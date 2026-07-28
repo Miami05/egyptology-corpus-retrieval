@@ -1,0 +1,10 @@
+# Committed deploy config. Secrets live in .streamlit/secrets.toml, which is
+# gitignored — set those in the Streamlit Cloud dashboard instead.
+
+[server]
+# The corpus CSV is ~8 MB; keep uploads modest so a bad request cannot exhaust
+# the container's memory.
+maxUploadSize = 20
+
+[browser]
+gatherUsageStats = false

@@ -1,0 +1,18 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+streamlit==1.49.0
+pandas==2.3.2
+numpy==2.3.2
+rapidfuzz==3.14.1
+scikit-learn==1.7.1
+sqlalchemy==2.0.43
+pydantic==2.11.7
+python-dotenv==1.1.1
+# Pinned: Streamlit serialises dataframes through pyarrow, and pyarrow 25.0.0
+# segfaults in convert_column when the corpus table is re-rendered on a rerun
+# (crash inside Streamlit's script thread, so it takes the whole app down).
+# 21.0.0 is stable. Do not unpin without re-testing the Corpus explorer twice.
+pyarrow==21.0.0
+
+# Test suite (tests/): pytest tests/ -q
+pytest==9.1.1

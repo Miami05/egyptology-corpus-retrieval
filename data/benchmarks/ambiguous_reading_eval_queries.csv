@@ -1,0 +1,21 @@
+benchmark_id,query_input,query_type,expected_transliteration,expected_source_text_id,expected_source_sentence_id,notes
+AMB_001,ndj w di r s,simplified_transliteration,nḏ (w)di̯ r =s,TLA_EARLIER_001,S001,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_002,n tjw m,partial_transliteration,n ṯw ꞽm =sn,TLA_EARLIER_002,S002,Simplified transliteration with final portion removed.
+AMB_003,kha m t hnqt kapl apdpl n makh m-r-shnapl mn-m-hat maa-khrw,normalized_reading_order,ḫꜣ m tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) n ꞽmꜣḫ ꞽm.ꞽ-rʾ-šnꜥ.PL ꞽmn-m-ḥꜣ.t mꜣꜥ-ḫrw,TLA_EARLIER_003,S003,Local normalized reading-order key from the imported row.
+AMB_004,aha,simplified_transliteration,ꜥḥꜥ,TLA_EARLIER_004,S004,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_005,w sr wns m n k r t hr w ab,partial_transliteration,(w)sꞽr wnꞽs m n =k ꞽr.t-ḥr.w ꞽꜥb n =k s(ꞽ) ꞽr rʾ =k,TLA_EARLIER_005,S005,Simplified transliteration with final portion removed.
+AMB_006,wa rn,normalized_reading_order,ꞽwꜣ rn,TLA_EARLIER_006,S006,Local normalized reading-order key from the imported row.
+AMB_007,qrs t m z my t mn t t awi t nfr wr t r t kh t nswt wmt t ka,simplified_transliteration,qrs.t(ꞽ) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.tꞽ) nfr wr.t (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt wmt.t-kꜣ,TLA_EARLIER_007,S007,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_008,m r zkha w w a,partial_transliteration,(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w(w)-ꜥ-(n-)nswt sšm-nfr,TLA_EARLIER_008,S008,Simplified transliteration with final portion removed.
+AMB_009,hm-ka mrw-dw,normalized_reading_order,ḥm-kꜣ mr.w-ꞽdw,TLA_EARLIER_009,S009,Local normalized reading-order key from the imported row.
+AMB_010,kh hnhn s hr rmn du,simplified_transliteration,ꞽḫ hnhn =s ḥr rmn.DU =ꞽ,TLA_EARLIER_010,S010,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_011,w gs n atjp w k r shdi t k,partial_transliteration,ꞽw gs n ꜣṯp.w =k r šdi̯.t =k ḥr mr.yt nb.t,TLA_EARLIER_011,S011,Simplified transliteration with final portion removed.
+AMB_012,wshbw mdwt m khprt m s,normalized_reading_order,wšb.w md(w).t mꞽ ḫpr.t ꞽm =s,TLA_EARLIER_012,S012,Local normalized reading-order key from the imported row.
+AMB_013,wah b,simplified_transliteration,wꜣḥ-ꞽb,TLA_EARLIER_013,S013,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_014,r tms sp t du f dshr sp t du,partial_transliteration,ꞽr tms sp.t.DU =fꞽ dšr sp.t.DU =f(ꞽ) pw mꞽ ꞽrtꞽw tms.t,TLA_EARLIER_014,S014,Simplified transliteration with final portion removed.
+AMB_015,wab r f shsaw pn m r f,normalized_reading_order,wꜥb r =f šsꜣ.w pn ꞽm(.ꞽ) rʾ =f,TLA_EARLIER_015,S015,Local normalized reading-order key from the imported row.
+AMB_016,khrp hr b,simplified_transliteration,ḫrp-ḥr(.ꞽ)-ꞽb,TLA_EARLIER_016,S016,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_017,djai t ba m htp,partial_transliteration,ḏꜣi̯.t bꞽꜣ m ḥtp nfr wr.t,TLA_EARLIER_017,S017,Simplified transliteration with final portion removed.
+AMB_018,stji-hab,normalized_reading_order,sṯi̯-ḥꜣb,TLA_EARLIER_018,S018,Local normalized reading-order key from the imported row.
+AMB_019,rr k r k r f r m,simplified_transliteration,ꞽrr =k r =k ꞽr =f r m,TLA_EARLIER_019,S019,"Editorial markers, dots, parentheses, and equals signs removed."
+AMB_020,w awn b,partial_transliteration,ꞽw ꜥwn ꞽb =k,TLA_EARLIER_020,S020,Simplified transliteration with final portion removed.

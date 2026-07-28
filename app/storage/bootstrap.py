@@ -1,0 +1,132 @@
+"""Create and seed the database from the processed CSV.
+
+The SQLite file is gitignored, so a fresh deployment (Streamlit Community Cloud,
+a new clone, CI) starts with no database at all. `ensure_corpus_ready` builds the
+schema and imports `data/processed/examples.csv` when the corpus table is empty,
+which is what gives every row the stable `id` that annotations are attached to.
+
+`upsert_examples` is shared with scripts/import_examples.py so the (long) column
+mapping lives in exactly one place.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+from sqlalchemy import func, select
+
+from app.storage.db import Base, SessionLocal, engine
+from app.storage.models import EvaluationResult  # noqa: F401
+from app.storage.models import Annotation, Example, RetrievalRun  # noqa: F401
+from app.storage.repo import ExampleRepo
+
+# Importing the models above is what registers the tables on Base.metadata;
+# without them create_all() would silently create nothing.
+
+
+def create_tables() -> None:
+    """Create any missing tables. Existing tables and rows are left alone."""
+    Base.metadata.create_all(bind=engine)
+
+
+def example_count() -> int:
+    session = SessionLocal()
+    try:
+        return session.execute(select(func.count()).select_from(Example)).scalar_one()
+    finally:
+        session.close()
+
+
+def upsert_examples(df: pd.DataFrame) -> dict[str, object]:
+    """Insert or refresh one corpus row per CSV row, preserving annotations.
+
+    Returns counts of created/updated/unchanged rows plus a per-field tally of
+    what was refreshed on rows that already existed.
+    """
+    session = SessionLocal()
+    created = 0
+    updated = 0
+    unchanged = 0
+    field_changes: dict[str, int] = {}
+
+    try:
+        repo = ExampleRepo(session)
+
+        for _, row in df.iterrows():
+            _, was_created, changed = repo.upsert_example(
+                source=row["source"],
+                source_text_id=row["source_text_id"],
+                source_sentence_id=row["source_sentence_id"],
+                language_stage=row["language_stage"],
+                script_type=row["script_type"],
+                genre=row["genre"],
+                period=row["period"],
+                hieroglyphs=row["hieroglyphs"],
+                mdc=row["mdc"],
+                sign_sequence=row["sign_sequence"],
+                transliteration_gold=row["transliteration_gold"],
+                translation=row["translation"],
+                lemma_sequence=row["lemma_sequence"],
+                upos=row["upos"],
+                glossing=row["glossing"],
+                grammar_notes=row["grammar_notes"],
+                source_ref=row["source_ref"],
+                review_status=row["review_status"],
+                formula_type=row["formula_type"],
+                deity=row["deity"],
+                recipient=row["recipient"],
+                offering_items=row["offering_items"],
+                formula_slot=row["formula_slot"],
+                display_sequence=row["display_sequence"],
+                normalized_reading_order=row["normalized_reading_order"],
+                alt_transliterations=row["alt_transliterations"],
+                variant_writing_note=row["variant_writing_note"],
+                morphology_note=row["morphology_note"],
+                syntax_note=row["syntax_note"],
+                aesthetic_arrangement_flag=bool(row["aesthetic_arrangement_flag_bool"]),
+                mdc_norm=row["mdc_norm"],
+                sign_sequence_norm=row["sign_sequence_norm"],
+                transliteration_norm=row["transliteration_norm"],
+                formula_type_norm=row["formula_type_norm"],
+                deity_norm=row["deity_norm"],
+                recipient_norm=row["recipient_norm"],
+                offering_items_norm=row["offering_items_norm"],
+                formula_slot_norm=row["formula_slot_norm"],
+                display_sequence_norm=row["display_sequence_norm"],
+                normalized_reading_order_norm=row["normalized_reading_order_norm"],
+                alt_transliterations_norm=row["alt_transliterations_norm"],
+            )
+
+            if was_created:
+                created += 1
+            elif changed:
+                updated += 1
+                for field in changed:
+                    field_changes[field] = field_changes.get(field, 0) + 1
+            else:
+                unchanged += 1
+    finally:
+        session.close()
+
+    return {
+        "created": created,
+        "updated": updated,
+        "unchanged": unchanged,
+        "field_changes": field_changes,
+    }
+
+
+def ensure_corpus_ready(df: pd.DataFrame) -> int:
+    """Make the database usable, then report how many corpus rows it holds.
+
+    Safe to call on every app start: the schema step is idempotent, and seeding
+    only runs when the corpus table is empty, so a populated local database is
+    never re-imported (and never has its annotations disturbed).
+    """
+    create_tables()
+
+    count = example_count()
+    if count == 0:
+        upsert_examples(df)
+        count = example_count()
+
+    return count

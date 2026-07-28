@@ -1,0 +1,6 @@
+benchmark_id,query_mdc,query_normalized_reading_order,expected_source,expected_source_text_id,expected_source_sentence_id,notes
+BM_001,maa-khrw=k khr baw-jwnw khr ntrw nbw,maa-khrw=k khr baw-jwnw khr ntrw nbw,TLA,MORHQGR3SNBI3KHAF6YOW5WLL4,IBUBdyrreiJCMUoQqaTZBjhMe7E,
+BM_002,m-htp nfr.t wr.t,m-htp nfr.t wr.t,TLA,MORHQGR3SNBI3KHAF6YOW5WLL4,IBUBdWmLladUyko2k5C0EII9hFw,
+BM_003,jad.w man=f khnt.j,jad.w man=f khnt.j,TLA,MORHQGR3SNBI3KHAF6YOW5WLL4,IBUBd9DewXwpf02TpMDtZ4mp6EE,
+BM_004,dd jsi aw ma n=k hmt=k,dd jsi aw ma n=k hmt=k,TLA,MORHQGR3SNBI3KHAF6YOW5WLL4,IBUBd9mdeuaUgUoguw77fojG1qo,
+BM_005,jw mhr rmm=s tw,jw mhr rmm=s tw,TLA,MORHQGR3SNBI3KHAF6YOW5WLL4,IBUBd1NUc4LHaUPIlW0V9mCZyNQ,

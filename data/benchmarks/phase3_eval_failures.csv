@@ -1,0 +1,1 @@
+benchmark_id,query_mdc,query_normalized_reading_order,expected_source,expected_source_text_id,expected_source_sentence_id,expected_rank,top1_hit,top3_hit,returned_keys,returned_scores

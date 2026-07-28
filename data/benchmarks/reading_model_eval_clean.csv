@@ -1,0 +1,7 @@
+corpus_sentences,train_sentences,test_sentences,duplicate_test_sentences,duplicates_excluded,ambiguous_sign_types,test_sign_instances,unseen_signs,unseen_share,ambiguous_instances,ambiguous_share_of_seen,acc_all_most_frequent,acc_all_context,acc_ambiguous_most_frequent,acc_ambiguous_left_only,acc_ambiguous_context,fallback_predictions,fallback_share_of_unseen,acc_fallback,coverage_before_fallback,coverage_with_fallback,ambiguous_gain,right_context_gain
+300,240,54,6,True,28,367,160,0.436,69,0.3333,0.8889,0.8986,0.8696,0.8986,0.8986,95,0.5938,0.1579,0.564,0.8229,0.029,0.0
+500,400,85,15,True,48,555,231,0.4162,137,0.4228,0.8796,0.8951,0.8394,0.8686,0.8759,156,0.6753,0.1474,0.5838,0.8649,0.0365,0.0073
+1000,800,166,34,True,106,1102,378,0.343,328,0.453,0.8854,0.8964,0.8384,0.8628,0.8628,304,0.8042,0.1776,0.657,0.9328,0.0244,0.0
+2000,1600,329,71,True,211,2129,609,0.286,851,0.5599,0.8888,0.9086,0.8566,0.8931,0.8919,542,0.89,0.203,0.714,0.9685,0.0353,-0.0012
+5000,4000,738,262,True,450,4658,1025,0.2201,2273,0.6257,0.8841,0.896,0.8636,0.8777,0.8825,960,0.9366,0.226,0.7799,0.986,0.0189,0.0048
+11959,9567,1689,703,True,1021,10784,1735,0.1609,6151,0.6797,0.8812,0.9071,0.8561,0.8921,0.8942,1675,0.9654,0.2537,0.8391,0.9944,0.0381,0.0021

@@ -1,0 +1,1 @@
+test_id,source,source_text_id,source_sentence_id,query_mdc,gold_transliteration,gold_canonical,rank_of_gold,top1_hit,top3_hit,suggestions,suggestion_canonicals,confidence_scores,evidence_summaries,supporting_sources,evaluation_mode

@@ -1,0 +1,84 @@
+config,split,queries,top1_useful,top3_useful,mrr
+baseline (current defaults),tune,40,0.375,0.675,0.4917
+fuzzy=0.1 tfidf=0.1 overlap=0.1 idf=0.0,tune,40,0.35,0.625,0.4708
+fuzzy=0.1 tfidf=0.1 overlap=0.1 idf=0.2,tune,40,0.35,0.675,0.4875
+fuzzy=0.1 tfidf=0.1 overlap=0.1 idf=0.4,tune,40,0.325,0.65,0.475
+fuzzy=0.1 tfidf=0.1 overlap=0.25 idf=0.0,tune,40,0.375,0.575,0.4625
+fuzzy=0.1 tfidf=0.1 overlap=0.25 idf=0.2,tune,40,0.3,0.625,0.45
+fuzzy=0.1 tfidf=0.1 overlap=0.25 idf=0.4,tune,40,0.3,0.65,0.4625
+fuzzy=0.1 tfidf=0.18 overlap=0.1 idf=0.0,tune,40,0.375,0.65,0.4875
+fuzzy=0.1 tfidf=0.18 overlap=0.1 idf=0.2,tune,40,0.375,0.625,0.4792
+fuzzy=0.1 tfidf=0.18 overlap=0.1 idf=0.4,tune,40,0.35,0.65,0.4875
+fuzzy=0.1 tfidf=0.18 overlap=0.25 idf=0.0,tune,40,0.35,0.6,0.4583
+fuzzy=0.1 tfidf=0.18 overlap=0.25 idf=0.2,tune,40,0.325,0.65,0.4667
+fuzzy=0.1 tfidf=0.18 overlap=0.25 idf=0.4,tune,40,0.3,0.65,0.4625
+fuzzy=0.1 tfidf=0.3 overlap=0.1 idf=0.0,tune,40,0.35,0.625,0.4625
+fuzzy=0.1 tfidf=0.3 overlap=0.1 idf=0.2,tune,40,0.35,0.65,0.4708
+fuzzy=0.1 tfidf=0.3 overlap=0.1 idf=0.4,tune,40,0.35,0.65,0.4792
+fuzzy=0.1 tfidf=0.3 overlap=0.25 idf=0.0,tune,40,0.35,0.625,0.4625
+fuzzy=0.1 tfidf=0.3 overlap=0.25 idf=0.2,tune,40,0.35,0.625,0.4667
+fuzzy=0.1 tfidf=0.3 overlap=0.25 idf=0.4,tune,40,0.35,0.65,0.4792
+fuzzy=0.22 tfidf=0.1 overlap=0.1 idf=0.0,tune,40,0.325,0.6,0.4375
+fuzzy=0.22 tfidf=0.1 overlap=0.1 idf=0.2,tune,40,0.375,0.65,0.4833
+fuzzy=0.22 tfidf=0.1 overlap=0.1 idf=0.4,tune,40,0.35,0.625,0.4667
+fuzzy=0.22 tfidf=0.1 overlap=0.25 idf=0.0,tune,40,0.35,0.625,0.4583
+fuzzy=0.22 tfidf=0.1 overlap=0.25 idf=0.2,tune,40,0.35,0.6,0.4625
+fuzzy=0.22 tfidf=0.1 overlap=0.25 idf=0.4,tune,40,0.325,0.625,0.4583
+fuzzy=0.22 tfidf=0.18 overlap=0.1 idf=0.0,tune,40,0.325,0.625,0.45
+fuzzy=0.22 tfidf=0.18 overlap=0.1 idf=0.2,tune,40,0.375,0.625,0.4792
+fuzzy=0.22 tfidf=0.18 overlap=0.1 idf=0.4,tune,40,0.375,0.625,0.475
+fuzzy=0.22 tfidf=0.18 overlap=0.25 idf=0.0,tune,40,0.35,0.6,0.4625
+fuzzy=0.22 tfidf=0.18 overlap=0.25 idf=0.2,tune,40,0.375,0.575,0.4625
+fuzzy=0.22 tfidf=0.18 overlap=0.25 idf=0.4,tune,40,0.35,0.675,0.4875
+fuzzy=0.22 tfidf=0.3 overlap=0.1 idf=0.0,tune,40,0.325,0.65,0.4583
+fuzzy=0.22 tfidf=0.3 overlap=0.1 idf=0.2,tune,40,0.375,0.65,0.4833
+fuzzy=0.22 tfidf=0.3 overlap=0.1 idf=0.4,tune,40,0.375,0.65,0.4833
+fuzzy=0.22 tfidf=0.3 overlap=0.25 idf=0.0,tune,40,0.375,0.65,0.4875
+fuzzy=0.22 tfidf=0.3 overlap=0.25 idf=0.2,tune,40,0.375,0.625,0.4792
+fuzzy=0.22 tfidf=0.3 overlap=0.25 idf=0.4,tune,40,0.375,0.65,0.4875
+fuzzy=0.35 tfidf=0.1 overlap=0.1 idf=0.0,tune,40,0.35,0.6,0.4542
+fuzzy=0.35 tfidf=0.1 overlap=0.1 idf=0.2,tune,40,0.35,0.575,0.4458
+fuzzy=0.35 tfidf=0.1 overlap=0.1 idf=0.4,tune,40,0.375,0.65,0.4833
+fuzzy=0.35 tfidf=0.1 overlap=0.25 idf=0.0,tune,40,0.325,0.6,0.4375
+fuzzy=0.35 tfidf=0.1 overlap=0.25 idf=0.2,tune,40,0.325,0.65,0.4583
+fuzzy=0.35 tfidf=0.1 overlap=0.25 idf=0.4,tune,40,0.35,0.625,0.4667
+fuzzy=0.35 tfidf=0.18 overlap=0.1 idf=0.0,tune,40,0.3,0.6,0.4292
+fuzzy=0.35 tfidf=0.18 overlap=0.1 idf=0.2,tune,40,0.35,0.6,0.4542
+fuzzy=0.35 tfidf=0.18 overlap=0.1 idf=0.4,tune,40,0.375,0.675,0.4917
+fuzzy=0.35 tfidf=0.18 overlap=0.25 idf=0.0,tune,40,0.35,0.6,0.45
+fuzzy=0.35 tfidf=0.18 overlap=0.25 idf=0.2,tune,40,0.375,0.625,0.475
+fuzzy=0.35 tfidf=0.18 overlap=0.25 idf=0.4,tune,40,0.35,0.625,0.4625
+fuzzy=0.35 tfidf=0.3 overlap=0.1 idf=0.0,tune,40,0.3,0.6,0.4333
+fuzzy=0.35 tfidf=0.3 overlap=0.1 idf=0.2,tune,40,0.325,0.625,0.4542
+fuzzy=0.35 tfidf=0.3 overlap=0.1 idf=0.4,tune,40,0.375,0.625,0.4792
+fuzzy=0.35 tfidf=0.3 overlap=0.25 idf=0.0,tune,40,0.35,0.625,0.4625
+fuzzy=0.35 tfidf=0.3 overlap=0.25 idf=0.2,tune,40,0.375,0.625,0.4792
+fuzzy=0.35 tfidf=0.3 overlap=0.25 idf=0.4,tune,40,0.375,0.625,0.475
+[suggest] suggestion baseline,tune,40,0.375,0.675,0.4917
+[suggest] rel=0.35 translit=0.1 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.4,0.6,0.4833
+[suggest] rel=0.35 translit=0.1 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.375,0.575,0.4583
+[suggest] rel=0.35 translit=0.1 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.375,0.6,0.4708
+[suggest] rel=0.35 translit=0.1 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.375,0.575,0.4583
+[suggest] rel=0.35 translit=0.2 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.375,0.625,0.4792
+[suggest] rel=0.35 translit=0.2 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.375,0.6,0.4625
+[suggest] rel=0.35 translit=0.2 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.4,0.675,0.5083
+[suggest] rel=0.35 translit=0.2 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.375,0.65,0.4792
+[suggest] rel=0.5 translit=0.1 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.4,0.6,0.4833
+[suggest] rel=0.5 translit=0.1 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.4,0.575,0.4708
+[suggest] rel=0.5 translit=0.1 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.375,0.575,0.4625
+[suggest] rel=0.5 translit=0.1 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.375,0.575,0.4583
+[suggest] rel=0.5 translit=0.2 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.375,0.6,0.4708
+[suggest] rel=0.5 translit=0.2 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.4,0.575,0.4708
+[suggest] rel=0.5 translit=0.2 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.375,0.65,0.4875
+[suggest] rel=0.5 translit=0.2 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.375,0.65,0.4833
+[suggest] rel=0.65 translit=0.1 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.4,0.6,0.4833
+[suggest] rel=0.65 translit=0.1 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.375,0.6,0.4667
+[suggest] rel=0.65 translit=0.1 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.35,0.575,0.45
+[suggest] rel=0.65 translit=0.1 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.35,0.575,0.4458
+[suggest] rel=0.65 translit=0.2 char=0.05 support=0.05 mean=0 lemma=0,tune,40,0.4,0.6,0.4833
+[suggest] rel=0.65 translit=0.2 char=0.05 support=0.15 mean=0 lemma=0,tune,40,0.4,0.6,0.4792
+[suggest] rel=0.65 translit=0.2 char=0.16 support=0.05 mean=0 lemma=0,tune,40,0.375,0.625,0.4792
+[suggest] rel=0.65 translit=0.2 char=0.16 support=0.15 mean=0 lemma=0,tune,40,0.375,0.625,0.475
+baseline both layers,holdout,40,0.55,0.725,0.6167
+tuned retrieval: baseline (current defaults),holdout,40,0.55,0.725,0.6167
+tuned both: baseline (current defaults) + rel=0.35 translit=0.2 char=0.16 support=0.05 mean=0 lemma=0,holdout,40,0.55,0.725,0.6125

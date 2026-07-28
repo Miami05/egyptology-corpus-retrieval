@@ -1,0 +1,652 @@
+sign,gold_reading,context_prediction,most_frequent_prediction,attested_count,candidates,sentence
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,qrs.t(ꞽ) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.tꞽ) nfr wr.t (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt wmt.t-kꜣ
+𓊿𓏏𓏏,ꞽmn.t(ꞽ).t,ꞽmn.tꞽ.t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,qrs.t(ꞽ) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.tꞽ) nfr wr.t (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt wmt.t-kꜣ
+𓀘,ꞽꜣwi̯(.tꞽ),ꞽꜣwi̯(.w),sms.w,9,sms.w:0.67 | ꞽꜣw(.t):0.11 | smsw:0.11 | ꞽꜣwi̯(.w):0.11,qrs.t(ꞽ) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.tꞽ) nfr wr.t (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt wmt.t-kꜣ
+𓇓𓏏𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,23,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.52 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.30 | (ꞽ)r(.ꞽt-ꞽ)ḫt-nswt:0.09 | rḫ.t-nzw:0.04 | (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt:0.04,qrs.t(ꞽ) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.tꞽ) nfr wr.t (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt wmt.t-kꜣ
+𓏏,=t,=t(w),=t(w),37,=t(w):0.30 | km.t:0.08 | =t:0.08 | ꞽmn.t:0.05 | wꜣḏ.t:0.05,ꞽri̯ =t r tn(ꞽ) ꞽdy.t šr.t
+𓃾,kꜣ(.PL),ꞽḥ,ꞽḥ,26,ꞽḥ:0.69 | ꞽwꜣ:0.12 | kꜣ(.PL):0.04 | ꞽḥ.PL:0.04 | kꜣ:0.04,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓅿,ꜣpd(.PL),ꜣpd,ꜣpd,34,ꜣpd:0.71 | sr:0.21 | ꜣpd(.PL):0.03 | rʾ:0.03 | ḏꜣ(.t):0.03,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓐍𓏏,ḫ.t,(ꞽ)ḫ.t,(ꞽ)ḫ.t,58,(ꞽ)ḫ.t:0.79 | ḫ.t:0.12 | (ꞽ)ḫ(.t):0.05 | ꞽḫ.t:0.03,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓎟,nb(.t),nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓄤,nfr(.t),nfr,nfr,60,nfr:0.92 | nfr(.t):0.03 | nfr(.w):0.03 | nfr(.PL):0.02,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓃂,wꜥb(.t),ꜥb(.w),wꜥb,7,wꜥb:0.86 | ꜥb(.w):0.14,pr.t-ḫrw tʾ ḥnq.t kꜣ(.PL) ꜣpd(.PL) šs mnḫ.t ḫ.t nb(.t) nfr(.t) wꜥb(.t) pri̯.t m-bꜣḥ nṯr-ꜥꜣ
+𓁶𓏤,tp(.ꞽ),tp,tp,38,tp:0.95 | tp(.ꞽ):0.03 | dp:0.03,ꞽr wnn =k m rwy.t ꜥḥꜥ ḥmsi̯ r nmt.PL =k wdd n =k hrw tp(.ꞽ)
+𓈎𓂋𓋴𓌠𓊭,qrs,qrs(.w),qrs(.w),4,qrs(.w):0.75 | qrs:0.25,šzp.t rmṯ qrs =sn ḫꜣ =s m tʾ ḫꜣ =s m ḥ(n)q.t ḥr wdḥ.w n(.ꞽ) ḫnt(.ꞽ)-ꞽmn.t(ꞽ).w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,šzp.t rmṯ qrs =sn ḫꜣ =s m tʾ ḫꜣ =s m ḥ(n)q.t ḥr wdḥ.w n(.ꞽ) ḫnt(.ꞽ)-ꞽmn.t(ꞽ).w
+𓇋𓃀,ꞽb,ꞽb(ꜣ),ꞽbi̯,5,ꞽbi̯:0.60 | ꞽb(ꜣ):0.40,sn =f ꞽb mꜣꜥ-ḫrw
+𓇓𓅱,nswt,sw,sw,137,sw:0.99 | sw=w(ꞽ):0.01,ḥtp-ḏi̯ nswt ḥtp-ḏi̯ ꞽnp.w ḫnt.ꞽ-zḥ-nṯr
+𓋴𓍋𓌡𓏏,smr-wꜥ.tꞽ,smr-wꜥ.t(ꞽ),smr-wꜥ.tꞽ,4,smr-wꜥ.tꞽ:0.75 | smr-wꜥ.t(ꞽ):0.25,wr-mḏ-šmꜥ.w (ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt ẖr(.ꞽ)-ḥ(ꜣ)b(.t) smr-wꜥ.tꞽ mr-ꞽb
+𓈖𓏏,n.ꞽ.t,n(.ꞽ).t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽni̯.t nḏ.t-ḥr n.ꞽ.t nʾ.t.PL n.ꞽ.(w)t pr-ḏ.t
+𓈖𓏏,n.ꞽ.(w)t,n.ꞽ.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽni̯.t nḏ.t-ḥr n.ꞽ.t nʾ.t.PL n.ꞽ.(w)t pr-ḏ.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,nšš nn n(.ꞽ) rꜥ
+𓉻𓏏,ꜥꜣ.t,ꜥꜣi̯.t,ꜥꜣ.t,3,ꜥꜣ.t:0.67 | ꜥꜣi̯.t:0.33,nḏ ṯw psḏ.t ꜥꜣ.t rḏi̯.n =sn n =k ḫft(.ꞽ) =k ẖr =k
+𓏎𓈖𓈖,ꞽnn!,ꞽni̯.n,ꞽni̯.n,21,ꞽni̯.n:0.86 | ꞽnn:0.14,ꞽw =s ꞽnn! ḥꜣb nfr
+𓅓𓂋,(ꞽ)m(.ꞽ)-r(ʾ),(ꞽ)m(.ꞽ)-rʾ,(ꞽ)m(.ꞽ)-rʾ,7,(ꞽ)m(.ꞽ)-rʾ:0.86 | (ꞽ)m(.ꞽ)-r(ʾ):0.14,ꞽnk (ꞽ)m(.ꞽ)-r(ʾ) ḥḥ.PL ḥfn.PL ḏbꜥ.PL ḫꜣ.PL šn.t.PL mḏ.PL bꞽ.t.PL
+𓊵𓏏𓊪𓏙,ḥtp-ḏi̯,ḥtp-ḏꞽ,ḥtp-ḏꞽ,43,ḥtp-ḏꞽ:0.51 | ḥtp-ḏi̯:0.49,ḥtp-ḏi̯ nswt ḥtp-ḏi̯ z(my).t ꞽmn.t(ꞽ).t
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,ḥtp-ḏi̯ nswt ḥtp-ḏi̯ z(my).t ꞽmn.t(ꞽ).t
+𓋴,sfḫ,=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,sfḫ
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓊹𓂋,nṯr,nṯri̯,nṯr(.ꞽ),5,nṯr(.ꞽ):0.60 | nṯri̯:0.40,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽnk ḥm wꜥb.w n nṯr-nʾ.t(ꞽ) rʾ =f
+𓅓𓏏𓏱,m(w)t,m(w)t(.tꞽ),m(w)t,12,m(w)t:0.75 | m(w)t(.tꞽ):0.17 | mwt:0.08,ntb.kw ḫḫ =ꞽ ḫm.w ḏd.n =ꞽ dp.t m(w)t nn
+𓇋𓋴,ꞽs,ꞽ:sšm,ꞽs,90,ꞽs:0.99 | ꞽ:sšm:0.01,ꞽs nr.t ḫr.t ḥr zꜣ =s
+𓂧𓏏,di̯.t(ꞽ),ḏd.t(w),ḏd.t(w),4,ḏd.t(w):0.50 | di̯.t(ꞽ):0.25 | ḏr.t:0.25,(w)sꞽr wnꞽs m ꞽr.t-ḥr.w di̯.t(ꞽ) n =k m rʾ =k
+𓈝𓅓𓂻,šm(w),šmi̯,šm,7,šm:0.57 | šmi̯:0.43,ꞽr šmi̯ =f sꞽ =f m tbw.t =f ḏd =f r šm(w) =f tb(w).t =f nni̯.t(ꞽ)
+𓇋𓏶𓏏,ꞽm.(w)tꞽ,ꞽm.t,ꞽm.t,19,ꞽm.t:0.84 | ꞽm.ꞽ.t:0.11 | ꞽm.(w)t(ꞽ):0.05,pri̯.n wnꞽs ꞽm.(w)tꞽ mn.t.DU psḏ.t
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt mw.t =s mri̯=s-ꜥnḫ zꜣ.t =s ḫn.wt
+𓅃𓅆,ḥr,ḥr.w,ḥr.w,8,ḥr.w:0.62 | ḥr:0.38,zꜣ sḏm.w m šms ḥr
+𓁹𓁹,ꞽr.t.DU,ꞽr(.t.ꞽ),ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,rḏi̯.n n =k gbb ꞽr.t.DU =k ḥtp =k m ꞽr.t.DU wr pn ꞽm(.ꞽ) =k
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,rḏi̯.n n =k gbb ꞽr.t.DU =k ḥtp =k m ꞽr.t.DU wr pn ꞽm(.ꞽ) =k
+𓇋𓏏,ꞽt,ꞽt(ꞽ),ꞽt(ꞽ),58,ꞽt(ꞽ):0.93 | ꞽt:0.05 | ḥw.t-ꞽt(ꞽ):0.02,ꞽꜣq ꞽr =k ꞽr bw ẖr(.ꞽ) ꞽt =k ꞽr bw ẖr(.ꞽ) gbb
+𓇓𓏏𓆤𓏏,nswt-bꞽ.t,nzw-bꞽ.tꞽ,nzw-bꞽ.tꞽ,49,nzw-bꞽ.tꞽ:0.86 | nswt-bꞽ.tꞽ:0.08 | nsw.t-bꞽ.tꞽ:0.02 | n(ꞽ)swt-bꞽ.tꞽ:0.02 | nṯr.PL:0.02,nswt-bꞽ.t zꜣ-rꜥw ttꞽ ꜥnḫ ḏ.t
+𓐍𓂋,ḫru̯,ḫr,ḫr,175,ḫr:0.97 | ḫru̯:0.02 | ḫr(.ꞽ):0.01,ꞽꜥb n =k qs.PL =k šzp n =k tp =k ḫru̯ gbb
+𓊃,z,=s,=s,19,=s:0.95 | s(ꞽ):0.05,htt z ꞽwi̯ pf z ꞽwi̯ pn z
+𓀀,z,=ꞽ,=ꞽ,489,=ꞽ:0.99 | z:0.00 | =y:0.00 | =(ꞽ):0.00,htt z ꞽwi̯ pf z ꞽwi̯ pn z
+𓀀,z,=ꞽ,=ꞽ,489,=ꞽ:0.99 | z:0.00 | =y:0.00 | =(ꞽ):0.00,htt z ꞽwi̯ pf z ꞽwi̯ pn z
+𓊗𓏭,zp-2,zp-sn.wꞽ,zp-sn.wꞽ,5,zp-sn.wꞽ:0.40 | zp-2:0.40 | zp-sn:0.20,m ṯf zp-2 zꜣu̯ ṯw
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,ḥm.t =f (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt sꜣb.t
+𓈙𓋴𓌞,š(m)s,š(m)s(.w),šms,4,šms:0.25 | šms(.w):0.25 | š(m)s(.w):0.25 | š(m)s:0.25,ḥtp wnꞽs m ꜥnḫ m ꞽmn.t š(m)s sw d(w)ꜣ.t(ꞽ).w
+𓂝𓂝,ḏḏ,dd,ḏḏ,17,ḏḏ:0.53 | ꜥ.DU:0.29 | dd:0.18,m =k zꜣ nfr n ḏḏ nṯr rḏi̯ ḥꜣw-ḥr ḏdd.t n =f ḫr nb =f ꞽri̯ =f mꜣꜥ.t ꞽri̯.n ꞽb =f r nmt.t.PL
+𓈖𓌰𓅓𓏏𓏏𓂻𓏥,nmt.t.PL,nmt.t,nmt.t.PL,2,nmt.t.PL:0.50 | nmt.t:0.50,m =k zꜣ nfr n ḏḏ nṯr rḏi̯ ḥꜣw-ḥr ḏdd.t n =f ḫr nb =f ꞽri̯ =f mꜣꜥ.t ꞽri̯.n ꞽb =f r nmt.t.PL
+𓇓𓏏𓈖,nzw,nswt,nswt,17,nswt:0.53 | nzw:0.18 | nsw.t:0.12 | nsw:0.12 | pr-nsw:0.06,n m(w)t n(ꞽ).t n nzw n m(w)t n(ꞽ).t n r(m)ṯ
+𓌡𓏤,wꜥ,wꜥ(.w),wꜥ(.w),2,wꜥ(.w):0.50 | wꜥ:0.50,ꞽ:nḏ ḥr =k wꜥ ꞽ:ḏdd =f rꜥw-nb
+𓇓𓏏𓊵𓏙,ḥtp-ḏi̯-nswt,ḥtp-di̯-nswt,ḥtp-di̯-nswt,25,ḥtp-di̯-nswt:0.44 | ḥtp-ḏi̯-nswt:0.40 | ḥtp-ḏi̯-nzw:0.12 | ḥtp-di̯-nsw:0.04,ḥtp-ḏi̯-nswt ḫꜣ m tʾ ḥnq.t ḫꜣ m kꜣ.PL ꜣpd.PL ḫꜣ m ḫ.t nb.t ꜥnḫ.tꞽ nṯr ꞽm n kꜣ n sms.w-hꜣy.
+𓐍𓏏,ḫ.t,(ꞽ)ḫ.t,(ꞽ)ḫ.t,58,(ꞽ)ḫ.t:0.79 | ḫ.t:0.12 | (ꞽ)ḫ(.t):0.05 | ꞽḫ.t:0.03,ḥtp-ḏi̯-nswt ḫꜣ m tʾ ḥnq.t ḫꜣ m kꜣ.PL ꜣpd.PL ḫꜣ m ḫ.t nb.t ꜥnḫ.tꞽ nṯr ꞽm n kꜣ n sms.w-hꜣy.
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḥtp-ḏi̯-nswt ḫꜣ m tʾ ḥnq.t ḫꜣ m kꜣ.PL ꜣpd.PL ḫꜣ m ḫ.t nb.t ꜥnḫ.tꞽ nṯr ꞽm n kꜣ n sms.w-hꜣy.
+𓐍𓏏𓏛𓏥,(ꞽ)ḫ.t.PL,(ꞽ)ḫ.t,ḫ.t,49,ḫ.t:0.43 | (ꞽ)ḫ.t:0.41 | (ꞽ)ḫ.t.PL:0.10 | ḫ.t.PL:0.06,ꞽr ḫꜣi̯ =k z n(.ꞽ) wbn.w m msḏr =f ꞽsp r rʾ ḥꜥ.PL =f ꞽst (ꞽ)ḫ.t.PL m ẖr.ꞽ n(.ꞽ) msḏr =f mn
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,qrs =f m z(my).t ꞽmn.tꞽ.t ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ nb-ꞽmꜣḫ-ḫr-nb=f (mn-)s.wt-ꞽtꞽ-nswt
+𓊿𓏏𓏏,ꞽmn.tꞽ.t,ꞽmn.t(ꞽ).t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,qrs =f m z(my).t ꞽmn.tꞽ.t ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ nb-ꞽmꜣḫ-ḫr-nb=f (mn-)s.wt-ꞽtꞽ-nswt
+𓄟𓅱,ms.(w),ms.w,ms.w,13,ms.w:0.92 | msi̯.w:0.08,rḏi̯.n n =k ḥr.w ms.(w) =f wṯz =sn kw
+𓅓𓂝,mꜥ(w),m,m,128,m:0.55 | m-ꜥ:0.44 | mḥꜥ:0.01 | mi̯:0.01,mꜥ(w)
+𓁷,ḥr(.ꞽ)-wḏꜣ,ḥr,ḥr,186,ḥr:0.98 | ḥr(.ꞽ):0.01 | ꞽꜣ.t:0.01,ḥr(.ꞽ)-wḏꜣ
+𓄂𓏏𓏏,ḥꜣ.tt,ḥꜣt.t,ḥꜣ.tt,25,ḥꜣ.tt:0.64 | ḥꜣt.t:0.36,ḥꜣ.tt n.ꞽ.t ṯḥn.w
+𓈖𓏏,n.ꞽ.t,n(ꞽ.)t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ḥꜣ.tt n.ꞽ.t ṯḥn.w
+𓅓𓂋,(ꞽ)m(.ꞽ)-rʾ-mnn.ww,(ꞽ)m(.ꞽ)-rʾ,(ꞽ)m(.ꞽ)-rʾ,7,(ꞽ)m(.ꞽ)-rʾ:0.86 | (ꞽ)m(.ꞽ)-r(ʾ):0.14,tꜣ-wr (ꞽ)m(.ꞽ)-rʾ-mnn.ww (ꞽ)m(.ꞽ)-rʾ-nswt.w (ꞽ)m(.ꞽ)-rʾ-wpw.(w)t sšm-tꜣ ḥqꜣ-ḥw.t-ꜥꜣ.t (ꞽ)r
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,twt n(.ꞽ) ꞽr.t sqꜣi̯(.w) m ḥꜣ.t =k sṯsi̯(.w) m pḥ.DU =k
+𓇓𓏏𓈖,nswt,nsw,nswt,17,nswt:0.53 | nzw:0.18 | nsw.t:0.12 | nsw:0.12 | pr-nsw:0.06,mrr.w nswt nṯr =sn ḏd.w
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,ꞽ:mr.n ḥr.w ꞽt(ꞽ) =f ꞽm(.ꞽ) =k n ḏi̯.n ḥr.w bnu̯ =k
+𓅓𓏏𓏱,mt,m(w)t(.tꞽ),m(w)t,12,m(w)t:0.75 | m(w)t(.tꞽ):0.17 | mwt:0.08,ꜣ.t kt.t mꞽ.tt rsw.t ꞽw pḥ.tw mt ḥr rḫ st
+𓈖𓅱,n(.ꞽ).w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,n nḥmm sꜥḥ.w n(.ꞽ).w ttꞽ m-ꜥ =f
+𓄤𓂋𓏏,nfr(.t),nfr.t,nfr.t,44,nfr.t:0.57 | nfr.(w)t:0.41 | nfr:0.02,wꜣḥ wdḥ.w m (ꞽ)ḫ.t nb(.t) nfr(.t) rꜥw-nb
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k mʾw.t =k ꞽy n =k nw.t šnm.t-wr.t swꜥb =s ṯw ppy pw šnm =s ṯw ppy pw ḫwꞽ =s gꜣu̯.w 
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k mʾw.t =k ꞽy n =k nw.t šnm.t-wr.t swꜥb =s ṯw ppy pw šnm =s ṯw ppy pw ḫwꞽ =s gꜣu̯.w 
+𓌸𓇋𓇋,mri̯.y,mr.y,mr.y,26,mr.y:0.77 | mri̯.y:0.23,ḏd =k ꞽw =k dr.t(w) =f n =k m ḏd.t =k nb.t n ꞽmꜣḫ ḫtm.w-bꞽ.tꞽ mri̯.y nb =f mꜣꜥ ḥzi̯.y =f n
+𓆑,=f(ꞽ),=f,=f,3156,=f:0.99 | =f(ꞽ):0.01 | =(f):0.00 | n:0.00 | ḫtꞽw:0.00,ꞽr šw(.t).DU =fꞽ dp.t.DU =f(ꞽ) pw
+𓋴𓍌𓌡𓏏𓏤,smr-wꜥw.tꞽ,smr-wꜥ.tꞽ,smr-wꜥ.tꞽ,19,smr-wꜥ.tꞽ:0.84 | smr-wꜥ.t(ꞽ):0.11 | smr-wꜥw.tꞽ:0.05,smr-wꜥw.tꞽ ẖr.ꞽ-ḥ(ꜣ)b(.t) sšm-nfr ḥtp-ḏꞽ nswt ꞽz
+𓎛𓌨𓃀,ẖr.ꞽ-ḥ(ꜣ)b(.t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),15,ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.67 | ẖr(.ꞽ)-ḥ(ꜣ)b.t:0.13 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.07 | ẖr.ꞽ-ḥꜣb.t:0.07 | ẖr.(ꞽ)-ḥ(ꜣ)b.t:0.07,smr-wꜥw.tꞽ ẖr.ꞽ-ḥ(ꜣ)b(.t) sšm-nfr ḥtp-ḏꞽ nswt ꞽz
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt ꞽn.tꞽ
+𓂋𓊪𓂝,ꞽr.ꞽ-pꜥ.t,(ꞽ)r(.ꞽ)-pꜥ(.t),(ꞽ)r(.ꞽ)-pꜥ(.t),22,(ꞽ)r(.ꞽ)-pꜥ(.t):0.59 | ꞽr.ꞽ-pꜥ.t:0.36 | ḥꜣ.t(ꞽ)-ꜥ:0.05,ꞽr.ꞽ-pꜥ.t ḥꜣ.tꞽ-ꜥ ḥrꞽ-tp-nḫb nfr-sšm-rꜥw
+𓌸𓂋𓏏,mri̯.t,mr.(y)t,mr.t,20,mr.t:0.20 | mri̯.t:0.20 | mr.(y)t:0.20 | mr.yt:0.15 | mr(.y)t:0.15,ḥm.t =f mri̯.t =f ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ ḫntꞽ.t-kꜣ.w=s rn =s ꞽtꞽ
+𓇋𓂋,ꞽr(.ꞽ),ꞽr,ꞽr,369,ꞽr:0.98 | ꞽr(.ꞽ):0.01 | r:0.01 | ꞽrp:0.00 | ꞽt(ꞽ):0.00,grg n =k ꞽr(.ꞽ) ꞽt(ꞽ) ꞽ:zn n =k ꞽt(ꞽ)
+𓌻𓂋𓇋𓇋𓏏𓈇𓏤,mr.yt,mry.t,mr.yt,4,mr.yt:0.50 | mry.t:0.50,wḏꜣ pw ꞽri̯.n =f ḥnꜥ =f r mr.yt ḥr rḏi̯.t n =f ꜥ =f
+𓊹𓋴𓍿,snṯr,snṯ(r),snṯ(r),2,snṯ(r):0.50 | snṯr:0.50,rʾ n(.ꞽ) ppy nfr-kꜣ-rꜥw m snṯr sp.t.DU ppy nfr-kꜣ-rꜥw m ꜥnt.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣ-rꜥ n(.ꞽ) ẖ.t =f sbk-ḥtp mr.y ꞽmn-rꜥ nb-ns.wt-tꜣ.wꞽ ḏi̯ ꜥnḫ ḏ.t
+𓌃𓂧𓅱,mdw,mdwi̯,mdw,3,mdw:0.67 | mdwi̯:0.33,mdw ḥr rꜥ mdw rꜥ ḥr =ꞽ ḥr =k
+𓏎𓈖𓈖,ꞽnn,ꞽni̯.n,ꞽni̯.n,21,ꞽni̯.n:0.86 | ꞽnn:0.14,ꞽnn =tw m ḫmm r srḫ.t n =f
+𓏏𓏲,=tw,tw,=tw,61,=tw:0.61 | tw:0.39,ꞽnn =tw m ḫmm r srḫ.t n =f
+𓍹𓐍𓅱𓆑𓅱𓍺𓊹𓍛,ḥm-nṯr-ḫwi̯=f-w(ꞽ),ḥm-nṯr-ḫwi̯=f-wꞽ,ḥm-nṯr-ḫwi̯=f-wꞽ,14,ḥm-nṯr-ḫwi̯=f-wꞽ:0.71 | ḥm-nṯr-ḫwi̯=f-w(ꞽ):0.14 | ḥm-nṯr-ḥwi̯=f-wꞽ:0.07 | ḥm(.t)-nṯr-ḫwi̯=f-w(ꞽ):0.07,ḥm-nṯr-ḫwi̯=f-w(ꞽ) ḥr.ꞽ-sštꜣ
+𓁷𓂋𓋴𓈙𓏏𓍔,ḥr.ꞽ-sštꜣ,ḥr(.ꞽ)-sštꜣ,ḥr.ꞽ-sštꜣ,17,ḥr.ꞽ-sštꜣ:0.65 | ḥr(.ꞽ)-sštꜣ:0.35,ḥm-nṯr-ḫwi̯=f-w(ꞽ) ḥr.ꞽ-sštꜣ
+𓌸𓂋𓏏,mri̯.t,mr.(y)t,mr.t,20,mr.t:0.20 | mri̯.t:0.20 | mr.(y)t:0.20 | mr.yt:0.15 | mr(.y)t:0.15,zꜣ.t =f mri̯.t =f nb.t-ꞽt=f
+𓂞,ḏi̯,di̯,ḏi̯,34,ḏi̯:0.71 | di̯:0.29,ḏi̯ n =k ꜥ.wꞽ =k r nfr.t
+𓄤𓆑𓂋𓏏,nfr.t,nfr.t(ꞽ),nfr.t,4,nfr.t:0.75 | nfr.t(ꞽ):0.25,ḏi̯ n =k ꜥ.wꞽ =k r nfr.t
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,qrs.t =f m z(my).t ꞽmn.tꞽ.t ꞽꜣwi̯(.w) nfr wr.t ḫpi̯(.w) ḥr wꜣ.t.PL nfr.(w)t
+𓇥𓂋𓈖𓏏𓏏,ḏr-n.tꞽt,ḏr-n.tt,ḏr-n.tt,4,ḏr-n.tt:0.75 | ḏr-n.tꞽt:0.25,ḏr-n.tꞽt ꞽr gr m-ḫt pḥ ssḫm ꞽb pw n(.ꞽ) ḫrw.y
+𓅓𓆱𓐍𓏏,m-ḫt,mfḫ.t,m-ḫt,5,m-ḫt:0.60 | mfḫ.t:0.20 | (ꞽ)m(.ꞽ)-ḫt-ḥm(.w)-kꜣ:0.20,ḏr-n.tꞽt ꞽr gr m-ḫt pḥ ssḫm ꞽb pw n(.ꞽ) ḫrw.y
+𓇋𓂧𓄔,ꞽdi̯,ꞽd(r),ꞽd,2,ꞽd:0.50 | ꞽd(r):0.50,n ꞽdi̯ =f tm =f sḏm ḫrw =k
+𓌡𓏤,wꜥi̯,wꜥ(.w),wꜥ(.w),2,wꜥ(.w):0.50 | wꜥ:0.50,pzḥ =k wnꞽs ḏi̯ =f wꜥi̯ =k
+𓏏𓍯𓄿𓏏,twꜣw.t,twꜣ(w).t,twꜣ(w).t,3,twꜣ(w).t:0.67 | twꜣw.t:0.33,sṯꞽ-ḥꜣb ḥknw sfṯ nẖnm twꜣw.t ḥꜣ.tt ꜥš ḥꜣ.tt ṯḥnw
+𓇋𓌳𓄪𓐍,ꞽmꜣḫ,ꞽmꜣḫ.w,ꞽmꜣḫ.w,19,ꞽmꜣḫ.w:0.26 | ꞽmꜣḫ(.w):0.26 | ꞽmꜣḫ:0.16 | ꞽmꜣḫ.(w):0.16 | ꞽmꜣḫ(.w).w:0.05,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt wꜥb-nswt ꞽmꜣḫ nfr
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,psg =k ḥr n ḥr.w n =f ꞽ:dr =k nkn ꞽr(.ꞽ) =f
+𓇋𓂋,ꞽr(.ꞽ),ꞽr,ꞽr,369,ꞽr:0.98 | ꞽr(.ꞽ):0.01 | r:0.01 | ꞽrp:0.00 | ꞽt(ꞽ):0.00,psg =k ḥr n ḥr.w n =f ꞽ:dr =k nkn ꞽr(.ꞽ) =f
+𓌨𓂋,ẖr,ẖr(.ꞽ),ẖr,100,ẖr:0.92 | ẖr(.ꞽ):0.06 | ẖr.DU:0.01 | ẖr.ꞽ:0.01,nfr.wꞽ mꜣꜣ pr ẖr nꜥr.pl
+𓂋,m,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,ꞽwr nr.t m ppy nfr-kꜣ-rꜥw m šsꜣ.t m ꜥb =ṯ ꞽd.t šni̯.t
+𓂞𓏏,di̯.t(w),ḏi̯.t(w),ḏi̯.t(w),5,ḏi̯.t(w):0.60 | di̯.t(w):0.40,di̯.t(w) n =f ꜥ.DU m nšm.t
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k mʾw.t =k ꞽy n =k nw.t ꞽy n =k ẖnm.t-wr.t s(w)ꜥb =s ṯw n(ꞽ).t pw ẖnm =s ṯw n(ꞽ).t p
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k mʾw.t =k ꞽy n =k nw.t ꞽy n =k ẖnm.t-wr.t s(w)ꜥb =s ṯw n(ꞽ).t pw ẖnm =s ṯw n(ꞽ).t p
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k mʾw.t =k ꞽy n =k nw.t ꞽy n =k ẖnm.t-wr.t s(w)ꜥb =s ṯw n(ꞽ).t pw ẖnm =s ṯw n(ꞽ).t p
+𓎸𓏏𓅨𓂋𓏏,ẖnm.t-wr.t,ẖnm.t-wr(.t),ẖnm.t-wr.t,2,ẖnm.t-wr.t:0.50 | ẖnm.t-wr(.t):0.50,ꞽy n =k mʾw.t =k ꞽy n =k nw.t ꞽy n =k ẖnm.t-wr.t s(w)ꜥb =s ṯw n(ꞽ).t pw ẖnm =s ṯw n(ꞽ).t p
+𓂝,di̯,ḏi̯,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,di̯ =sn pr.t-ḫrw tʾ ḥnq.t kꜣ.PL ꜣpd.PL šs mnḫ.t ḫ.t nb.t nfr(.t) wꜥb(.t) snṯr mrḥ.t ṯꜣw nḏ
+𓐍𓏏,ḫ.t,(ꞽ)ḫ.t,(ꞽ)ḫ.t,58,(ꞽ)ḫ.t:0.79 | ḫ.t:0.12 | (ꞽ)ḫ(.t):0.05 | ꞽḫ.t:0.03,di̯ =sn pr.t-ḫrw tʾ ḥnq.t kꜣ.PL ꜣpd.PL šs mnḫ.t ḫ.t nb.t nfr(.t) wꜥb(.t) snṯr mrḥ.t ṯꜣw nḏ
+𓃂,wꜥb(.t),ꜥb(.w),wꜥb,7,wꜥb:0.86 | ꜥb(.w):0.14,di̯ =sn pr.t-ḫrw tʾ ḥnq.t kꜣ.PL ꜣpd.PL šs mnḫ.t ḫ.t nb.t nfr(.t) wꜥb(.t) snṯr mrḥ.t ṯꜣw nḏ
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,di̯ =sn pr.t-ḫrw tʾ ḥnq.t kꜣ.PL ꜣpd.PL šs mnḫ.t ḫ.t nb.t nfr(.t) wꜥb(.t) snṯr mrḥ.t ṯꜣw nḏ
+𓀸,mnꞽ.w,nr,mnꞽ.w,6,mnꞽ.w:0.50 | nr:0.50,mnꞽ.w ḏꜣḏꜣ.y
+𓎼𓂋𓏏,grt,gr.t,gr.t,12,gr.t:0.83 | grt:0.17,ꞽr grt fḫ.t(ꞽ) =fꞽ sw tm.t(ꞽ) =f(ꞽ) ꜥḥꜣ ḥr =f n zꜣ =ꞽ ꞽs n msi̯.t(w) =f ꞽs n =ꞽ
+𓆑,=f(ꞽ),=f,=f,3156,=f:0.99 | =f(ꞽ):0.01 | =(f):0.00 | n:0.00 | ḫtꞽw:0.00,ꞽr grt fḫ.t(ꞽ) =fꞽ sw tm.t(ꞽ) =f(ꞽ) ꜥḥꜣ ḥr =f n zꜣ =ꞽ ꞽs n msi̯.t(w) =f ꞽs n =ꞽ
+𓋴,=s(n),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,ḫpi̯ =s ḥr wꜣ.t.PL nfr.(w)t ḫpp!.(w)t ꞽmꜣḫ.wt(.w) ḥr =s(n) ḫr nb-ẖr(.t)-nṯr (ꞽ)r(.ꞽt-ꞽ)ḫ(.
+𓎟,nb-ẖr(.t)-nṯr,nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,ḫpi̯ =s ḥr wꜣ.t.PL nfr.(w)t ḫpp!.(w)t ꞽmꜣḫ.wt(.w) ḥr =s(n) ḫr nb-ẖr(.t)-nṯr (ꞽ)r(.ꞽt-ꞽ)ḫ(.
+𓊹𓍛,ḥm(.t)-nṯr-ḥw.t-ḥr.w,ḥm-nṯr,ḥm-nṯr,7,ḥm-nṯr:0.71 | ḥm-nṯr-ꞽgꜣ.ꞽ:0.14 | ḥm(.t)-nṯr-nꞽ.t:0.14,ḫpi̯ =s ḥr wꜣ.t.PL nfr.(w)t ḫpp!.(w)t ꞽmꜣḫ.wt(.w) ḥr =s(n) ḫr nb-ẖr(.t)-nṯr (ꞽ)r(.ꞽt-ꞽ)ḫ(.
+𓁷𓂋,ḥr(.ꞽ),ḥr,ḥr,137,ḥr:0.96 | ḥr(.ꞽ):0.04,ḥr ḥr =k ḥr(.ꞽ) rꞽ.t =f
+𓊵𓏏,ḥtp,ḥt(p.w),ḥtp,14,ḥtp:0.43 | ḥt(p):0.21 | ḥt(p.w):0.14 | ḥtp.t:0.07 | ḥtp(.w):0.07,ḫd m ḥtp r ꜣḫ.t-ḫwi̯=f-w(ꞽ) r ꞽz
+𓇋𓂋,ꞽr(.ꞽ),ꞽr,ꞽr,369,ꞽr:0.98 | ꞽr(.ꞽ):0.01 | r:0.01 | ꞽrp:0.00 | ꞽt(ꞽ):0.00,sḥ(w)i̯ n =k ꞽr(.ꞽ) mꜣꜥ.t n mꜣꜥ.t ḏd.t.n n(ꞽ).t
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,sḥ(w)i̯ n =k ꞽr(.ꞽ) mꜣꜥ.t n mꜣꜥ.t ḏd.t.n n(ꞽ).t
+𓆄𓆄,šw(.t).DU,šw.tꞽ,šw.tꞽ,4,šw.tꞽ:0.50 | šw(.t).DU:0.50,mʾw.t =k smꜣ.t-wr.t ḥr.t-ꞽb nḫb ḥḏ.t ꜥfn.t ꜣwi̯.t šw(.t).DU nḫꜣḫꜣ.t mnḏ.DU
+𓇳,rꜥ,rꜥw,rꜥw,102,rꜥw:0.91 | rꜥ:0.04 | hrw:0.03 | rꜥw-nb:0.01 | hrw.w:0.01,ḏi̯ ꜥnḫ mꞽ rꜥ
+𓇋𓌳𓄪𓐍,ꞽmꜣḫ.w,ꞽmꜣḫ(.w),ꞽmꜣḫ.w,19,ꞽmꜣḫ.w:0.26 | ꞽmꜣḫ(.w):0.26 | ꞽmꜣḫ:0.16 | ꞽmꜣḫ.(w):0.16 | ꞽmꜣḫ(.w).w:0.05,ẖr.ꞽ-tp-nswt ꞽmꜣḫ.w ꞽdw
+𓄂𓂝,ḥꜣ(.tꞽ)-ꜥ,ḥꜣ.tꞽ-ꜥ,ḥꜣ.tꞽ-ꜥ,38,ḥꜣ.tꞽ-ꜥ:0.74 | ḥꜣ.t(ꞽ)-ꜥ:0.11 | ḥꜣ(.t)-ꜥ:0.03 | ḥꜣ(.tꞽ)-ꜥ:0.03 | ḥꜣ.t-ꜥ:0.03,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥꜣ(.tꞽ)-ꜥ ḥm-rꜥw
+𓂝,ꜥ-r,ḏi̯,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,ꜥ-r rs(.ꞽ)
+𓇋𓋴,ꞽs,ꞽ:sšm,ꞽs,90,ꞽs:0.99 | ꞽ:sšm:0.01,ꞽs nr.t ꞽ:ḫr.t ḥr zꜣ =s
+𓌨,ẖr,ẖr(.wꞽ),ẖr,5,ẖr:0.60 | ẖr(.wꞽ):0.20 | ẖr(.ꞽ):0.20,ꞽ:zꞽ ẖr (w)sr(.w) n(ꞽ).t
+𓌃𓂧𓏏𓀁,md(w).t,md.t,md.t,27,md.t:0.67 | mdw.t:0.19 | md(w).t:0.07 | md(w)i̯.t:0.07,n sḏm.t.n =s md(w).t
+𓌇,m(ꞽ),m,m,124,m:0.85 | mꞽ:0.11 | m(ꞽ):0.04,ꞽt(ꞽ) ppy nfr-kꜣ-rꜥw m(ꞽ) n =k ḥng pri̯ m (w)sr(.w)
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ṯwt zꜣ wr n(.ꞽ) šw wt.w =f
+𓊨𓁹,(w)sr(.w),(w)sꞽr,(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,qbḥ(.w) =k ꞽpn (w)sr(.w) qbḥ(.w) =k ꞽpn hꜣ n(ꞽ).t pri̯.(w) ḫr zꜣ =k pri̯.w ḫr ḥr.w
+𓂋,(ꞽ)r(.ꞽ),r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,n ski̯ pr wnꞽs (ꞽ)r(.ꞽ) p.t
+𓂋𓂝,rdi̯,rḏi̯,rḏi̯,27,rḏi̯:0.85 | rdi̯:0.15,ꜥḥꜥ.n rdi̯ n =ꞽ rwd.w.PL nb(.PL) qrf m ḏr.tꞽ
+𓎟,nb(.PL),nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,ꜥḥꜥ.n rdi̯ n =ꞽ rwd.w.PL nb(.PL) qrf m ḏr.tꞽ
+𓈖𓂋,nr,nri̯,nri̯,2,nri̯:0.50 | nr:0.50,ꞽꜣḫi̯ nr ꞽḥ.PL tp mꞽz =f
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w tp.ꞽ-ḏw=f ḫnt.ꞽ-zḥ-nṯr ꞽm.ꞽ-wt nb-tꜣ-ḏsr
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,sd(ꜣ) n =k nṯr.PL m ẖnnw m rn =k pw n wpi̯-wꜣ.t.PL
+𓌇,m(ꞽ),m,m,124,m:0.85 | mꞽ:0.11 | m(ꞽ):0.04,m(ꞽ) n =k ꞽr(.t)-ḥr.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽw mꜣ.n =ꞽ sp =f n(.ꞽ) rḫ
+𓍿𓅱,ṯwt,ṯw,ṯw,224,ṯw:1.00 | ṯwt:0.00,n ḥtm qs.PL =k n zwn.w ꞽ(w)f =k n ḥri̯ ꜥ.t.PL =k ꞽr =k n ṯwt ꞽs wꜥ m nṯr.PL
+𓃹𓈖𓇋,wnꞽ,wn.ꞽ,wn.ꞽ,3,wn.ꞽ:0.67 | wni̯:0.33,wnꞽ
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,tꞽ-šps ꞽss.w mrḥ.t bꞽ.t mnḥ ꜥḏ n(.ꞽ) ꞽḥ
+𓎆,10,mḏ(.t),mḏ(.t),3,mḏ(.t):0.33 | mḏ:0.33 | 10:0.33,ꞽni̯.n =ꞽ ꜥꜣ =ꞽ ḥr šnꜥ 10
+𓋴𓈖,sn,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽn ḥr(.ꞽ)-ṯr.wt qꜣs sn n ttꞽ
+𓇋𓅓𓏏,ꞽm.t,ꞽm.(w)t(ꞽ),ꞽm.(w)t(ꞽ),3,ꞽm.(w)t(ꞽ):0.67 | ꞽm.t:0.33,(w)sꞽr wnꞽs m n =k ḥwn.(w)t ꞽm.t ꞽr(.t)-ḥr.w wpi̯ rʾ =k ꞽm =s
+𓋁,ꞽꜣb.t(ꞽ),ꞽꜣb(.t),ꞽꜣb(.ꞽ),7,ꞽꜣb(.ꞽ):0.43 | ꞽꜣb(.t):0.14 | ꞽꜣb.tꞽ:0.14 | ꞽꜣb.(t):0.14 | ꞽꜣb(.w):0.14,ꞽꜣb.t(ꞽ) mri̯-ẖnm.w-ꜥnḫ-ttꞽ
+𓐩𓈖,nḏ.t-ḥr,nḏ.n,nḏ.n,2,nḏ.n:0.50 | nḏ:0.50,ꞽni̯.t nḏ.t-ḥr
+𓇓𓏏𓆤𓏏,nzw-bꞽ.t,nzw-bꞽ.tꞽ,nzw-bꞽ.tꞽ,49,nzw-bꞽ.tꞽ:0.86 | nswt-bꞽ.tꞽ:0.08 | nsw.t-bꞽ.tꞽ:0.02 | n(ꞽ)swt-bꞽ.tꞽ:0.02 | nṯr.PL:0.02,nzw-bꞽ.t n(.ꞽ)-nzw-ḥ(w)
+𓂋𓂝𓎛𓎿𓊃𓇋𓇋,ḥzꞽ-rꜥ,ḥzy-rꜥw,ḥzy-rꜥw,2,ḥzy-rꜥw:0.50 | ḥzꞽꞽ-rꜥw:0.50,ḥzꞽ-rꜥ
+𓌇,mꞽ,m,m,124,m:0.85 | mꞽ:0.11 | m(ꞽ):0.04,(w)sr(.w) n(ꞽ).t mꞽ n =k mw ꞽm(.ꞽ) ꞽr(.t)-ḥr.w
+𓌨𓎛𓃀,ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),25,ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.56 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.12 | ẖr.ꞽ-ḥ(ꜣ)b(.t):0.12 | ẖr.(ꞽ)-ḥ(ꜣ)b.(t):0.08 | ẖr.ꞽ-ḥb:0.04,ẖr(.ꞽ)-ḥ(ꜣ)b(.t) ꞽzzꞽ-bꜣ=f
+𓌳𓁹𓄿𓈖,mꜣn,mꜣ.n,mꜣ.n,12,mꜣ.n:0.92 | mꜣn:0.08,mꜣn =s ḥḏ.w-kꜣ.PL
+𓊪𓊖,pʾ,p,pꞽ,15,pꞽ:0.67 | p:0.20 | bꜣ.PL-pꞽ:0.07 | bꜣ.w-pꞽ:0.07,qd.n.ṯw n =ꞽ pʾ snṯi̯.n.ṯw n =ꞽ dp.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓎛𓅱,ḥwi̯,ḥw,ḥw,6,ḥw:0.83 | ḥ(w):0.17,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓋴𓈖,sn,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓋴𓈖,sn,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓋴𓈖,sn,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓎛𓅱,ḥwi̯,ḥw,ḥw,6,ḥw:0.83 | ḥ(w):0.17,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓋴𓎡,sk,ski̯,ski̯,60,ski̯:0.85 | sk:0.15,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓋴𓈖,sn,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽ:dḫ n =k ꞽm(.ꞽ).w-bꜣḥ =k snḏ n =k ꞽm(.ꞽ).w-ḫt =k n rn =k pw ꞽri̯.n n =k ꞽt(ꞽ) =k (w)sr(.w
+𓂋,(ꞽ)r,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,ḥmsi̯ (ꞽ)r =ṯ ḥr ḫꜣ.t =ṯ nfr.t ꞽri̯.t.n n =ṯ ẖnm.t =ṯ
+𓐍𓐍𓐍,ḫ(w)i̯,ḫwi̯,ḫwi̯,18,ḫwi̯:0.94 | ḫ.PL:0.06,(w)sr(.w) n(ꞽ).t m n =k ꞽr(.t)-ḥr.w ḫ(w)i̯ mn =f s(ꞽ)
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,pr-ḫrw n =f m wpi̯-rnp.t tp.ꞽ-rnp.t ḥꜣb-zkr ḏḥw.t(y)t ḥꜣb nb rꜥw-nb ḥm-nṯr-ḥr.w-mḏdw-ḫwi̯=
+𓊹𓊹𓊹𓊹𓊹𓊹𓊹𓊹𓊹,psḏ(.t),psḏ.t,psḏ.t,14,psḏ.t:0.79 | psḏ(.t):0.21,ꜥḥꜥ ꞽr ꜥꜣ.DU ꜣḫ.t ꞽ:zn ꜥꜣ.DU qbḥ(.w) ꜥḥꜥ =k ḫnt =sn gbb ꞽs ḫnt(.ꞽ) psḏ(.t)
+𓂻𓅱𓏏,ꞽw.t,ꞽwi̯.t,ꞽwt,16,ꞽwt:0.50 | ꞽwi̯.t:0.44 | ꞽw.t:0.06,wpi̯.n =f tꜣ m rḫ.t.n =f hrw(.w) mri̯.n =f ꞽw.t ꞽm ꞽ ꞽn wr-skꜣ.t ḥr(.ꞽ)-ꞽb dwꜣ.t
+𓇋𓏤,ꞽ,=ꞽ,ꞽ,22,ꞽ:0.77 | =ꞽ:0.23,wpi̯.n =f tꜣ m rḫ.t.n =f hrw(.w) mri̯.n =f ꞽw.t ꞽm ꞽ ꞽn wr-skꜣ.t ḥr(.ꞽ)-ꞽb dwꜣ.t
+𓃥𓅓𓂋𓏞,zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w,zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww,zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww,9,zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww:0.89 | zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w:0.11,zꜣb-(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w kꜣ=ꞽ-ḫr-ptḥ
+𓏇𓏏𓂋𓇿,mꞽtr,mꞽtr(.t),mꞽtr.t,2,mꞽtr.t:0.50 | mꞽtr(.t):0.50,mꞽtr
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽ)-(ꞽ)ḫ.t-(n)zw,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,bḏ(t.ꞽ) (ꞽ)r(.ꞽ)-(ꞽ)ḫ.t-(n)zw mḏḥ.w-wꞽꜣ ꜥnḫ-wꜥ
+𓌎,mḏḥ.w-wꞽꜣ,mḏḥ.w,mḏḥ.w,7,mḏḥ.w:0.57 | mḏḥ(.w):0.29 | mḏḥ:0.14,bḏ(t.ꞽ) (ꞽ)r(.ꞽ)-(ꞽ)ḫ.t-(n)zw mḏḥ.w-wꞽꜣ ꜥnḫ-wꜥ
+𓅓𓂋𓎧,(ꞽ)m(.ꞽ)-rʾ-sšr.w,(ꞽ)m(.ꞽ)-rʾ-sšr,(ꞽ)m(.ꞽ)-rʾ-sšr,16,(ꞽ)m(.ꞽ)-rʾ-sšr:0.50 | (ꞽ)m(.ꞽ)-rʾ-sšr(.w):0.19 | (ꞽ)m(.ꞽ)-rʾ-sšr.w:0.19 | ꞽm.ꞽ-rʾ-sšr:0.06 | (ꞽ)m(.ꞽ)-r(ʾ)-sšr:0.06,(ꞽ)m(.ꞽ)-rʾ-sšr.w pri̯-nḏw
+𓅃,ḥr(.w),ḥr.w,ḥr.w,905,ḥr.w:0.97 | ḥr:0.02 | ḥr(.w):0.01 | mnw-ḥr:0.01 | ḥr.:0.00,msi̯ =k n ḥr(.w) ꞽwr =k n stẖ
+𓅨𓂋𓅱,wr.w,wr.w(ꞽ),wr.w,4,wr.w:0.50 | wr.w(ꞽ):0.50,wn n =k ꜥꜣ.DU p.t sbḫbḫ n =k z.wDU wr.w sṯꜣ n =k ḏb.t m ḥꜣ.t ꜥꜣ.t
+𓐍𓐍𓐍,ḫ(w)i̯,ḫwi̯,ḫwi̯,18,ḫwi̯:0.94 | ḫ.PL:0.06,(w)sꞽr wnꞽs m n =k ꞽr.t-ḥr(.w) ḫ(w)i̯ mn =f s(ꞽ)
+𓄖𓅱𓏭,pḥ.wꞽ,pḥwꞽ,pḥ.wꞽ,3,pḥ.wꞽ:0.67 | pḥwꞽ:0.33,pḥ.n =n pḥ.wꞽ wꜣwꜣ.t sni̯.n =n snm.t
+𓆓𓂧𓏏𓏥,ḏd.t,ḏd.t.n,ḏd.t.n,4,ḏd.t.n:0.50 | ḏd.t.PL:0.25 | ḏd.t:0.25,mrr sḏm pw ꞽrr ḏd.t
+𓇍𓂻𓈖,ꞽy.n,ꞽyi̯.n,ꞽy.n,2,ꞽy.n:0.50 | ꞽyi̯.n:0.50,ꞽy.n =ꞽ m rwḏ.w n(.ꞽ) zꜣ-nswt ꞽm.ꞽ-rʾ-gs-pr sbk-nḫt r ḏd
+𓈎𓄿,qꜣ-ꜥ,qꜣi̯,qꜣi̯,2,qꜣi̯:0.50 | qꜣ:0.50,ḥr.w qꜣ-ꜥ
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnpw ḫnt.ꞽ-zẖ-nṯr nb-tꜣ-ḏsr
+𓏃𓏏𓊹,ḫnt.ꞽ-zẖ-nṯr,ḫnt.ꞽ-zḥ-nṯr,ḫnt.ꞽ-zḥ-nṯr,8,ḫnt.ꞽ-zḥ-nṯr:0.88 | tp.ꞽ-ḏw=f:0.12,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnpw ḫnt.ꞽ-zẖ-nṯr nb-tꜣ-ḏsr
+𓈖,n.ꞽ,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,n.ꞽ s(w)
+𓋴,s(w),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,n.ꞽ s(w)
+𓏎𓈖,ꞽni̯.t,ꞽni̯,ꞽni̯,29,ꞽni̯:0.79 | ꞽni̯.n:0.14 | ꞽni̯(.n):0.03 | ꞽni̯(.w):0.03,ꞽni̯.t nḏ.t-ḥr
+𓅓𓂝,m-ꜥ,m,m,128,m:0.55 | m-ꜥ:0.44 | mḥꜥ:0.01 | mi̯:0.01,mdwi̯ =k n nswt ꞽb =k m-ꜥ =k
+𓋴𓈖,sn(ꞽ),sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯ gbb ḏi̯ n =k sn(ꞽ) ḥr.w ḥtp =k ḥr =sn(ꞽ)
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯ gbb ḏi̯ n =k sn(ꞽ) ḥr.w ḥtp =k ḥr =sn(ꞽ)
+𓅓𓏇,mr,mꞽ,mꞽ(.ꞽ),11,mꞽ(.ꞽ):0.36 | mꞽ(.y):0.27 | mꞽ:0.27 | mr(.y):0.09,sꜣḥ =k p.t mr sꜣḥ spd bꜣ =k mr spd.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽnk nw n(.ꞽ) ꞽꞽ ḏs =f n ḫḫmm
+𓅒,nb.tDU,nb.tꞽ,nb.tꞽ,6,nb.tꞽ:0.67 | nb.t.DU:0.17 | nb.DU:0.17,ḥtp n =k rꜥw ꞽm(.ꞽ) p.t sḥtp =f n =k nb.tDU
+𓌇,mꞽ,m,m,124,m:0.85 | mꞽ:0.11 | m(ꞽ):0.04,(w)sr(.w) n(ꞽ).t mꞽ n =k ꞽr(.t)-ḥr.w mꜣ.t.n =f gs =s m-ꜥ stš
+𓆓𓏏𓏤,ḏ(wi̯).t,ḏ.t,ḏ.t,4,ḏ.t:0.50 | ḏ(wi̯.w)t:0.25 | ḏ(wi̯).t:0.25,ḏ(wi̯).t r p.t zpꜣ ḥr.w r tꜣ
+𓋴𓐍𓏏,sḫ.t,sḫt,sḫt,4,sḫt:0.75 | sḫ.t:0.25,ꞽk rr wnꞽs ꜥn.t =f tn ꞽr =k ꞽꜣb.t di̯ =f sḫ.t ꞽm =s n mnw ꞽkꞽ.w
+𓁹𓁹,ꞽr(.t).DU,ꞽr(.t.ꞽ),ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,ḏi̯.n n =k gbb ꞽr(.t).DU =k ḥtp =k m ꞽr(.t).DU wr pn ꞽm(.ꞽ) =k
+𓁹𓁹,ꞽr(.t).DU,ꞽr.t.DU,ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,ḏi̯.n n =k gbb ꞽr(.t).DU =k ḥtp =k m ꞽr(.t).DU wr pn ꞽm(.ꞽ) =k
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,ḏi̯.n n =k gbb ꞽr(.t).DU =k ḥtp =k m ꞽr(.t).DU wr pn ꞽm(.ꞽ) =k
+𓈖𓏏,ḫnt(.ꞽ),n.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽ:nḏ ḥr =k wpi̯-wꜣ.t.PL ḫnt(.ꞽ) bꜣ.PL-ꞽwn.w ꞽni̯ ꞽri̯ nfr.t
+𓏎,ꞽni̯,ꞽni̯.(t),ꞽn.w,31,ꞽn.w:0.61 | ꞽni̯.(t):0.19 | ꞽni̯:0.13 | ꞽni̯.w:0.03 | ꞽni̯(.t):0.03,ꞽ:nḏ ḥr =k wpi̯-wꜣ.t.PL ḫnt(.ꞽ) bꜣ.PL-ꞽwn.w ꞽni̯ ꞽri̯ nfr.t
+𓄤𓆑𓂋𓏏,nfr.t,nfr.t(ꞽ),nfr.t,4,nfr.t:0.75 | nfr.t(ꞽ):0.25,ꞽ:nḏ ḥr =k wpi̯-wꜣ.t.PL ḫnt(.ꞽ) bꜣ.PL-ꞽwn.w ꞽni̯ ꞽri̯ nfr.t
+𓈖𓏏,n.t,n.ꞽ.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽni̯.t pr-ḫrw m nʾ.t.PL n.t pr-ḏ.t m ḥꜣb nb rꜥw-nb ḏ.t
+𓋴𓃀𓇼,sbꜣ,sb(ꜣ),sb(ꜣ),3,sb(ꜣ):0.67 | sbꜣ:0.33,ꞽwr wnꞽs ꞽn sḫm.t ꞽn šzm.tt msi̯.t wnꞽs sbꜣ spd ḥꜣ.t ꜣwi̯ šm.t.PL ꞽnn ḫr.t ḥr.t n rꜥw rꜥw-
+𓄫𓅱,ꜣwi̯,ꜣwi̯(.w),ꜣwi̯(.w),2,ꜣwi̯(.w):0.50 | ꜣwi̯:0.50,ꞽwr wnꞽs ꞽn sḫm.t ꞽn šzm.tt msi̯.t wnꞽs sbꜣ spd ḥꜣ.t ꜣwi̯ šm.t.PL ꞽnn ḫr.t ḥr.t n rꜥw rꜥw-
+𓎛𓁷𓂋𓏏𓈐,ḥr.t,ḥri̯.t(ꞽ),ḥri̯.t(ꞽ),5,ḥri̯.t(ꞽ):0.80 | ḥr.t:0.20,ꞽwr wnꞽs ꞽn sḫm.t ꞽn šzm.tt msi̯.t wnꞽs sbꜣ spd ḥꜣ.t ꜣwi̯ šm.t.PL ꞽnn ḫr.t ḥr.t n rꜥw rꜥw-
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽwr wnꞽs ꞽn sḫm.t ꞽn šzm.tt msi̯.t wnꞽs sbꜣ spd ḥꜣ.t ꜣwi̯ šm.t.PL ꞽnn ḫr.t ḥr.t n rꜥw rꜥw-
+𓄡𓊃𓅪,ẖsi̯,ẖs,ẖs,3,ẖs:0.67 | ẖzi̯:0.33,n spr.n sp ẖsi̯ r dmꞽ ẖr.(ꞽ)-sꜣ r sꜣḥ tꜣ
+𓋴𓈖,sndu,sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯.n gbb ḏi̯ n =k sndu ḥr.w ḥtp =k ḥr =sndu
+𓋴𓈖,=sndu,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯.n gbb ḏi̯ n =k sndu ḥr.w ḥtp =k ḥr =sndu
+𓊪,(ꞽ)p(.t),p,p,19,p:0.63 | p(w):0.21 | p(ꜣ):0.11 | pw:0.05,(ꞽ)p(.t) šmꜥ.w
+𓍡𓊃𓏏𓈖𓇋,nꞽ-mz.t,n.ꞽ-mzt,n.ꞽ-mz.t,3,n.ꞽ-mz.t:0.67 | n.ꞽ-mzt:0.33,ḥm-nṯr wꜥb-nswt (ꞽ)m(.ꞽ)-rʾ-pr (ꞽ)m(.ꞽ)-ḫt-ḥm(.w)-kꜣ ꞽmꜣḫ.w-(ḫ)r-nṯr-ꜥꜣ (ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-ns
+𓅃,ḥr,ḥr.w,ḥr.w,905,ḥr.w:0.97 | ḥr:0.02 | ḥr(.w):0.01 | mnw-ḥr:0.01 | ḥr.:0.00,sn =f ḥr mꜣꜥ-ḫrw
+𓂘𓅜,zḫn(.t)-ꜣḫ,zḫn.w-ꜣḫ,zḫn.w-ꜣḫ,16,zḫn.w-ꜣḫ:0.75 | zḫn(.t)-ꜣḫ:0.19 | zḫn.t-ꜣḫ:0.06,zḫn(.t)-ꜣḫ sn.w
+𓌂𓏤,sḫm,ꜥbꜣ,ꜥbꜣ,2,ꜥbꜣ:0.50 | ḫrp:0.50,nb sḫm ꜥꜣ m tnn.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏd =sn rn nfr n(.ꞽ) wnꞽs pn n rꜥw
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏd =sn rn nfr n(.ꞽ) wnꞽs pn n rꜥw
+𓍿,=t,=ṯ,=ṯ,110,=ṯ:0.98 | ṯ(w):0.02,ꞽwi̯.n =f ḫr =ṯ n.t ꞽwi̯.n =f ḫr =t nzr.t ꞽwi̯.n =f ḫr =ṯ wr.t ꞽwi̯.n =f ḫr =ṯ wr.t-ḥkꜣ.w 
+𓅓𓂜,(ꞽ)mi̯,m,m,20,m:0.95 | (ꞽ)mi̯:0.05,rḏi̯.n ḥr.w ꞽp =k sw m ḥr(.ꞽ)-ꞽb =f (ꞽ)mi̯ pri̯ =f m-ꜥ =k
+𓋴𓎡,sk,ski̯,ski̯,60,ski̯:0.85 | sk:0.15,ꞽri̯.t.n n =f zꜣ =f sms.w sk sw qrs(.w) m ẖr-nṯr ḫnt.ꞽ-š-pr-ꜥꜣ mr(.y)-ḫwi̯=f-wꞽ mrr.w-nb=f
+𓌸𓂋𓂋𓎟𓆑,mrr.w-nb=f,mrr(.w)-nb=f,mrr(.w)-nb=f,19,mrr(.w)-nb=f:0.68 | mrr.w-nb=f:0.32,ꞽri̯.t.n n =f zꜣ =f sms.w sk sw qrs(.w) m ẖr-nṯr ḫnt.ꞽ-š-pr-ꜥꜣ mr(.y)-ḫwi̯=f-wꞽ mrr.w-nb=f
+𓋴𓈖𓏥,sn,=sn,=sn,106,=sn:0.98 | sn:0.02,ꞽr mri̯ =k swꜣḥ ḫnms m ẖnw ꜥq =k r =f m nb m sn m ḫnms rʾ-pw r bw nb ꜥq =k ꞽm ꜥḥꜣ.t(ꞽ) m t
+𓈝𓅓𓂻,šm,šmi̯,šm,7,šm:0.57 | šmi̯:0.43,šm =f r nmt.t =f ꞽri̯.w sw ꞽm(.ꞽ)t-pr ẖr =s
+𓇓𓏏,nzw,nswt,nswt,163,nswt:0.90 | nzw:0.06 | (n)swt:0.01 | šps.t-nswt:0.01 | nsw.tꞽ:0.01,ꞽn.w nzw ḥtp-sṯ(ꞽ).t
+𓎟𓄪𓏤,nb-ꞽmꜣḫ,nb(.t)-ꞽmꜣḫ,nb-ꞽmꜣḫ,6,nb-ꞽmꜣḫ:0.67 | nb(.t)-ꞽmꜣḫ:0.17 | r-ḏd:0.17,ꞽm.ꞽ-rʾ-šnꜥ.PL ꞽmn-m-ḥꜣ.t nb-ꞽmꜣḫ ḏd =f
+𓂧,ḏd,di̯,di̯,27,di̯:0.74 | (w)di̯:0.19 | r:0.04 | (ꞽ)d(.t):0.04,ꞽm.ꞽ-rʾ-šnꜥ.PL ꞽmn-m-ḥꜣ.t nb-ꞽmꜣḫ ḏd =f
+𓏎𓈖𓈖,ꞽnn,ꞽni̯.n,ꞽni̯.n,21,ꞽni̯.n:0.86 | ꞽnn:0.14,ṯꜣw =k wbg ꞽṯnḥnḥ ꞽnn bꜣḥ =f
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ḥtp ḥr =sn(ꞽ)
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,(w)sr(.w) n(ꞽ).t wr.tꞽ dbn.tꞽ m rn =k n(.ꞽ) dbn-pẖr-ḥꜣ.(ꞽ)w-nb(.t)pl
+𓇋𓂋,ꞽr(.ꞽ),ꞽr,ꞽr,369,ꞽr:0.98 | ꞽr(.ꞽ):0.01 | r:0.01 | ꞽrp:0.00 | ꞽt(ꞽ):0.00,wḫꜣ n =k tꜣ pw ꞽr(.ꞽ) ꞽ(w)f =k
+𓊃,s(ꞽ),=s,=s,19,=s:0.95 | s(ꞽ):0.05,sḥri̯ s(ꞽ) r sḫm
+𓋴𓏭,sꞽ,=sꞽ,sꞽ,27,sꞽ:0.59 | =sꞽ:0.41,kꜣp sꞽ ḥr ssn.t =s nb.t m ꜣšr
+𓈖,n.(ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,n.(ꞽ) s(w)
+𓏞𓏛,zẖꜣ.w,zẖꜣw,zẖꜣw,2,zẖꜣw:0.50 | zẖꜣ:0.50,ꞽwi̯ =f pw ḥꜣ.t =f r pḥ(.wꞽ) =fꞽ mꞽ gmi̯.yt m zẖꜣ.w
+𓂋𓂝𓈖,rdi̯.n,rḏi̯.n,rḏi̯.n,26,rḏi̯.n:0.81 | rdi̯.n:0.19,rdi̯.n n =f gb ꞽwꜥ.t.PL =f nfr(.t) mꜣꜥ ḥr-ꞽb-n nṯr.PL nb.w.PL
+𓄤,nfr(.t),nfr,nfr,60,nfr:0.92 | nfr(.t):0.03 | nfr(.w):0.03 | nfr(.PL):0.02,rdi̯.n n =f gb ꞽwꜥ.t.PL =f nfr(.t) mꜣꜥ ḥr-ꞽb-n nṯr.PL nb.w.PL
+𓅒,nb.t.DU,nb.tꞽ,nb.tꞽ,6,nb.tꞽ:0.67 | nb.t.DU:0.17 | nb.DU:0.17,ḥtp n =k nb.t.DU
+𓈏𓈏𓈏,ꞽꜣ.t.PL,ꞽꜣ(.t).PL,ꞽꜣ(.t).PL,13,ꞽꜣ(.t).PL:0.77 | ꞽꜣ.t.PL:0.23,pẖr n =k ꞽꜣ.t.PL ḥr(.w) pẖr n =k ꞽꜣ.t.PL stẖ
+𓅃,ḥr(.w),ḥr.w,ḥr.w,905,ḥr.w:0.97 | ḥr:0.02 | ḥr(.w):0.01 | mnw-ḥr:0.01 | ḥr.:0.00,pẖr n =k ꞽꜣ.t.PL ḥr(.w) pẖr n =k ꞽꜣ.t.PL stẖ
+𓂋𓂝𓈖,rdi̯.n,rḏi̯.n,rḏi̯.n,26,rḏi̯.n:0.81 | rdi̯.n:0.19,rdi̯.n tm šf.(y)t =f m ꞽb n r(m)ṯ.PL nṯr.PL ꜣḫ.w.PL m(w)t.PL
+𓐍𓏏𓏛𓏥,(ꞽ)ḫ.t.PL,(ꞽ)ḫ.t,ḫ.t,49,ḫ.t:0.43 | (ꞽ)ḫ.t:0.41 | (ꞽ)ḫ.t.PL:0.10 | ḫ.t.PL:0.06,mꞽ ḏd ꞽw wnḫ r (ꞽ)ḫ.t.PL wnn dmꞽ ḫft pḥḏ.t(w) wꜥ.t r 2.nw =f
+𓐍𓆑𓏏,ḫft,ḫft(.ꞽ),ḫft(.ꞽ),19,ḫft(.ꞽ):0.63 | ḫft:0.37,mꞽ ḏd ꞽw wnḫ r (ꞽ)ḫ.t.PL wnn dmꞽ ḫft pḥḏ.t(w) wꜥ.t r 2.nw =f
+𓆑,=f(ꞽ),=f,=f,3156,=f:0.99 | =f(ꞽ):0.01 | =(f):0.00 | n:0.00 | ḫtꞽw:0.00,šsꜣ.w ḥsb m bb.wꞽ.DU =f(ꞽ)
+𓍿𓊃,ṯsi̯,ṯzi̯,ṯzi̯,31,ṯzi̯:0.94 | ṯzꞽ:0.06,ṯsi̯ tw ꞽr =k wsꞽr ḫnt(.ꞽ)-ꞽmn.tꞽ
+𓋀𓅂,ḫnt(.ꞽ)-ꞽmn.tꞽ,ḫnt(.ꞽ)-ꞽmn.tꞽw,ḫnt(.ꞽ)-ꞽmn.tꞽ,2,ḫnt(.ꞽ)-ꞽmn.tꞽ:0.50 | ḫnt(.ꞽ)-ꞽmn.tꞽw:0.50,ṯsi̯ tw ꞽr =k wsꞽr ḫnt(.ꞽ)-ꞽmn.tꞽ
+𓎁𓏏𓀜,ꞽṯi̯(.t),ꞽṯi̯,ꞽti̯,4,ꞽti̯:0.50 | ꞽṯi̯:0.50,ꞽw =ꞽ r ꞽṯi̯(.t) =k
+𓏶𓅓𓏏,ꞽm.ꞽ.t,ꞽm.(ꞽ)-t(w),ꞽm.(ꞽ)-t(w),2,ꞽm.(ꞽ)-t(w):0.50 | ꞽm.ꞽt:0.50,sd(ꜣ) n =k nṯr.PL m ḥw.t-sr wr.t ꞽm.ꞽ.t ꞽwn.w
+𓊃𓊪𓊗,zp,sp,sp,41,sp:0.63 | zp:0.27 | spi̯:0.07 | zpi̯:0.02,rḏi̯ =ṯn zp n ppy nfr-kꜣ-rꜥw sk sw ꞽy.y
+𓋴𓎡,sk,ski̯,ski̯,60,ski̯:0.85 | sk:0.15,rḏi̯ =ṯn zp n ppy nfr-kꜣ-rꜥw sk sw ꞽy.y
+𓇍𓇋𓇋,ꞽy.y,ꞽyi̯,ꞽyi̯,8,ꞽyi̯:0.50 | ꞽy:0.38 | ꞽy.y:0.12,rḏi̯ =ṯn zp n ppy nfr-kꜣ-rꜥw sk sw ꞽy.y
+𓉻𓂝𓄿,ꜥꜣ,ḥr,ꜥꜣi̯,4,ꜥꜣi̯:0.75 | ḥr:0.25,ꞽ:(n)ḏ ḥr =k ꜥꜣ ꞽm(.ꞽ) nṯr.PL
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꜥḥꜥ.w pꞽ n(.ꞽ) wnꞽs nḥḥ ḏr(.w) =f pꞽ ḏ.t m sꜥḥ =f pn n(.ꞽ) mrr=f-ꞽrr=f msḏḏ=f-n-ꞽri̯.n=f ꞽ
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓊹𓂋,nṯr,nṯri̯,nṯr(.ꞽ),5,nṯr(.ꞽ):0.60 | nṯri̯:0.40,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,zꜣu̯.n n =k (ꜣ)s.t ḥnꜥ nb.t-ḥw(.t) m zꜣ.wt(ꞽ) n nb =sn(ꞽ) ꞽm(.ꞽ) =k m rn =k n(.ꞽ) nb-zꜣ.wt
+𓁹𓂋,ꞽri̯,ꞽrr,ꞽrr,28,ꞽrr:0.75 | ꞽri̯:0.14 | ꞽr:0.04 | ḥzz.t:0.04 | ꞽri̯.t(ꞽ):0.04,ꞽn zꜣ =f ꞽri̯ n =f zẖꜣ.w rꜥw-nfr rn =f sk sw m ꞽmn.t
+𓋴𓎡,sk,ski̯,ski̯,60,ski̯:0.85 | sk:0.15,ꞽn zꜣ =f ꞽri̯ n =f zẖꜣ.w rꜥw-nfr rn =f sk sw m ꞽmn.t
+𓊿𓏏𓏏,ꞽmn.t.t,ꞽmn.tꞽ.t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,qrs.t =f m ẖr-nṯr m z(my.)t ꞽmn.t.t ꞽꜣwi̯(.w) nfr wr.t m ꞽmꜣḫ.w ḫr nswt ḫr nṯr-ꜥꜣ
+𓅓,(ꞽ)mi̯,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,rḏi̯.n ḥr.w ꞽp =k sw m ḥr(.ꞽ)-ꞽb =f (ꞽ)mi̯ pri̯ =f m-ꜥ =k
+𓋁,ꞽꜣb(.ꞽ),ꞽꜣb.tꞽ,ꞽꜣb(.ꞽ),7,ꞽꜣb(.ꞽ):0.43 | ꞽꜣb(.t):0.14 | ꞽꜣb.tꞽ:0.14 | ꞽꜣb.(t):0.14 | ꞽꜣb(.w):0.14,ꞽw ppy nfr-kꜣ-rꜥw r gs ꞽꜣb(.ꞽ) n(.ꞽ) nw.t
+𓏏𓈖𓏌𓏲𓌙𓅯𓀁,tni̯.w,tnw,tni̯.w,2,tni̯.w:0.50 | tnw:0.50,wꜣḥ ꞽb =k tr n mdwy =k ḏd =k ḫ.t tni̯.w
+𓇓𓏏𓂋𓐍𓏏,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,23,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.52 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.30 | (ꞽ)r(.ꞽt-ꞽ)ḫt-nswt:0.09 | rḫ.t-nzw:0.04 | (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt:0.04,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt ḥm(.t)-nṯr-ḥw.t-ḥr.w-nb-nh.t ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ ḥtp(-wꜣḏ.t)
+𓊵𓏏𓊪,ḥtp(-wꜣḏ.t),ḥtp,ḥtp,68,ḥtp:0.72 | ḥtp(.w):0.22 | ḥtp(-wꜣḏ.t):0.03 | ḥtp.w:0.01 | ḥtp.t:0.01,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt ḥm(.t)-nṯr-ḥw.t-ḥr.w-nb-nh.t ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ ḥtp(-wꜣḏ.t)
+𓈖,n(.ꞽt),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꜣzḫ ꞽt ꞽn ꞽz(.t).PL n(.ꞽt) pr-ḏ.t
+𓈖𓅱,n.w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,ḥnꜥ nḥs nb ḥnꜥ nḥs.t nb.t n.w ꞽꜣm n.w ꞽrṯ.t n.w wꜣwꜣ.t
+𓈖𓅱,n.w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,ḥnꜥ nḥs nb ḥnꜥ nḥs.t nb.t n.w ꞽꜣm n.w ꞽrṯ.t n.w wꜣwꜣ.t
+𓈖𓅱,n.w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,ḥnꜥ nḥs nb ḥnꜥ nḥs.t nb.t n.w ꞽꜣm n.w ꞽrṯ.t n.w wꜣwꜣ.t
+𓎡,k(w),=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,ꞽ:mz k(w) ꞽr =f
+𓏎𓈖𓏏𓏲,ꞽni̯.tw,ꞽnt.(t)w,ꞽnt.(t)w,5,ꞽnt.(t)w:0.40 | ꞽnt:0.20 | ꞽni̯(.t).tw:0.20 | ꞽni̯.tw:0.20,nn-wn ḫꜣḫ-ꞽb ꞽni̯.tw ꜥ
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥtp-ꞽb=s
+𓇹𓇼,ꜣbd(.w),ꜣbd.w,ꜣbd.w,9,ꜣbd.w:0.44 | ꜣbd:0.33 | ꜣbd.(w):0.11 | (tp.ꞽ-)ꜣbd(.w):0.11,ꜥḥꜥ n =k mnꞽ.w ꞽri̯.w n =k tp-3 ḫꜥi̯.w =k n ꜣbd(.w) wꜥb =k n psḏn.tw
+𓐍𓏏𓏛𓏥,ḫ.t,(ꞽ)ḫ.t,ḫ.t,49,ḫ.t:0.43 | (ꞽ)ḫ.t:0.41 | (ꞽ)ḫ.t.PL:0.10 | ḫ.t.PL:0.06,ḫpr ḫ.t šms ꞽb
+𓇓𓏏𓈖𓊵𓏙,ḥtp-ḏi̯-nzw,ḥtp-di̯-nswt,ḥtp-di̯-nswt,2,ḥtp-di̯-nswt:0.50 | ḥtp-ḏi̯-nswt:0.50,ḥtp-ḏi̯-nzw m sꜥḥ.PL =k nb.w
+𓇋𓅱,ꞽ(ꜣ)w,ꞽw,ꞽw,192,ꞽw:0.99 | ꞽwi̯:0.01 | wꞽ:0.01,ꞽ(ꜣ)w wsꞽr m hrw pn dwꜣ zp-sn
+𓊨𓁹,wsꞽr,(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,ꞽ(ꜣ)w wsꞽr m hrw pn dwꜣ zp-sn
+𓊗𓏭,zp-sn,zp-2,zp-sn.wꞽ,5,zp-sn.wꞽ:0.40 | zp-2:0.40 | zp-sn:0.20,ꞽ(ꜣ)w wsꞽr m hrw pn dwꜣ zp-sn
+𓂝,wḥꜥ,ꜥ,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,wt.w šw wḥꜥ ṯ(ꜣ)z.t.PL =k ꞽn nb.DU-nw.w
+𓊹𓊹𓊹,nṯr.w,nṯr.PL,nṯr.PL,148,nṯr.PL:0.98 | nṯr.w:0.01 | qs.PL:0.01 | ntr.PL:0.01,pr-ḫrw n =f mꜣꜥ-ḥr-ꞽb n nṯr.w nb(.w) ꞽmn.tt
+𓎟,nb(.w),nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,pr-ḫrw n =f mꜣꜥ-ḥr-ꞽb n nṯr.w nb(.w) ꞽmn.tt
+𓊿𓏏𓏏,ꞽmn.tt,ꞽmn.t(ꞽ).t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,pr-ḫrw n =f mꜣꜥ-ḥr-ꞽb n nṯr.w nb(.w) ꞽmn.tt
+𓈎𓂋𓌠𓋴𓊭𓏏,qrs.tꞽ,qrs.t,qrs.t,8,qrs.t:0.75 | qrs.t(ꞽ):0.25,qrs.tꞽ m ẖr-nṯr
+𓈎𓄿,qꜣi̯,qꜣ,qꜣi̯,2,qꜣi̯:0.50 | qꜣ:0.50,ꞽr(.t)-ḥr.w qꜣi̯ =ṯ ꜥꜣi̯ =ṯ r wnꞽs
+𓉻𓂝𓄿,ꜥꜣi̯,ḥr,ꜥꜣi̯,4,ꜥꜣi̯:0.75 | ḥr:0.25,ꞽr(.t)-ḥr.w qꜣi̯ =ṯ ꜥꜣi̯ =ṯ r wnꞽs
+𓏏𓏲,tw,=tw,=tw,61,=tw:0.61 | tw:0.39,n ḥm smꜣm tw r(m)ṯ.PL nṯr.PL ꜣḫ.w.PL m(w)t.w.PL
+𓎠𓉗,nb(.t)-ḥw.t,nb(.t)-ḥw(.t),nb(.t)-ḥw(.t),8,nb(.t)-ḥw(.t):0.75 | nb.t-ḥw(.t):0.12 | nb(.t)-ḥw.t:0.12,ꜣṯi̯ sw (ꜣ)s.t snq sw nb(.t)-ḥw.t
+𓈎𓂋𓌠𓋴𓊭𓏏,qrs.t(ꞽ),qrs.t,qrs.t,8,qrs.t:0.75 | qrs.t(ꞽ):0.25,qrs.t(ꞽ) =f m ẖr-nṯr ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,ḏi̯.n n =k gbb ꞽr.t.DU =k ḥtp =k m ꞽr.t.DU wr pn ꞽm(.ꞽ) =k
+𓏏𓅱,wt.ꞽ,tw,tw,40,tw:0.60 | =tw:0.15 | wt.ꞽ:0.12 | wt.ꞽ-ꞽnp.w:0.10 | wt(.ꞽ):0.03,wt.ꞽ
+𓌸𓂋𓇋,mrꞽ,mri̯.ꞽ,mrꞽ,2,mrꞽ:0.50 | mri̯.ꞽ:0.50,ḥtp-rꜥw zꜣ =f wr-bꜣ.w-ptḥ mrꞽ ꞽni̯.t ḥm-kꜣ ḥtpꞽ ḥtp-ꞽb (ꞽ)m(.ꞽ)-rʾ-ḥm(.w)-kꜣ wr-nb-mꜣꜥ.t ḥ
+𓈖,(ꞽ)n,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,nw.t (ꞽ)n pri̯.n ꞽr.t.DU m tp =ṯ
+𓈖,nn,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,nn ḫn ꞽm n(.ꞽ) ꜥbꜥ pri̯ m rʾ =ꞽ
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,nn ḫn ꞽm n(.ꞽ) ꜥbꜥ pri̯ m rʾ =ꞽ
+𓃿,ꞽḥ.PL,kꜣ(.PL),kꜣ.PL,7,kꜣ.PL:0.43 | kꜣ(.PL):0.29 | ḥr.ꞽ-ḏbꜥ:0.29,ḏi̯ =sn pr.t-ḫrw tʾ ḥ(n)q.t ꞽḥ.PL ꜣpd.PL šs mnḫ.t snṯr mrḥ.t (ꞽ)ḫ.t nb.t nfr.t wꜥb.t ꜥnḫ.t
+𓋔,n(.ꞽ),n,n,5,n:0.80 | n(.w):0.20,ḏi̯ =sn pr.t-ḫrw tʾ ḥ(n)q.t ꞽḥ.PL ꜣpd.PL šs mnḫ.t snṯr mrḥ.t (ꞽ)ḫ.t nb.t nfr.t wꜥb.t ꜥnḫ.t
+𓊼,ẖr(.t)-nṯr,ẖr-nṯr,ẖr-nṯr,12,ẖr-nṯr:0.67 | ẖr.t-nṯr:0.33,ḏi̯ =sn pr.t-ḫrw tʾ ḥ(n)q.t ꞽḥ.PL ꜣpd.PL šs mnḫ.t snṯr mrḥ.t (ꞽ)ḫ.t nb.t nfr.t wꜥb.t ꜥnḫ.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏi̯ =sn pr.t-ḫrw tʾ ḥ(n)q.t ꞽḥ.PL ꜣpd.PL šs mnḫ.t snṯr mrḥ.t (ꞽ)ḫ.t nb.t nfr.t wꜥb.t ꜥnḫ.t
+𓌳𓁹𓄿𓈖,mꜣn,mꜣ.n,mꜣ.n,12,mꜣ.n:0.92 | mꜣn:0.08,ptꞽ st ḏdꞽ tm rḏi̯ mꜣn =ꞽ tw
+𓇳𓀭,rꜥ,rꜥw,rꜥ,11,rꜥ:0.64 | rꜥ.w:0.27 | rꜥw:0.09,ꞽ:nḏ ḥr =k rꜥ ꞽm.ꞽ nws =f
+𓏶,ꞽm.ꞽ,ꞽm(.ꞽ),ꞽm(.ꞽ),6,ꞽm(.ꞽ):0.83 | ꞽm:0.17,ꞽ:nḏ ḥr =k rꜥ ꞽm.ꞽ nws =f
+𓇼𓄿𓇳,dwꜣ,dwꜣ(.w),dwꜣ,5,dwꜣ:0.60 | dwꜣ.w:0.20 | dwꜣ(.w):0.20,ḥḏ.n r =f tꜣ dwꜣ zp-2 ꞽw ꞽri̯ mꞽ ḏd =f ḫpi̯ r =f sw ntr.t tn
+𓊨𓁹,(w)sꞽr,(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,ṯwt ḥr.w zꜣ (w)sꞽr
+𓄂𓏏𓏏,ḥꜣt.t,ḥꜣ.tt,ḥꜣ.tt,25,ḥꜣ.tt:0.64 | ḥꜣt.t:0.36,ḥꜣt.t ꜥš ꞽn kꜣ nfr-sšm-rꜥw
+𓊨𓁹,(w)sꞽr,(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,(w)sꞽr ꞽyi̯ r =f wnꞽs pn ḫwrr psḏ.t ꜣḫ(.ꞽ) ꞽ:ḫm ski̯
+𓇋𓊪𓈖,ꞽp.n,ꞽpn,ꞽpn,22,ꞽpn:0.95 | ꞽp.n:0.05,ꞽp.n n =k sn ḥr.w zmꜣ.w
+𓇓𓏏𓈖,nzw,nsw,nswt,17,nswt:0.53 | nzw:0.18 | nsw.t:0.12 | nsw:0.12 | pr-nsw:0.06,pšr ṯw mꜣ =k pšr pn ꞽri̯.n n =k nzw ꞽri̯.n n =k ḫnt(.ꞽ)-ꞽmn.t(ꞽ)w
+𓎡,m,=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,mw =k m ꜣbw nṯr(.ꞽ) =k m ꞽrw ḥzmn =k m wꜣb.wꞽ snṯr =k m tꜣ-zt(ꞽ)
+𓅓,ꞽrw,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,mw =k m ꜣbw nṯr(.ꞽ) =k m ꞽrw ḥzmn =k m wꜣb.wꞽ snṯr =k m tꜣ-zt(ꞽ)
+𓎡,m,=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,mw =k m ꜣbw nṯr(.ꞽ) =k m ꞽrw ḥzmn =k m wꜣb.wꞽ snṯr =k m tꜣ-zt(ꞽ)
+𓅓,wꜣb.wꞽ,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,mw =k m ꜣbw nṯr(.ꞽ) =k m ꞽrw ḥzmn =k m wꜣb.wꞽ snṯr =k m tꜣ-zt(ꞽ)
+𓂋,rʾ,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,(w)sr(.w) n(ꞽ).t wpi̯ rʾ =k m mḥ.t ꞽm =k
+𓂻𓅱𓏏,ꞽwi̯.t,ꞽwt,ꞽwt,16,ꞽwt:0.50 | ꞽwi̯.t:0.44 | ꞽw.t:0.06,ꞽwi̯.t =sn r wnꞽs m ꞽm(.ꞽ)-rd mi̯.y n =f mi̯.y n =f
+𓄟,ms,msi̯,msi̯,27,msi̯:0.74 | ms(.w):0.11 | ms:0.11 | msi̯.n:0.04,ms =f ḏ.t ḥm-kꜣ ꜥnḫ(=ꞽ)-m-ꜥ-k(ꜣ=ꞽ)
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ꞽmn-ḏf(ꜣ)=s
+𓅱,ꜥ.w,ṯꜣw,ꜥ.w,25,ꜥ.w:0.28 | gꜣu̯.w:0.24 | w:0.12 | w(ꞽ):0.08 | ṯꜣw:0.08,ꞽṯi̯.n wnꞽs ꜥ.w m smn
+𓋴𓍿,sṯ(ꞽ),sṯ,sṯ,11,sṯ:0.82 | sṯꞽ:0.09 | sṯ(ꞽ):0.09,ꞽyi̯ sṯ(ꞽ) =ṯn r wnꞽs nṯr.PL ꞽyi̯ sṯ(ꞽ) wnꞽs ꞽr =tn nṯr.PL
+𓍿𓈖,=tn,=ṯn,=ṯn,119,=ṯn:0.60 | =ṯn(ꞽ):0.23 | ṯn:0.09 | ṯn(ꞽ):0.05 | =tn:0.03,ꞽyi̯ sṯ(ꞽ) =ṯn r wnꞽs nṯr.PL ꞽyi̯ sṯ(ꞽ) wnꞽs ꞽr =tn nṯr.PL
+𓃹𓈖,wn,wni̯,wn,32,wn:0.84 | wni̯:0.16,ꞽw ꞽni̯.tw ꜥq wn ꜣq
+𓊃,=z,=s,=s,19,=s:0.95 | s(ꞽ):0.05,sn =z ꞽm.ꞽ-sꜣ mnṯ.w-sw
+𓌇,mꞽ,m,m,124,m:0.85 | mꞽ:0.11 | m(ꞽ):0.04,(w)sr(.w) n(ꞽ).t mꞽ n =k ꞽr(.t)-ḥr.w ꞽ:sḏꜣ.t.n =f
+𓇋𓌸𓂋𓈘𓈖,ꞽ:mr.n,ꞽ:mri̯.n,ꞽ:mri̯.n,2,ꞽ:mri̯.n:0.50 | ꞽ:mr.n:0.50,šms.n kw ḥr.w ꞽ:mr.n =f kw
+𓎟𓏏,nb.t-pr,nb.t,nb.t,69,nb.t:0.94 | nb.t(.PL):0.04 | nb(.t):0.01,rʾ-ꜥꜣ-ḫꜣs.t.PL nḥr.ꞽ zꜣ ẖnm(.w)-ḥtp zꜣ ẖnm(.w)-ḥtp ꞽri̯.n nb.t-pr ẖty
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,ꞽni̯.n =f n =k nṯr.PL m-zp n bꞽꜣi̯ ꞽm(.ꞽ) =sn m-ꜥ =f
+𓄂𓂝,ḥ(ꜣ).t(ꞽ)-ꜥ,ḥꜣ.tꞽ-ꜥ,ḥꜣ.tꞽ-ꜥ,38,ḥꜣ.tꞽ-ꜥ:0.74 | ḥꜣ.t(ꞽ)-ꜥ:0.11 | ḥꜣ(.t)-ꜥ:0.03 | ḥꜣ(.tꞽ)-ꜥ:0.03 | ḥꜣ.t-ꜥ:0.03,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥ(ꜣ).t(ꞽ)-ꜥ smr-wꜥ.t(ꞽ) ꞽmꜣḫ.w-ḫr-nb=f ḥr(.ꞽ)-tp-ꜥꜣ(-n)-ꜣtf.t ꞽzꞽ
+𓋴𓍌𓌡𓏏𓏤,smr-wꜥ.t(ꞽ),smr-wꜥ.tꞽ,smr-wꜥ.tꞽ,19,smr-wꜥ.tꞽ:0.84 | smr-wꜥ.t(ꞽ):0.11 | smr-wꜥw.tꞽ:0.05,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥ(ꜣ).t(ꞽ)-ꜥ smr-wꜥ.t(ꞽ) ꞽmꜣḫ.w-ḫr-nb=f ḥr(.ꞽ)-tp-ꜥꜣ(-n)-ꜣtf.t ꞽzꞽ
+𓎟𓏏,nb.t(.PL),nb.t,nb.t,69,nb.t:0.94 | nb.t(.PL):0.04 | nb(.t):0.01,sḏꜣ.t ḥnꜥ nṯr-ꜥꜣ r nmt.t.PL =f nb.t(.PL) ꞽn ꞽmꜣḫ.w (ꞽ)m(.ꞽ)-rʾ-mšꜥ m tꜣ r-ḏr =f ꞽni̯-ꞽt=f 
+𓏎𓈖𓏏,ꞽni̯.t,ꞽnt,ꞽni̯.t,35,ꞽni̯.t:0.77 | ꞽnt:0.11 | ꞽni̯(.t).t(w):0.06 | ꞽni̯t.(tw):0.03 | ꞽnn.t:0.03,ḥtp.t ꞽni̯.t n =k
+𓇓𓏏𓏞𓂝𓏝,zẖꜣ.w-ꜥ-nswt,zẖꜣ.w-ꜥ-(n-)nswt,zẖꜣ.w-ꜥ-(n-)nswt,6,zẖꜣ.w-ꜥ-(n-)nswt:0.50 | zẖꜣ.w-ꜥ-n-nswt:0.17 | zẖꜣ.w-ꜥ(-n-)nswt:0.17 | zẖꜣ.w-ꜥ(-n)-nswt:0.17,tʾ ḫꜣ ḥnq.t ḫꜣ ꞽḥ ḫꜣ ꜣpd ḫꜣ šs ḫꜣ mnḫ.t ḫꜣ n zẖꜣ.w-ꜥ-nswt snḏm-ꞽb
+𓋁,ꞽꜣb(.ꞽ),ꞽꜣb(.w),ꞽꜣb(.ꞽ),7,ꞽꜣb(.ꞽ):0.43 | ꞽꜣb(.t):0.14 | ꞽꜣb.tꞽ:0.14 | ꞽꜣb.(t):0.14 | ꞽꜣb(.w):0.14,ḫꜥi̯ =f ḥnꜥ =f m ꞽꜣb(.ꞽ) ḥtp =f ḥnꜥ =f m ꞽmn(.t)
+𓊿,ꞽmn(.t),ꞽmn.t,wnm(.ꞽ),5,wnm(.ꞽ):0.40 | ꞽmn.tt:0.20 | ꞽmn.t:0.20 | ꞽmn.tꞽ(.t):0.20,ḫꜥi̯ =f ḥnꜥ =f m ꞽꜣb(.ꞽ) ḥtp =f ḥnꜥ =f m ꞽmn(.t)
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,qsn pw n ꞽtn.w m s.t tkn.t(ꞽ)
+𓌃𓂧𓏏𓀁,md.t,mdw.t,md.t,27,md.t:0.67 | mdw.t:0.19 | md(w).t:0.07 | md(w)i̯.t:0.07,ꜥḥꜣ t(w) m sḏw m md.t skn.tꞽ wr n wr
+𓈖𓏏,n.ꞽ.t,n.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,sti̯.tꞽ mꞽ (ꞽ)ḫ.t n.ꞽ.t mrḥ.t
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,wnw.t-ḥw.t-nṯr ꜥ.DU =sn ẖr ḥtp.t pri̯.t m nṯr-ꜥꜣ n kꜣ n ꞽr.ꞽ-ꜥ.t ḏꜣꜣ mꜣꜥ-ḫrw
+𓃿,ꞽḥ,ḥr.ꞽ-ḏbꜥ,kꜣ.PL,7,kꜣ.PL:0.43 | kꜣ(.PL):0.29 | ḥr.ꞽ-ḏbꜥ:0.29,tʾ ḫꜣ ḥnq.t ḫꜣ ꞽḥ ḫꜣ šs ḫꜣ mnḫ.t ḫꜣ
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,pri̯.w pw n tꜣ-ẖ.t
+𓄖𓅱𓏭,pḥ.wꞽ,pḥwꞽ,pḥ.wꞽ,3,pḥ.wꞽ:0.67 | pḥwꞽ:0.33,nf ḥwi̯ tꜣ nn-wn pḥ.wꞽ =fꞽ
+𓆓𓌃,ḏd-mdw,ḏ(d)-mdw,ḏ(d)-mdw,161,ḏ(d)-mdw:0.99 | ḏd-mdw:0.01,ḏd-mdw ḫsf rrk tm nḥm tp n(.ꞽ) z m-ꜥ =f
+𓏎𓈖,ꞽni̯,ꞽni̯.n,ꞽni̯,29,ꞽni̯:0.79 | ꞽni̯.n:0.14 | ꞽni̯(.n):0.03 | ꞽni̯(.w):0.03,ꜥḥꜥ.n ꞽni̯ n =f smn wḏꜥ tp =f
+𓏅𓏏𓊹𓉱,ḫnt(.ꞽ)-zḥ-nṯr,ḫnt.ꞽ-zḥ-nṯr,ḫnt.ꞽ-zḥ-nṯr,10,ḫnt.ꞽ-zḥ-nṯr:0.80 | ḫnt(.ꞽ)-zḥ-nṯr:0.10 | ḫntꞽ-zḥ-nṯr:0.10,ḥtp-ḏi̯ nswt ḥtp-ḏi̯ ꞽnp.w ḫnt(.ꞽ)-zḥ-nṯr ꞽm.ꞽ-wt
+𓐍𓆑𓏏𓈓,ḫft.PL,ḫft(.ꞽ).PL,ḫft(.ꞽ).PL,4,ḫft(.ꞽ).PL:0.75 | ḫft.PL:0.25,nḏ.n zꜣ ꞽt(ꞽ) =f nḏ.n ḥr.w (w)sr(.w) nḏ.n ḥr.w ppy pn m-ꜥ ḫft.PL =f
+𓅃,ḥr.w,ḥr,ḥr.w,905,ḥr.w:0.97 | ḥr:0.02 | ḥr(.w):0.01 | mnw-ḥr:0.01 | ḥr.:0.00,hꜣ n(ꞽ).t r(m)n =k ḫnt ḥr.w =k
+𓂋𓏏𓀀𓁐𓏥,r(m)t.PL,r(m)ṯ.PL,r(m)ṯ.PL,4,r(m)ṯ.PL:0.75 | r(m)t:0.25,n-ꞽs n r(m)t.PL ꞽ (ꞽ)ty ꜥnḫ-(w)ḏꜣ-s(nb) nb =ꞽ
+𓂝,di̯,ḏi̯,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,di̯ nbw ꜥnḫ r fnd =k
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽr wšb =ꞽ st nn ḥr =ꞽ ꜥ n nṯr ꞽs pw
+𓐍𓆑𓏏,ḫft,ḫft(.ꞽ),ḫft(.ꞽ),19,ḫft(.ꞽ):0.63 | ḫft:0.37,ḥmsi̯ =ṯ ḫft wnꞽs m nṯr =f
+𓇗,šmꜥ(.t),šmꜥ.w,šmꜥ.w,70,šmꜥ.w:0.89 | šmꜥ(.w):0.06 | šmꜥ(.wꞽ):0.04 | šmꜥ:0.01,šmꜥ(.t) nfr.t szf ḫꜣ
+𓄤𓏏,nfr.t,nfr.t(.PL),nfr.t,3,nfr.t:0.67 | nfr.t(.PL):0.33,šmꜥ(.t) nfr.t szf ḫꜣ
+𓇋𓊪𓈖,ꞽp.n,ꞽpn,ꞽpn,22,ꞽpn:0.95 | ꞽp.n:0.05,ꞽp.n n =k sn ḥr.w zmꜣ.w
+𓋴,s(ꞽ),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,mw.t-nswt =f sk s(ꞽ) ḫpi̯.t(ꞽ) mw.t =f (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt ḫnm.t ꞽmꜣḫ.(w)t-ḫr-nṯr-ꜥꜣ
+𓇓𓏏𓂋𓐍𓏏,(ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,23,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.52 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.30 | (ꞽ)r(.ꞽt-ꞽ)ḫt-nswt:0.09 | rḫ.t-nzw:0.04 | (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt:0.04,mw.t-nswt =f sk s(ꞽ) ḫpi̯.t(ꞽ) mw.t =f (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt ḫnm.t ꞽmꜣḫ.(w)t-ḫr-nṯr-ꜥꜣ
+𓇋𓌳𓄪𓐍𓏏𓐍𓂋𓊹𓉻,ꞽmꜣḫ.(w)t-ḫr-nṯr-ꜥꜣ,ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ,ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ,3,ꞽmꜣḫ.wt-ḫr-nṯr-ꜥꜣ:0.67 | ꞽmꜣḫ.(w)t-ḫr-nṯr-ꜥꜣ:0.33,mw.t-nswt =f sk s(ꞽ) ḫpi̯.t(ꞽ) mw.t =f (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt ḫnm.t ꞽmꜣḫ.(w)t-ḫr-nṯr-ꜥꜣ
+𓆑𓂧𓏤𓏤𓏤𓏤,fd(.w),fd.w,fd,4,fd:0.50 | fd.w:0.50,sṯꜣ =f tp(.ꞽ).w-rʾ =k sšr =f mtw.t =k m fd(.w) ꞽpw rwḏ.PL ꞽm(.ꞽ).w-ḫt ṯbw.t (w)sr(.w)
+𓇋𓏶𓅱𓆱𓐍𓏏,ꞽm(.ꞽ).w-ḫt,ꞽm(.ꞽ.w)-ḫt,ꞽm(.ꞽ.w)-ḫt,2,ꞽm(.ꞽ.w)-ḫt:0.50 | ꞽm(.ꞽ).w-ḫt:0.50,sṯꜣ =f tp(.ꞽ).w-rʾ =k sšr =f mtw.t =k m fd(.w) ꞽpw rwḏ.PL ꞽm(.ꞽ).w-ḫt ṯbw.t (w)sr(.w)
+𓇋𓆑𓄹,ꞽ(w)f,ꞽwf,ꞽ(w)f,7,ꞽ(w)f:0.71 | ꞽwf:0.29,nmt.ꞽ-m-zꜣ=f mr.n-rꜥw wḏꜣ wḏꜣ ꞽ(w)f =f
+𓏊,wdp.w,ḥnq.t,ḥnq.t,61,ḥnq.t:0.77 | wdp.w:0.11 | ḥ(n)q.t:0.08 | wdp(.w):0.02 | ḥ(n)qt:0.02,wdp.w kꜣ-ꞽri̯.ꞽ
+𓏎,ꞽni̯,ꞽn.w,ꞽn.w,31,ꞽn.w:0.61 | ꞽni̯.(t):0.19 | ꞽni̯:0.13 | ꞽni̯.w:0.03 | ꞽni̯(.t):0.03,ꞽni̯ ꞽri̯.t.n =k n =ꞽ nfr.t
+𓄤𓆑𓂋𓏏,nfr.t,nfr.t(ꞽ),nfr.t,4,nfr.t:0.75 | nfr.t(ꞽ):0.25,ꞽni̯ ꞽri̯.t.n =k n =ꞽ nfr.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏr-n.tꞽt sḏm nḥs(.ꞽ) r ḫr n(.ꞽ) rʾ
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:tm =k ꞽr =k ḏꜣi̯ wnꞽs sṯp =f di̯ =f sw tp ḏnḥ n(.ꞽ) ḏḥw.tꞽ
+𓆑,=f,=f(ꞽ),=f,3156,=f:0.99 | =f(ꞽ):0.01 | =(f):0.00 | n:0.00 | ḫtꞽw:0.00,wnm =f ḥfꜣ.t.PL nb.t pw
+𓁶𓈋𓆑,tp(.ꞽ)-ḏw=f,tp.ꞽ-ḏw=f,tp.ꞽ-ḏw=f,32,tp.ꞽ-ḏw=f:0.81 | tp(.ꞽ)-ḏw=f:0.09 | tp-ḏw=f:0.03 | tp.ꞽ-ḏw=:0.03 | ꞽnp.w:0.03,ḥtp-di̯-nswt ꞽnp.w tp(.ꞽ)-ḏw=f ꞽm.ꞽ-wt nb-tꜣ-ḏsr
+𓅓𓂋𓂓𓏏𓀋𓎟𓈖𓏏𓇓𓏏𓈖,(ꞽ)m(.ꞽ)-rʾ-kꜣ.t-n.t-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,10,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.70 | (ꞽ)m(.ꞽ)-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽmꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.10,zꜣ-nswt-n-ẖ.t=f smr ḫtm.w-nṯr-wꞽꜣ-bꜣ-nṯr.w ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ ḫtm.w-nṯr-wꞽꜣ-nb-rḫ.yt 
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,tkꜣ pw n(.ꞽ) ꞽrr =sn stꞽ.n =ꞽ sw r =s
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt ḫn.wt
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,n bꞽꜣi̯.n ḥr.w ꞽr =k nḏ.n ḥr.w ꞽt(ꞽ) =f ꞽm(.ꞽ) =k
+𓂋𓍿,r(m)ṯ,rmṯ,r(m)ṯ,3,r(m)ṯ:0.67 | rmṯ:0.33,nḫꞽ rn =k ḫr r(m)ṯ ḫpr rn =k ḫr nṯr.PL
+𓈋𓏲𓅪,ḏw,ḏw(.w),ḏwi̯,3,ḏwi̯:0.33 | ḏw(.w):0.33 | ḏw:0.33,ḫr.n =f n ḏd.t.n =f nb.t r =ꞽ ḏw m gs =f ḥr.ꞽ
+𓅓𓎡𓏏,mk(w).t,mk.t,mk.t,5,mk.t:0.80 | mki̯.t:0.20,ꞽw mk(w).t =f m ꞽri̯.yt r =f
+𓁹𓅃,ꞽr(.t)-ḥr(.w),ꞽr(.t)-ḥr.w,ꞽr(.t)-ḥr.w,72,ꞽr(.t)-ḥr.w:0.94 | ꞽr(.t)-ḥr(.w):0.03 | ꞽr.t-ḥr.w:0.03,(w)sr(.w) n(ꞽ).t m n =k ꞽr(.t)-ḥr(.w) ḫnf.t.n =f
+𓏏𓅨,tʾ-wr,twr,twr,3,twr:0.33 | twri̯:0.33 | tʾ-wr:0.33,tʾ ḫꜣ ḥnq.t ḫꜣ šs ḫꜣ mnḫ.t ḫꜣ tʾ-rtḥ tʾ-wr
+𓇋𓅱,gꞽu̯.w,ꞽw,ꞽw,192,ꞽw:0.99 | ꞽwi̯:0.01 | wꞽ:0.01,ꞽy ꞽy n gꞽu̯.w =k ꞽy n =k mʾw.t =k n gꜣu̯.w =k ꞽy n =k nw.t n gꜣu̯.w =k ꞽy n =k ẖnm.t wr n
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy ꞽy n gꞽu̯.w =k ꞽy n =k mʾw.t =k n gꜣu̯.w =k ꞽy n =k nw.t n gꜣu̯.w =k ꞽy n =k ẖnm.t wr n
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy ꞽy n gꞽu̯.w =k ꞽy n =k mʾw.t =k n gꜣu̯.w =k ꞽy n =k nw.t n gꜣu̯.w =k ꞽy n =k ẖnm.t wr n
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy ꞽy n gꞽu̯.w =k ꞽy n =k mʾw.t =k n gꜣu̯.w =k ꞽy n =k nw.t n gꜣu̯.w =k ꞽy n =k ẖnm.t wr n
+𓈖𓏏,n(.ꞽ).t,n.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,dn.w pri̯ šꜣ m ẖ.t n(.ꞽ).t mw.t =f
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,rḏi̯.n n =k gbb ꞽr.t.DU =k ḥtp =k m ꞽr.t.DU wr pn ꞽm(.ꞽ) =k
+𓇓𓏏𓆤𓏏,nswt-bꞽ.tꞽ,nzw-bꞽ.tꞽ,nzw-bꞽ.tꞽ,49,nzw-bꞽ.tꞽ:0.86 | nswt-bꞽ.tꞽ:0.08 | nsw.t-bꞽ.tꞽ:0.02 | n(ꞽ)swt-bꞽ.tꞽ:0.02 | nṯr.PL:0.02,nswt-bꞽ.tꞽ 𓍹n.ꞽ-mꜣꜥ-ḫrw-rꜥ(w)𓍺 ḏi̯ ꜥnḫ ḏ.t
+𓏌𓏤,n.w,n(.ꞽ).w,n.w,36,n.w:0.83 | n(.ꞽ).w:0.14 | n(ꞽ).w:0.03,ꜥḥꜥ.w.PL hꜣꜣ ꞽm =f qb mꞽ mw n.w wnš.ꞽ
+𓅱,w,ꜥ.w,ꜥ.w,25,ꜥ.w:0.28 | gꜣu̯.w:0.24 | w:0.12 | w(ꞽ):0.08 | ṯꜣw:0.08,mꜣꜣ w mꜣ.n =k ꞽr.w ms.wt ꞽt(ꞽ).PL =sn ꞽ:rḫ.w rʾ =sn ꞽ:ḫm-sk
+𓋴𓎡,sk,ski̯,ski̯,60,ski̯:0.85 | sk:0.15,sk wnꞽs pri̯ m hrw pn m ꞽr.w mꜣꜥ n(.ꞽ) ꜣḫ.ꞽ ꜥnḫ ꞽ:sḏ wnꞽs ꜥḥꜣ bḥn =f ẖnn.w
+𓉔𓂋𓅱𓇳,hrw,hrw(.w),hrw(.w),4,hrw(.w):0.50 | hrw:0.50,sk wnꞽs pri̯ m hrw pn m ꞽr.w mꜣꜥ n(.ꞽ) ꜣḫ.ꞽ ꜥnḫ ꞽ:sḏ wnꞽs ꜥḥꜣ bḥn =f ẖnn.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,sk wnꞽs pri̯ m hrw pn m ꞽr.w mꜣꜥ n(.ꞽ) ꜣḫ.ꞽ ꜥnḫ ꞽ:sḏ wnꞽs ꜥḥꜣ bḥn =f ẖnn.w
+𓉠,nb.t-ḥw.t,nb.t-ḥw(.t),nb.t-ḥw(.t),15,nb.t-ḥw(.t):0.60 | nb.t-ḥw.t:0.40,ꞽnk nb.t-ḥw.t
+𓉔𓂋𓅱𓇳,hrw,hrw(.w),hrw(.w),4,hrw(.w):0.50 | hrw:0.50,pri̯ wnꞽs m hrw pn ꞽnt =f mꜣꜥ.t ꞽ(w) =s ḫr =f
+𓁹,ꞽr(.t),ꞽri̯,ꞽri̯,112,ꞽri̯:0.94 | ꞽr(.t):0.04 | ꞽri̯(.t):0.01 | ꞽri̯(.w):0.01 | ꞽr.(t):0.01,wpi̯ n =k ꞽr(.t) =k mꜣ =k ꞽm =s
+𓈖𓅱,n(.ꞽ).w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,ꞽw pẖr ꞽm(.ꞽ).w p.t n ttꞽ šsr.t n =f ktw.t.PL m rd.w n(.ꞽ).w ḥʾm.t.PL =sn
+𓅃,ḥr,ḥr.w,ḥr.w,905,ḥr.w:0.97 | ḥr:0.02 | ḥr(.w):0.01 | mnw-ḥr:0.01 | ḥr.:0.00,ꜥq.n =ꞽ ḥr wpi̯-wꜣ.t.PL m ḥr nb-mꜣꜥ.t
+𓄤𓆑𓂋𓏏,nfr.t,nfr.t(ꞽ),nfr.t,4,nfr.t:0.75 | nfr.t(ꞽ):0.25,n rḏi̯.n =k n =ꞽ dbꜣ.w n md.t tn nfr.t prr.t m rʾ n rꜥ ḏs =f
+𓉐,pr(.w),pr,pr,26,pr:0.73 | pr.w:0.19 | pri̯:0.04 | pr-ḥts.t:0.04,nfr pr(.w) =ꞽ
+𓏂,qbḥ,qbḥ(.w),qbḥ(.w),19,qbḥ(.w):0.84 | qbḥ-ḥw.t-nm.t:0.11 | qbḥ:0.05,ḏi̯ qbḥ
+𓇓𓏏𓅭,zꜣ-nzw,zꜣ-nswt,zꜣ-nswt,15,zꜣ-nswt:0.47 | zꜣ.t-nswt:0.27 | zꜣ-nzw:0.07 | zꜣ(.t)-nzw:0.07 | zꜣ(.t)-nswt:0.07,zꜣ-nzw ms.n-kꜣ(=ꞽ)
+𓅓𓂋𓇓𓏏𓏞𓂝𓏝,(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww-ꜥ-n-nswt,(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w(w)-ꜥ-(n-)nswt,(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w(w)-ꜥ-(n-)nswt,16,(ꞽ)m(.ꞽ)-rʾ-zẖꜣ.w(w)-ꜥ-(n-)nswt:0.62 | ꞽm.ꞽ-rʾ-zẖꜣ.w(w)-ꜥ(-n)-nswt:0.19 | zẖꜣ.w-ꜥ-(n-)nswt:0.06 | (ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww-ꜥ-n-nswt:0.06 | (ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww-ꜥ(-n)-nswt:0.06,zꜣ =f sms.w (ꞽ)m(.ꞽ)-rʾ-zẖꜣ.ww-ꜥ-n-nswt sšm-nfr
+𓅃𓅆,ḥr.w,ḥr,ḥr.w,8,ḥr.w:0.62 | ḥr:0.38,ꞽmi̯ =k snḏ zꜣ =ꞽ ḥr.w
+𓇋𓂋,ꞽr(.ꞽ),ꞽr,ꞽr,369,ꞽr:0.98 | ꞽr(.ꞽ):0.01 | r:0.01 | ꞽrp:0.00 | ꞽt(ꞽ):0.00,ṯwt ꞽr(.ꞽ) =f
+𓇉,mḥ(.w),mḥ.w,mḥ.w,83,mḥ.w:0.69 | ḥꜣ:0.27 | mḥ(.wꞽ):0.02 | mḥ(.w):0.01 | ḥꜣ(.w):0.01,rḏi̯ qbḥ.w nṯr(.ꞽ) ḥt.t mḥ(.w) šmꜥ(.w)
+𓇗,šmꜥ(.w),šmꜥ.w,šmꜥ.w,70,šmꜥ.w:0.89 | šmꜥ(.w):0.06 | šmꜥ(.wꞽ):0.04 | šmꜥ:0.01,rḏi̯ qbḥ.w nṯr(.ꞽ) ḥt.t mḥ(.w) šmꜥ(.w)
+𓍿𓈖𓏥,=ṯn,=ṯn.PL,=ṯn,16,=ṯn:0.88 | ṯn:0.06 | =ṯn.PL:0.06,m =ṯn ꞽs ḫ.t pri̯.t(ꞽ)
+𓌸𓂋𓏏,mr(.y)t,mr.(y)t,mr.t,20,mr.t:0.20 | mri̯.t:0.20 | mr.(y)t:0.20 | mr.yt:0.15 | mr(.y)t:0.15,ḥm.t =f mr(.y)t =f smd.t
+𓇓𓂋𓐍𓏏,ꞽr.ꞽ-ꞽḫ.t-nzw,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,ꞽr.ꞽ-ꞽḫ.t-nzw ꞽm.ꞽ-rʾ-ꜥḥ ḫrp-mꞽtr.w ꜣb-nb(=ꞽ)
+𓅓𓂋,ꞽm.ꞽ-rʾ-ꜥḥ,(ꞽ)m(.ꞽ)-rʾ,(ꞽ)m(.ꞽ)-rʾ,7,(ꞽ)m(.ꞽ)-rʾ:0.86 | (ꞽ)m(.ꞽ)-r(ʾ):0.14,ꞽr.ꞽ-ꞽḫ.t-nzw ꞽm.ꞽ-rʾ-ꜥḥ ḫrp-mꞽtr.w ꜣb-nb(=ꞽ)
+𓊪,p,p(w),p,19,p:0.63 | p(w):0.21 | p(ꜣ):0.11 | pw:0.05,ṯzi̯ ṯw n(ꞽ).t p dndn =k ꞽꜣ.t.PL =k rs(.ꞽ).t dndn =k ꞽꜣ.t.PL =k mḥ.t.t
+𓅓𓆱𓏏,(ꞽ)m(.ꞽ.w)-ḫt,(ꞽ)m(.ꞽ).w-ḫt,m-ḫt,17,m-ḫt:0.76 | (ꞽ)m(.ꞽ).w-ḫt:0.12 | (ꞽ)m(.ꞽ.w)-ḫt:0.06 | (ꞽ)m(.ꞽ)-ḫt:0.06,rḏi̯.n =f sḫti̯ n =k ḏḥw.tꞽ (ꞽ)m(.ꞽ.w)-ḫt stš
+𓃿,ꞽḥ.PL,kꜣ.PL,kꜣ.PL,7,kꜣ.PL:0.43 | kꜣ(.PL):0.29 | ḥr.ꞽ-ḏbꜥ:0.29,n kꜣ n(.ꞽ) ꞽr.ꞽ-ꜥ.t wdp.w ḫw.y ḏi̯ =f pr.t-ḫrw tʾ ḥ(n)q.t ꞽḥ.PL ꜣpd.PL mnḫ.t šs (ꞽ)ḫ.t nb.
+𓎛𓃀𓌨,ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),9,ẖr.ꞽ-ḥ(ꜣ)b(.t):0.56 | ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.22 | ẖr(.ꞽ-)ḥ(ꜣ)b(.t):0.11 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.11,ḫnt(.ꞽ)-pr-nzw ẖr(.ꞽ)-ḥ(ꜣ)b(.t)
+𓐍𓊪𓊪𓏏𓂻,ḫpp!.(w)t,ḫpp.(w)t,ḫpp!.(w)t,4,ḫpp!.(w)t:0.75 | ḫpp.(w)t:0.25,sšmi̯.t(ꞽ) =f ḥr wꜣ.t.PL ḏsr.(w)t ḫpp!.(w)t ꞽmꜣḫ.w.(w) ḥr =sn
+𓏏𓍯𓄿𓏏,twꜣ.t,twꜣ(w).t,twꜣ(w).t,3,twꜣ(w).t:0.67 | twꜣw.t:0.33,ḥkn.wtt tp ḏꜥ(m) =s tfn.t wnꞽs twꜣ.t šw
+𓈖,=n,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,mꜣ =n mꜣ(w).t ꞽ.n =sn nṯr.PL pꜣw.t(ꞽ).w
+𓏏𓅨𓂋,twri̯,twr,twr,5,twr:0.60 | twri̯:0.20 | twr(.w):0.20,bw.t ttꞽ pw ḥs twri̯ ttꞽ wzš.t
+𓂝,ꜥ(.wꞽ),ꜥ,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,sbḫ n =k ꜥ(.wꞽ) =k ḥꜣ =f ḥꜣ =f nwꜣwꜣ qs.PL =f ꜥꜣi̯ ꞽb =f
+𓅓𓂞,ꞽmi̯,m,m,3,m:0.33 | m-dꞽ:0.33 | m-ꜥ:0.33,ꞽmi̯ wn nn n =k
+𓊃𓏏,st,z.t,z.t,8,z.t:0.62 | z(my).t:0.25 | st:0.12,šꜣ.t.n nṯr.PL ḏr-bꜣḥ ḥḏi̯.n st nbd.PL-qd
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt pr(.ꞽ)-ꜥꜣ wꜥb-nswt rʾrʾmw
+𓉐𓉻,pr(.ꞽ)-ꜥꜣ,pr.ꞽ-ꜥꜣ,pr.ꞽ-ꜥꜣ,6,pr.ꞽ-ꜥꜣ:0.67 | pr-ꜥꜣ:0.17 | pr(.ꞽ)-ꜥꜣ:0.17,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt pr(.ꞽ)-ꜥꜣ wꜥb-nswt rʾrʾmw
+𓁹𓁹,ꞽr(.t).DU,ꞽr.t.DU,ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,ḏi̯ =s šꜥ.t =k n(ꞽ).t pn m ꞽr(.t).DU nṯr.PL nb m ꞽr(.t).DU ꜣḫ.PL ꞽ:ḫm.w-sk štꜣ.w-s.t.PL m 
+𓁹𓁹,ꞽr(.t).DU,ꞽr.t.DU,ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,ḏi̯ =s šꜥ.t =k n(ꞽ).t pn m ꞽr(.t).DU nṯr.PL nb m ꞽr(.t).DU ꜣḫ.PL ꞽ:ḫm.w-sk štꜣ.w-s.t.PL m 
+𓁹𓁹,ꞽr(.t).DU,ꞽr.t.DU,ꞽr.t.DU,26,ꞽr.t.DU:0.65 | ꞽr(.t).DU:0.23 | ꞽr(.t.ꞽ):0.12,ḏi̯ =s šꜥ.t =k n(ꞽ).t pn m ꞽr(.t).DU nṯr.PL nb m ꞽr(.t).DU ꜣḫ.PL ꞽ:ḫm.w-sk štꜣ.w-s.t.PL m 
+𓋴𓈖,=sn,=sn(ꞽ),=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ḏi̯ =s šꜥ.t =k n(ꞽ).t pn m ꞽr(.t).DU nṯr.PL nb m ꞽr(.t).DU ꜣḫ.PL ꞽ:ḫm.w-sk štꜣ.w-s.t.PL m 
+𓎗𓏲𓏛,wḏ.w,wḏ,wḏ,6,wḏ:0.83 | wḏ.w:0.17,mk ꞽni̯ =t(w) n =k wḏ.w pn n n(ꞽ)swt r rdi̯.t rḫ =k n.tt
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,mk ꞽni̯ =t(w) n =k wḏ.w pn n n(ꞽ)swt r rdi̯.t rḫ =k n.tt
+𓂋𓂝𓏏,rdi̯.t,rḏi̯.t,rḏi̯.t,23,rḏi̯.t:0.65 | rdi̯.t:0.17 | rḏi̯.t(w):0.13 | rdi̯.t(ꞽ):0.04,mk ꞽni̯ =t(w) n =k wḏ.w pn n n(ꞽ)swt r rdi̯.t rḫ =k n.tt
+𓏤,qs,=ꞽ,=ꞽ,15,=ꞽ:0.47 | bꜣ:0.20 | stp-zꜣ:0.07 | ḥḏ:0.07 | wꜥ:0.07,ꞽnk ḥmt sd qs
+𓎛𓂋𓏏,ḥri̯.t(ꞽ),ḥr.t,ḥr.t,6,ḥr.t:0.67 | ḥḏr.t:0.17 | ḥri̯.t(ꞽ):0.17,ṯwt ꜥḥꜥ.tꞽ ḥri̯.t(ꞽ) ꞽr =f
+𓈝𓅓,šm,šmi̯,šmi̯,9,šmi̯:0.89 | šm:0.11,šm =k pw šm.t.PL =k ꞽptw šm pw pw n(.ꞽ) ḥr.w m šm =f pw m šm.t.PL =f ꞽptw
+𓈝𓅓,šm,šmi̯,šmi̯,9,šmi̯:0.89 | šm:0.11,šm =k pw šm.t.PL =k ꞽptw šm pw pw n(.ꞽ) ḥr.w m šm =f pw m šm.t.PL =f ꞽptw
+𓈝𓅓,šm,šmi̯,šmi̯,9,šmi̯:0.89 | šm:0.11,šm =k pw šm.t.PL =k ꞽptw šm pw pw n(.ꞽ) ḥr.w m šm =f pw m šm.t.PL =f ꞽptw
+𓁷𓂋,ḥr(.ꞽ),ḥr,ḥr,137,ḥr:0.96 | ḥr(.ꞽ):0.04,mꜥḥꜣ ḥr.w ḥr(.ꞽ) sḥd.w p.t sꜥnḫ rꜥw rꜥw-nb ꞽ:qd =f wnꞽs sꜥnḫ =f wnꞽs rꜥw-nb
+𓆓𓏏𓏤,ḏ.t,ḏ(wi̯).t,ḏ.t,4,ḏ.t:0.50 | ḏ(wi̯.w)t:0.25 | ḏ(wi̯).t:0.25,ꞽnq n =k wrr.wPL ꞽꜥb n =k mr.wPL n ḥr.w nḏ.n =f ꞽt(ꞽ) =f n ꞽt(ꞽ) nmt.ꞽ-m-zꜣ=f mr.n-rꜥw pn 
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w ḫnt(.ꞽ-)tꜣ-ḏsr
+𓊵,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp,26,ḥtp:0.54 | ḥtp-ḏi̯:0.27 | ḥtp-ḏꞽ:0.15 | ḥtp-(ḏi̯):0.04,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w ḫnt(.ꞽ-)tꜣ-ḏsr
+𓂝,šzp,ꜥ,ꜥ,73,ꜥ:0.64 | ḏi̯:0.23 | ꜥ(.wꞽ):0.03 | ꜥ-stẖ:0.03 | ꜥ.DU:0.01,šzp wnꞽs ꞽn ꞽri̯ s.t =f
+𓉠,nb.t-ḥw.t,nb.t-ḥw(.t),nb.t-ḥw(.t),15,nb.t-ḥw(.t):0.60 | nb.t-ḥw.t:0.40,ppy nfr-kꜣ-rꜥw pw nb.t-ḥw.t
+𓍹𓐍𓅱𓆑𓅱𓍺𓊹𓍛,ḥm-nṯr-ḫwi̯=f-wꞽ,ḥm-nṯr-ḥwi̯=f-wꞽ,ḥm-nṯr-ḫwi̯=f-wꞽ,14,ḥm-nṯr-ḫwi̯=f-wꞽ:0.71 | ḥm-nṯr-ḫwi̯=f-w(ꞽ):0.14 | ḥm-nṯr-ḥwi̯=f-wꞽ:0.07 | ḥm(.t)-nṯr-ḫwi̯=f-w(ꞽ):0.07,sḥḏ-wꜥb(.w) ḫnt(.ꞽ)-š ḥr(.ꞽ)-sštꜣ ḥm-nṯr-ḫwi̯=f-wꞽ (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt ꞽꜣzn
+𓂖,ḥm(.t)-kꜣ,ḥm-kꜣ,ḥm-kꜣ,87,ḥm-kꜣ:0.94 | ḥm(.t)-kꜣ:0.05 | ḥm.t-kꜣ:0.01,ḥm(.t)-kꜣ ꜥnḫ-m-ꜥ-nb=s
+𓆓𓏏𓏤,ḏ.t,ḏ(wi̯).t,ḏ.t,4,ḏ.t:0.50 | ḏ(wi̯.w)t:0.25 | ḏ(wi̯).t:0.25,pꜣw.tꞽ ḏ.t =f ḏ.t
+𓄂𓂝,ḥꜣ.t-ꜥ,ḥꜣ.tꞽ-ꜥ,ḥꜣ.tꞽ-ꜥ,38,ḥꜣ.tꞽ-ꜥ:0.74 | ḥꜣ.t(ꞽ)-ꜥ:0.11 | ḥꜣ(.t)-ꜥ:0.03 | ḥꜣ(.tꞽ)-ꜥ:0.03 | ḥꜣ.t-ꜥ:0.03,ḥꜣ.t-ꜥ m mḏꜣ.t n.t ꞽri̯.t ꞽꜣw m rnp
+𓉲𓎱,ḥ(ꜣ)b,ḥꜣb,ḥꜣb,12,ḥꜣb:0.83 | ḥ(ꜣ)b:0.17,ḏi̯ =k ḥ(ꜣ)bi̯.y ppy nfr-kꜣ-rꜥw m ḥ(ꜣ)b =k n(.ꞽ) ḥr.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏi̯ =k ḥ(ꜣ)bi̯.y ppy nfr-kꜣ-rꜥw m ḥ(ꜣ)b =k n(.ꞽ) ḥr.w
+𓋴𓏭,sꞽ,=sꞽ,sꞽ,27,sꞽ:0.59 | =sꞽ:0.41,ꜥḥꜥ.n ꞽṯi̯.n sꞽ msḥ
+𓌸𓂋,mr.y,mri̯,mri̯,13,mri̯:0.62 | mr:0.23 | mr.t:0.08 | mr(.y):0.08,zꜣ =f mr.y =f ḫnt.ꞽ-š-pr-ꜥꜣ ḥm-ꜣḫ.t
+𓈏𓈏𓈏,ꞽꜣ.t.PL,ꞽꜣ(.t).PL,ꞽꜣ(.t).PL,13,ꞽꜣ(.t).PL:0.77 | ꞽꜣ.t.PL:0.23,šmi̯.n =k wḏ =k mdw n ꞽꜣ.t.PL ḥr.w wḏ =k mdw n ꞽꜣ.t.PL stš ꞽ:ḏd =k mdw n ꞽꜣ.t.PL (w)sr(.w)
+𓈏𓈏𓈏,ꞽꜣ.t.PL,ꞽꜣ(.t).PL,ꞽꜣ(.t).PL,13,ꞽꜣ(.t).PL:0.77 | ꞽꜣ.t.PL:0.23,šmi̯.n =k wḏ =k mdw n ꞽꜣ.t.PL ḥr.w wḏ =k mdw n ꞽꜣ.t.PL stš ꞽ:ḏd =k mdw n ꞽꜣ.t.PL (w)sr(.w)
+𓈏𓈏𓈏,ꞽꜣ.t.PL,ꞽꜣ(.t).PL,ꞽꜣ(.t).PL,13,ꞽꜣ(.t).PL:0.77 | ꞽꜣ.t.PL:0.23,šmi̯.n =k wḏ =k mdw n ꞽꜣ.t.PL ḥr.w wḏ =k mdw n ꞽꜣ.t.PL stš ꞽ:ḏd =k mdw n ꞽꜣ.t.PL (w)sr(.w)
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k sn.t.DU =k (ꜣ)s.t nb.t-ḥw.t ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓉠,nb.t-ḥw.t,nb.t-ḥw(.t),nb.t-ḥw(.t),15,nb.t-ḥw(.t):0.60 | nb.t-ḥw.t:0.40,ꞽy n =k sn.t.DU =k (ꜣ)s.t nb.t-ḥw.t ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽy n =k sn.t.DU =k (ꜣ)s.t nb.t-ḥw.t ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓌨𓂋,ẖr(.ꞽ),ẖr,ẖr,100,ẖr:0.92 | ẖr(.ꞽ):0.06 | ẖr.DU:0.01 | ẖr.ꞽ:0.01,ꞽy n =k sn.t.DU =k (ꜣ)s.t nb.t-ḥw.t ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓏏𓇓𓅭,zꜣ.t-nzw,zꜣ.t-nswt,zꜣ.t-nswt,10,zꜣ.t-nswt:0.50 | zꜣ.t-nzw:0.40 | zꜣ-nswt:0.10,zꜣ.t-nzw ꞽn.t-kꜣ=s
+𓈖𓅓𓂝,nm,(ꞽ)n-m,(ꞽ)n-m,4,(ꞽ)n-m:0.75 | n-m:0.25,nm ꞽr =f ḫsf =f bw-ḥwr.w
+𓇍𓇋𓏏𓂻,ꞽy.t(ꞽ),ꞽyi̯.t,ꞽy.t,9,ꞽy.t:0.44 | ꞽyi̯.t:0.44 | ꞽꞽ.t:0.11,ꜥḥꜥ.n dp.t tf ꞽy.t(ꞽ) mꞽ sr.t.n =f ḫnt(.w)
+𓏃𓈖𓏏,ḫnt(.w),ḫnt,ḫnt(.ꞽ)-ꞽmn.tꞽw,6,ḫnt(.ꞽ)-ꞽmn.tꞽw:0.33 | ḫnt:0.33 | ḫnt(ꞽ):0.17 | ḫnti̯:0.17,ꜥḥꜥ.n dp.t tf ꞽy.t(ꞽ) mꞽ sr.t.n =f ḫnt(.w)
+𓏞,zẖꜣ,zẖꜣ.w,zẖꜣ.w,34,zẖꜣ.w:0.82 | zẖꜣ:0.09 | zẖꜣ(.w):0.06 | sẖꜣ.w:0.03,zẖꜣ m ḫt-ꜥꜣ ntꞽ m ḥr.t-mw
+𓈖𓏏,ntꞽ,n.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,zẖꜣ m ḫt-ꜥꜣ ntꞽ m ḥr.t-mw
+𓋴,s(ꞽ),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,m ꞽṯi̯ md.t m ꞽni̯ s(ꞽ)
+𓍹𓐍𓅱𓆑𓅱𓍺𓊹𓍛,ḥm-nṯr-ḫwi̯=f-w(ꞽ),ḥm-nṯr-ḫwi̯=f-wꞽ,ḥm-nṯr-ḫwi̯=f-wꞽ,14,ḥm-nṯr-ḫwi̯=f-wꞽ:0.71 | ḥm-nṯr-ḫwi̯=f-w(ꞽ):0.14 | ḥm-nṯr-ḥwi̯=f-wꞽ:0.07 | ḥm(.t)-nṯr-ḫwi̯=f-w(ꞽ):0.07,ḥm-nṯr-ḫwi̯=f-w(ꞽ) (ꞽ)m(.ꞽ)-rʾ-pr-ḥw.t-ꜥꜣ(.t) ḥm-nṯr-sꜣḥ.w-rꜥw ꞽmꜣḫ.w-ḫr-nb=f ḥm-nṯr-nfr-ꞽ
+𓅓𓏏𓏱,mt,m(w)t(.tꞽ),m(w)t,12,m(w)t:0.75 | m(w)t(.tꞽ):0.17 | mwt:0.08,bꞽ(ꜣ).t =f ꞽm m-rḫ n sr.w.PL ḥr mt ꜥnḫ rꜥ-nb
+𓈖,ẖni̯,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ẖni̯ s(ꞽ) ꞽm(.ꞽ).w ꜣḫ.t
+𓋴,s(ꞽ),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,ẖni̯ s(ꞽ) ꞽm(.ꞽ).w ꜣḫ.t
+𓅓𓏇,mꞽ,mꞽ(.ꞽ),mꞽ(.ꞽ),11,mꞽ(.ꞽ):0.36 | mꞽ(.y):0.27 | mꞽ:0.27 | mr(.y):0.09,ꞽri̯.w n =f ꞽn (ꞽ)tm(.w) mꞽ ꞽri̯.t n =f
+𓁹𓂋,ꞽri̯.t,ꞽrr,ꞽrr,28,ꞽrr:0.75 | ꞽri̯:0.14 | ꞽr:0.04 | ḥzz.t:0.04 | ꞽri̯.t(ꞽ):0.04,ꞽri̯.w n =f ꞽn (ꞽ)tm(.w) mꞽ ꞽri̯.t n =f
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ ẖr.t(ꞽ) n(.ꞽ) nzꜣ.t mẖn.tꞽ n.ꞽ ꞽqh.t ꞽri̯.t ẖnm.w
+𓉼,ꜥꜣ,ꜥꜣ(.t),ꜥꜣ,7,ꜥꜣ:0.86 | ꜥꜣ(.t):0.14,šms.w ddꞽ ꜥꜣ mꜣꜥ-ḫrw
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w tp.ꞽ-ḏw=f ꞽm.ꞽ-wt ḫnt.ꞽ-zḥ-nṯr
+𓊵𓏏𓊪𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏꞽ,43,ḥtp-ḏꞽ:0.51 | ḥtp-ḏi̯:0.49,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w tp.ꞽ-ḏw=f ꞽm.ꞽ-wt ḫnt.ꞽ-zḥ-nṯr
+𓈖𓂝𓅱𓆙,nꜥw,nꜥ.w,nꜥ.w,5,nꜥ.w:0.80 | nꜥw:0.20,sḏ =k m kꜣ nꜥw
+𓊵𓏏𓊪,ḥtp(.w),ḥtp,ḥtp,68,ḥtp:0.72 | ḥtp(.w):0.22 | ḥtp(-wꜣḏ.t):0.03 | ḥtp.w:0.01 | ḥtp.t:0.01,nḏ =ꞽ ḥr =k ppy nfr-kꜣ-rꜥw ꞽy.t m ḥtp(.w)
+𓆓𓂧,ḏ(d)-mdw,ḏd,ḏd,141,ḏd:0.97 | ḏd(.t):0.01 | ḏd(.w):0.01 | ḏdꜣ:0.01 | ꞽ:ḏd:0.01,ḏ(d)-mdw
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḥr.ꞽ-tp n s.t-wr.t ḫtm ẖ.t =f ḥr mꜣ.t.PL =f wꜥb ꜥ.wꞽ ḥr ꞽri̯.t ḫ.t
+𓃂𓈗,wꜥb,wꜥb(.w),wꜥb,6,wꜥb:0.83 | wꜥb(.w):0.17,ḥr.ꞽ-tp n s.t-wr.t ḫtm ẖ.t =f ḥr mꜣ.t.PL =f wꜥb ꜥ.wꞽ ḥr ꞽri̯.t ḫ.t
+𓂝𓏤𓅱𓏭,ꜥ.wꞽ,ꜥ.wꞽ.DU,ꜥ.wꞽ,7,ꜥ.wꞽ:0.86 | ꜥ.wꞽ.DU:0.14,ḥr.ꞽ-tp n s.t-wr.t ḫtm ẖ.t =f ḥr mꜣ.t.PL =f wꜥb ꜥ.wꞽ ḥr ꞽri̯.t ḫ.t
+𓐍𓏏,ḫ.t,(ꞽ)ḫ.t,(ꞽ)ḫ.t,58,(ꞽ)ḫ.t:0.79 | ḫ.t:0.12 | (ꞽ)ḫ(.t):0.05 | ꞽḫ.t:0.03,ḥr.ꞽ-tp n s.t-wr.t ḫtm ẖ.t =f ḥr mꜣ.t.PL =f wꜥb ꜥ.wꞽ ḥr ꞽri̯.t ḫ.t
+𓍿𓈖,ṯn,=ṯn,=ṯn,119,=ṯn:0.60 | =ṯn(ꞽ):0.23 | ṯn:0.09 | ṯn(ꞽ):0.05 | =tn:0.03,ḏwi̯ =f ṯn ꞽwt =ṯn ꞽri̯ =ṯn (ꞽ)ḫ.t nb(.t) nfr.t ꞽm n ppy nfr-kꜣ-rꜥw n ḏ.t ḏ.t
+𓇋𓂻𓅱𓏏,ꞽwt,ꞽwi̯.t(ꞽ),ꞽwi̯.t(ꞽ),4,ꞽwi̯.t(ꞽ):0.50 | ꞽw.t:0.25 | ꞽwt:0.25,ḏwi̯ =f ṯn ꞽwt =ṯn ꞽri̯ =ṯn (ꞽ)ḫ.t nb(.t) nfr.t ꞽm n ppy nfr-kꜣ-rꜥw n ḏ.t ḏ.t
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,nw.t ꞽ:ḫr.t ḥr zꜣ =s ꞽm(.ꞽ) =k ḫwi̯ =s ṯw ẖnm =s ṯw ꞽnq =s ṯw ṯzi̯ =s ṯw
+𓊃,z(b),=s,=s,19,=s:0.95 | s(ꞽ):0.05,z(b) ꞽm(ꞽ) =k ꞽm(.w) ꞽrꞽ r nn
+𓁹,ꞽrꞽ,ꞽri̯,ꞽri̯,112,ꞽri̯:0.94 | ꞽr(.t):0.04 | ꞽri̯(.t):0.01 | ꞽri̯(.w):0.01 | ꞽr.(t):0.01,z(b) ꞽm(ꞽ) =k ꞽm(.w) ꞽrꞽ r nn
+𓁷𓄣,ḥr.ꞽ-ꞽb,ḥr(.ꞽ)-ꞽb,ḥr(.ꞽ)-ꞽb,7,ḥr(.ꞽ)-ꞽb:0.57 | ḥr-ꞽb:0.29 | ḥr.ꞽ-ꞽb:0.14,n-n.tt ꞽnk ꞽs wbd.w ḥr.ꞽ-ꞽb nr.w.PL
+𓁹𓂋,ꞽrr!,ꞽrr,ꞽrr,28,ꞽrr:0.75 | ꞽri̯:0.14 | ꞽr:0.04 | ḥzz.t:0.04 | ꞽri̯.t(ꞽ):0.04,ḫrp-zḥ ꞽrr! ḥzz!.t
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt sn.t-ꞽt=s
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ:sk =f ꞽ(w)f n(.ꞽ) kꜣ n(.ꞽ) n(ꞽ).t n(.ꞽ) ḏ.t =s m nw ḥr(.ꞽ) rmn.DU rꜥw m ꜣḫ.t šzp.w =f ps
+𓇍𓌸𓇋𓇋,ꞽy-mr.y,ꞽꞽ-mry,ꞽꞽ-mry,13,ꞽꞽ-mry:0.69 | ꞽy-mr.y:0.31,n sḥḏ-zẖꜣ.ww-pr-ḥḏ ꞽy-mr.y
+𓏎𓈖𓏏,ꞽnt,ꞽni̯.t,ꞽni̯.t,35,ꞽni̯.t:0.77 | ꞽnt:0.11 | ꞽni̯(.t).t(w):0.06 | ꞽni̯t.(tw):0.03 | ꞽnn.t:0.03,s(w)ꜣḏ wnꞽs sm(.w) ḥr ꞽdb.DU ꜣḫ.t ꞽnt wnꞽs ṯḥn.t n ꞽr.t wr.t ḥr.t-ꞽb sḫ.t
+𓋴𓈖,sn(ꞽ),sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯.n gbb ḏi̯ n =k sn(ꞽ) ḥr.w ḥtp =k ḥr =sn(ꞽ)
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,rḏi̯.n gbb ḏi̯ n =k sn(ꞽ) ḥr.w ḥtp =k ḥr =sn(ꞽ)
+𓇓𓏏𓂋𓐍,(ꞽ)r.(ꞽ-ꞽ)ḫ(.t-n)swt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r.(ꞽ-ꞽ)ḫ(.t-n)swt sḥḏ-(ꞽ)r(.w-ꞽ)ḫ.t-pr-ḥḏ kꜣ(.ꞽ)-m-ꜥnḫ
+𓊪,(ꞽ)p(.t),p,p,19,p:0.63 | p(w):0.21 | p(ꜣ):0.11 | pw:0.05,(ꞽ)p(.t) šmꜥ.w
+𓊿𓏏𓏏,ꞽmn.t.t,ꞽmn.t(ꞽ).t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,qrs(.w) m z(my.)t ꞽmn.t.t m nb-ꞽmꜣḫ smr ḥts-ꞽnp.w zꜣ-nswt-n-ẖ.t=f ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ 
+𓊹𓋨𓇼𓇿𓇿,ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ,ḫtm.w-nṯr-wꞽꜣ,ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ,8,ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ:0.88 | ḫtm.w-nṯr-wꞽꜣ:0.12,qrs(.w) m z(my.)t ꞽmn.t.t m nb-ꞽmꜣḫ smr ḥts-ꞽnp.w zꜣ-nswt-n-ẖ.t=f ḫtm.w-nṯr-wꞽꜣ-dwꜣ-tꜣ.wꞽ 
+𓏊,ḥ(n)q.t.PL,ḥnq.t,ḥnq.t,61,ḥnq.t:0.77 | wdp.w:0.11 | ḥ(n)q.t:0.08 | wdp(.w):0.02 | ḥ(n)qt:0.02,ḏi̯ =f pr.t-ḫrw tʾ.PL ḥ(n)q.t.PL ꞽḥ.PL ꜣpd.PL šs dꜣꞽ.w mnḫ.t n kꜣ n(.ꞽ) ꞽm.ꞽ-rʾ-pr-ḥsb-ꞽt 
+𓇋𓅓,ꞽmi̯,ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,zꜣu̯ ꞽmi̯ =k sfḫḫ.w ꞽm =f
+𓎆,10,mḏ(.t),mḏ(.t),3,mḏ(.t):0.33 | mḏ:0.33 | 10:0.33,wꜥ.t ḥḏi̯.t 10
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt ꞽr.ty
+𓇓𓏏𓈖𓀆,wꜥb-nsw.t,wꜥb-nswt,wꜥb-nswt,30,wꜥb-nswt:0.90 | wꜥb-nsw.t:0.10,sḥḏ-(ꞽ)r(.w-ꞽ)ḫ(.t)-n-pr-ḥḏ sḥḏ-ḥm(.w)-nṯr wꜥb-nsw.t mrr! nb =f (ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt kꜣ(.ꞽ
+𓊿𓏏𓏏,ꞽmn.tt,ꞽmn.t(ꞽ).t,ꞽmn.t(ꞽ).t,31,ꞽmn.t(ꞽ).t:0.55 | ꞽmn.tꞽ.t:0.19 | ꞽmn.tt:0.13 | ꞽmn.t.t:0.10 | ꞽm.t(ꞽ).t:0.03,ḫpi̯ =f m ḥtp m ḥtp r ꞽmn.tt
+𓈖𓅱,n(.ꞽ).w,n.ꞽ.wꞽ,n(.ꞽ).w,5,n(.ꞽ).w:0.60 | n:0.20 | n.ꞽ.wꞽ:0.20,ṯꜣz.DU nw n(.ꞽ).w ꜣb.w ꞽm(.ꞽ).w rʾ n(.ꞽ) (w)sꞽr ṯ(ꜣ)z.w.n ḥr.w ḥr bqs.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ṯꜣz.DU nw n(.ꞽ).w ꜣb.w ꞽm(.ꞽ).w rʾ n(.ꞽ) (w)sꞽr ṯ(ꜣ)z.w.n ḥr.w ḥr bqs.w
+𓊨𓁹,(w)sꞽr,(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,ṯꜣz.DU nw n(.ꞽ).w ꜣb.w ꞽm(.ꞽ).w rʾ n(.ꞽ) (w)sꞽr ṯ(ꜣ)z.w.n ḥr.w ḥr bqs.w
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,twt zꜣ nḏ.tꞽ-ꞽt=f srwd tꜣš n(.ꞽ) wtt sw
+𓍿𓈖,ṯni̯,=ṯn,=ṯn,119,=ṯn:0.60 | =ṯn(ꞽ):0.23 | ṯn:0.09 | ṯn(ꞽ):0.05 | =tn:0.03,n(.ꞽ) kw mn nṯr pw ḏd.n zꜣ.t.DU (ꞽ)tm(.w) ṯni̯ kw ꞽ.n =sn m rn =k n nṯr
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,n(.ꞽ) kw mn nṯr pw ḏd.n zꜣ.t.DU (ꞽ)tm(.w) ṯni̯ kw ꞽ.n =sn m rn =k n nṯr
+𓊃,=z,=s,=s,19,=s:0.95 | s(ꞽ):0.05,zꜣ =z nb-sw-mnw mꜣꜥ-ḫrw
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,qrs(.w) m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.w) nfr wr.t
+𓌃𓂧𓏏𓀁,mdw.t,md.t,md.t,27,md.t:0.67 | mdw.t:0.19 | md(w).t:0.07 | md(w)i̯.t:0.07,wn.ꞽn r(w)d-ḏd.t ḥr wḥm n =f mdw.t tn
+𓈎𓂋𓌠𓋴𓊭𓏏,qrs.t(ꞽ),qrs.t,qrs.t,8,qrs.t:0.75 | qrs.t(ꞽ):0.25,qrs.t(ꞽ) =f m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.w) nfr wr.t ꞽmꜣḫ
+𓊃𓏏𓈉,z(my).t,z(my.)t,z(my.)t,27,z(my.)t:0.59 | z(my).t:0.33 | zmy.t:0.04 | z(mꞽ).t:0.04,qrs.t(ꞽ) =f m z(my).t ꞽmn.t(ꞽ).t ꞽꜣwi̯(.w) nfr wr.t ꞽmꜣḫ
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,n(ꞽ).t šzp n =k tʾ =k pn ꞽm(.ꞽ) ꞽr(.t)-ḥr.w
+𓐍𓏏,(ꞽ)ḫ(.t),(ꞽ)ḫ.t,(ꞽ)ḫ.t,58,(ꞽ)ḫ.t:0.79 | ḫ.t:0.12 | (ꞽ)ḫ(.t):0.05 | ꞽḫ.t:0.03,ḫꜣ (ꞽ)ḫ(.t) nb(.t) nfr.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,mn tp.PL =sn m qs ḥr.ꞽ n(.ꞽ) qꜣb.t =f (ꞽ)ꜥr n ḥt(y).t =f
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt
+𓏎𓈖𓈖,ꞽnn,ꞽni̯.n,ꞽni̯.n,21,ꞽni̯.n:0.86 | ꞽnn:0.14,ꞽnn =tw m ḏrḏr.w.PL r mt(ꞽ).t-n.t-ꞽb
+𓏏𓏲,=tw,tw,=tw,61,=tw:0.61 | tw:0.39,ꞽnn =tw m ḏrḏr.w.PL r mt(ꞽ).t-n.t-ꞽb
+𓇋𓏏,ꞽt,ꞽt(ꞽ),ꞽt(ꞽ),58,ꞽt(ꞽ):0.93 | ꞽt:0.05 | ḥw.t-ꞽt(ꞽ):0.02,ꞽt =f ꞽm.ꞽ-rʾ-ḥw.t-nṯr ḥnw mꜣꜥ-ḫrw
+𓆣𓂋,ḫpr,ḫpr(.w),ḫpr,47,ḫpr:0.94 | ḫpr(.w):0.06,ḫsf ꜥwꜣi̯ nḏ ḥr mꜣꞽr m ḫpr m wḏn.w r spr.w
+𓇍𓇋𓇋𓂻,ꞽyi̯.y,ꞽy.y,ꞽy,7,ꞽy:0.43 | ꞽyi̯.y:0.29 | ꞽꞽi̯.y:0.14 | ꞽy.y:0.14,sn =f pw ꞽyi̯.y ꞽni̯ n =f
+𓈖,=f,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓆑,n,=f,=f,3156,=f:0.99 | =f(ꞽ):0.01 | =(f):0.00 | n:0.00 | ḫtꞽw:0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓈖,=k,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓎡,sn,=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓋴𓈖,m,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓅓,ꜥr.w,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓋴𓈖,ḥr,=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓁷,=k,ḥr,ḥr,186,ḥr:0.98 | ḥr(.ꞽ):0.01 | ꞽꜣ.t:0.01,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓎡,m,=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓅓,ḥḏ.PL,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,ḏi̯.n n =k ḥr.w nṯr.PL sꞽꜥ.n =f n =k sn m ꜥr.w sḥḏ =sn ḥr =k m ḥḏ.PL
+𓇋,ꞽꜥi̯,ꞽ(w),=ꞽ,78,=ꞽ:0.46 | ꞽ(w):0.19 | ꞽ:0.18 | ꞽꜥi̯:0.05 | ꞽ:bꜣ:0.03,ꞽꜥi̯ kw n(ꞽ).t wpi̯ rʾ =k m ꞽr(.t)-ḥr.w
+𓎡,kw,=k,=k,1968,=k:0.99 | ꞽr.t:0.00 | k(w):0.00 | bꜣk:0.00 | kꜣ:0.00,ꞽꜥi̯ kw n(ꞽ).t wpi̯ rʾ =k m ꞽr(.t)-ḥr.w
+𓇗,šmꜥ(.w),šmꜥ.w,šmꜥ.w,70,šmꜥ.w:0.89 | šmꜥ(.w):0.06 | šmꜥ(.wꞽ):0.04 | šmꜥ:0.01,rḏi̯.n n =k gbb nṯr.PL nb šmꜥ(.w) mḥ(.w) wṯz =sn kw sḫm =k ꞽm =sn
+𓇉,mḥ(.w),mḥ.w,mḥ.w,83,mḥ.w:0.69 | ḥꜣ:0.27 | mḥ(.wꞽ):0.02 | mḥ(.w):0.01 | ḥꜣ(.w):0.01,rḏi̯.n n =k gbb nṯr.PL nb šmꜥ(.w) mḥ(.w) wṯz =sn kw sḫm =k ꞽm =sn
+𓂋𓊪𓂝𓊹𓊹𓊹,(ꞽ)r(.ꞽ)-pꜥ(.t)-nṯr.PL,(ꞽ)r(.ꞽ)-pꜥ.t-nṯr.PL,(ꞽ)r(.ꞽ)-pꜥ(.t)-nṯr.PL,3,(ꞽ)r(.ꞽ)-pꜥ(.t)-nṯr.PL:0.67 | (ꞽ)r(.ꞽ)-pꜥ.t-nṯr.PL:0.33,ḥtp-di̯-nswt gb (ꞽ)r(.ꞽ)-pꜥ(.t)-nṯr.PL
+𓈖𓏏𓏏,n.t.t,n.tt,n.tt,22,n.tt:0.64 | n.t.t:0.32 | n.tꞽt:0.05,wn.ꞽn =sn ḥr šdi̯.t st mꞽ n.t.t m zẖꜣw
+𓏏𓅱,wt.ꞽ-ꞽnp.w,tw,tw,40,tw:0.60 | =tw:0.15 | wt.ꞽ:0.12 | wt.ꞽ-ꞽnp.w:0.10 | wt(.ꞽ):0.03,wr-mḏ-šmꜥ.w (ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt ẖr(.ꞽ)-ḥ(ꜣ)b(.t) wt.ꞽ-ꞽnp.w mr.y-nb=f mrr.w-nb=f mr-ꞽb
+𓅓,mnw,m,m,1751,m:0.99 | m(ꞽ):0.00 | (ꞽ)m:0.00 | (ꞽ)mi̯:0.00 | m(ꜣ.t):0.00,ḥtp-di̯-nswt wsꞽr n kꜣ n ẖr(.ꞽ)-ḥ(ꜣ)b n mnw m ꞽp.w mn.w-nḫt mꜣꜥ-ḫrw
+𓈖,ꞽp.w,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḥtp-di̯-nswt wsꞽr n kꜣ n ẖr(.ꞽ)-ḥ(ꜣ)b n mnw m ꞽp.w mn.w-nḫt mꜣꜥ-ḫrw
+𓂋𓂝,rḏi̯(.w),rḏi̯,rḏi̯,27,rḏi̯:0.85 | rdi̯:0.15,rḏi̯(.w) m ḥꜣ.t dp.t tn
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt nb(.t)-ꞽmꜣḫ ḫnt(.ꞽt)-kꜣ.w=s
+𓏃𓏏𓂓𓂓𓂓𓋴,ḫnt(.ꞽt)-kꜣ.w=s,ḫnt.ꞽt-kꜣ.w=s,ḫnt.ꞽt-kꜣ.w=s,2,ḫnt.ꞽt-kꜣ.w=s:0.50 | ḫntꞽ.t-kꜣ.w=s:0.50,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt nb(.t)-ꞽmꜣḫ ḫnt(.ꞽt)-kꜣ.w=s
+𓉐𓂋𓏏,pr.t,pri̯.t,pri̯.t,15,pri̯.t:0.60 | pr.t:0.27 | prꞽ.t:0.07 | pri̯.t(ꞽ)+:0.07,mw =k n =k bꜥḥ =k n =k rḏw pri̯ m nṯr ḥwꜣꜣ.t pr.t m (w)sr(.w)
+𓅓𓂋𓂓𓏏𓀋𓎟𓈖𓏏𓇓𓏏𓈖,ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t-n.t)-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,10,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.70 | (ꞽ)m(.ꞽ)-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽmꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.10,ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t-n.t)-nswt ẖr.ꞽ-tp-nswt ššꞽ
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥnw.t=sn (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt mr.t-ꞽtꞽ=s (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt bw-nfr (ꞽ)
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥnw.t=sn (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt mr.t-ꞽtꞽ=s (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt bw-nfr (ꞽ)
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥnw.t=sn (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt mr.t-ꞽtꞽ=s (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt bw-nfr (ꞽ)
+𓃀𓄤𓆑𓂋,bw-nfr,b(w)-nfr,b(w)-nfr,8,b(w)-nfr:0.88 | bw-nfr:0.12,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥnw.t=sn (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt mr.t-ꞽtꞽ=s (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt bw-nfr (ꞽ)
+𓇓𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,rḫ.t-nzw,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,9,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.44 | rḫ.t-nzw:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.22 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.11,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt ḥnw.t=sn (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt mr.t-ꞽtꞽ=s (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt bw-nfr (ꞽ)
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,sm.PL =f r rd sḫ.yt.PL swꜣḏ n ḫt =f tḫ.PL
+𓅓𓂋𓂓𓏏𓀋𓎟𓈖𓏏𓇓𓏏𓈖,ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t)-n.t-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt,10,ꞽm.ꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.70 | (ꞽ)m(.ꞽ)-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t)-n.t-nswt:0.10 | ꞽmꞽ-rʾ-kꜣ.t-nb.t-n.t-nswt:0.10,sḥḏ-ḥm(.w)-nṯr-ḏd-s.tPL-ttꞽ ḫnt.ꞽ-š ꞽm.ꞽ-rʾ-kꜣ.t-nb(.t)-n.t-nswt ẖr.ꞽ-tp-nswt nfr-sšm-rꜥw
+𓁷𓂋,ḥr(.w),ḥr,ḥr,137,ḥr:0.96 | ḥr(.ꞽ):0.04,ꞽw pꜣḏ =f ꞽr ḥr(.w) ḥnꜥ rꜥw
+𓈞𓅓,ḥm,ḥmi̯,ḥmi̯,9,ḥmi̯:0.56 | ḥm:0.44,n šwi̯ p.t m nmt.ꞽ-m-zꜣ=f mr.n-rꜥw n ḥm šwi̯ tꜣ pn ꞽm =f ḏ.t
+𓈙𓆄𓅱,šwi̯,šw,šw,15,šw:0.87 | šwi̯:0.13,n šwi̯ p.t m nmt.ꞽ-m-zꜣ=f mr.n-rꜥw n ḥm šwi̯ tꜣ pn ꞽm =f ḏ.t
+𓌃𓂧𓅱,mdwi̯,mdw,mdw,3,mdw:0.67 | mdwi̯:0.33,ꞽn gbb mdwi̯ ḥr =s ḥnꜥ (ꞽ)tm(.w)
+𓂋,ꞽr,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,ṯ(ꜣ)z n =k tp =k ꞽr qs.PL =k ṯ(ꜣ)z n =k qs.PL =k ꞽr tp =k
+𓂋,ꞽr,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,ṯ(ꜣ)z n =k tp =k ꞽr qs.PL =k ṯ(ꜣ)z n =k qs.PL =k ꞽr tp =k
+𓄂𓂝,ḥꜣ(.tꞽ)-ꜥ,ḥꜣ.tꞽ-ꜥ,ḥꜣ.tꞽ-ꜥ,38,ḥꜣ.tꞽ-ꜥ:0.74 | ḥꜣ.t(ꞽ)-ꜥ:0.11 | ḥꜣ(.t)-ꜥ:0.03 | ḥꜣ(.tꞽ)-ꜥ:0.03 | ḥꜣ.t-ꜥ:0.03,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥꜣ(.tꞽ)-ꜥ ẖr(.ꞽ)-ḥ(ꜣ)b(.t) ḥr(.ꞽ)-tp hnqw
+𓎛𓃀𓌨,ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),9,ẖr.ꞽ-ḥ(ꜣ)b(.t):0.56 | ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.22 | ẖr(.ꞽ-)ḥ(ꜣ)b(.t):0.11 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.11,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥꜣ(.tꞽ)-ꜥ ẖr(.ꞽ)-ḥ(ꜣ)b(.t) ḥr(.ꞽ)-tp hnqw
+𓁷𓁶,ḥr(.ꞽ)-tp,ḥr.ꞽ-tp,ḥr-tp,7,ḥr-tp:0.57 | ḥr(.ꞽ)-tp:0.29 | ḥr.ꞽ-tp:0.14,(ꞽ)r(.ꞽ)-pꜥ(.t) ḥꜣ(.tꞽ)-ꜥ ẖr(.ꞽ)-ḥ(ꜣ)b(.t) ḥr(.ꞽ)-tp hnqw
+𓇓𓏏𓂋𓐍,(ꞽ)r(ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,ḥm-nṯr-ḫwi̯=f-wꞽ (ꞽ)r(ꞽ-ꞽ)ḫ(.t)-nswt ḥm-nṯr-nfr-ꞽr-kꜣ-rꜥw ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ wꜥb-nswt (ꞽ)m(.
+𓇋𓌳𓐍𓄪𓐍𓂋𓊹𓉻,ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ,ꞽmꜣḫ(.t)-ḫr-nṯr-ꜥꜣ,ꞽmꜣḫ(.t)-ḫr-nṯr-ꜥꜣ,2,ꞽmꜣḫ(.t)-ḫr-nṯr-ꜥꜣ:0.50 | ꞽmꜣḫ(.w)-ḫr-nṯr-ꜥꜣ:0.50,ḥm-nṯr-ḫwi̯=f-wꞽ (ꞽ)r(ꞽ-ꞽ)ḫ(.t)-nswt ḥm-nṯr-nfr-ꞽr-kꜣ-rꜥw ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ wꜥb-nswt (ꞽ)m(.
+𓎟,nb(.t),nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,ḥtp-ḏi̯-nzw ḥbs =k bꜣ ḥbs =k ḫsdḏ šmi̯ =k m wḫꜣ.t.DU =k rḫs =k ꞽḥ šmi̯ =k m wꜣḏ-ꜥn m s.t.P
+𓇓𓏏𓈖,nzw,nsw,nswt,17,nswt:0.53 | nzw:0.18 | nsw.t:0.12 | nsw:0.12 | pr-nsw:0.06,ḫsf w rmṯ.PL ꞽr nzw zꜣ nṯr ḫsf =k ꜣ ꞽwi̯ nmt.ꞽ-m-zꜣ=f mr.n-rꜥw ꞽr bw n.tꞽ =k ꞽm
+𓋳,ḥbs,mnḫ.t,ḥbs,7,ḥbs:0.57 | mnḫ.t:0.43,smꜥ(r) ḥbs n pꜣq.t nfr.t
+𓃹𓈖,wn,wni̯,wn,32,wn:0.84 | wni̯:0.16,ꞽr nn tms ḥr =s tm wn (ꞽ)ḫ.t.PL pw ḥr =s dšr
+𓐍𓏏𓏛𓏥,(ꞽ)ḫ.t.PL,ḫ.t,ḫ.t,49,ḫ.t:0.43 | (ꞽ)ḫ.t:0.41 | (ꞽ)ḫ.t.PL:0.10 | ḫ.t.PL:0.06,ꞽr nn tms ḥr =s tm wn (ꞽ)ḫ.t.PL pw ḥr =s dšr
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽ kꜣ n(.ꞽ) ttꞽ ꞽni̯ wnm ttꞽ ḥnꜥ =k
+𓇋𓏎𓈖,ꞽni̯,ꞽni̯.n,ꞽn,19,ꞽn:0.32 | ꞽni̯:0.26 | ꞽni̯.(n):0.21 | ꞽni̯.n:0.11 | ꞽ.n:0.11,ꞽ kꜣ n(.ꞽ) ttꞽ ꞽni̯ wnm ttꞽ ḥnꜥ =k
+𓋁,ꞽꜣb.tꞽ,ꞽꜣb(.t),ꞽꜣb(.ꞽ),7,ꞽꜣb(.ꞽ):0.43 | ꞽꜣb(.t):0.14 | ꞽꜣb.tꞽ:0.14 | ꞽꜣb.(t):0.14 | ꞽꜣb(.w):0.14,ꞽꜣb.tꞽ mr.t-wsr-kꜣ=f
+𓈖𓏏,n.ꞽ.t,n(.ꞽ).t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽp nḏ.t-ḥr n.ꞽ.t nʾ.t.PL =f pr-ḏ.t
+𓇋𓁹𓅱,ꞽri̯.w,ꞽr.w,ꞽr.w,6,ꞽr.w:0.50 | ꞽri̯.w:0.50,pꜣ.t =k n =k (ꞽ)tm(.w) ḥnꜥ rw.tꞽ ꞽri̯.w nṯr.DU =sn ḏ.t =sn ḏs =sn šw p(w) ḥnꜥ tfn.wt ꞽri̯.
+𓊪,p(w),p,p,19,p:0.63 | p(w):0.21 | p(ꜣ):0.11 | pw:0.05,pꜣ.t =k n =k (ꞽ)tm(.w) ḥnꜥ rw.tꞽ ꞽri̯.w nṯr.DU =sn ḏ.t =sn ḏs =sn šw p(w) ḥnꜥ tfn.wt ꞽri̯.
+𓌸𓇋𓇋,mr.y(.t),mr.y,mr.y,26,mr.y:0.77 | mri̯.y:0.23,zꜣ.t =f mr.y(.t) ḫnt.t-š ṯꜣz.t
+𓎆,10,mḏ(.t),mḏ(.t),3,mḏ(.t):0.33 | mḏ:0.33 | 10:0.33,wꜥ.t ḥḏi̯.t 10
+𓎛𓃀𓌨,ẖr.ꞽ-ḥ(ꜣ)b.t,ẖr.ꞽ-ḥ(ꜣ)b(.t),ẖr.ꞽ-ḥ(ꜣ)b(.t),9,ẖr.ꞽ-ḥ(ꜣ)b(.t):0.56 | ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.22 | ẖr(.ꞽ-)ḥ(ꜣ)b(.t):0.11 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.11,ẖr.ꞽ-ḥ(ꜣ)b.t ꞽbꞽ
+𓊿,ꞽmn(.t),wnm(.ꞽ),wnm(.ꞽ),5,wnm(.ꞽ):0.40 | ꞽmn.tt:0.20 | ꞽmn.t:0.20 | ꞽmn.tꞽ(.t):0.20,ꞽri̯ n =k s.t =k m-ḫnt ꞽmn(.t) ꞽri̯ n =k sḫm =k m-ḫnt nṯr.PL
+𓋴𓍌𓌡𓏏𓏤,smr-wꜥ.t(ꞽ),smr-wꜥ.tꞽ,smr-wꜥ.tꞽ,19,smr-wꜥ.tꞽ:0.84 | smr-wꜥ.t(ꞽ):0.11 | smr-wꜥw.tꞽ:0.05,smr-wꜥ.t(ꞽ) ḥr(.ꞽ)-tp-ꜥꜣ(-n)-ꜣtf.t hnqw
+𓇋𓅓,ꞽm(.ꞽ),ꞽm,ꞽm,335,ꞽm:0.88 | ꞽm(.ꞽ):0.09 | ꞽmi̯:0.01 | ꞽm(.y):0.00 | ꞽm.(ꞽ):0.00,ꞽm(.ꞽ) ꞽb.w zkr ꞽr pr n(.ꞽ) mʾw.t =f
+𓍿𓈖,ṯn,=ṯn,=ṯn,119,=ṯn:0.60 | =ṯn(ꞽ):0.23 | ṯn:0.09 | ṯn(ꞽ):0.05 | =tn:0.03,ꞽri̯.n =ꞽ gr.t mꜥḥꜥ.t ṯn sꜣḫ.tꞽ smnḫ s.t =s rḏi̯.n =ꞽ ḫtm.t ḏbꜣ.w n ḥm.PL-nṯr n.w ꜣbḏw
+𓇋,ꞽdi̯.y,ꞽ(w),=ꞽ,78,=ꞽ:0.46 | ꞽ(w):0.19 | ꞽ:0.18 | ꞽꜥi̯:0.05 | ꞽ:bꜣ:0.03,ꞽdi̯.y wr.t n kꜣ nḫn
+𓇋𓇋,wr.t,=y,ꞽꞽ,4,ꞽꞽ:0.50 | =y:0.25 | ꞽꜥi̯.y:0.25,ꞽdi̯.y wr.t n kꜣ nḫn
+𓅨𓂋𓏏,n,wr.t,wr.t,68,wr.t:0.97 | wr.t(ꞽ):0.01 | rwꞽ:0.01,ꞽdi̯.y wr.t n kꜣ nḫn
+𓈖,kꜣ,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ꞽdi̯.y wr.t n kꜣ nḫn
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt ṯnt.tꞽ
+𓋴,s(ꞽ),=s,=s,559,=s:0.83 | s(ꞽ):0.15 | =s(n):0.01 | s:0.00 | swꜣḏ:0.00,nn s(ꞽ) m ꞽb =ꞽ
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḥm-kꜣ n(.ꞽ) nb =f ꞽrr ḥzz.t nb =f ꞽpy
+𓁶𓏤,dp,tp,tp,38,tp:0.95 | tp(.ꞽ):0.03 | dp:0.03,ḏd.tw rʾ pn ḥr ꞽšd.t pšn.tꞽ ḥr dp n(.ꞽ) z ḫft ḏd rʾ pn
+𓎛𓌨𓃀,ẖr(.ꞽ)-ḥ(ꜣ)b.t,ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),15,ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.67 | ẖr(.ꞽ)-ḥ(ꜣ)b.t:0.13 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.07 | ẖr.ꞽ-ḥꜣb.t:0.07 | ẖr.(ꞽ)-ḥ(ꜣ)b.t:0.07,ẖr(.ꞽ)-ḥ(ꜣ)b.t zꜣ-mzḥ
+𓊨𓁹,(w)sꞽr,(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,(w)sꞽr (ꜣ)s.t ꞽ:zy ḥw.w n nṯr.PL mḥ(.w) ꜣḫ.PL =sn ꞽsṯ
+𓇉,mḥ(.w),mḥ.w,mḥ.w,83,mḥ.w:0.69 | ḥꜣ:0.27 | mḥ(.wꞽ):0.02 | mḥ(.w):0.01 | ḥꜣ(.w):0.01,(w)sꞽr (ꜣ)s.t ꞽ:zy ḥw.w n nṯr.PL mḥ(.w) ꜣḫ.PL =sn ꞽsṯ
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k sn.t =k (ꜣ)s.t ḥꜥꜥ.t n mrw.t =k
+𓂋,rʾ,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,ꞽṯi̯ r rʾ =f
+𓄿,wꜣḏ,ꜣ,ꜣ,24,ꜣ:0.92 | wꜣḏ:0.04 | (ꞽ)ꜣ:0.04,ḥꜣ =k šꜣšꜣ wꜣḏ bꜣ.t
+𓈖𓂜𓋴𓇦𓂋𓂓,nn-sḏr-kꜣ=ꞽ,nn-sḏr-kꜣ(=ꞽ),nn-sḏr-kꜣ(=ꞽ),14,nn-sḏr-kꜣ(=ꞽ):0.79 | nn-sḏr-kꜣ=ꞽ:0.14 | nn-sḏr-kꜣ:0.07,zꜣ.t-nswt ẖkr.t-nswt nn-sḏr-kꜣ=ꞽ
+𓈖𓏏,n.ꞽ.t,n.t,n.t,135,n.t:0.69 | n(.ꞽ).t:0.09 | n.ꞽ.t:0.09 | n.ꞽ.(w)t:0.03 | n.t(ꞽ):0.02,ꞽṯn.t n.ꞽ.t wꜥb.t
+𓂋𓊪𓂝,ꞽr.ꞽ-pꜥ.t,(ꞽ)r(.ꞽ)-pꜥ(.t),(ꞽ)r(.ꞽ)-pꜥ(.t),22,(ꞽ)r(.ꞽ)-pꜥ(.t):0.59 | ꞽr.ꞽ-pꜥ.t:0.36 | ḥꜣ.t(ꞽ)-ꜥ:0.05,ꞽr.ꞽ-pꜥ.t ḥꜣ.tꞽ-ꜥ smr-wꜥ.tꞽ nfr-sšm-rꜥw
+𓌃𓂧𓏏𓀁,md.t,mdw.t,md.t,27,md.t:0.67 | mdw.t:0.19 | md(w).t:0.07 | md(w)i̯.t:0.07,sr.w.PL rḏi̯ =f md.t ḥr gs ꞽr.ꞽ
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,zmꜣ.n n =f ḥr=f-ḥꜣ=f mẖn.tꞽ n(.ꞽ) mr-n(.ꞽ)-ḫꜣ
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt ḥm.t-rꜥw
+𓇍𓈖,ꞽy.n,ꞽyi̯.n,ꞽyi̯.n,28,ꞽyi̯.n:0.79 | ꞽy.n:0.14 | ꞽꞽ.n:0.04 | ꞽyi̯-n(=ꞽ):0.04,ꞽy.n =ꞽ mꜣꜥ-ḫr.w =ꞽ ꜥḥꜥ kꜣ =ꞽ n ḏ.t =ꞽ
+𓏏𓏲,tw,=tw,=tw,61,=tw:0.61 | tw:0.39,ꞽꜥi̯ tw
+𓎟,=k,nb,nb,272,nb:0.79 | nb(.t):0.17 | nb.t:0.01 | nb(.PL):0.01 | nb(.wt):0.01,wꜣgi̯ ṯw m tʾ =k pn mr wꜣgꞽ.t sw ḥr.w m ꞽr.t =f
+𓅓𓏇𓂋,mr,mr(.y),mr,2,mr:0.50 | mr(.y):0.50,wꜣgi̯ ṯw m tʾ =k pn mr wꜣgꞽ.t sw ḥr.w m ꞽr.t =f
+𓅒,nb.tDU,nb.tꞽ,nb.tꞽ,6,nb.tꞽ:0.67 | nb.t.DU:0.17 | nb.DU:0.17,ḥtp n =k nb.tDU
+𓈖,n,n(.ꞽ),n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ẖni̯ n-ḥr n kꜣ
+𓇓𓏏𓂋𓐍,(ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt,147,(ꞽ)r(.ꞽ-ꞽ)ḫ(.t)-nswt:0.63 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.21 | (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt:0.06 | (ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.03 | (ꞽ)r(.ꞽ-ꞽ)ḫ-nswt:0.01,ḥm.t =f (ꞽ)r(.ꞽ-ꞽ)ḫ.t-nswt ꞽmn-ḏf(ꜣ)=s
+𓅪,šrꞽ,nḏs,nḏs,7,nḏs:0.86 | nḏs(.t):0.14,zẖꜣ.w n.ꞽ-wꞽ-nṯr šrꞽ
+𓋁,ꞽꜣb(.t),ꞽꜣb.(t),ꞽꜣb(.ꞽ),7,ꞽꜣb(.ꞽ):0.43 | ꞽꜣb(.t):0.14 | ꞽꜣb.tꞽ:0.14 | ꞽꜣb.(t):0.14 | ꞽꜣb(.w):0.14,tp ꞽꜣb(.t)
+𓋞,nbw,nb,nbw,7,nbw:0.57 | nb:0.43,nbw ḥkn.w ḫꜥi̯-tꜣ.w ḥkn.w kꜣ =k nn wꜣš ꞽrr.w nn r =f
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w nb-qrs(-nfr)
+𓊵𓏙,ḥtp-ḏꞽ,ḥtp-ḏi̯,ḥtp-ḏi̯,156,ḥtp-ḏi̯:0.83 | ḥtp-ḏꞽ:0.17,ḥtp-ḏꞽ nswt ḥtp-ḏꞽ ꞽnp.w nb-qrs(-nfr)
+𓇋,ꞽwf,=ꞽ,=ꞽ,78,=ꞽ:0.46 | ꞽ(w):0.19 | ꞽ:0.18 | ꞽꜥi̯:0.05 | ꞽ:bꜣ:0.03,nnšm ḫpš ḥꜥ ꞽwf n ḥꜣ(.t)
+𓄂,ḥꜣ(.t),ḥꜣ.t,ḥꜣ.t,16,ḥꜣ.t:0.94 | ḥꜣ(.t):0.06,nnšm ḫpš ḥꜥ ꞽwf n ḥꜣ(.t)
+𓂘𓅜,zḫn.t-ꜣḫ,zḫn.w-ꜣḫ,zḫn.w-ꜣḫ,16,zḫn.w-ꜣḫ:0.75 | zḫn(.t)-ꜣḫ:0.19 | zḫn.t-ꜣḫ:0.06,zḫn.t-ꜣḫ n(.ꞽt)-nꞽ.t
+𓂋𓍿,r(m)ṯ,rmṯ,r(m)ṯ,3,r(m)ṯ:0.67 | rmṯ:0.33,ꞽmi̯ =k rḏi̯ n r(m)ṯ ꞽpw n.t(ꞽ).w ꞽr gs =k
+𓂞,rdi̯,ḏi̯,ḏi̯,34,ḏi̯:0.71 | di̯:0.29,rdi̯ r sꜣ n(.ꞽ) ꞽr.t.DU zp.PL ꜥšꜣ.w
+𓂖,ḥm(.t)-kꜣ,ḥm-kꜣ,ḥm-kꜣ,87,ḥm-kꜣ:0.94 | ḥm(.t)-kꜣ:0.05 | ḥm.t-kꜣ:0.01,ḥm(.t)-kꜣ ꞽn.t-k(ꜣ)=s
+𓊼,ẖr.t-nṯr,ẖr-nṯr,ẖr-nṯr,12,ẖr-nṯr:0.67 | ẖr.t-nṯr:0.33,tm wnm z ꞽn ḥfꜣ(.w) nb m ẖr.t-nṯr
+𓎛𓃀𓋴𓋳,ḥbs,ḥbs(.w),ḥbs,3,ḥbs:0.67 | ḥbs(.w):0.33,ꞽw sꜣ =k r ḥbs ẖr =s
+𓇓𓏏𓈖,nsw.t,nswt,nswt,17,nswt:0.53 | nzw:0.18 | nsw.t:0.12 | nsw:0.12 | pr-nsw:0.06,kꜣ pw nsw.t
+𓂋,(ꞽ)r,r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,sbꜣ.t(ꞽ)-mw mꜣꜥ (ꞽ)r =k
+𓏊,ḥ(n)q.t,ḥnq.t,ḥnq.t,61,ḥnq.t:0.77 | wdp.w:0.11 | ḥ(n)q.t:0.08 | wdp(.w):0.02 | ḥ(n)qt:0.02,tʾ ḥ(n)q.t pꜣw.t ꞽḥ ḫꜣ ḫꜣ tʾ-wr tʾ-rtḥ šs ḫꜣ mnḫ.t ḫꜣ
+𓏖,pꜣw.t,pzn,pzn,10,pzn:0.90 | pꜣ.t:0.10,tʾ ḥ(n)q.t pꜣw.t ꞽḥ ḫꜣ ḫꜣ tʾ-wr tʾ-rtḥ šs ḫꜣ mnḫ.t ḫꜣ
+𓈖,ꞽmn.t,n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,ḥmsi̯ =f ḥr ꞽmn.t n(.t) wsꞽr m-ḥꜣ.t sꜥḥ.PL
+𓊨𓁹,n(.t),(w)sr(.w),(w)sr(.w),301,(w)sr(.w):0.62 | (w)sꞽr:0.31 | wsꞽr:0.07,ḥmsi̯ =f ḥr ꞽmn.t n(.t) wsꞽr m-ḥꜣ.t sꜥḥ.PL
+𓇓𓏏,(n)swt,nswt,nswt,163,nswt:0.90 | nzw:0.06 | (n)swt:0.01 | šps.t-nswt:0.01 | nsw.tꞽ:0.01,ḥtp-ḏi̯ (n)swt ḥtp-ḏi̯ wsꞽr nb-ꜣbḏw
+𓏏𓏲,tw,=tw,=tw,61,=tw:0.61 | tw:0.39,nḥm-n tw ḥr tf.yt
+𓇓𓏏𓂋𓐍𓏏,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt,23,(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt:0.52 | (ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt:0.30 | (ꞽ)r(.ꞽt-ꞽ)ḫt-nswt:0.09 | rḫ.t-nzw:0.04 | (ꞽ)r(.ꞽ)t-(ꞽ)ḫ(.t)-nswt:0.04,(ꞽ)r(.ꞽt-ꞽ)ḫ(.t)-nswt ḫntꞽ
+𓐍𓆑𓏏,ḫft,ḫft(.ꞽ),ḫft(.ꞽ),19,ḫft(.ꞽ):0.63 | ḫft:0.37,ꞽri̯ n =f (ꞽ)ḫ.t ḫft zẖꜣ.w pf n ḥmw.t ẖr.(ꞽ)-ḥ(ꜣ)b.(t) ꞽmꜣḫ.(w)-ḫr-nswt ꞽmꜣḫ.(w)-ḫr-nṯr-ꜥꜣ
+𓌨𓎛𓃀,ẖr.(ꞽ)-ḥ(ꜣ)b.(t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),ẖr(.ꞽ)-ḥ(ꜣ)b(.t),25,ẖr(.ꞽ)-ḥ(ꜣ)b(.t):0.56 | ẖr.ꞽ-ḥ(ꜣ)b.t:0.12 | ẖr.ꞽ-ḥ(ꜣ)b(.t):0.12 | ẖr.(ꞽ)-ḥ(ꜣ)b.(t):0.08 | ẖr.ꞽ-ḥb:0.04,ꞽri̯ n =f (ꞽ)ḫ.t ḫft zẖꜣ.w pf n ḥmw.t ẖr.(ꞽ)-ḥ(ꜣ)b.(t) ꞽmꜣḫ.(w)-ḫr-nswt ꞽmꜣḫ.(w)-ḫr-nṯr-ꜥꜣ
+𓈝𓅓𓏏𓂻,šm.t,šmi̯.t,šmi̯.t,8,šmi̯.t:0.75 | šm.t:0.12 | šm.t(ꞽ):0.12,ꞽri̯ šm.t
+𓈖,n(.ꞽ),n,n,2214,n:0.77 | n(.ꞽ):0.21 | n.ꞽ:0.00 | nḥb.w:0.00 | =k:0.00,bꜣ r =f ḥr.w ꞽp =f ꞽt(ꞽ) =f ꞽm =k m rn =f n(.ꞽ) ḥr.w bꜣ-ꞽt(ꞽ)-rpw.t
+𓂋,r(n),r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ
+𓂋,r(n),r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ
+𓂋,r(n),r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ
+𓂋,r(n),r,r,739,r:0.93 | rʾ:0.03 | ꞽr:0.01 | (ꞽ)r:0.01 | (ꞽ)r(.ꞽ):0.01,r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ r(n) ꞽwꜣ
+𓇍,ꞽy,ꞽyi̯,ꞽyi̯,56,ꞽyi̯:0.54 | ꞽy:0.46,ꞽy n =k sn.t.DU =k (ꜣ)s.t tw ḥnꜥ nb.t-ḥw(.t) ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓅱,tw,ꜥ.w,ꜥ.w,25,ꜥ.w:0.28 | gꜣu̯.w:0.24 | w:0.12 | w(ꞽ):0.08 | ṯꜣw:0.08,ꞽy n =k sn.t.DU =k (ꜣ)s.t tw ḥnꜥ nb.t-ḥw(.t) ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓋴𓈖,=sn(ꞽ),=sn,=sn,220,=sn:0.79 | sn:0.11 | =sn(ꞽ):0.09 | sn(ꞽ):0.01,ꞽy n =k sn.t.DU =k (ꜣ)s.t tw ḥnꜥ nb.t-ḥw(.t) ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓌨𓂋,ẖr(.ꞽ),ẖr,ẖr,100,ẖr:0.92 | ẖr(.ꞽ):0.06 | ẖr.DU:0.01 | ẖr.ꞽ:0.01,ꞽy n =k sn.t.DU =k (ꜣ)s.t tw ḥnꜥ nb.t-ḥw(.t) ḥmi̯.n =sn(ꞽ) m bw ẖr(.ꞽ) =k ꞽm
+𓅜𓐍𓏏𓏛,ꜣḫ.t,ꜣḫ,ꜣḫ.t,3,ꜣḫ.t:0.67 | ꜣḫ:0.33,ꜣḥ.t pw ꜣḫ.t n nb =s
+𓏎𓈖,ꞽni̯.n,ꞽni̯,ꞽni̯,29,ꞽni̯:0.79 | ꞽni̯.n:0.14 | ꞽni̯(.n):0.03 | ꞽni̯(.w):0.03,ꞽni̯.n n =k gbb ḥr.w ꞽp =f n =k ꞽb.PL =sn
+𓏎𓈖𓈖,ꞽnn,ꞽni̯.n,ꞽni̯.n,21,ꞽni̯.n:0.86 | ꞽnn:0.14,ꞽnn ꞽn.w n ẖkr.t-nswt m ḫꜣs.t.PL nb(.t) ꞽmꜣḫ.w ḫr nṯr-ꜥꜣ
+𓎔𓏏,mḥ.(w)t,mḥ.t,sti̯.t,2,sti̯.t:0.50 | mḥ.t:0.50,ꞽwt =k m-ḫt ttꞽ mꞽ ꞽw.t mḥ.(w)t m-ḫt rs.w
