@@ -47,6 +47,17 @@ else:
         "pool_size": 5,
         "max_overflow": 2,
         "pool_recycle": 300,
+        "connect_args": {
+            # Works with a connection-pooler endpoint as well as a direct one.
+            # Neon's `-pooler` host runs PgBouncer in transaction mode, where a
+            # server connection is handed to a different client between statements.
+            # psycopg starts issuing named prepared statements after a few repeats
+            # of the same query, and those names then collide or vanish, producing
+            # intermittent "prepared statement already exists" errors that only
+            # show up under load. Disabling the automatic prepare removes the whole
+            # failure mode; the cost is negligible at this query volume.
+            "prepare_threshold": None,
+        },
     }
 
 engine = create_engine(DATABASE_URL, **_engine_kwargs)

@@ -28,8 +28,23 @@ The code is already Postgres-ready. It needs one thing: a database URL.
 1. Create a free Postgres database. [Neon](https://neon.tech) has a free tier that
    suits this (project → get the connection string). Supabase or Render work too.
    *You have to do this step — it needs an account, and account creation is yours.*
-2. Copy the connection string. It looks like:
-   `postgres://user:password@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`
+   When creating the Neon project: pick a **US East** region. The latency that matters
+   is app-to-database, and the app runs on Streamlit Cloud in the US — choosing an EU
+   region because you are in Europe adds a transatlantic hop to every query and helps
+   nobody. Leave Neon Auth off; this app does not use it.
+2. Copy the connection string. Prefer the **direct** endpoint over the pooled one —
+   the `-pooler` host runs PgBouncer in transaction mode, and the app keeps its own
+   small SQLAlchemy pool so it gains nothing from Neon's:
+
+   ```
+   ep-xxx-123456.us-east-2.aws.neon.tech          <- direct, prefer this
+   ep-xxx-123456-pooler.us-east-2.aws.neon.tech   <- pooled
+   ```
+
+   Either will work: `db.py` sets `prepare_threshold=None`, which disables psycopg's
+   automatic prepared statements. Under a transaction-mode pooler those statement
+   names collide or disappear between statements, causing intermittent "prepared
+   statement already exists" failures that only appear under load.
 3. In Streamlit Cloud: **Manage app → Settings → Secrets**, add the line below and
    save. Paste the string exactly as the provider gave it — `postgres://` is handled.
 
