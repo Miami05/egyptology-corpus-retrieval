@@ -47,7 +47,11 @@ st.set_page_config(
     page_title=f"{settings.app_name} · Scholarly Egyptology",
     page_icon="𓋹",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # "auto", not "expanded": "expanded" forces the sidebar open on every device,
+    # and a 16rem sidebar on a 390px phone left ~130px for the page — the hero text
+    # was clipped mid-sentence. "auto" keeps it open on desktop and collapsed on
+    # narrow screens, where the ☰ button opens it as an overlay.
+    initial_sidebar_state="auto",
 )
 
 

@@ -40,6 +40,28 @@
   font-display: swap;
 }
 
+/* Self-hosted Gentium Plus subset, built from SIL's full 6.200 release and served
+   from app/ui/static (SIL Open Font License — the full text ships alongside it).
+
+   Why self-hosting was unavoidable: NO Gentium subset Google serves contains the
+   combining marks at all, so U+032F (the inverted breve under ḏi̯) had no glyph
+   anywhere in the stack and left a stray box. This subset keeps the mark and mkmk
+   GPOS features, which are what actually position a mark under its base letter.
+
+   It is applied to transliteration ONLY, and deliberately has no unicode-range: the
+   base letter and its combining mark must come from the SAME font. A grapheme
+   cluster split across two fonts is exactly what produced the box in the first
+   place, so partial coverage here would reintroduce the bug. */
+@font-face {
+  font-family: 'EgyptologicalText';
+  src: url('/app/static/GentiumPlus-Regular.subset.woff2') format('woff2');
+  font-display: swap;
+}
+
+/* Applied on .suggestion-reading and .corpus-reading further down this file. Those
+   rules are the single source of truth — declaring it up here as well was silently
+   overridden by them, since they come later with equal specificity. */
+
 :root {
   --ink: #14231f;
   --ink-soft: #53605b;
@@ -690,7 +712,8 @@ button[data-testid="stExpandSidebarButton"]::before {
 .corpus-reading {
   margin-top: .8rem;
   color: #193a31;
-  font-family: "EgyptologicalLatin", Georgia, serif;
+  /* Full-coverage transliteration font — see the EgyptologicalText @font-face. */
+  font-family: "EgyptologicalText", Georgia, serif;
   font-size: 1rem;
 }
 
@@ -866,6 +889,13 @@ div[data-testid="stDataFrame"] {
 
 /* Tablet portrait and phones. */
 @media (max-width: 900px) {
+  /* A fixed 16rem sidebar leaves ~130px of page on a 390px phone. Cap it against
+     the viewport so the overlay never covers the whole screen. */
+  section[data-testid="stSidebar"] {
+    width: min(16rem, 82vw) !important;
+    min-width: 0 !important;
+  }
+
   .block-container {
     padding: 3.6rem 1rem 3rem;
   }
@@ -1069,7 +1099,8 @@ div[data-testid="stDataFrame"] {
 
 .suggestion-reading {
   color: #19332b;
-  font-family: "EgyptologicalLatin", Georgia, serif;
+  /* Full-coverage transliteration font — see the EgyptologicalText @font-face. */
+  font-family: "EgyptologicalText", Georgia, serif;
   font-size: 1.05rem;
   line-height: 1.4;
   word-break: break-word;

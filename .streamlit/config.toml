@@ -6,5 +6,9 @@
 # the container's memory.
 maxUploadSize = 20
 
+# Serves ./static at /app/static/. Required for the self-hosted Gentium Plus
+# subset that renders Egyptological transliteration — see whyptology_theme.css.
+enableStaticServing = true
+
 [browser]
 gatherUsageStats = false
