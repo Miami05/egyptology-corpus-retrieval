@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from html import escape
 from pathlib import Path
 import sys
@@ -41,6 +42,9 @@ from app.ui.review_common import (
 
 DATA_PATH = PROJECT_ROOT / "data/processed/examples.csv"
 THEME_PATH = Path(__file__).with_name("whyptology_theme.css")
+# Gentium Plus (SIL OFL), subset to the characters the corpus transliterations use.
+# Rebuild with pyftsubset if the corpus gains new characters — see DEPLOYMENT.md.
+FONT_PATH = Path(__file__).with_name("static") / "GentiumPlus-Translit.woff2"
 
 
 st.set_page_config(
@@ -55,8 +59,37 @@ st.set_page_config(
 )
 
 
+@st.cache_data(show_spinner=False)
+def translit_font_face() -> str:
+    """Embed the transliteration font as a base64 data URI.
+
+    Serving it from app/ui/static did not survive deployment: Streamlit Cloud gates
+    /app/static/ behind the app's auth redirect, so on the private deployment the
+    font request returned an HTML login page instead of a woff2 and the face failed
+    to load — the Egyptological yod reverted to a tofu box in production while
+    working perfectly on localhost. Embedding removes both the URL that could be
+    intercepted and the reliance on a server setting Cloud does not honour.
+
+    The subset is only ~8KB because it is cut to the 88 characters the corpus
+    actually uses, so inlining it costs little per rerun. Cached so the file is read
+    and encoded once per session rather than on every rerun.
+    """
+    encoded = base64.b64encode(FONT_PATH.read_bytes()).decode("ascii")
+    return (
+        "@font-face{font-family:'EgyptologicalText';"
+        f"src:url(data:font/woff2;base64,{encoded}) format('woff2');"
+        "font-display:swap;}"
+    )
+
+
 def inject_theme() -> None:
-    st.markdown(f"<style>{THEME_PATH.read_text()}</style>", unsafe_allow_html=True)
+    # The font face is appended AFTER the stylesheet, never before: the theme starts
+    # with an @import, and @import is only valid before any other rule. Prepending
+    # here would silently invalidate it. @font-face has no such ordering constraint.
+    st.markdown(
+        f"<style>{THEME_PATH.read_text()}\n{translit_font_face()}</style>",
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_resource(show_spinner=False)

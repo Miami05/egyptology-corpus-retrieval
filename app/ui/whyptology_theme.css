@@ -52,11 +52,14 @@
    base letter and its combining mark must come from the SAME font. A grapheme
    cluster split across two fonts is exactly what produced the box in the first
    place, so partial coverage here would reintroduce the bug. */
-@font-face {
-  font-family: 'EgyptologicalText';
-  src: url('/app/static/GentiumPlus-Regular.subset.woff2') format('woff2');
-  font-display: swap;
-}
+/* The EgyptologicalText @font-face is NOT declared here. It is appended by
+   inject_theme() in whyptology_app.py, which embeds the woff2 as a base64 data URI.
+
+   Serving it as a static file did not survive deployment: Streamlit Cloud gates
+   /app/static/ behind the app's auth redirect, so on the private deployment the font
+   request came back as an HTML login page (HTTP 200, 5.8KB) and the face failed to
+   load — the yod silently reverted to a tofu box in production while working locally.
+   An embedded font has no URL to be intercepted and no server config to honour. */
 
 /* Applied on .suggestion-reading and .corpus-reading further down this file. Those
    rules are the single source of truth — declaring it up here as well was silently
