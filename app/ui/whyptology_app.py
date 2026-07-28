@@ -66,7 +66,7 @@ def load_reading_model(corpus_signature: int):
     return train_reading_model(load_examples_csv(str(DATA_PATH)))
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner="Preparing the corpus…")
 def load_corpus() -> pd.DataFrame:
     # attach_db_ids adds the SQLite id per row; without it annotations cannot be
     # saved against a retrieved parallel. The database file is gitignored, so on a

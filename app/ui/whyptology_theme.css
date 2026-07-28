@@ -65,13 +65,24 @@ html, body, [data-testid="stAppViewContainer"] {
   background: transparent;
 }
 
-[data-testid="stToolbar"] {
+/* Hide the framework's toolbar CONTENTS, never the toolbar itself: Streamlit puts
+   the collapsed-sidebar expand button inside stToolbar, so display:none on that
+   container also hid the only way back to the navigation. The expand button is not
+   a child of stToolbarActions, so hiding the actions leaves it reachable. */
+[data-testid="stToolbarActions"],
+[data-testid="stHeaderActionElements"],
+[data-testid="stAppDeployButton"],
+[data-testid="stDecoration"] {
   display: none !important;
 }
 
-[data-testid="stDecoration"],
-[data-testid="stStatusWidget"] {
-  display: none !important;
+/* The toolbar strip itself must not swallow clicks aimed at the page beneath it. */
+[data-testid="stToolbar"] {
+  pointer-events: none;
+}
+
+[data-testid="stToolbar"] button {
+  pointer-events: auto;
 }
 
 .block-container {
@@ -99,10 +110,14 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
   padding-top: 0 !important;
 }
 
+/* The header only existed to reserve room for a fixed-position collapse button.
+   That button is now absolutely placed inside the sidebar, so the reserved strip
+   is pure dead space — it was pushing the brand down by 38px. */
 section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
-  height: 2.4rem !important;
-  min-height: 2.4rem !important;
-  margin-bottom: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
@@ -111,11 +126,19 @@ section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
   visibility: visible !important;
 }
 
+/* Collapse control: ABSOLUTE inside the sidebar, never fixed. Streamlit collapses
+   the sidebar with transform: translateX(-256px), and a transformed ancestor becomes
+   the containing block for position:fixed — which dragged this button to x=-42, off
+   screen and unclickable. Absolute positioning keeps it pinned to the sidebar's own
+   top-right corner, and it correctly travels off-canvas with it; getting back in is
+   the expand button's job. */
 section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button {
-  position: fixed !important;
-  z-index: 1002 !important;
-  top: .45rem !important;
-  left: 13.25rem !important;
+  position: absolute !important;
+  z-index: 3;
+  top: .5rem !important;
+  right: .55rem !important;
+  left: auto !important;
+  bottom: auto !important;
   display: grid !important;
   place-items: center;
   width: 2rem !important;
@@ -148,15 +171,23 @@ section[data-testid="stSidebar"] * {
   color: #f3eddf;
 }
 
+/* Streamlit's vertical block inserts a 16px gap between every child. On a nav list
+   that turned 46px rows into a 62px pitch, which read as loose, unrelated items.
+   Scoped to the sidebar so page layouts keep their normal breathing room. */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+  gap: .22rem !important;
+}
+
 section[data-testid="stSidebar"] .stButton > button {
   width: 100%;
   justify-content: flex-start;
   border: 0;
   border-radius: 9px;
-  padding: .64rem .8rem;
+  padding: .5rem .8rem;
   color: #ede6d7;
   background: transparent;
   font-weight: 520;
+  line-height: 1.3;
 }
 
 section[data-testid="stSidebar"] .stButton > button:hover {
@@ -165,7 +196,8 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 }
 
 .brand {
-  padding: .15rem .25rem .8rem;
+  /* Right padding reserves the corner the absolute collapse button occupies. */
+  padding: .3rem 2.5rem .8rem .25rem;
   border-bottom: 1px solid rgba(234,217,177,.15);
   margin-bottom: .55rem;
 }
@@ -203,7 +235,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   font-size: .68rem;
   letter-spacing: .13em;
   text-transform: uppercase;
-  margin: 1.15rem .5rem .35rem;
+  margin: 1rem .5rem .45rem;
 }
 
 .profile-card {
@@ -796,6 +828,43 @@ div[data-testid="stDataFrame"] {
   overflow: hidden;
 }
 
+/* ---- Tablet / small laptop (901–1200px) ------------------------------------
+   Between the desktop layout and the 900px phone tier the sidebar still takes a
+   fixed 16rem, so the hero and the wider card grids were the first things to get
+   squeezed. This tier shrinks the chrome instead of the content. */
+@media (min-width: 901px) and (max-width: 1200px) {
+  section[data-testid="stSidebar"] {
+    width: 14.5rem !important;
+  }
+
+  .block-container {
+    padding: 1.15rem 1.15rem 3.5rem;
+  }
+
+  .hero {
+    min-height: 0;
+    padding: 3.4rem 2.6rem 2.6rem;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.9rem, 6.4vw, 4.6rem);
+  }
+
+  .hero p {
+    font-size: .95rem;
+  }
+
+  /* Five metrics across a ~700px column gives unreadable 140px cards. */
+  .summary-grid-five {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Tablet portrait and phones. */
 @media (max-width: 900px) {
   .block-container {
     padding: 3.6rem 1rem 3rem;
