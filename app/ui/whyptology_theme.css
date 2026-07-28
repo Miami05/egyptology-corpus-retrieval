@@ -1,3 +1,45 @@
+/* Egyptological character coverage. Must stay first — @import is only valid at
+   the top of a stylesheet.
+
+   Georgia and Streamlit's "Source Sans" do not render the Egyptological yod
+   ꞽ (U+A7BD) — it came out as an empty box, measurably a full em square (16px at
+   16px type, against 4.7px for a normal letter). Gentium Plus is SIL's scholarly
+   font and does cover the Egyptological Latin ranges. See the @font-face below for
+   why it has to be first in the stack rather than a fallback.
+
+   The hieroglyph webfont is insurance for viewers whose OS lacks Egyptian
+   Hieroglyphs coverage (macOS has it, many Windows installs do not). */
+@import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap');
+
+/* Why this alias has to come FIRST in every stack rather than act as a fallback:
+   Georgia maps U+A7BD to a blank glyph. A blank glyph still counts as "present",
+   so the browser never falls through to the next family — it just draws an empty
+   em square. Listing Gentium Plus after Georgia therefore fixes nothing (measured:
+   still exactly 16px at 16px type). Restricting this face by unicode-range means it
+   claims ONLY the Egyptological characters, so Georgia keeps every ordinary letter
+   and the design is untouched.
+
+   The URL is version-pinned (…/gentiumplus/v2/…) and was verified to contain a real
+   ꞽ glyph, not a .notdef, by loading it and pixel-comparing against an unassigned
+   codepoint. If Google bumps the version and the URL 404s, only these characters
+   regress to boxes — re-extract it from the css2 endpoint above. local() is tried
+   first so anyone with Gentium Plus installed never fetches it. */
+@font-face {
+  font-family: 'EgyptologicalLatin';
+  src: local('Gentium Plus'),
+       url('https://fonts.gstatic.com/s/gentiumplus/v2/Iurd6Ytw-oSPaZ00r2bNe8VZhZFNym499r7e.woff2') format('woff2');
+  /* Latin Extended-D (ꜣ ꞽ and friends) plus the Egyptological aleph/ayin
+     modifiers. Every codepoint here was pixel-tested against .notdef in this exact
+     subset file and has a real glyph.
+
+     Combining marks are deliberately EXCLUDED. Claiming a range is a promise the
+     font can draw it, and Gentium's subset has no U+0323/U+032F — claiming them
+     pushed ḏi̯ from 13.9px to 31.1px, i.e. two boxes where Georgia had composed the
+     mark correctly. Leave combining marks to Georgia; it handles them properly. */
+  unicode-range: U+A720-A7FF, U+02BE-02BF;
+  font-display: swap;
+}
+
 :root {
   --ink: #14231f;
   --ink-soft: #53605b;
@@ -13,6 +55,10 @@
 html, body, [data-testid="stAppViewContainer"] {
   background: var(--paper);
   color: var(--ink);
+  /* "Source Sans" is Streamlit's own default and stays first; the two additions
+     are only ever reached for characters it lacks. */
+  font-family: "EgyptologicalLatin", "Source Sans", "Noto Sans Egyptian Hieroglyphs",
+               sans-serif;
 }
 
 [data-testid="stHeader"] {
@@ -20,12 +66,17 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 
 [data-testid="stToolbar"] {
-  right: 1rem;
+  display: none !important;
+}
+
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
+  display: none !important;
 }
 
 .block-container {
   max-width: 1500px;
-  padding: 1.5rem 2.2rem 4rem;
+  padding: 1.15rem 1.35rem 4rem;
 }
 
 section[data-testid="stSidebar"] {
@@ -33,11 +84,64 @@ section[data-testid="stSidebar"] {
     radial-gradient(circle at 10% 0%, rgba(201,154,61,.12), transparent 24rem),
     linear-gradient(180deg, #041c19 0%, #031512 100%);
   border-right: 1px solid rgba(201,154,61,.22);
-  width: 17rem !important;
+  width: 16rem !important;
 }
 
 section[data-testid="stSidebar"] > div {
-  padding-top: 1.4rem;
+  padding-top: 0 !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+  padding-top: .65rem !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+  padding-top: 0 !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
+  height: 2.4rem !important;
+  min-height: 2.4rem !important;
+  margin-bottom: 0 !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+  width: 2rem !important;
+  height: 2rem !important;
+  visibility: visible !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button {
+  position: fixed !important;
+  z-index: 1002 !important;
+  top: .45rem !important;
+  left: 13.25rem !important;
+  display: grid !important;
+  place-items: center;
+  width: 2rem !important;
+  min-width: 2rem !important;
+  height: 2rem !important;
+  padding: 0 !important;
+  border: 1px solid rgba(201,154,61,.28) !important;
+  border-radius: 50% !important;
+  color: #fff7e5 !important;
+  background: rgba(255,255,255,.04) !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button:hover {
+  border-color: #d9b568 !important;
+  background: rgba(201,154,61,.14) !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button span {
+  display: none !important;
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] button::before {
+  content: "‹";
+  color: #fff7e5;
+  font-size: 1.25rem;
+  line-height: 1;
 }
 
 section[data-testid="stSidebar"] * {
@@ -61,9 +165,9 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 }
 
 .brand {
-  padding: 0 .4rem 1.2rem;
+  padding: .15rem .25rem .8rem;
   border-bottom: 1px solid rgba(234,217,177,.15);
-  margin-bottom: .9rem;
+  margin-bottom: .55rem;
 }
 
 .brand-row {
@@ -74,22 +178,24 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .brand-mark {
   color: var(--gold);
-  font-family: Georgia, serif;
-  font-size: 2.15rem;
+  font-family: "EgyptologicalLatin", Georgia, serif;
+  font-size: 1.8rem;
   line-height: 1;
 }
 
 .brand-name {
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   letter-spacing: .08em;
-  font-size: 1.12rem;
+  font-size: 1rem;
   color: #fff8ea;
 }
 
 .brand-tag {
   color: #a9b5af !important;
-  font-size: .72rem;
-  margin: .2rem 0 0 2.85rem;
+  max-width: 11.5rem;
+  font-size: .67rem;
+  line-height: 1.4;
+  margin: .18rem 0 0 2.5rem;
 }
 
 .side-label {
@@ -133,6 +239,47 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   color: #d8dfdc !important;
   font-size: .76rem;
   line-height: 1.45;
+}
+
+/* Keep navigation discoverable whenever Streamlit collapses the sidebar.
+   The framework's default pale double-chevron disappears on the paper canvas. */
+button[data-testid="stExpandSidebarButton"] {
+  position: fixed;
+  z-index: 1000;
+  top: .7rem;
+  left: .65rem;
+  display: grid !important;
+  place-items: center;
+  width: 2.6rem !important;
+  min-width: 2.6rem !important;
+  height: 2.6rem !important;
+  padding: 0 !important;
+  border: 1px solid rgba(201,154,61,.5) !important;
+  border-radius: 50% !important;
+  color: #fff7e5 !important;
+  background: #06382e !important;
+  box-shadow: 0 7px 20px rgba(4,29,25,.24) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  animation: none !important;
+  isolation: isolate;
+}
+
+button[data-testid="stExpandSidebarButton"]:hover {
+  border-color: #d9b568 !important;
+  background: #0a4b3d !important;
+  transform: translateY(-1px);
+}
+
+button[data-testid="stExpandSidebarButton"] span {
+  display: none !important;
+}
+
+button[data-testid="stExpandSidebarButton"]::before {
+  content: "☰";
+  color: #fff7e5;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .open-access-note small {
@@ -204,7 +351,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   max-width: 620px;
   margin: 1rem 0 1.15rem;
   color: #fffaf1;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "EgyptologicalLatin", Georgia, "Times New Roman", serif;
   font-size: clamp(3.2rem, 5.8vw, 6.4rem);
   line-height: .97;
   letter-spacing: -.045em;
@@ -248,7 +395,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   display: flex;
   gap: 1.8rem;
   color: #9eaaa5;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: .78rem;
 }
 
@@ -262,7 +409,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .section-heading h2 {
   margin: .3rem 0 0;
   color: #102b24;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 2rem;
   letter-spacing: -.025em;
 }
@@ -281,7 +428,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .feature-number {
   color: #b88831;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: .78rem;
 }
 
@@ -294,7 +441,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .feature-card h3 {
   margin: 0 0 .5rem;
   color: #142c25;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1.15rem;
 }
 
@@ -321,7 +468,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .workspace-title {
   margin: 0;
   color: #112922;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 2rem;
   letter-spacing: -.025em;
 }
@@ -374,12 +521,12 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .line-no {
   min-width: 1.2rem;
   color: #9b8b6a;
-  font-family: ui-monospace, monospace;
+  font-family: "EgyptologicalLatin", ui-monospace, monospace;
   font-size: .74rem;
 }
 
 .glyphs {
-  font-family: "Noto Sans Egyptian Hieroglyphs", "Segoe UI Historic", serif;
+  font-family: "EgyptologicalLatin", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Historic", serif;
   font-size: 1.75rem;
   letter-spacing: .1em;
 }
@@ -391,7 +538,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   padding: .65rem 0;
   border-bottom: 1px solid #ebe6dd;
   color: #33423d;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: .92rem;
 }
 
@@ -429,7 +576,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
   border: 1px solid #83af99;
   border-radius: 50%;
   color: #226448;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: .82rem;
 }
 
@@ -442,7 +589,25 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .stat-card { padding: 1rem 1.1rem; }
 .stat-label { color: #77827d; font-size: .7rem; }
-.stat-value { margin-top: .2rem; color: #18342b; font-family: Georgia, serif; font-size: 1.55rem; }
+.stat-value { margin-top: .2rem; color: #18342b; font-family: "EgyptologicalLatin", Georgia, serif; font-size: 1.55rem; }
+
+.summary-grid {
+  display: grid;
+  gap: .75rem;
+  margin: .85rem 0 1rem;
+}
+
+.summary-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-grid-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.summary-grid .stat-card {
+  min-width: 0;
+}
 
 .review-card {
   padding: 1rem 1.1rem;
@@ -481,7 +646,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .corpus-card h3 {
   margin: .42rem 0 .12rem;
   color: #19332b;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1rem;
 }
 
@@ -493,7 +658,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .corpus-reading {
   margin-top: .8rem;
   color: #193a31;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1rem;
 }
 
@@ -540,7 +705,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 .project-card h3 {
   margin: .85rem 0 .25rem;
   color: #17332a;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1.2rem;
 }
 
@@ -563,7 +728,7 @@ section[data-testid="stSidebar"] .stButton > button:hover {
 
 .project-metrics strong {
   color: #1e3a31;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1.2rem;
 }
 
@@ -632,33 +797,8 @@ div[data-testid="stDataFrame"] {
 }
 
 @media (max-width: 900px) {
-  .block-container { padding: 1rem 1rem 3rem; }
-
-  button[data-testid="stExpandSidebarButton"] {
-    position: fixed;
-    z-index: 1000;
-    top: .7rem;
-    left: .55rem;
-    display: grid;
-    place-items: center;
-    width: 2.4rem;
-    height: 2.4rem;
-    border: 1px solid rgba(201,154,61,.28);
-    border-radius: 50%;
-    color: #f4ead6 !important;
-    background: var(--forest);
-    box-shadow: 0 5px 16px rgba(4,29,25,.16);
-  }
-
-  button[data-testid="stExpandSidebarButton"] span {
-    display: none;
-  }
-
-  button[data-testid="stExpandSidebarButton"]::before {
-    content: "☰";
-    color: #f4ead6;
-    font-size: 1rem;
-    line-height: 1;
+  .block-container {
+    padding: 3.6rem 1rem 3rem;
   }
 
   .hero {
@@ -749,6 +889,11 @@ div[data-testid="stDataFrame"] {
 
   .metric-strip { grid-template-columns: repeat(2, 1fr); }
 
+  .summary-grid-four,
+  .summary-grid-five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .st-key-corpus_table {
     display: none;
   }
@@ -797,6 +942,18 @@ div[data-testid="stDataFrame"] {
     grid-template-columns: 1fr 1fr;
   }
 
+  .summary-grid {
+    gap: .6rem;
+  }
+
+  .summary-grid .stat-card {
+    padding: .85rem .9rem;
+  }
+
+  .summary-grid .stat-value {
+    font-size: 1.35rem;
+  }
+
   .corpus-card-top {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -837,13 +994,13 @@ div[data-testid="stDataFrame"] {
   border-radius: 50%;
   background: var(--forest);
   color: var(--gold-soft);
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: .8rem;
 }
 
 .suggestion-reading {
   color: #19332b;
-  font-family: Georgia, serif;
+  font-family: "EgyptologicalLatin", Georgia, serif;
   font-size: 1.05rem;
   line-height: 1.4;
   word-break: break-word;

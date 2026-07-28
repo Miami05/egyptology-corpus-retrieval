@@ -55,6 +55,31 @@ def test_home_links_have_working_query_parameter_destinations() -> None:
         assert_clean(app)
 
 
+def test_sidebar_navigation_works_after_arriving_via_a_deep_link() -> None:
+    """The hero buttons open ?view=... in a new tab, so that is how most visitors
+    arrive. The sidebar has to keep working from there.
+
+    Regression guard: the ?view= handler runs on every rerun, so leaving the
+    parameter in the URL overwrote whatever the sidebar buttons set and pinned the
+    page permanently — the click appeared to do nothing.
+    """
+    app = AppTest.from_file(APP_PATH, default_timeout=120)
+    app.query_params["view"] = "corpus"
+    app.run()
+    assert app.session_state["page"] == "Corpus"
+    assert "view" not in app.query_params, "the deep link must be consumed, not kept"
+    assert_clean(app)
+
+    for label, expected_page in [
+        ("▤  Text workspace", "Workspace"),
+        ("✓  Reviews", "Reviews"),
+        ("⌂  Home", "Home"),
+    ]:
+        app = click_button(app, label)
+        assert app.session_state["page"] == expected_page
+        assert_clean(app)
+
+
 def test_workspace_empty_search_is_handled_without_an_exception() -> None:
     app = click_button(run_app(), "▤  Text workspace")
     search = next(

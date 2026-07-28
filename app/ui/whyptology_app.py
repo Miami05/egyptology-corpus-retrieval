@@ -1084,9 +1084,8 @@ def render_signs(df: pd.DataFrame) -> None:
         )
         return
 
-    metrics = st.columns(4)
-    for column, label, value in zip(
-        metrics,
+    metric_items = list(
+        zip(
         [
             "Sign groups",
             "More than one reading",
@@ -1099,13 +1098,17 @@ def render_signs(df: pd.DataFrame) -> None:
             f"{summary['genuinely_multivalent']:,}",
             f"{summary['well_attested_multivalent']:,}",
         ],
-    ):
-        with column:
-            st.markdown(
-                f'<div class="stat-card"><div class="stat-label">{label}</div>'
-                f'<div class="stat-value">{value}</div></div>',
-                unsafe_allow_html=True,
-            )
+        )
+    )
+    metric_cards = "".join(
+        f'<div class="stat-card"><div class="stat-label">{escape(label)}</div>'
+        f'<div class="stat-value">{escape(metric_value)}</div></div>'
+        for label, metric_value in metric_items
+    )
+    st.markdown(
+        f'<div class="summary-grid summary-grid-four">{metric_cards}</div>',
+        unsafe_allow_html=True,
+    )
     st.caption(
         "The counts narrow deliberately. “More than one reading” is the raw figure. "
         "“Not just bracketing” drops editorial variants, so `n.t` and `n(.ꞽ).t` count "
@@ -1202,18 +1205,19 @@ def render_reviews() -> None:
 
     reviewed = pd.DataFrame(rows)
     status_counts = reviewed["latest_status"].value_counts().to_dict()
-    metrics = st.columns(len(ANNOTATION_STATUSES) + 1)
-    metrics[0].markdown(
-        f'<div class="stat-card"><div class="stat-label">Reviewed examples</div>'
-        f'<div class="stat-value">{len(reviewed):,}</div></div>',
+    review_metric_items = [("Reviewed examples", f"{len(reviewed):,}")] + [
+        (status.title(), f"{status_counts.get(status, 0):,}")
+        for status in ANNOTATION_STATUSES
+    ]
+    review_metric_cards = "".join(
+        f'<div class="stat-card"><div class="stat-label">{escape(label)}</div>'
+        f'<div class="stat-value">{escape(metric_value)}</div></div>'
+        for label, metric_value in review_metric_items
+    )
+    st.markdown(
+        f'<div class="summary-grid summary-grid-five">{review_metric_cards}</div>',
         unsafe_allow_html=True,
     )
-    for column, status in zip(metrics[1:], ANNOTATION_STATUSES):
-        column.markdown(
-            f'<div class="stat-card"><div class="stat-label">{status.title()}</div>'
-            f'<div class="stat-value">{status_counts.get(status, 0):,}</div></div>',
-            unsafe_allow_html=True,
-        )
 
     st.markdown("")
     left, right = st.columns([1.65, 1])
@@ -1320,6 +1324,10 @@ corpus = load_corpus()
 query_page = st.query_params.get("view")
 if query_page in {"home", "workspace", "corpus", "projects", "reviews", "signs"}:
     st.session_state["page"] = query_page.title()
+    # Consume the deep link, don't let it pin the page. This block runs on every
+    # rerun, so leaving ?view= in the URL would overwrite whatever the sidebar
+    # buttons set and navigation would be dead for the rest of the session.
+    del st.query_params["view"]
 
 page = sidebar()
 if page == "Home":
