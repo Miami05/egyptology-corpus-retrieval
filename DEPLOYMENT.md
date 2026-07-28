@@ -60,9 +60,18 @@ the Secrets box only.
 
 ### Verifying it worked
 
-Save an annotation in **Reviews**, then use *Manage app → Reboot*. If the annotation
-is still listed after the reboot, persistence is live. Before this change, it would
-not have been.
+Save an annotation via the workspace, then *Manage app → Reboot*. If it is still
+listed under **Reviews** afterwards, persistence is live.
+
+**Wait for the secret to propagate before testing.** Streamlit says changes take about
+a minute, and it is not a formality: testing too early writes the annotation into the
+still-running SQLite container, the reboot then discards it, and the result looks
+exactly like a failed Postgres setup when nothing is wrong. Confirmed this way once —
+the annotation "vanished" purely because it had never reached Postgres.
+
+A quick way to tell which engine actually served a saved annotation: look at the
+timestamp on the review card. Postgres `timestamptz` renders with an offset
+(`20:10:11.598071+00:00`); SQLite has none (`20:01:10.391991`).
 
 ### How the code handles it
 

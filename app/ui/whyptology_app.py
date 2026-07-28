@@ -806,9 +806,14 @@ def render_workspace(df: pd.DataFrame) -> None:
         if results is None or results.empty:
             st.info("Run a query to review the corpus parallels behind a suggestion.")
         else:
+            # Deliberately does not name the engine: the deployment runs on Postgres
+            # via DATABASE_URL, local development on SQLite. Saying "SQLite" here was
+            # wrong in production and is exactly the kind of detail a reviewer would
+            # reasonably trust.
             st.caption(
                 "Each parallel can be accepted, edited, rejected or marked uncertain. "
-                "Decisions are stored in SQLite and appear in the reviewed export."
+                "Decisions are saved to the project database and appear in the "
+                "reviewed export."
             )
             for position, (_, row) in enumerate(results.reset_index(drop=True).iterrows()):
                 label = value(row, "transliteration_gold", "Untitled reading")
