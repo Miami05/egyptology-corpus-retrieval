@@ -145,12 +145,24 @@ def sidebar() -> str:
         st.button("◫  Dictionary", width="stretch", disabled=True)
         st.button("⌘  Sign list", width="stretch", disabled=True)
         st.button("▱  Collections", width="stretch", disabled=True)
+        # CC BY-SA 4.0 requires that attribution reach the viewer of the data, not
+        # just a file in the repo. Do not remove this: the corpus is not our work.
+        # See DATA-LICENSE.md for the full citation and the record of modifications.
         st.markdown(
             """
             <div class="open-access-note">
               <span class="open-access-dot"></span>
               Open research access<br>
               <small>No account required</small>
+            </div>
+            <div class="corpus-credit">
+              Corpus data: <a href="https://thesaurus-linguae-aegyptiae.de"
+                 target="_blank" rel="noopener">Thesaurus Linguae Aegyptiae</a>,
+              Earlier Egyptian, corpus v18, ed. Richter &amp; Werning
+              (BBAW) and Fischer-Elfert &amp; Dils (SAW Leipzig).
+              Licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/"
+                 target="_blank" rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>.
+              Adapted: normalised, re-segmented and extended with derived fields.
             </div>
             """,
             unsafe_allow_html=True,

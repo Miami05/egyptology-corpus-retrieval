@@ -6,6 +6,10 @@ numpy==2.3.2
 rapidfuzz==3.14.1
 scikit-learn==1.7.1
 sqlalchemy==2.0.43
+# Postgres driver. Needed only when DATABASE_URL points at Postgres, which is how
+# annotations survive a redeploy — a container-local SQLite file does not. Harmless
+# when running on SQLite locally. See DEPLOYMENT.md.
+psycopg[binary]==3.3.4
 pydantic==2.11.7
 python-dotenv==1.1.1
 # Pinned: Streamlit serialises dataframes through pyarrow, and pyarrow 25.0.0
