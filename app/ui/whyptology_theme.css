@@ -870,6 +870,76 @@ div[data-testid="stDataFrame"] {
   overflow: hidden;
 }
 
+/* Streamlit widget labels inherit a near-white colour, which is invisible on this
+   paper canvas. The search box and period filter get away with it because their
+   placeholder and selected value carry the meaning, but a bare number stepper does
+   not — without this the page control reads as a floating "1". Scoped to that one
+   widget so the other labels stay as designed. */
+.st-key-corpus_page [data-testid="stWidgetLabel"],
+.st-key-corpus_page [data-testid="stWidgetLabel"] p {
+  color: var(--ink-soft) !important;
+  font-size: .74rem;
+}
+
+/* Corpus explorer table. Hand-rendered HTML rather than st.dataframe so the reading
+   column can use the transliteration font — a canvas-drawn grid cannot. */
+.corpus-table-wrap {
+  max-height: 33rem;
+  overflow: auto;              /* vertical for rows, horizontal for narrow screens */
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+}
+
+.corpus-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .84rem;
+}
+
+.corpus-table thead th {
+  position: sticky;            /* header stays put while scrolling rows */
+  top: 0;
+  z-index: 1;
+  padding: .6rem .75rem;
+  border-bottom: 1px solid rgba(201,154,61,.28);
+  background: var(--forest-deep);
+  color: #f1ead9;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.corpus-table tbody td {
+  padding: .55rem .75rem;
+  border-bottom: 1px solid rgba(222,216,204,.7);
+  color: #23342e;
+  vertical-align: top;
+}
+
+.corpus-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.corpus-table tbody tr:nth-child(even) {
+  background: rgba(245,240,230,.5);
+}
+
+.corpus-table tbody tr:hover {
+  background: rgba(201,154,61,.09);
+}
+
+/* The one column this whole exercise was for. */
+.corpus-table .corpus-cell-reading {
+  min-width: 14rem;
+  color: #17322a;
+  font-family: "EgyptologicalText", Georgia, serif;
+  font-size: .95rem;
+}
+
 /* ---- Tablet / small laptop (901–1200px) ------------------------------------
    Between the desktop layout and the 900px phone tier the sidebar still takes a
    fixed 16rem, so the hero and the wider card grids were the first things to get

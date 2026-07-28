@@ -79,6 +79,50 @@ python3.12 -m venv ~/venvs/egyptology
 ~/venvs/egyptology/bin/pip install -r requirements.txt watchdog
 ```
 
+### The transliteration font
+
+Egyptological characters — the yod `ꞽ` (U+A7BD) and the combining marks under `ḏi̯` —
+have no glyph in Georgia or Streamlit's Source Sans, and Georgia maps U+A7BD to a
+*blank* glyph, which counts as "present" and stops the browser falling back. So the
+font has to be first in the stack, not a fallback.
+
+`app/ui/static/GentiumPlus-Translit.woff2` is Gentium Plus (SIL OFL) subset to the 88
+characters the corpus transliterations actually use — 8.4KB. It is **embedded as a
+base64 data URI** by `translit_font_face()` in `whyptology_app.py`, not served as a
+static file. Serving it failed in production: Streamlit Cloud puts an auth redirect in
+front of `/app/static/` for private apps, so the request returned an HTML login page
+with HTTP 200 and the font silently fell back to boxes while working on localhost.
+
+To rebuild it after the corpus gains new characters:
+
+```bash
+# 1. Collect the characters the corpus actually uses
+python - <<'PY'
+import pandas as pd
+df = pd.read_csv('data/processed/examples.csv', low_memory=False)
+cols = ['transliteration_gold','transliteration_norm','alt_transliterations',
+        'sign_sequence','display_sequence','normalized_reading_order']
+chars = {c for col in cols if col in df.columns
+         for v in df[col].dropna().astype(str) for c in v
+         if ord(c) >= 0x20 and not 0x13000 <= ord(c) <= 0x143FF}
+open('/tmp/translit_chars.txt','w').write(''.join(sorted(chars)))
+PY
+
+# 2. Subset. --layout-features must keep mark/mkmk or diacritics stop being
+#    positioned under their base letter, which is the whole point.
+pyftsubset /path/to/GentiumPlus-Regular.ttf \
+  --output-file=app/ui/static/GentiumPlus-Translit.woff2 --flavor=woff2 \
+  --text-file=/tmp/translit_chars.txt \
+  --layout-features+=ccmp,mark,mkmk,kern --no-hinting --desubroutinize
+```
+
+Full font from <https://software.sil.org/gentium/>. Keep `GentiumPlus-OFL.txt`
+alongside it — the licence requires it.
+
+**A note on `st.dataframe`:** it renders on a canvas via glide-data-grid and ignores
+CSS `font-family`, so Egyptological characters always box there. That is why the corpus
+explorer table is hand-rendered HTML with pagination instead of a dataframe.
+
 ### Testing responsive layout
 
 Streamlit stores the sidebar open/closed state in **browser storage**, and that

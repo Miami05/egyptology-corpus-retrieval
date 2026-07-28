@@ -80,6 +80,43 @@ def test_sidebar_navigation_works_after_arriving_via_a_deep_link() -> None:
         assert_clean(app)
 
 
+def test_corpus_table_paginates_and_uses_the_transliteration_font() -> None:
+    """The corpus table is hand-rendered HTML, not st.dataframe.
+
+    st.dataframe draws on a canvas and ignores CSS font-family, so the Egyptological
+    characters rendered as empty boxes in the reading column. HTML can use the font,
+    but it cannot virtualise 12,772 rows, so it has to page — and paging is easy to
+    get subtly wrong (off-by-one slices, a stepper that resets every rerun).
+    """
+    import re
+
+    app = AppTest.from_file(APP_PATH, default_timeout=120)
+    app.query_params["view"] = "corpus"
+    app.run()
+    assert_clean(app)
+
+    def table_html(a: AppTest) -> str:
+        for md in a.markdown:
+            if 'class="corpus-table"' in md.value:
+                return md.value
+        raise AssertionError("corpus table markup not rendered")
+
+    first_page = table_html(app)
+    assert 'class="corpus-cell-reading"' in first_page, (
+        "reading cells must carry the class the transliteration font is bound to"
+    )
+    assert re.search(r"TLA_EARLIER_0*1\b", first_page)
+
+    # Page 4 of 50-row pages starts at record 151.
+    app = app.number_input[0].set_value(4).run()
+    assert_clean(app)
+    fourth_page = table_html(app)
+
+    assert "TLA_EARLIER_151" in fourth_page
+    assert "TLA_EARLIER_001" not in fourth_page, "paging must replace rows, not append"
+    assert any("Showing 151–200" in c.value for c in app.caption)
+
+
 def test_workspace_empty_search_is_handled_without_an_exception() -> None:
     app = click_button(run_app(), "▤  Text workspace")
     search = next(

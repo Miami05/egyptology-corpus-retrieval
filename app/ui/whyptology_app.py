@@ -46,6 +46,18 @@ THEME_PATH = Path(__file__).with_name("whyptology_theme.css")
 # Rebuild with pyftsubset if the corpus gains new characters — see DEPLOYMENT.md.
 FONT_PATH = Path(__file__).with_name("static") / "GentiumPlus-Translit.woff2"
 
+# The corpus explorer table is hand-rendered HTML rather than st.dataframe, so it
+# needs its own paging — see render_corpus for why.
+CORPUS_PAGE_SIZE = 50
+CORPUS_COLUMN_LABELS = {
+    "source": "Source",
+    "source_text_id": "Text",
+    "period": "Period",
+    "language_stage": "Language stage",
+    "transliteration_gold": "Reading",
+    "translation": "Translation",
+}
+
 
 st.set_page_config(
     page_title=f"{settings.app_name} · Scholarly Egyptology",
@@ -994,12 +1006,64 @@ def render_corpus(df: pd.DataFrame) -> None:
         if col in filtered.columns
     ]
     with st.container(key="corpus_table"):
-        st.dataframe(
-            filtered.loc[:, columns],
-            hide_index=True,
-            width="stretch",
-            height=530,
+        # Deliberately NOT st.dataframe. That widget draws on a canvas via
+        # glide-data-grid, which ignores CSS font-family, so the Egyptological
+        # characters (ꞽ U+A7BD and the combining marks) rendered as empty boxes in
+        # the one column where being able to read them is the entire point. An HTML
+        # table can use the transliteration font. It also has to be paginated: the
+        # canvas grid virtualised 12,772 rows for free, HTML would not.
+        total = len(filtered)
+        pages = max(1, (total + CORPUS_PAGE_SIZE - 1) // CORPUS_PAGE_SIZE)
+
+        page = 1
+        if pages > 1:
+            # Narrow column so the stepper does not span the full table width, and a
+            # visible label so it is not just a floating "1".
+            picker, _ = st.columns([1, 4])
+            with picker:
+                page = int(
+                    st.number_input(
+                        f"Page (1–{pages:,})",
+                        min_value=1,
+                        max_value=pages,
+                        value=1,
+                        step=1,
+                        key="corpus_page",
+                    )
+                )
+
+        start = (page - 1) * CORPUS_PAGE_SIZE
+        window = filtered.iloc[start : start + CORPUS_PAGE_SIZE]
+
+        header = "".join(
+            f"<th>{escape(CORPUS_COLUMN_LABELS.get(col, col))}</th>" for col in columns
         )
+        body_rows = []
+        for _, row in window.iterrows():
+            cells = []
+            for col in columns:
+                cell = escape(value(row, col, "—"))
+                # Only the reading column gets the transliteration font; everything
+                # else stays in the interface font.
+                css_class = (
+                    ' class="corpus-cell-reading"'
+                    if col == "transliteration_gold"
+                    else ""
+                )
+                cells.append(f"<td{css_class}>{cell}</td>")
+            body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+        st.markdown(
+            f'<div class="corpus-table-wrap"><table class="corpus-table">'
+            f"<thead><tr>{header}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+
+        if total:
+            first = start + 1
+            last = min(start + CORPUS_PAGE_SIZE, total)
+            st.caption(f"Showing {first:,}–{last:,} of {total:,} matching records.")
 
     with st.container(key="corpus_cards"):
         for _, row in filtered.head(30).iterrows():
