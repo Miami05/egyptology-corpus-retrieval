@@ -45,6 +45,10 @@ THEME_PATH = Path(__file__).with_name("whyptology_theme.css")
 # Gentium Plus (SIL OFL), subset to the characters the corpus transliterations use.
 # Rebuild with pyftsubset if the corpus gains new characters — see DEPLOYMENT.md.
 FONT_PATH = Path(__file__).with_name("static") / "GentiumPlus-Translit.woff2"
+# The Egyptological characters the subset above really carries out of Latin Extended-D
+# and the modifier letters — aleph, ayin, yod and the modifier aleph. Kept exact on
+# purpose; see translit_font_face for why a range must never over-claim.
+RANGE_LIMITED_CODEPOINTS = "U+A723, U+A725, U+A7BD, U+02BE"
 
 # The corpus explorer table is hand-rendered HTML rather than st.dataframe, so it
 # needs its own paging — see render_corpus for why.
@@ -85,11 +89,40 @@ def translit_font_face() -> str:
     The subset is only ~8KB because it is cut to the 88 characters the corpus
     actually uses, so inlining it costs little per rerun. Cached so the file is read
     and encoded once per session rather than on every rerun.
+
+    Two faces are emitted from the same bytes, because the two jobs need different
+    unicode-range behaviour:
+
+    EgyptologicalText claims everything and is set on transliteration only. A base
+    letter and its combining mark must resolve to ONE font or the cluster splits, which
+    is the bug that started all of this.
+
+    EgyptologicalLatin claims four codepoints and is safe to put in front of the UI
+    font, so ꜣ ꜥ ꞽ ʾ survive in text Streamlit renders itself — expander labels,
+    captions, st.markdown — where the sans stack is otherwise untouched.
+
+    It used to load a version-pinned Gentium subset from fonts.gstatic.com, and that
+    URL has stopped carrying the yod: U+A7BD came back as .notdef. A unicode-range is a
+    claim, not a request, so the browser did not fall back to Source Sans — it drew the
+    empty box from the font that had promised the character. Sourcing both faces from
+    the file in this repo removes the external dependency that broke.
+
+    RANGE_LIMITED_CODEPOINTS must list only codepoints this subset really contains, for
+    that same reason — claiming one it lacks reintroduces the box. Verified against the
+    file: it has exactly ꜣ (A723), ꜥ (A725), ꞽ (A7BD) and ʾ (02BE) from those blocks,
+    and no U+02BF. None of the four ever carries a combining mark in the corpus, so
+    supplying them from a different font than the surrounding text cannot split a
+    cluster — re-check that with the scan in DEPLOYMENT.md if the corpus grows.
     """
     encoded = base64.b64encode(FONT_PATH.read_bytes()).decode("ascii")
+    source = f"src:url(data:font/woff2;base64,{encoded}) format('woff2');"
     return (
         "@font-face{font-family:'EgyptologicalText';"
-        f"src:url(data:font/woff2;base64,{encoded}) format('woff2');"
+        f"{source}"
+        "font-display:swap;}"
+        "@font-face{font-family:'EgyptologicalLatin';"
+        f"{source}"
+        f"unicode-range:{RANGE_LIMITED_CODEPOINTS};"
         "font-display:swap;}"
     )
 

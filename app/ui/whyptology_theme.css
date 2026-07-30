@@ -4,43 +4,35 @@
    Georgia and Streamlit's "Source Sans" do not render the Egyptological yod
    ꞽ (U+A7BD) — it came out as an empty box, measurably a full em square (16px at
    16px type, against 4.7px for a normal letter). Gentium Plus is SIL's scholarly
-   font and does cover the Egyptological Latin ranges. See the @font-face below for
-   why it has to be first in the stack rather than a fallback.
+   font and does cover the Egyptological Latin ranges. Both faces built from it are
+   declared in whyptology_app.py, not here; see the note below for why the range-limited
+   one has to be first in the stack rather than a fallback.
 
    The hieroglyph webfont is insurance for viewers whose OS lacks Egyptian
-   Hieroglyphs coverage (macOS has it, many Windows installs do not). */
-@import url('https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap');
+   Hieroglyphs coverage (macOS has it, many Windows installs do not). It is the only
+   thing this @import is still for: Gentium Plus used to be requested here too, but its
+   sole consumer was the remote EgyptologicalLatin face described below, and no stack
+   names "Gentium Plus" now that the face is built from the embedded subset instead.
+   Requesting it anyway would download a font nothing can reach. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Egyptian+Hieroglyphs&display=swap');
 
-/* Why this alias has to come FIRST in every stack rather than act as a fallback:
-   Georgia maps U+A7BD to a blank glyph. A blank glyph still counts as "present",
-   so the browser never falls through to the next family — it just draws an empty
-   em square. Listing Gentium Plus after Georgia therefore fixes nothing (measured:
-   still exactly 16px at 16px type). Restricting this face by unicode-range means it
-   claims ONLY the Egyptological characters, so Georgia keeps every ordinary letter
-   and the design is untouched.
+/* Why the EgyptologicalLatin alias has to come FIRST in every stack rather than act as
+   a fallback: Georgia maps U+A7BD to a blank glyph. A blank glyph still counts as
+   "present", so the browser never falls through to the next family — it just draws an
+   empty em square. Listing Gentium Plus after Georgia therefore fixes nothing
+   (measured: still exactly 16px at 16px type). Restricting the face by unicode-range
+   means it claims ONLY the Egyptological characters, so the UI font keeps every
+   ordinary letter and the design is untouched.
 
-   The URL is version-pinned (…/gentiumplus/v2/…) and was verified to contain a real
-   ꞽ glyph, not a .notdef, by loading it and pixel-comparing against an unassigned
-   codepoint. If Google bumps the version and the URL 404s, only these characters
-   regress to boxes — re-extract it from the css2 endpoint above. local() is tried
-   first so anyone with Gentium Plus installed never fetches it. */
-@font-face {
-  font-family: 'EgyptologicalLatin';
-  src: local('Gentium Plus'),
-       url('https://fonts.gstatic.com/s/gentiumplus/v2/Iurd6Ytw-oSPaZ00r2bNe8VZhZFNym499r7e.woff2') format('woff2');
-  /* Latin Extended-D (ꜣ ꞽ and friends) plus the Egyptological aleph/ayin
-     modifiers. Every codepoint here was pixel-tested against .notdef in this exact
-     subset file and has a real glyph.
+   Its @font-face is NOT declared here any more. It used to load a version-pinned subset
+   from fonts.gstatic.com, and that URL stopped carrying the yod — U+A7BD came back as
+   .notdef, so every character in the claimed range drew an empty box in exactly the
+   text that had no explicit font (expander labels, captions). It is now built by
+   translit_font_face() in whyptology_app.py from the SAME embedded subset as
+   EgyptologicalText, which is verified to contain the glyphs, with the range cut to the
+   four codepoints that file really has. See that docstring before touching the range.
 
-     Combining marks are deliberately EXCLUDED. Claiming a range is a promise the
-     font can draw it, and Gentium's subset has no U+0323/U+032F — claiming them
-     pushed ḏi̯ from 13.9px to 31.1px, i.e. two boxes where Georgia had composed the
-     mark correctly. Leave combining marks to Georgia; it handles them properly. */
-  unicode-range: U+A720-A7FF, U+02BE-02BF;
-  font-display: swap;
-}
-
-/* Self-hosted Gentium Plus subset, built from SIL's full 6.200 release and served
+   Self-hosted Gentium Plus subset, built from SIL's full 6.200 release and served
    from app/ui/static (SIL Open Font License — the full text ships alongside it).
 
    Why self-hosting was unavoidable: NO Gentium subset Google serves contains the
@@ -84,6 +76,36 @@ html, body, [data-testid="stAppViewContainer"] {
      are only ever reached for characters it lacks. */
   font-family: "EgyptologicalLatin", "Source Sans", "Noto Sans Egyptian Hieroglyphs",
                sans-serif;
+}
+
+/* Streamlit re-declares font-family on its own text containers, which DROPS the
+   EgyptologicalLatin above — the rule on body only survives as far as the widget wrapper.
+   Walking up from a boxed character shows the break precisely: summary and every ancestor
+   compute "EgyptologicalLatin, Source Sans, …", and the stMarkdownContainer inside them
+   computes plain "Source Sans, sans-serif". So every string Streamlit renders itself — an
+   expander label, a caption, an st.markdown paragraph — lost the yod and drew ⯑ instead,
+   while hand-written HTML that names a font (.suggestion-reading, .corpus-cell-reading)
+   was fine. That is why the box appeared in the evidence line under a reading that
+   rendered perfectly.
+   Restoring the stack on the two containers fixes all of them at once, and changes
+   nothing visually: EgyptologicalLatin is unicode-range limited to the four codepoints
+   listed in whyptology_app.py, so it supplies ꜣ ꜥ ꞽ ʾ only and all other text still
+   comes from Source Sans. The class rules further down keep their own fonts — a
+   declaration on the element always beats an inherited value. */
+[data-testid="stMarkdownContainer"],
+[data-testid="stCaptionContainer"] {
+  font-family: "EgyptologicalLatin", "Source Sans", sans-serif;
+}
+
+/* Inline code chips need saying separately: Streamlit sets "Source Code Pro" directly on
+   `code`, so they never inherit the rule above. The sign-readings caption contrasts
+   `n.t` with `n(.ꞽ).t`, and the yod there was a box. Keep EgyptologicalLatin — being
+   range-limited, it leaves the ASCII chips monospace. Do NOT use EgyptologicalText: it
+   carries no unicode-range and would render whole chips in Gentium serif. It would only
+   be needed for a combining mark, and no chip has one — recheck before adding one. */
+[data-testid="stMarkdownContainer"] code,
+[data-testid="stCaptionContainer"] code {
+  font-family: "EgyptologicalLatin", "Source Code Pro", monospace;
 }
 
 [data-testid="stHeader"] {

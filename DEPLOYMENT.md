@@ -143,6 +143,57 @@ pyftsubset /path/to/GentiumPlus-Regular.ttf \
 Full font from <https://software.sil.org/gentium/>. Keep `GentiumPlus-OFL.txt`
 alongside it — the licence requires it.
 
+#### The two font faces, and the check to run after rebuilding
+
+`translit_font_face()` emits **two** `@font-face` rules from that one file:
+
+| Family | unicode-range | Used for |
+|---|---|---|
+| `EgyptologicalText` | none (everything) | transliteration only — a base letter and its combining mark must come from one font or the cluster splits |
+| `EgyptologicalLatin` | four codepoints | goes in front of the UI sans, so ꜣ ꜥ ꞽ ʾ survive in text Streamlit renders itself |
+
+`EgyptologicalLatin` used to be a version-pinned subset from `fonts.gstatic.com`. That
+URL stopped carrying the yod, and because **a `unicode-range` is a claim, not a
+request**, the browser did not fall back — it drew the empty box from the font that had
+promised the character. Every string Streamlit renders itself (expander labels,
+captions, `st.markdown`) showed `⯑` for ꞽ, while hand-written HTML that names a font was
+fine, so a reading rendered perfectly with a box in the evidence line right beneath it.
+Both faces now come from the file in this repo. Do not repoint either at a CDN.
+
+After rebuilding the subset, re-run this — it prints what the file actually covers, and
+`RANGE_LIMITED_CODEPOINTS` must not name anything missing from the first list:
+
+```bash
+~/venvs/egyptology/bin/python - <<'PY'
+from fontTools.ttLib import TTFont
+cps = set()
+for t in TTFont('app/ui/static/GentiumPlus-Translit.woff2')['cmap'].tables:
+    cps |= set(t.cmap.keys())
+for lo, hi, label in [(0xA720, 0xA7FF, 'Latin Ext-D'), (0x02B0, 0x02FF, 'modifiers'),
+                      (0x0300, 0x036F, 'combining marks')]:
+    got = sorted(c for c in cps if lo <= c <= hi)
+    print(label, ':', ' '.join(f'U+{c:04X}({chr(c)})' for c in got) or 'none')
+PY
+```
+
+The range-limited face is only safe because none of those four characters ever carries a
+combining mark in the corpus — if one did, its base would come from one font and its
+mark from another, which is the bug that started all of this. Re-check with:
+
+```bash
+~/venvs/egyptology/bin/python - <<'PY'
+import pandas as pd, unicodedata
+df = pd.read_csv('data/processed/examples.csv', low_memory=False)
+targets = {0xA723, 0xA725, 0xA7BD, 0x02BE}
+cols = [c for c in ['transliteration_gold', 'transliteration_norm', 'alt_transliterations',
+                    'normalized_reading_order', 'display_sequence'] if c in df.columns]
+bad = [(v, i) for c in cols for v in df[c].dropna().astype(str)
+       for i, ch in enumerate(v[:-1])
+       if ord(ch) in targets and unicodedata.combining(v[i + 1])]
+print(f'{len(bad)} clusters — must be 0, else give that element EgyptologicalText')
+PY
+```
+
 **A note on `st.dataframe`:** it renders on a canvas via glide-data-grid and ignores
 CSS `font-family`, so Egyptological characters always box there. That is why the corpus
 explorer table is hand-rendered HTML with pagination instead of a dataframe.
