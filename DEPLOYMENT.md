@@ -205,9 +205,23 @@ overrides `initial_sidebar_state`. Testing on an origin where you have already t
 the sidebar will mislead you. Use a fresh origin — `127.0.0.1:8501` rather than
 `localhost:8501` — or clear site data first.
 
-## Licensing before going public
+## Licensing — the repo and the app are both public
 
-The repo is private. Before making it or the app public, read `DATA-LICENSE.md`: the
-corpus is CC BY-SA 4.0 (share-alike) and cannot be redistributed under the MIT licence
-that covers the code. The required attribution is rendered in the app sidebar and must
-stay there.
+Checked 2026-07-30: the GitHub repo is **public**, and *Settings → Sharing* is set to
+**"This app is public and searchable"** — so the app needs no viewer invitation, and it
+can be indexed by search engines and listed in Streamlit's Explore gallery.
+
+That makes `DATA-LICENSE.md` binding rather than advisory. The corpus is CC BY-SA 4.0
+(share-alike) and cannot be redistributed under the MIT licence that covers the code.
+The conditions that publication triggers are met, and each one has to stay met:
+
+- **Attribution** — rendered in the app sidebar on every page, and not decorative: it is
+  a licence condition. Do not remove it.
+- **State the changes** — the same credit says "normalised, re-segmented and extended
+  with derived fields", with the detail in `DATA-LICENSE.md`.
+- **No relicensing** — `LICENSE` covers code only; `data/` stays CC BY-SA. Keep the
+  split that `README.md` documents.
+
+Before turning sharing back to private, note that the font workaround in this file
+depends on it: Streamlit Cloud gates `/app/static/` behind the auth redirect for private
+apps, which is why the font is embedded rather than served.
