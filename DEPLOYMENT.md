@@ -16,6 +16,14 @@ APP_NAME = "Whyptology"
 TOP_K = 3
 ```
 
+**A push does not reliably reload imported modules.** Observed 2026-07-30: after
+pushing a commit that changed both `whyptology_app.py` and `app/retrieval/scorer.py`,
+the live app showed the new sidebar labels but ranked with the old scorer — the main
+script is re-executed per rerun, while `app/` modules stay cached in the running
+process from `sys.modules`. It looks exactly like "my fix didn't work". After any
+push that touches code under `app/`, hit *Manage app → Reboot* and then verify the
+changed behaviour on the live app, not just that the deploy "went through".
+
 ## Making annotations survive (required for real review work)
 
 **Without this step, every annotation is lost when the app sleeps or redeploys.**
