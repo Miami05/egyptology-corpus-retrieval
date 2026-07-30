@@ -220,9 +220,13 @@ def sidebar() -> str:
             on_click=go_to,
             args=("Signs",),
         )
-        st.button("◫  Dictionary", width="stretch", disabled=True)
-        st.button("⌘  Sign list", width="stretch", disabled=True)
-        st.button("▱  Collections", width="stretch", disabled=True)
+        # Planned pages, not built yet. The "soon" tag has to be in the label text:
+        # a disabled st.button gets no distinct styling from Streamlit beyond a
+        # cursor change, so without it these read as broken links to a first-time
+        # visitor who clicks one and sees nothing happen.
+        st.button("◫  Dictionary — soon", width="stretch", disabled=True)
+        st.button("⌘  Sign list — soon", width="stretch", disabled=True)
+        st.button("▱  Collections — soon", width="stretch", disabled=True)
         # CC BY-SA 4.0 requires that attribution reach the viewer of the data, not
         # just a file in the repo. Do not remove this: the corpus is not our work.
         # See DATA-LICENSE.md for the full citation and the record of modifications.

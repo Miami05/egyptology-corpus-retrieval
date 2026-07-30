@@ -13,7 +13,11 @@ from app.data.normalizer import (
     normalize_sign_sequence,
     normalize_transliteration,
 )
-from app.retrieval.scorer import token_overlap_score, tokenize_query
+from app.retrieval.scorer import (
+    effective_surplus_penalty,
+    token_overlap_score,
+    tokenize_query,
+)
 
 TOKEN_RE = re.compile(r"[\s|:;\-,=~{}\[\]().]+")
 LOOSE_MARKER_RE = re.compile(r"[|:;\-,=~{}\[\]().]+")
@@ -38,6 +42,12 @@ class SuggestionWeights:
     reading_similarity: float = 0.08
     support: float = 0.05
     lemma_density: float = 0.03
+    # Not a weight (never part of the weight mass): Tversky penalty on the
+    # candidate reading's surplus tokens inside translit_overlap. At 1.0 the
+    # overlap is symmetric Jaccard, which lets a one-token reading outscore the
+    # full sentence that contains the whole query — see idf_overlap_score, whose
+    # docstring also records how 0.3 was chosen and what the holdout showed.
+    surplus_penalty: float = 0.3
 
     def replace(self, **changes: float) -> SuggestionWeights:
         return dataclasses_replace(self, **changes)
@@ -204,6 +214,9 @@ def suggest_top_readings(
     max_row_score = max(float(value) for value in results["final_score"].fillna(0.0))
     query_key = canonical_reading(query_mdc)
     query_loose = loose_reading_form(query_mdc)
+    surplus_penalty = effective_surplus_penalty(
+        query_loose or query_key, weights.surplus_penalty
+    )
 
     for candidate_key, group in results.groupby("candidate_key", sort=False):
         group = group.sort_values("final_score", ascending=False).copy()
@@ -215,8 +228,8 @@ def suggest_top_readings(
         best_candidate = best["candidate_transliteration"]
         candidate_loose = loose_reading_form(best_candidate)
         translit_overlap = max(
-            token_overlap_score(query_key, candidate_key),
-            token_overlap_score(query_loose, candidate_loose),
+            token_overlap_score(query_key, candidate_key, surplus_penalty),
+            token_overlap_score(query_loose, candidate_loose, surplus_penalty),
         )
         char_similarity = char_ngram_similarity(query_key, candidate_key)
         exact_or_near_bonus = 1.0 if candidate_key == query_key else 0.0
