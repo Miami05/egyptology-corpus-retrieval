@@ -86,6 +86,34 @@ class ExampleRepo:
         stmt = select(Example).order_by(Example.id.asc())
         return list(self.session.scalars(stmt).all())
 
+    def list_example_keys(self) -> list[tuple[int, str, str, str]]:
+        """(id, source, source_text_id, source_sentence_id) for every example.
+
+        Deliberately not `list_examples()`: that pulls every corpus column over the
+        wire, and on hosted Postgres downloading the full corpus on each boot is what
+        exhausted the free tier's data-transfer quota. The id map only needs these
+        four columns.
+        """
+        stmt = select(
+            Example.id,
+            Example.source,
+            Example.source_text_id,
+            Example.source_sentence_id,
+        ).order_by(Example.id.asc())
+        return [tuple(row) for row in self.session.execute(stmt).all()]
+
+    def list_examples_by_ids(self, ids: list[int]) -> list[Example]:
+        """Full rows, but only for the given ids.
+
+        Exports only need the annotated examples — a handful of rows — so fetching
+        the whole corpus first and discarding most of it wastes the same hosted
+        egress that `list_example_keys` exists to avoid.
+        """
+        if not ids:
+            return []
+        stmt = select(Example).where(Example.id.in_(ids)).order_by(Example.id.asc())
+        return list(self.session.scalars(stmt).all())
+
     def get_example(self, example_id: int) -> Example | None:
         return self.session.get(Example, example_id)
 

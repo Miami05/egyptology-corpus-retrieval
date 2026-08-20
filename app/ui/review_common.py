@@ -50,12 +50,10 @@ def attach_db_ids(df: pd.DataFrame) -> pd.DataFrame:
     try:
         repo = ExampleRepo(session)
         id_map = {
-            (
-                example.source,
-                example.source_text_id,
-                example.source_sentence_id,
-            ): example.id
-            for example in repo.list_examples()
+            (source, source_text_id, source_sentence_id): example_id
+            for example_id, source, source_text_id, source_sentence_id in (
+                repo.list_example_keys()
+            )
         }
         out = df.copy()
         out["id"] = out.apply(
@@ -124,11 +122,11 @@ def reviewed_annotation_rows() -> list[dict]:
         example_repo = ExampleRepo(session)
         annotation_repo = AnnotationRepo(session)
 
-        examples = example_repo.list_examples()
         latest_annotations = {
             row.example_id: row
             for row in annotation_repo.list_latest_annotations_only()
         }
+        examples = example_repo.list_examples_by_ids(list(latest_annotations))
 
         export_rows: list[dict] = []
         for example in examples:

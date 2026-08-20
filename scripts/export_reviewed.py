@@ -21,11 +21,11 @@ def main() -> None:
         example_repo = ExampleRepo(session)
         annotation_repo = AnnotationRepo(session)
 
-        examples = example_repo.list_examples()
         latest_annotations = {
             row.example_id: row
             for row in annotation_repo.list_latest_annotations_only()
         }
+        examples = example_repo.list_examples_by_ids(list(latest_annotations))
 
         export_rows: list[dict] = []
         for example in examples:
