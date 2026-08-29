@@ -140,9 +140,9 @@ recovered rows. On the trial paste the variant fold alone turned `n n.t` into
 readings share a key" — the first is not achievable without inspecting ~39 source rows,
 and the second would defeat the display fold's purpose.)*
 
-## Phase 1 — Segmentation and the reading model
+## Phase 1 — Segmentation and the reading model — DONE 2026-08-29
 
-- [ ] **Resegmentation lattice: spaces are hints, not truth.** Dynamic programming over
+- [x] **Resegmentation lattice: spaces are hints, not truth.** Dynamic programming over
       spans where attested groups form arcs; unattested spans carry a penalty; the
       Viterbi score arbitrates. An unspaced paste currently collapses to one 16-glyph
       unattested group and returns an empty reading marked `unreadable`.
@@ -155,7 +155,7 @@ and the second would defeat the display fold's purpose.)*
       will systematically prefer long singleton groups over well-attested splits on a
       formulaic corpus unless arc weight includes attestation count (e.g. smoothed
       log-count or a Dirichlet prior). Build this in from the start.
-- [ ] **Order-aware fallback similarity** in `ReadingModel.nearest_known_group`
+- [x] **Order-aware fallback similarity** in `ReadingModel.nearest_known_group`
       (`reading_model.py:197-217`): glyph bigrams or sequence overlap rather than set
       Jaccard; re-measure the 0.5 threshold; make the tie-break deterministic (sort
       the candidate set — it currently iterates a `set`, so output depends on
@@ -163,12 +163,12 @@ and the second would defeat the display fold's purpose.)*
       split-preferring segmentation (`𓆓𓂧`+`𓆑`), not a better fallback; `𓆓𓂧𓆑` vs
       `𓆓𓂧𓆑𓏛` is a legitimately close, order-consistent match that bigrams would
       not reject.
-- [ ] ~~Classifier vs. suffix pronoun for A1~~ — **reframed.** The 0.99 prior for
+- [x] ~~Classifier vs. suffix pronoun for A1~~ — **reframed.** The 0.99 prior for
       standalone `𓀀`→`=ꞽ` is correct for this corpus. Do not demote it. The
       classifier case is handled by the lattice preferring the attested merge
       `𓂋𓍿𓀀𓏥` when the neighbouring spans support it. Keep as a regression case,
       not a modelling task.
-- [ ] **Segmentation editor in the UI**: show detected groups as chips the user can
+- [x] **Segmentation editor in the UI**: show detected groups as chips the user can
       split and merge, document that spaces are hints, show the runner-up segmentation
       when scores are close. `tests/test_normalizer.py:25-28` pins whitespace-as-boundary
       and must be rewritten deliberately, not "fixed" when it fails.
@@ -178,6 +178,23 @@ Done when: the messy paste, the cleanly grouped paste, and the unspaced paste al
 current model already produces exactly this given TLA-style segmentation, so the
 target is proven reachable. *(The first draft's target `ḏd=f ḏd=ꞽ` is not the corpus's
 token format, and its claim that `=ṯn` must be disclosed as unattested was wrong.)*
+
+**Result (2026-08-29):** `app/services/segmentation.py` — a semi-Markov lattice over
+attested sign groups with a Good-Turing-discounted unigram group model (count of 1 →
+0.39), the user's spaces as weak hints (+0.5 kept / −1.0 crossed), and a 6-nat-per-glyph
+cost for unattested spans. Measured by `scripts/run_segmentation_eval.py` on 845
+held-out sentences (twins excluded): boundary **F1 0.856 unspaced / 0.866 scrambled,
+exact-sentence 31% / 33%**, against 0.669 / 6% for trusting the paste's spaces. The
+singleton discount decides the `(ꞽ)ntn` case as predicted but moves the aggregate by
+< 0.003; the unattested-span penalty is the weight that matters (sweep in the code).
+The trial paste, the by-word grouping and the fully unspaced string all read
+`ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t` with zero fallbacks — pinned as three tests on the
+real corpus. Fallback similarity is now ½ glyph-set + ½ glyph-bigram Jaccard with a
+0.4 threshold (precision 27.8% → 29.5%, coverage 99.5% → 97.7%; table in the code).
+Workspace: chips for the proposed groups, an editable spacing field that overrides
+them, a note saying where the paste was regrouped, and the as-pasted reading as
+runner-up when within 8 nats. Corpus parallels are retrieved on the regrouped signs.
+Suite 93/93.
 
 ## Phase 2 — Ranking and suggestions
 

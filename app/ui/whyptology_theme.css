@@ -1243,3 +1243,12 @@ div[data-testid="stDataFrame"] {
   font-size: .74rem;
   line-height: 1.5;
 }
+
+/* Segmentation editor: one chip per sign group proposed by the lattice. */
+.seg-chips { display: flex; flex-wrap: wrap; gap: 0.35rem 0.4rem; margin: 0.3rem 0 0.8rem; }
+.seg-chip {
+  display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+  border: 1px solid var(--line, #d9d4c5); background: var(--surface-2, #f4f1e8);
+  font-size: 1.35rem; line-height: 1.6;
+}
+.seg-chip-unattested { border-style: dashed; opacity: 0.75; }

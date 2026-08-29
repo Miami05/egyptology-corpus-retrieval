@@ -62,7 +62,53 @@ SMOOTHING = 0.1
 # 0.50 keeps almost all the coverage; raising it to 0.67 buys ~8 points of precision
 # for half the coverage. Fallback readings are always flagged, so the reader can judge
 # them, which is why coverage is preferred here.
-FALLBACK_THRESHOLD = 0.5
+#
+# Re-measured 2026-08-29 after the similarity became order-aware (see
+# `glyph_similarity`), same protocol, 2,555 held-out sentences, duplicates excluded:
+#
+#   similarity        threshold   fallback precision   coverage incl. fallback
+#   set Jaccard (old)   0.50            27.8%                 99.45%
+#   order-aware         0.50            32.6%                 95.54%
+#   order-aware         0.40            29.5%                 97.67%   <- chosen
+#   order-aware         0.30            28.1%                 98.76%
+#
+# Order awareness buys precision only by refusing more borrowings; 0.40 takes about
+# half of the gain for a third of the coverage loss. Since the resegmentation lattice
+# (app.services.segmentation) now removes most spurious unattested groups before
+# reading, fewer queries reach this fallback at all.
+FALLBACK_THRESHOLD = 0.4
+
+# Weight of glyph-*order* agreement in the fallback similarity. The similarity used
+# to be the Jaccard overlap of glyph sets alone, which is blind to order: on the first
+# expert trial the unattested f-ḏd-d borrowed the snake-word ḏd-f at 0.75 with no
+# penalty for the reversed sequence. Mixing in the Jaccard overlap of adjacent-glyph
+# bigrams makes a reordered group less similar than a group that merely gained or
+# lost a determinative. 0.5 = equal weight; the measured effect on fallback precision
+# is recorded in ROADMAP.md, Phase 1.
+FALLBACK_ORDER_WEIGHT = 0.5
+
+
+def glyph_similarity(left: str, right: str, order_weight: float | None = None) -> float:
+    """Order-aware glyph overlap in [0, 1]: (1-w)·Jaccard(glyphs) + w·Jaccard(bigrams).
+
+    Single-glyph groups have no bigrams; for them the set overlap stands alone so a
+    lone sign can still borrow from a group that contains it. `order_weight` defaults
+    to the module constant at call time so evaluations can vary it.
+    """
+    if order_weight is None:
+        order_weight = FALLBACK_ORDER_WEIGHT
+    left_set, right_set = set(left), set(right)
+    union = left_set | right_set
+    if not union:
+        return 0.0
+    set_score = len(left_set & right_set) / len(union)
+    left_bigrams = {left[i : i + 2] for i in range(len(left) - 1)}
+    right_bigrams = {right[i : i + 2] for i in range(len(right) - 1)}
+    bigram_union = left_bigrams | right_bigrams
+    if not bigram_union:
+        return set_score
+    order_score = len(left_bigrams & right_bigrams) / len(bigram_union)
+    return (1.0 - order_weight) * set_score + order_weight * order_score
 
 
 @dataclass
@@ -190,11 +236,11 @@ class ReadingModel:
         return log((counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * vocabulary))
 
     def nearest_known_group(self, sign: str) -> tuple[str, float]:
-        """Closest attested sign group to an unattested one, by glyph overlap.
+        """Closest attested sign group to an unattested one, by order-aware glyph overlap.
 
         An unseen *group* is usually made of glyphs that are individually common, so
-        rather than refusing to read it we find the attested group sharing the most
-        glyphs. Returns ("", 0.0) when nothing shares a glyph.
+        rather than refusing to read it we find the attested group most similar to
+        it (see `glyph_similarity`). Returns ("", 0.0) when nothing shares a glyph.
         """
         if sign in self.sign_reading:
             return sign, 1.0
@@ -210,11 +256,9 @@ class ReadingModel:
         # hash seed, and two equally similar, equally attested groups used to swap
         # between runs.
         for candidate in sorted(candidates):
-            candidate_glyphs = set(candidate)
-            union = glyphs | candidate_glyphs
-            if not union:
+            score = glyph_similarity(sign, candidate)
+            if score <= 0.0:
                 continue
-            score = len(glyphs & candidate_glyphs) / len(union)
             # Prefer a closer match; break ties toward the better attested group so a
             # one-off spelling does not outrank a common word.
             if score > best_score or (
@@ -236,7 +280,7 @@ class ReadingModel:
         sign_context_weight: float = 0.8,
         next_sign_weight: float = 0.8,
         use_fallback: bool = True,
-        fallback_threshold: float = FALLBACK_THRESHOLD,
+        fallback_threshold: float | None = None,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -251,6 +295,8 @@ class ReadingModel:
         """
         if not signs:
             return []
+        if fallback_threshold is None:
+            fallback_threshold = FALLBACK_THRESHOLD
 
         # Resolve which group's statistics each position will use.
         # (group whose statistics are used, fallback origin or "", glyph similarity)

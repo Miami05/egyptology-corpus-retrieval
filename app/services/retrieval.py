@@ -21,13 +21,17 @@ def retrieve_top_k(
     query_reading_order: str = "",
     k: int = 3,
     weights: ScoreWeights = DEFAULT_WEIGHTS,
+    query_hieroglyphs_norm: str | None = None,
 ) -> pd.DataFrame:
     # A query written in hieroglyphs must be matched against the sign columns:
     # normalize_mdc strips those codepoints, so treating it as transliteration
-    # would leave an empty query that matches nothing.
-    query_hieroglyphs_norm = (
-        normalize_hieroglyphs(query_mdc) if contains_hieroglyphs(query_mdc) else ""
-    )
+    # would leave an empty query that matches nothing. The caller may pass the
+    # resegmented sign groups (see app.services.segmentation) so that the parallels
+    # are matched on corpus-style groups rather than on the paste's spacing.
+    if query_hieroglyphs_norm is None:
+        query_hieroglyphs_norm = (
+            normalize_hieroglyphs(query_mdc) if contains_hieroglyphs(query_mdc) else ""
+        )
     query_mdc_norm = normalize_mdc(query_mdc)
     query_reading_order_norm = normalize_sign_sequence(query_reading_order)
     exact_df = exact_match_candidates(df, query_mdc_norm)

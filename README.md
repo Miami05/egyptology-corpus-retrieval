@@ -16,13 +16,14 @@ Live app: <https://egyptology-corpus-retrieval.streamlit.app>
 
 | Page | Purpose |
 |---|---|
-| Reading workspace | Enter a reading; get the top 3 suggestions with scores and evidence, plus a sign-by-sign predicted reading |
+| Reading workspace | Enter a reading; get the top 3 suggestions with scores and evidence, plus a sign-by-sign predicted reading with an editable sign grouping |
 | Corpus explorer | Search and page through the corpus by reading, translation, text ID or MdC key |
 | Sign readings | Which signs are genuinely multivalent, and how the reading model chooses between readings |
 | Projects / Reviews | Corpus composition by period, and the record of expert annotations |
 
 The scoring combines exact, fuzzy and TF-IDF retrieval (`app/retrieval/`) with a
-sign-level reading model (`app/services/reading_model.py`).
+sign-level reading model (`app/services/reading_model.py`) fed by a resegmentation
+lattice (`app/services/segmentation.py`) that treats pasted spaces as hints.
 
 ## Layout
 
@@ -66,9 +67,10 @@ Tests: `pytest tests/ -q`
 An external expert trial (Urk. IV 1, August 2026) exposed the current weak points —
 each is understood and scheduled in [ROADMAP.md](ROADMAP.md):
 
-- **Sign groups are split on whitespace.** The spacing of a pasted query *is* the
-  segmentation; an unspaced paste collapses to one unattested group. Until the
-  resegmentation work lands, space the query by quadrat.
+- ~~Sign groups are split on whitespace~~ — fixed (Phase 1): the paste's spaces are
+  now hints. A lattice regroups the signs against the corpus's attested groups
+  (boundary F1 0.86 on held-out sentences vs 0.67 for trusting the spaces), shows
+  where it disagreed with the paste, and lets you edit the grouping.
 - ~~`<g>…</g>` markup breaks glyph/reading alignment~~ — fixed (Phase 0): markup for
   signs without a Unicode codepoint is now one placeholder glyph, so all 12,772
   rows are aligned and used; the loader reports the count on every start.

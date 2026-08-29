@@ -24,6 +24,7 @@ from app.data.normalizer import (
 from app.services.annotations import save_annotation
 from app.services.retrieval import retrieve_top_k
 from app.services.reading_model import train_reading_model
+from app.services.segmentation import Segmenter, glyph_stream
 from app.services.signs import (
     build_sign_index,
     multivalence_summary,
@@ -165,6 +166,24 @@ def load_reading_model(signature: str, _df: pd.DataFrame):
     not run on every rerun.
     """
     return train_reading_model(_df)
+
+
+@st.cache_resource(show_spinner=False)
+def load_segmenter(signature: str, _model) -> Segmenter:
+    """The resegmentation lattice over the trained model's attested groups."""
+    return Segmenter(_model)
+
+
+def resegment_query(df: pd.DataFrame, query: str):
+    """Sign groups for a pasted glyph query: the paste's spaces are hints, not truth.
+
+    Returns (segmentation, groups_as_pasted, model, segmenter).
+    """
+    signature = corpus_signature(df)
+    model = load_reading_model(signature, df)
+    segmenter = load_segmenter(signature, model)
+    as_pasted = normalize_hieroglyphs(query).split()
+    return segmenter.segment(as_pasted), as_pasted, model, segmenter
 
 
 @st.cache_data(show_spinner="Preparing the corpus…")
@@ -653,8 +672,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                 signs = normalize_hieroglyphs(query).split()
                 st.caption(
                     f"Detected **hieroglyphs** · {len(signs)} sign group"
-                    f"{'s' if len(signs) != 1 else ''} · matched against the corpus "
-                    "sign index"
+                    f"{'s' if len(signs) != 1 else ''} as pasted · your spaces are "
+                    "treated as hints: signs are regrouped against the corpus before "
+                    "reading, and you can correct the grouping afterwards"
                 )
             else:
                 st.caption(
@@ -675,11 +695,21 @@ def render_workspace(df: pd.DataFrame) -> None:
             st.warning("Enter a transliteration, MdC string or sign sequence first.")
         else:
             with st.spinner("Searching corpus parallels…"):
+                # For a glyph query, regroup the signs first so the parallels are
+                # matched on corpus-style groups rather than on the paste's spacing.
+                regrouped: str | None = None
+                if contains_hieroglyphs(query):
+                    segmentation, _, _, _ = resegment_query(df, query)
+                    regrouped = " ".join(segmentation.groups)
+                    st.session_state["whyptology_segments"] = segmentation.groups
+                else:
+                    st.session_state.pop("whyptology_segments", None)
                 pool = retrieve_top_k(
                     df,
                     query_mdc=query,
                     query_reading_order=reading_order,
                     k=max(settings.top_k, 25),
+                    query_hieroglyphs_norm=regrouped,
                 )
                 st.session_state["whyptology_results"] = pool.head(
                     max(settings.top_k, 5)
@@ -721,8 +751,62 @@ def render_workspace(df: pd.DataFrame) -> None:
                 "already given."
             )
         else:
-            model = load_reading_model(corpus_signature(df), df)
-            signs = normalize_hieroglyphs(last_query).split()
+            segmentation, as_pasted, model, segmenter = resegment_query(df, last_query)
+            suggested = " ".join(segmentation.groups)
+
+            # --- segmentation editor -------------------------------------------
+            # The lattice's grouping is a proposal. An Egyptologist must be able to
+            # override it, so the groups are shown as chips and the spacing can be
+            # edited directly: a space is a boundary. The widget key includes the
+            # query so a new search starts from the new proposal.
+            edit_key = f"whyptology_segment_edit_{hashlib.blake2b(last_query.encode(), digest_size=8).hexdigest()}"
+            edited = st.text_input(
+                "Sign groups — edit the spaces to split or merge groups",
+                value=suggested,
+                key=edit_key,
+                help="One space = one group boundary. The reading below follows this grouping.",
+            )
+            signs = normalize_hieroglyphs(edited).split() or segmentation.groups
+            chips = "".join(
+                f'<span class="seg-chip{" seg-chip-unattested" if g not in segmenter.group_counts else ""}">'
+                f"{escape(display_sign_group(g))}</span>"
+                for g in signs
+            )
+            st.markdown(f'<div class="seg-chips">{chips}</div>', unsafe_allow_html=True)
+
+            if signs == segmentation.groups and segmentation.changed_from_hints:
+                parts = []
+                if segmentation.crossed_hints:
+                    parts.append(
+                        f"merged across {len(segmentation.crossed_hints)} of your space"
+                        f"{'s' if len(segmentation.crossed_hints) != 1 else ''}"
+                    )
+                if segmentation.inserted_boundaries:
+                    parts.append(
+                        f"added {len(segmentation.inserted_boundaries)} boundar"
+                        f"{'ies' if len(segmentation.inserted_boundaries) != 1 else 'y'}"
+                    )
+                st.caption(
+                    "Regrouped from your spacing (" + ", ".join(parts) + ") to match "
+                    "how the corpus writes these signs. Every group shown as a chip is "
+                    "attested unless marked; edit the spaces above to overrule."
+                )
+                # Runner-up: the reading under the user's own spacing, when its score
+                # is close enough that a specialist might reasonably prefer it.
+                _, hints = glyph_stream(as_pasted)
+                pasted_score = segmenter.score_segmentation(as_pasted, hints)
+                gap = segmentation.score - pasted_score
+                if gap < 8.0:
+                    pasted_reading = " ".join(
+                        p.predicted or "∅" for p in model.predict_sequence(as_pasted)
+                    )
+                    st.caption(
+                        f"Runner-up — your spacing as pasted ({gap:.1f} nats behind): "
+                        f"*{escape(pasted_reading)}*"
+                    )
+            elif signs != segmentation.groups:
+                st.caption("Using your edited grouping.")
+
             predictions = model.predict_sequence(signs)
             reading = " ".join(p.predicted for p in predictions if p.predicted)
             unseen = [p for p in predictions if not p.was_seen]
