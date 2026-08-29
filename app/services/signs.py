@@ -75,7 +75,9 @@ def build_sign_index(
     """
     index: dict[str, SignReadings] = {}
     for _, row in df.iterrows():
-        glyphs = str(row.get("hieroglyphs_norm") or row.get("hieroglyphs") or "").split()
+        # Only the normalised column: falling back to the raw string used to put
+        # literal `<g>E198</g>` markup into the index as if it were a sign.
+        glyphs = str(row.get("hieroglyphs_norm") or "").split()
         readings = str(row.get("transliteration_gold") or "").split()
         if not glyphs or len(glyphs) != len(readings):
             continue

@@ -14,11 +14,11 @@ from app.core.config import settings
 from app.data.loader import load_examples_csv
 from app.services.annotations import save_annotation
 from app.services.evaluation import evaluate_benchmark, load_benchmark_csv
-from app.services.retrieval import log_retrieval, retrieve_top_k
+from app.services.retrieval import retrieve_top_k
 from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import SessionLocal
-from app.storage.repo import AnnotationRepo, RetrievalRunRepo
+from app.storage.repo import AnnotationRepo
 from app.ui.review_common import (
     annotation_history_to_df,
     attach_db_ids,
@@ -103,17 +103,6 @@ with search_tab:
                 )
                 st.session_state["results"] = results
                 st.session_state["reading_suggestions"] = suggestions
-
-                session = SessionLocal()
-                try:
-                    log_retrieval(
-                        RetrievalRunRepo(session),
-                        query_mdc=query_mdc,
-                        query_reading_order=query_reading_order,
-                        top_df=results,
-                    )
-                finally:
-                    session.close()
             else:
                 st.warning("Please enter MdC or sign sequence.")
 

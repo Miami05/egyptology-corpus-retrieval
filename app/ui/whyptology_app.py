@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from html import escape
 from pathlib import Path
 import sys
@@ -15,9 +16,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.config import settings
 from app.data.loader import load_examples_csv
-from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs
+from app.data.normalizer import (
+    contains_hieroglyphs,
+    display_sign_group,
+    normalize_hieroglyphs,
+)
 from app.services.annotations import save_annotation
-from app.services.retrieval import log_retrieval, retrieve_top_k
+from app.services.retrieval import retrieve_top_k
 from app.services.reading_model import train_reading_model
 from app.services.signs import (
     build_sign_index,
@@ -27,7 +32,7 @@ from app.services.signs import (
 from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import SessionLocal
-from app.storage.repo import AnnotationRepo, RetrievalRunRepo
+from app.storage.repo import AnnotationRepo
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
     attach_db_ids,
@@ -137,15 +142,29 @@ def inject_theme() -> None:
     )
 
 
-@st.cache_resource(show_spinner=False)
-def load_reading_model(corpus_signature: int):
-    """Train the sign-level reading model once per corpus.
+def corpus_signature(df: pd.DataFrame) -> str:
+    """Content hash of the columns the reading model trains on.
 
-    The signature argument is the row count, so the cache invalidates when the corpus
-    is reimported. Training is fast (well under a second on the full corpus) but it
-    should not run on every rerun.
+    The row count used to serve as the cache key, but a re-import with the same
+    number of rows then silently kept the stale model. Hashing the sign and reading
+    columns (a few ms) invalidates exactly when the training data changes.
     """
-    return train_reading_model(load_examples_csv(str(DATA_PATH)))
+    hasher = hashlib.blake2b(digest_size=16)
+    for column in ("hieroglyphs_norm", "transliteration_gold"):
+        hasher.update(pd.util.hash_pandas_object(df[column], index=False).values.tobytes())
+    return hasher.hexdigest()
+
+
+@st.cache_resource(show_spinner=False)
+def load_reading_model(signature: str, _df: pd.DataFrame):
+    """Train the sign-level reading model once per corpus content.
+
+    `_df` is the already-loaded corpus (the underscore keeps Streamlit from hashing
+    it; `signature` carries the identity instead), so the CSV is not parsed a second
+    time. Training is fast (well under a second on the full corpus) but it should
+    not run on every rerun.
+    """
+    return train_reading_model(_df)
 
 
 @st.cache_data(show_spinner="Preparing the corpus…")
@@ -672,16 +691,6 @@ def render_workspace(df: pd.DataFrame) -> None:
                     query_reading_order=reading_order,
                     top_n=3,
                 )
-                session = SessionLocal()
-                try:
-                    log_retrieval(
-                        RetrievalRunRepo(session),
-                        query_mdc=query,
-                        query_reading_order=reading_order,
-                        top_df=st.session_state["whyptology_results"],
-                    )
-                finally:
-                    session.close()
             st.rerun()
 
     decode_tab, suggestions_tab, parallels_tab, analysis_tab, source_tab = st.tabs(
@@ -712,7 +721,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 "already given."
             )
         else:
-            model = load_reading_model(len(df))
+            model = load_reading_model(corpus_signature(df), df)
             signs = normalize_hieroglyphs(last_query).split()
             predictions = model.predict_sequence(signs)
             reading = " ".join(p.predicted for p in predictions if p.predicted)
@@ -737,10 +746,10 @@ def render_workspace(df: pd.DataFrame) -> None:
             table = pd.DataFrame(
                 [
                     {
-                        "Sign": p.sign,
+                        "Sign": display_sign_group(p.sign),
                         "Chosen reading": p.predicted or "— unreadable —",
                         "Evidence": (
-                            f"inferred from {p.fallback_from} "
+                            f"inferred from {display_sign_group(p.fallback_from)} "
                             f"({p.fallback_similarity:.0%} glyph match)"
                             if p.is_fallback
                             else f"attested {p.attested_count}×"
@@ -782,7 +791,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                         if r != p.predicted
                     )
                     st.markdown(
-                        f"- **{p.sign}** → chose `{p.predicted}` over {others or '—'}"
+                        f"- **{display_sign_group(p.sign)}** → chose `{p.predicted}` over {others or '—'}"
                     )
 
     with suggestions_tab:
@@ -1232,6 +1241,19 @@ def render_signs(df: pd.DataFrame) -> None:
 
     index = build_sign_index(df)
     summary = multivalence_summary(index)
+    alignment = df.attrs.get("alignment")
+    if alignment is not None:
+        if alignment.misaligned_rows:
+            st.warning(
+                f"{alignment.misaligned_rows:,} of {alignment.total_rows:,} corpus rows "
+                "have sign groups that do not line up with their transliteration and "
+                "are excluded from these counts."
+            )
+        else:
+            st.caption(
+                f"All {alignment.total_rows:,} corpus rows are sign/reading aligned and "
+                "counted here."
+            )
     if not index:
         st.info(
             "No sign/reading alignment available. Rows need hieroglyphs whose sign "
@@ -1287,7 +1309,7 @@ def render_signs(df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
     labels = [
-        f"{entry.sign}  —  {entry.distinct_count} readings, {entry.total_instances} instances"
+        f"{display_sign_group(entry.sign)}  —  {entry.distinct_count} readings, {entry.total_instances} instances"
         for entry in multivalent
     ]
     chosen = st.selectbox("Sign group", labels, label_visibility="collapsed")
@@ -1295,7 +1317,7 @@ def render_signs(df: pd.DataFrame) -> None:
 
     st.markdown(
         '<div class="hieroglyph-panel"><div class="glyph-line">'
-        f'<span class="glyphs">{escape(entry.sign)}</span></div></div>',
+        f'<span class="glyphs">{escape(display_sign_group(entry.sign))}</span></div></div>',
         unsafe_allow_html=True,
     )
     st.markdown(

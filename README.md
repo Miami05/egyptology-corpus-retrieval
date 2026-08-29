@@ -61,6 +61,21 @@ scikit-learn in ways that look like dependency bugs.
 
 Tests: `pytest tests/ -q`
 
+## Known limitations
+
+An external expert trial (Urk. IV 1, August 2026) exposed the current weak points —
+each is understood and scheduled in [ROADMAP.md](ROADMAP.md):
+
+- **Sign groups are split on whitespace.** The spacing of a pasted query *is* the
+  segmentation; an unspaced paste collapses to one unattested group. Until the
+  resegmentation work lands, space the query by quadrat.
+- ~~`<g>…</g>` markup breaks glyph/reading alignment~~ — fixed (Phase 0): markup for
+  signs without a Unicode codepoint is now one placeholder glyph, so all 12,772
+  rows are aligned and used; the loader reports the count on every start.
+- ~~No Unicode variant folding~~ — fixed (Phase 0): text is NFC-normalised and the
+  plural-strokes variants U+133E5/U+133FC fold together. Other visually identical
+  pairs can be added to `SIGN_VARIANTS` in `app/data/normalizer.py` as they are found.
+
 See [DEPLOYMENT.md](DEPLOYMENT.md) for hosting, the database step that makes annotations
 persist, the transliteration font, and the responsive-testing gotcha.
 

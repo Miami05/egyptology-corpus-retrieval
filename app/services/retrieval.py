@@ -13,7 +13,6 @@ from app.retrieval.exact import exact_match_candidates
 from app.retrieval.fuzzy import fuzzy_candidate
 from app.retrieval.scorer import DEFAULT_WEIGHTS, ScoreWeights, combine_scores
 from app.retrieval.tfidf import tfidf_candidates
-from app.storage.repo import RetrievalRunRepo
 
 
 def retrieve_top_k(
@@ -74,20 +73,3 @@ def retrieve_top_k(
     top["evidence"] = top.apply(build_evidence, axis=1)
     return top
 
-
-def log_retrieval(
-    session_repo: RetrievalRunRepo,
-    query_mdc: str,
-    query_reading_order: str,
-    top_df: pd.DataFrame,
-) -> None:
-    ids = ",".join(map(str, top_df["id"].tolist())) if "id" in top_df.columns else ""
-    scores = ",".join(f"{score:.4f}" for score in top_df["final_score"].tolist())
-    session_repo.log_run(
-        query_mdc=query_mdc,
-        query_mdc_norm=normalize_mdc(query_mdc),
-        query_reading_order=query_reading_order,
-        query_reading_order_norm=normalize_sign_sequence(query_reading_order),
-        top_example_ids=ids,
-        top_scores=scores,
-    )

@@ -74,6 +74,20 @@ Fix applied in `scripts/build_competitive_ambiguity_benchmark.py`:
 
 **Do not quote the 0.85 / 1.00 figure.** It is an evaluation bug, not a result.
 
+> **Correction (2026-08-29): the fix above is incomplete.** The twin-overlap guard
+> runs inside the builder's candidate pool (`--pool-size`, default 2,000 rows), but
+> the eval runner loads the **full** corpus and excludes only the one expected row.
+> A near-identical twin outside the builder pool is invisible to the guard and present
+> at eval time — the same artifact, through a window the fix did not cover, and it
+> still scales with corpus size. Measured on 2026-08-29 with the builder's own metric
+> (loose-form token Jaccard ≥ 0.9) over all 12,772 rows: **11 of the 20 competitive
+> items have a twin outside the pool — 7 of them at 1.00, 4 string-identical.** The
+> ambiguous benchmark has no guard at all (`df.head(20)`) and 10 of its 20 items have
+> twins. Until the guard is re-run against the same corpus the eval loads (see
+> ROADMAP.md, Phase 4), treat current benchmark numbers as an upper bound rather than
+> a measurement, and version the benchmark file rather than overwriting it — a re-run
+> re-selects all 20 items and breaks comparability with every number in this report.
+
 ## 4. Two other evals that are not accuracy measures
 
 - `run_ambiguous_suggestion_eval` reports 1.00 across the board because the expected

@@ -1,19 +1,132 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+import zlib
 
 WHITESPACE_RE = re.compile(r"\s+")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
 
-# Egyptian Hieroglyphs: U+13000-U+1342F, plus the format controls and the extended
-# block used for quadrat layout. Anything here is a sign, not transliteration.
-HIEROGLYPH_RE = re.compile(
-    r"[\U00013000-\U0001342F\U00013430-\U0001345F\U00013460-\U000143FF]"
-)
-NON_HIEROGLYPH_RE = re.compile(
-    r"[^\U00013000-\U0001342F\U00013430-\U0001345F\U00013460-\U000143FF\s]"
-)
+# ---------------------------------------------------------------------------
+# Hieroglyph character classes
+#
+# Three kinds of codepoint appear in sign strings and each needs different handling:
+#
+#   signs            U+13000-1342F (Egyptian Hieroglyphs) and U+13460-143FF
+#                    (Extended-A). These are the content.
+#   format controls  U+13430-1345F: quadrat joiners, insertion and enclosure marks
+#                    used by layout-aware editors. They say how signs are arranged,
+#                    not which signs there are. The corpus contains none, so a pasted
+#                    query carrying them could never match — they are deleted.
+#   placeholders     Private Use Area codepoints this module allocates for TLA's
+#                    `<g>M12B</g>` markup (signs that have no Unicode codepoint yet).
+#                    See `markup_to_placeholder`.
+#
+# Variation selectors (U+FE00-FE0F, U+E0100-E01EF) attach to the preceding sign and
+# are deleted rather than treated as separators: replacing one with a space used to
+# split a sign group in two, misaligning every group after it.
+# ---------------------------------------------------------------------------
+SIGN_CLASS = r"\U00013000-\U0001342F\U00013460-\U000143FF"
+FORMAT_CONTROL_CLASS = r"\U00013430-\U0001345F"
+PLACEHOLDER_CLASS = r"\U000F0000-\U000FFFFD\U00100000-\U0010FFFD"
+VARIATION_SELECTOR_CLASS = r"\uFE00-\uFE0F\U000E0100-\U000E01EF"
+
+# Real signs only: the detector that routes a query to the sign index. Format
+# controls and placeholders alone must not make a query count as hieroglyphic.
+HIEROGLYPH_RE = re.compile(f"[{SIGN_CLASS}]")
+# Everything that may stay inside a normalised sign group.
+NON_GROUP_CHAR_RE = re.compile(f"[^{SIGN_CLASS}{PLACEHOLDER_CLASS}\\s]")
+DELETE_IN_GROUP_RE = re.compile(f"[{FORMAT_CONTROL_CLASS}{VARIATION_SELECTOR_CLASS}]")
+PLACEHOLDER_RE = re.compile(f"[{PLACEHOLDER_CLASS}]")
+
+# TLA writes a sign that has no Unicode codepoint as <g>GARDINER_ID</g>. Only this
+# exact shape occurs in the corpus (2,577 tags, 586 distinct IDs, verified 2026-08-29).
+G_MARKUP_RE = re.compile(r"<g>([^<>]*)</g>")
+
+# Visually identical or interchangeable codepoints, folded to one canonical form on
+# both the corpus and the query side. Each entry needs a reason; do not fold signs
+# that merely look alike to a non-specialist.
+#
+#   U+133FC Z15B (three vertical strokes) -> U+133E5 Z2 (plural strokes). Text
+#   editors and PDFs emit either for the plural marker; the corpus uses Z2 1,763
+#   times and Z15B 7 times. This was the mismatch in the first expert trial.
+SIGN_VARIANTS: dict[str, str] = {
+    "\U000133FC": "\U000133E5",
+}
+_SIGN_VARIANT_TABLE = str.maketrans(SIGN_VARIANTS)
+
+# Placeholder registry. A placeholder is a Private Use codepoint derived from the
+# markup content by a hash, so the same sign ID maps to the same codepoint in every
+# process and the reading model can treat it as one more glyph. When two IDs hash to
+# the same slot the later one probes forward; that is deterministic as long as IDs
+# are first seen in the same order, which holds because the corpus CSV is loaded in
+# file order before any query is normalised. The registry also lets the UI turn a
+# placeholder back into its ID for display.
+_PLACEHOLDER_BASE = 0xF0000
+_PLACEHOLDER_SLOTS = 0x10FFFD - 0xF0000 + 1  # both supplementary PUA planes
+_PLACEHOLDER_SKIP = {0xFFFFE, 0xFFFFF}  # noncharacters between the two planes
+_placeholder_to_id: dict[str, str] = {}
+_id_to_placeholder: dict[str, str] = {}
+# (existing id, new id) pairs that shared a hash slot and were resolved by probing.
+# Informational; the loader reports the count.
+PLACEHOLDER_COLLISIONS: list[tuple[str, str]] = []
+
+# A bare Gardiner sign number standing alone as a token (e.g. "V31Aa" between two sign
+# groups) is the same thing as <g>V31Aa</g> without its markup; one corpus row writes
+# it that way. Only whole whitespace-delimited tokens qualify.
+BARE_GARDINER_TOKEN_RE = re.compile(r"(?<!\S)(?:[A-Z]|Aa|NL|NU)\d{1,3}[A-Za-z]{0,2}(?!\S)")
+
+# TLA restoration brackets ⟦ ⟧ wrap a sign inside a group; they are deleted, not
+# spaced, so the group they sit in is not split.
+EDITORIAL_BRACKETS_RE = re.compile(r"[\u27e6\u27e7\u2e22-\u2e25\u2329\u232a\u27e8\u27e9]")
+
+
+def markup_to_placeholder(sign_id: str) -> str:
+    """One Private Use codepoint standing in for a `<g>…</g>` sign ID."""
+    key = normalize_whitespace(sign_id) or "(empty)"
+    known = _id_to_placeholder.get(key)
+    if known is not None:
+        return known
+    slot = zlib.crc32(key.encode("utf-8")) % _PLACEHOLDER_SLOTS
+    probed = False
+    while True:
+        codepoint = _PLACEHOLDER_BASE + (slot % _PLACEHOLDER_SLOTS)
+        if codepoint in _PLACEHOLDER_SKIP:
+            slot += 1
+            continue
+        placeholder = chr(codepoint)
+        existing = _placeholder_to_id.get(placeholder)
+        if existing is None:
+            break
+        if not probed:
+            PLACEHOLDER_COLLISIONS.append((existing, key))
+            probed = True
+        slot += 1
+    _placeholder_to_id[placeholder] = key
+    _id_to_placeholder[key] = placeholder
+    return placeholder
+
+
+def placeholder_to_markup(placeholder: str) -> str:
+    """The sign ID behind a placeholder, e.g. 'D77'; '?' when unknown."""
+    return _placeholder_to_id.get(placeholder, "?")
+
+
+def is_placeholder(char: str) -> bool:
+    return bool(PLACEHOLDER_RE.fullmatch(char))
+
+
+def display_sign_group(group: str) -> str:
+    """Render a normalised sign group for humans: placeholders become ⟨ID⟩."""
+    return PLACEHOLDER_RE.sub(lambda m: f"⟨{placeholder_to_markup(m.group(0))}⟩", group)
+
+
+def nfc(value: object) -> str:
+    """Canonical composition. Egyptological transliteration mixes precomposed and
+    combining forms of the same letter (ẖ appears both ways in the corpus), and they
+    only compare equal after composition. Every normaliser starts here."""
+    return unicodedata.normalize("NFC", str(value))
 
 
 def contains_hieroglyphs(value: object) -> bool:
@@ -27,16 +140,31 @@ def contains_hieroglyphs(value: object) -> bool:
 
 
 def normalize_hieroglyphs(value: object) -> str:
-    """Keep only hieroglyphs, preserving whitespace as the sign-group separator.
+    """Keep only sign groups, preserving whitespace as the group separator.
 
-    The TLA data separates quadrats/sign groups with spaces and those groups line up
+    The TLA data separates sign groups with spaces and those groups line up
     one-to-one with transliteration tokens, so whitespace is meaningful and must
-    survive normalisation.
+    survive normalisation — and nothing else may introduce or remove a space.
+
+    Steps, in order:
+      1. NFC.
+      2. `<g>ID</g>` markup becomes a single placeholder codepoint, so a sign
+         without a Unicode codepoint stays one sign instead of vanishing or
+         splitting its group.
+      3. Format controls, variation selectors and editorial brackets ⟦⟧ are
+         deleted (not spaced), so they never split a group.
+      4. Variant codepoints are folded to their canonical sign.
+      5. Anything else that is not a sign becomes a space.
     """
-    text = str(value)
+    text = nfc(value)
     if not text.strip():
         return ""
-    text = NON_HIEROGLYPH_RE.sub(" ", text)
+    text = G_MARKUP_RE.sub(lambda m: markup_to_placeholder(m.group(1)), text)
+    text = BARE_GARDINER_TOKEN_RE.sub(lambda m: markup_to_placeholder(m.group(0)), text)
+    text = DELETE_IN_GROUP_RE.sub("", text)
+    text = EDITORIAL_BRACKETS_RE.sub("", text)
+    text = text.translate(_SIGN_VARIANT_TABLE)
+    text = NON_GROUP_CHAR_RE.sub(" ", text)
     return normalize_whitespace(text)
 
 
@@ -45,7 +173,7 @@ def normalize_whitespace(value: str) -> str:
 
 
 def normalize_text(value: str) -> str:
-    value = str(value).lower().strip()
+    value = nfc(value).lower().strip()
     return normalize_whitespace(value)
 
 
@@ -62,6 +190,14 @@ def normalize_sign_sequence(value: str) -> str:
 
 
 def normalize_transliteration(value: str) -> str:
+    """ASCII search fold for transliteration (ḥtp → htp, ḏ → dj …).
+
+    This is deliberately lossy: it exists so a user typing plain ASCII can hit the
+    corpus. It merges ꜣ/ꜥ and ḥ/h, so it must never be used as an identity key for
+    readings — see `strict_reading_key` in app.services.suggestions for that.
+    NFC runs first (inside normalize_text) so a decomposed ẖ folds to kh like its
+    precomposed twin instead of leaking through as a bare h.
+    """
     value = normalize_text(value)
     value = value.replace("ꜣ", "a")
     value = value.replace("ꜥ", "a")

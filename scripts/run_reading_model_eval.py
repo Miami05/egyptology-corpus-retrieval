@@ -119,6 +119,10 @@ def main() -> None:
         for _, row in test.iterrows():
             signs = str(row["hieroglyphs_norm"]).split()
             gold = str(row["transliteration_gold"]).split()
+            if not signs or len(signs) != len(gold):
+                # zip() would silently truncate and score misaligned positions as if
+                # they lined up; such a row cannot be evaluated at all.
+                continue
             predictions = model.predict_sequence(signs)
             # Ablation: same model, right-hand sign context switched off, so any
             # difference is attributable to that term alone.

@@ -114,6 +114,9 @@ class ReadingModel:
     # group by falling back to the closest attested one.
     glyph_to_groups: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     sentences_seen: int = 0
+    # Rows skipped because sign groups and readings did not align. Reported, not
+    # hidden: on a clean load this must be 0 (see app.data.loader.alignment_report).
+    sentences_skipped: int = 0
 
     # ---------- training ----------
 
@@ -124,6 +127,7 @@ class ReadingModel:
             if not signs or len(signs) != len(readings):
                 # Without one-to-one alignment a sign cannot be paired with a
                 # reading; skipping keeps the counts honest.
+                self.sentences_skipped += 1
                 continue
             self.sentences_seen += 1
             previous_reading = BOUNDARY
@@ -202,7 +206,10 @@ class ReadingModel:
             candidates |= self.glyph_to_groups.get(glyph, set())
         best_group = ""
         best_score = 0.0
-        for candidate in candidates:
+        # Sorted so the result is deterministic: set iteration order depends on the
+        # hash seed, and two equally similar, equally attested groups used to swap
+        # between runs.
+        for candidate in sorted(candidates):
             candidate_glyphs = set(candidate)
             union = glyphs | candidate_glyphs
             if not union:
@@ -349,8 +356,4 @@ class ReadingModel:
 
 
 def train_reading_model(df: pd.DataFrame) -> ReadingModel:
-    return ReadingModel(
-        sign_reading=defaultdict(Counter),
-        reading_bigram=defaultdict(Counter),
-        sign_context=defaultdict(Counter),
-    ).fit(df)
+    return ReadingModel().fit(df)

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass, field
+
 import pandas as pd
 
 from app.data.normalizer import (
+    PLACEHOLDER_COLLISIONS,
     normalize_hieroglyphs,
     normalize_label,
     normalize_mdc,
@@ -46,6 +50,46 @@ REQUIRED_COLUMNS = [
 ]
 
 
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AlignmentReport:
+    """How many corpus rows the sign-level model can actually use.
+
+    A row is usable when its normalised sign groups line up one-to-one with its
+    transliteration tokens. Rows that do not are skipped by the reading model and
+    the sign index, so the count must be visible rather than a silent `continue`.
+    The raw CSV is 100% aligned; every misalignment is introduced by normalisation,
+    which makes this number a regression check on the normaliser itself.
+    """
+
+    total_rows: int
+    misaligned_rows: int
+    misaligned_indices: list[int] = field(default_factory=list)
+    placeholder_collisions: int = 0
+
+    @property
+    def usable_rows(self) -> int:
+        return self.total_rows - self.misaligned_rows
+
+
+def alignment_report(df: pd.DataFrame, max_listed: int = 50) -> AlignmentReport:
+    signs = df["hieroglyphs_norm"].astype(str).str.split()
+    readings = df["transliteration_gold"].astype(str).str.split()
+    bad = [
+        int(index)
+        for index, (s, r) in enumerate(zip(signs, readings))
+        if not s or len(s) != len(r)
+    ]
+    return AlignmentReport(
+        total_rows=len(df),
+        misaligned_rows=len(bad),
+        misaligned_indices=bad[:max_listed],
+        placeholder_collisions=len(PLACEHOLDER_COLLISIONS),
+    )
+
+
 def load_examples_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     for col in REQUIRED_COLUMNS:
@@ -82,4 +126,16 @@ def load_examples_csv(path: str) -> pd.DataFrame:
     df["aesthetic_arrangement_flag_bool"] = df["aesthetic_arrangement_flag"].map(
         parse_bool
     )
+    report = alignment_report(df)
+    df.attrs["alignment"] = report
+    if report.misaligned_rows:
+        logger.warning(
+            "%d of %d corpus rows have sign groups that do not align with their "
+            "transliteration and will be skipped by the reading model (first: %s)",
+            report.misaligned_rows,
+            report.total_rows,
+            report.misaligned_indices[:10],
+        )
+    else:
+        logger.info("corpus alignment: %d/%d rows usable", report.usable_rows, report.total_rows)
     return df

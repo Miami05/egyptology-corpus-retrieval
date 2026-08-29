@@ -5,7 +5,7 @@ from collections import OrderedDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.storage.models import Annotation, EvaluationResult, Example, RetrievalRun
+from app.storage.models import Annotation, EvaluationResult, Example
 
 
 def _coerce_bool(value: object) -> bool:
@@ -182,33 +182,6 @@ class AnnotationRepo:
                 latest_by_example[row.example_id] = row
 
         return list(latest_by_example.values())
-
-
-class RetrievalRunRepo:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def log_run(
-        self,
-        query_mdc: str,
-        query_mdc_norm: str,
-        query_reading_order: str,
-        query_reading_order_norm: str,
-        top_example_ids: str,
-        top_scores: str,
-    ) -> RetrievalRun:
-        row = RetrievalRun(
-            query_mdc=query_mdc,
-            query_mdc_norm=query_mdc_norm,
-            query_reading_order=query_reading_order,
-            query_reading_order_norm=query_reading_order_norm,
-            top_example_ids=top_example_ids,
-            top_scores=top_scores,
-        )
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
-        return row
 
 
 class EvaluationRepo:

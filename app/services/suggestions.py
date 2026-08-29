@@ -9,9 +9,11 @@ from math import sqrt
 import pandas as pd
 
 from app.data.normalizer import (
+    nfc,
     normalize_mdc,
     normalize_sign_sequence,
     normalize_transliteration,
+    normalize_whitespace,
 )
 from app.retrieval.scorer import (
     effective_surplus_penalty,
@@ -21,6 +23,10 @@ from app.retrieval.scorer import (
 
 TOKEN_RE = re.compile(r"[\s|:;\-,=~{}\[\]().]+")
 LOOSE_MARKER_RE = re.compile(r"[|:;\-,=~{}\[\]().]+")
+# Characters the strict key drops: editorial brackets (round, square, curly, angle,
+# half-brackets) and the morpheme dot. Their *contents* are kept — `(w)di̯` keeps its
+# w — so only the marks vanish, never a letter.
+STRICT_DROP_RE = re.compile(r"[()\[\]{}⟨⟩⸢⸣⸤⸥〈〉.|]+")
 
 
 @dataclass(frozen=True)
@@ -77,11 +83,37 @@ def _token_set(value: object) -> set[str]:
     return {token for token in TOKEN_RE.split(text) if token}
 
 
+def strict_reading_key(value: object) -> str:
+    """Identity key for a reading: two readings share it only if they are the same
+    string of sounds.
+
+    NFC, lower-case, `⸗` → `=`, editorial brackets and dots removed, everything else
+    kept. In particular every Egyptological letter stays distinct (ꜣ ≠ ꜥ, ḥ ≠ h,
+    ḫ ≠ ẖ, ṯ ≠ t, ḏ ≠ d), the yod ꞽ is a letter and is kept, and `=` survives so a
+    suffix pronoun `=ꞽ` does not collapse to the empty string.
+
+    This replaced the old canonical key, which ran the ASCII search fold first and
+    merged 256 sentence-level readings that differ in a consonant (ꜣ/ꜥ 85 pairs, ḥ/h
+    986 tokens) — corrupting suggestion grouping and support counts. The ASCII fold
+    still exists for *search*; it is simply not an identity.
+    """
+    text = nfc(_safe_str(value)).lower().replace("⸗", "=")
+    text = STRICT_DROP_RE.sub("", text)
+    return normalize_whitespace(text)
+
+
 def canonical_reading(value: object) -> str:
-    return normalize_mdc(normalize_transliteration(_safe_str(value)))
+    """The key readings are grouped and compared by. Strict — see strict_reading_key."""
+    return strict_reading_key(value)
 
 
 def loose_reading_form(value: object) -> str:
+    """Display / near-match form: ASCII-folded and stripped of editorial marks.
+
+    Deliberately lossy (ḥ and h both become h), so it can tell that a user's plain
+    ASCII `htp` means the corpus's `ḥtp` and that `n.t` and `n(.ꞽ).t` are one word.
+    Never use it to decide that two corpus readings are identical.
+    """
     text = normalize_transliteration(_safe_str(value))
     text = LOOSE_MARKER_RE.sub(" ", text)
     return normalize_mdc(text)
