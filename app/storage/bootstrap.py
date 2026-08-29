@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from app.storage.db import Base, SessionLocal, engine
 from app.storage.models import EvaluationResult  # noqa: F401
-from app.storage.models import Annotation, Example, RetrievalRun  # noqa: F401
+from app.storage.models import Annotation, Example  # noqa: F401
 from app.storage.repo import ExampleRepo
 
 # Importing the models above is what registers the tables on Base.metadata;

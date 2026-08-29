@@ -1,45 +1,57 @@
+"""One human-readable line saying which signals actually ranked this row.
+
+The line must show the signals that produced the ranking. The old version printed
+only the transliteration signals, so every hit for a hieroglyph query read
+`fuzzy=0.00 | tfidf=0.00` — the glyph signals that did all the work were invisible,
+which made correct rankings look arbitrary.
+"""
+
 from __future__ import annotations
 
 import pandas as pd
 
 
+def _value(row: pd.Series, key: str) -> float:
+    return float(row.get(key, 0.0) or 0.0)
+
+
 def build_evidence(row: pd.Series) -> str:
     bits: list[str] = []
-    exact_bonus = float(row.get("exact_bonus", 0.0) or 0.0)
-    deity_bonus = float(row.get("deity_bonus", 0.0) or 0.0)
-    formula_type_bonus = float(row.get("formula_type_bonus", 0.0) or 0.0)
-    formula_slot_bonus = float(row.get("formula_slot_bonus", 0.0) or 0.0)
-    offering_overlap = float(row.get("offering_overlap", 0.0) or 0.0)
-    recipient_bonus = float(row.get("recipient_bonus", 0.0) or 0.0)
-    reading_order_overlap = float(row.get("reading_order_overlap", 0.0) or 0.0)
-    aesthetic_flag = bool(row.get("aesthetic_arrangement_flag_bool", False) or False)
-    fuzzy_score = float(row.get("fuzzy_score", 0.0) or 0.0)
-    tfidf_score = float(row.get("tfidf_score", 0.0) or 0.0)
-    overlap_score = float(row.get("overlap_score", 0.0) or 0.0)
-    if exact_bonus == 1.0:
+
+    if _value(row, "exact_bonus") == 1.0:
         bits.append("matched by exact normalized MdC")
-    context_bits: list[str] = []
-    if formula_type_bonus > 0.0:
-        context_bits.append("formula type")
-    if formula_slot_bonus > 0.0:
-        context_bits.append("formula slot")
-    if deity_bonus > 0.0:
-        context_bits.append("deity")
-    if recipient_bonus > 0.0:
-        context_bits.append("recipient")
-    if offering_overlap > 0.0:
-        context_bits.append(f"offering items ({offering_overlap:.2f})")
-    if context_bits:
-        bits.append("context match: " + ", ".join(context_bits))
-    else:
-        bits.append("context match: none detected")
-    if reading_order_overlap > 0.0:
-        bits.append(f"reading order contributed ({reading_order_overlap:.2f})")
-    else:
-        bits.append("reading order did not contribute")
-    if aesthetic_flag:
-        bits.append("candidate has aesthetic arrangement flag")
-    bits.append(f"text similarity: fuzzy={fuzzy_score:.2f}")
-    bits.append(f"tfidf={tfidf_score:.2f}")
-    bits.append(f"token overlap={overlap_score:.2f}")
+    if _value(row, "glyph_exact_bonus") == 1.0:
+        bits.append("exact sign-group match")
+
+    glyph_bits: list[str] = []
+    for key, label in [
+        ("glyph_idf_overlap_score", "sign IDF overlap"),
+        ("glyph_order_score", "sign order"),
+        ("glyph_overlap_score", "sign overlap"),
+    ]:
+        value = _value(row, key)
+        if value > 0.0:
+            glyph_bits.append(f"{label}={value:.2f}")
+    if glyph_bits:
+        bits.append("sign match: " + " · ".join(glyph_bits))
+
+    text_bits: list[str] = []
+    for key, label in [
+        ("idf_overlap_score", "IDF overlap"),
+        ("overlap_score", "token overlap"),
+        ("fuzzy_score", "fuzzy"),
+        ("tfidf_score", "char ngram"),
+    ]:
+        value = _value(row, key)
+        if value > 0.0:
+            text_bits.append(f"{label}={value:.2f}")
+    if text_bits:
+        bits.append("text match: " + " · ".join(text_bits))
+
+    reading_order = _value(row, "reading_order_overlap")
+    if reading_order > 0.0:
+        bits.append(f"reading order contributed ({reading_order:.2f})")
+
+    if not bits:
+        bits.append("no matching signal — ranked by tie order only")
     return " | ".join(bits)

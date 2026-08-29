@@ -184,7 +184,6 @@ def evaluate(
             query_mdc=entry["query"],
             query_reading_order=entry["reading_order"],
             top_n=3,
-            include_query_candidate=False,
             weights=suggestion_weights,
         )
         useful_rank = None

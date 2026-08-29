@@ -200,13 +200,13 @@ def score_breakdown_lines(row: pd.Series) -> list[str]:
         "fuzzy_score",
         "tfidf_score",
         "overlap_score",
+        "idf_overlap_score",
         "exact_bonus",
+        "glyph_overlap_score",
+        "glyph_idf_overlap_score",
+        "glyph_order_score",
+        "glyph_exact_bonus",
         "reading_order_overlap",
-        "deity_bonus",
-        "formula_type_bonus",
-        "formula_slot_bonus",
-        "offering_overlap",
-        "aesthetic_bonus",
         "final_score",
     ]
     return [f"{key}: {float(row[key]):.4f}" for key in keys if key in row]

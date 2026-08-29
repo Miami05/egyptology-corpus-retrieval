@@ -124,7 +124,7 @@ def main() -> None:
 
         retrieved = retrieve_top_k(pool, query_mdc=query, k=min(50, len(pool)))
         suggestions = suggest_top_readings(
-            retrieved, query_mdc=query, top_n=3, include_query_candidate=False
+            retrieved, query_mdc=query, top_n=3
         )
 
         exact_rank = None

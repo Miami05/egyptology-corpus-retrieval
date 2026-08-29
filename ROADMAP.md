@@ -196,9 +196,9 @@ them, a note saying where the paste was regrouped, and the as-pasted reading as
 runner-up when within 8 nats. Corpus parallels are retrieved on the regrouped signs.
 Suite 93/93.
 
-## Phase 2 — Ranking and suggestions
+## Phase 2 — Ranking and suggestions — DONE 2026-08-29
 
-- [ ] **Order-sensitive glyph signal** in `app/retrieval/scorer.py`. Confirmed: every
+- [x] **Order-sensitive glyph signal** in `app/retrieval/scorer.py`. Confirmed: every
       surviving glyph signal is set-based (`:309-311` Jaccard, `:315-323` Tversky,
       `:324-326` whole-string equality); `fuzzy.py:9` and `tfidf.py:38` read only
       `mdc_norm`, which is `""` for glyph input. **14** permutation-collision groups
@@ -211,7 +211,7 @@ Suite 93/93.
       (`token_sort`/LCS), **not** `fuzz.ratio` on the raw codepoint string, which
       ignores group boundaries and over-rewards shared prefixes. Keep rows 1105/4763
       and the 3× repetition as regression fixtures.
-- [ ] **Renormalise the suggestion layer — and retune in the same change.** For glyph
+- [x] **Renormalise the suggestion layer — and retune in the same change.** For glyph
       input **56%** of the weight mass is structurally zero (`translit_overlap` 0.20,
       `char_similarity` 0.16, `exact_or_near` 0.12, plus `reading_similarity` 0.08
       whenever there is no reading order; `suggestions.py:37-44, :271-280`). *Correction
@@ -222,7 +222,7 @@ Suite 93/93.
       `lemma_density` (`:240-243`) is `min(rows_with_lemma,5)/5` — effectively a second
       support count. Naive renormalisation raises support's share from 8% to 18%, the
       opposite of the intent; retune weights together with the strict key from Phase 0.
-- [ ] **Honest empty state.** `retrieve_top_k` (`retrieval.py:73`) always returns k
+- [x] **Honest empty state.** `retrieve_top_k` (`retrieval.py:73`) always returns k
       rows; a junk query `𓀀 𓀁 𓀂 𓀃 𓀄` yields three cards at 0.273/0.231/0.231. Floor
       on **raw evidence** (shared sign groups ≥ n, or glyph IDF before renormalisation),
       not on `final_score`, which is renormalised per query and not comparable across
@@ -230,7 +230,7 @@ Suite 93/93.
       `fuzzy=0.00 | tfidf=0.00 | token overlap=0.00`. Also: for a glyph query 12,763 rows
       tie at 0 and `sort_values` is not stable, so ranks past the last positive score
       (and suggestions 2–3 for short queries) are arbitrary — use a stable sort.
-- [ ] **Delete the dead metadata block instead of debugging it.** *(Replaces the first
+- [x] **Delete the dead metadata block instead of debugging it.** *(Replaces the first
       draft's "bug sweep".)* `deity_norm`, `offering_items_norm`, `formula_type_norm`
       are empty for all 12,772 rows, so `deity/formula_type/formula_slot/offering/
       recipient/aesthetic` — 0.30 of the weight — never activate and are always
@@ -242,7 +242,7 @@ Suite 93/93.
       call site — dead. Reverse-alphabetical tie-break (`:350-357`) is real and common
       because confidence is rounded to 3 dp before sorting. Delete the block or
       populate the columns; fix the tie-break.
-- [ ] **New (missed by the first audit):**
+- [x] **New (missed by the first audit):**
       - Mixed glyph + Latin input is silently double-scored: `contains_hieroglyphs`
         routes to glyph mode while `normalize_mdc` keeps the Latin remainder, so both
         signal sets fire (appending ` wad` to an exact glyph query dropped it from
@@ -269,6 +269,40 @@ scores below the exact match, a junk query returns "no attested parallel", and t
 draft said "re-run the frozen evals" — those are transliteration-only and cannot see a
 glyph change. The sign eval's two result files disagree, top-1 exact 0.342 vs 0.080
 after dedup; only the deduplicated number can arbitrate.)*
+
+**Result (2026-08-29):**
+- Order signal: `glyph_order_score` = LCS over sign-group sequences / query length
+  (rapidfuzz at C speed via a group→char encoding), weight 0.25 of the glyph mass.
+  The permutation fixture (rows 1105/4763) no longer ties for a third order; a 3×
+  repetition scores 1/3, not 1.0. Stable sort ends the arbitrary zero-score tail.
+- Suggestion layer renormalises over structurally live signals (mirroring
+  `combine_scores`) and glyph queries get their own similarity/exactness signals in
+  the vacated slots: an exact glyph match now scores ~0.9 instead of 0.376.
+  `mean_score` is pool-normalised; identical duplicate rows count as one attestation;
+  ties break alphabetically ascending.
+- Honest empty state: retrieval floors on raw evidence (shared sign groups / shared
+  tokens), returns empty instead of k rows, and the UI says "no attested parallel".
+  The evidence line now names the glyph signals (`sign IDF overlap · sign order`)
+  instead of printing `fuzzy=0.00`.
+- The dead metadata block (deity/formula/offering/recipient/aesthetic — 0.30 of the
+  weight on columns empty for all 12,772 rows) is deleted, not debugged.
+- New degeneracies fixed: Latin residue in a glyph paste is ignored for matching
+  (was: dropped an exact match 1.000 → 0.732, now flagged in the UI); a row with an
+  empty transliteration can no longer become a universal fuzzy/tfidf match; the
+  suggestion layer receives the *resegmented* grouping, so both layers reason about
+  one segmentation; UI pool is 50 to match the eval scripts; suggestions honour
+  `top_k`.
+- Measured: deduplicated sign-reading eval (400 leave-one-out glyph queries)
+  top-1 useful 0.768 → **0.803**, top-3 useful 0.833 → **0.850**, MRR 0.797 → 0.823,
+  top-1 exact 0.085 → 0.088. Competitive (transliteration) benchmark: useful-family
+  0.55/0.75 unchanged, MRR 0.633 → 0.642; one already-contaminated top-3 exact hit
+  (COMP_020) moved below rank 3 under the normalised mean — accepted, since that
+  metric is spent (11/20 twins) and both live metrics are flat-to-up.
+- Also in this change: `RetrievalRun` model removed;
+  `scripts/drop_retrieval_runs_table.py` drops the production table (dry-run by
+  default, `--yes` to execute). Suite 120/120 plus a 300-query fuzz harness
+  (`tests/test_pipeline_fuzz.py`) covering hostile and corpus-derived inputs with
+  determinism checks.
 
 ## Phase 3 — Performance and the free-tier database
 

@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.storage.db import Base, engine
 from app.storage.models import EvaluationResult  # noqa: F401
-from app.storage.models import Annotation, Example, RetrievalRun
+from app.storage.models import Annotation, Example
 
 
 def main() -> None:

@@ -20,6 +20,7 @@ from app.data.normalizer import (
     contains_hieroglyphs,
     display_sign_group,
     normalize_hieroglyphs,
+    normalize_mdc,
 )
 from app.services.annotations import save_annotation
 from app.services.retrieval import retrieve_top_k
@@ -676,6 +677,11 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "treated as hints: signs are regrouped against the corpus before "
                     "reading, and you can correct the grouping afterwards"
                 )
+                if normalize_mdc(query):
+                    st.caption(
+                        "The Latin text in this paste is ignored for matching — a "
+                        "hieroglyph query is matched on signs only."
+                    )
             else:
                 st.caption(
                     "Detected **transliteration / MdC** · matched against the corpus "
@@ -704,11 +710,13 @@ def render_workspace(df: pd.DataFrame) -> None:
                     st.session_state["whyptology_segments"] = segmentation.groups
                 else:
                     st.session_state.pop("whyptology_segments", None)
+                # Pool of 50: the evaluation scripts rank within 50, so what ships
+                # must rank within the same pool or the tuned behaviour differs.
                 pool = retrieve_top_k(
                     df,
                     query_mdc=query,
                     query_reading_order=reading_order,
-                    k=max(settings.top_k, 25),
+                    k=max(settings.top_k, 50),
                     query_hieroglyphs_norm=regrouped,
                 )
                 st.session_state["whyptology_results"] = pool.head(
@@ -719,7 +727,8 @@ def render_workspace(df: pd.DataFrame) -> None:
                     pool,
                     query_mdc=query,
                     query_reading_order=reading_order,
-                    top_n=3,
+                    top_n=settings.top_k,
+                    query_hieroglyphs=regrouped or "",
                 )
             st.rerun()
 
@@ -887,9 +896,10 @@ def render_workspace(df: pd.DataFrame) -> None:
             for rank, suggestion in enumerate(suggestions, start=1):
                 render_suggestion_card(rank, suggestion)
         elif results is not None:
-            st.info(
-                "No reading could be grouped from the current corpus. "
-                "The query may be too short, or this text family is not imported yet."
+            st.warning(
+                "No attested parallel in this corpus for this query. Nothing shares "
+                "a sign group or a reading token with it — an honest empty result, "
+                "not a weak match."
             )
         else:
             st.info("Run a query to see ranked reading suggestions with evidence.")

@@ -5,8 +5,7 @@ from dataclasses import dataclass, replace
 from math import log
 
 import pandas as pd
-
-from app.data.normalizer import pipe_list_to_set
+from rapidfuzz.distance import LCSseq
 
 TOKEN_SPLIT_RE = re.compile(r"[\s:\-]+")
 
@@ -36,15 +35,18 @@ class ScoreWeights:
     # Sign-based signals. They are zero for a transliteration query and the
     # transliteration signals are zero for a sign query, and combine_scores drops
     # whichever set is inactive, so one weight set serves both input modes.
-    glyph_overlap: float = 0.30
-    glyph_idf_overlap: float = 0.50
+    #
+    # glyph_order is the one order-sensitive glyph signal: before it existed every
+    # surviving signal was set-based, so reordered offering formulas scored
+    # identically (14 verified permutation-collision groups) and a query repeated
+    # three times scored 1.0 against a single occurrence. It is the normalised
+    # longest-common-subsequence of sign *groups*, divided by the query's group
+    # count — order-aware and repetition-aware, but indifferent to how much longer
+    # the candidate sentence is (surplus length is idf_overlap's job).
+    glyph_overlap: float = 0.15
+    glyph_idf_overlap: float = 0.40
+    glyph_order: float = 0.25
     glyph_exact: float = 0.20
-    deity: float = 0.10
-    formula_type: float = 0.06
-    formula_slot: float = 0.04
-    offering: float = 0.04
-    recipient: float = 0.03
-    aesthetic: float = 0.03
     # Not a signal weight: how much a candidate's surplus tokens reduce the IDF
     # overlap (see idf_overlap_score). 1.0 is symmetric Jaccard. Deliberately absent
     # from WEIGHT_COLUMNS, which only lists signal weights — and unlike those it can
@@ -77,36 +79,21 @@ WEIGHT_COLUMNS: dict[str, str] = {
     "idf_overlap": "idf_overlap_score",
     "exact": "exact_bonus",
     "reading_order": "reading_order_overlap",
-    "deity": "deity_bonus",
-    "formula_type": "formula_type_bonus",
-    "formula_slot": "formula_slot_bonus",
-    "offering": "offering_overlap",
-    "recipient": "recipient_bonus",
-    "aesthetic": "aesthetic_bonus",
     "glyph_overlap": "glyph_overlap_score",
     "glyph_idf_overlap": "glyph_idf_overlap_score",
+    "glyph_order": "glyph_order_score",
     "glyph_exact": "glyph_exact_bonus",
 }
 
 DEFAULT_WEIGHTS = ScoreWeights()
 
-KNOWN_DEITIES = {
-    "wsir": "wsir",
-    "inpw": "inpw",
-    "ra": "ra",
-    "pth": "pth",
-    "hwt-hr": "hwt-hr",
-    "anpu": "inpw",
-}
-
-KNOWN_OFFERING_ITEMS = {
-    "t": "bread",
-    "hnqt": "beer",
-    "k3w": "oxen",
-    "3pdw": "fowl",
-    "irp": "wine",
-    "sšmn": "oil",
-}
+# The deity/formula/offering/recipient/aesthetic metadata signals that used to live
+# here (0.30 of the weight) were removed on 2026-08-29: their source columns are
+# empty for all 12,772 corpus rows, so the signals never activated and were dropped
+# by the renormalisation on every query — 250 lines of unreachable code, several of
+# them buggy. Git history has the implementation if metadata columns are ever
+# populated; reintroduce them only together with data and a benchmark that can see
+# them.
 
 
 def tokenize_query(text: str) -> list[str]:
@@ -207,70 +194,6 @@ def idf_overlap_score(
     return shared_weight / denominator
 
 
-def exact_label_bonus(query_value: str, candidate_value: str) -> float:
-    if not query_value or not candidate_value:
-        return 0.0
-    return 1.0 if str(query_value).strip() == str(candidate_value).strip() else 0.0
-
-
-def pipe_overlap_score(query_value: str, candidate_value: str) -> float:
-    q_set = pipe_list_to_set(str(query_value))
-    c_set = pipe_list_to_set(str(candidate_value))
-    if not q_set or not c_set:
-        return 0.0
-    return len(q_set & c_set) / len(q_set | c_set)
-
-
-def extract_query_features(
-    query_mdc_norm: str,
-    query_reading_order_norm: str = "",
-) -> dict:
-    """
-    Rule-based Phase 3 feature extraction.
-
-    This is still a baseline, but it is safer than substring matching
-    and better aligned with real offering-formula patterns.
-    """
-    source_text = query_reading_order_norm or query_mdc_norm
-    tokens = tokenize_query(source_text)
-    token_set = set(tokens)
-    detected_deity = ""
-    for token in tokens:
-        if token in KNOWN_DEITIES:
-            detected_deity += KNOWN_DEITIES[token]
-            break
-    formula_type = ""
-    formula_slot = ""
-    opening_pattern = {"htp", "di", "nsw"}
-    invocation_pattern = {"prt", "hrw"}
-    if opening_pattern.issubset(token_set):
-        formula_type = "offering_formula"
-        formula_slot = "opening"
-    elif invocation_pattern.issubset(token_set):
-        formula_type = "invocation_formula"
-        formula_slot = "invocation"
-    detected_items: list[str] = []
-    for token in tokens:
-        item = KNOWN_OFFERING_ITEMS.get(token)
-        if item and item not in detected_items:
-            detected_items.append(item)
-    offering_items = "|".join(detected_items)
-    recipient = ""
-    if "k3" in token_set and "im3hw" in token_set:
-        recipient = "revered_one"
-    elif detected_deity == "wsir":
-        recipient = "osiris"
-    elif detected_deity == "inpw":
-        recipient = "anubis"
-    return {
-        "query_deity_norm": detected_deity,
-        "query_formula_type_norm": formula_type,
-        "query_formula_slot_norm": formula_slot,
-        "query_offering_items_norm": offering_items,
-        "query_recipient_norm": recipient,
-    }
-
-
 def combine_scores(
     df: pd.DataFrame,
     query_mdc_norm: str,
@@ -324,9 +247,30 @@ def combine_scores(
         out["glyph_exact_bonus"] = out["hieroglyphs_norm"].map(
             lambda value: 1.0 if str(value).strip() == query_hieroglyphs_norm else 0.0
         )
+        # Order-aware signal: LCS over sign-group sequences, normalised by the
+        # query's group count. Groups are mapped to single characters so rapidfuzz
+        # can run the sequence match at C speed across all rows.
+        encoding: dict[str, str] = {}
+
+        def encode(text: str) -> str:
+            return "".join(
+                encoding.setdefault(group, chr(0x20000 + len(encoding)))
+                for group in str(text).split()
+            )
+
+        query_encoded = encode(query_hieroglyphs_norm)
+        query_groups = len(query_encoded)
+        out["glyph_order_score"] = out["hieroglyphs_norm"].map(
+            lambda value: (
+                LCSseq.similarity(query_encoded, encode(value)) / query_groups
+                if query_groups
+                else 0.0
+            )
+        )
     else:
         out["glyph_overlap_score"] = 0.0
         out["glyph_idf_overlap_score"] = 0.0
+        out["glyph_order_score"] = 0.0
         out["glyph_exact_bonus"] = 0.0
     out["reading_order_overlap"] = out["normalized_reading_order_norm"].map(
         lambda value: (
@@ -334,34 +278,6 @@ def combine_scores(
             if query_reading_order_norm
             else 0.0
         )
-    )
-    query_features = extract_query_features(
-        query_mdc_norm=query_mdc_norm,
-        query_reading_order_norm=query_reading_order_norm,
-    )
-    out["deity_bonus"] = out["deity_norm"].map(
-        lambda value: exact_label_bonus(query_features["query_deity_norm"], value)
-    )
-    out["formula_type_bonus"] = out["formula_type_norm"].map(
-        lambda value: exact_label_bonus(
-            query_features["query_formula_type_norm"], value
-        )
-    )
-    out["formula_slot_bonus"] = out["formula_slot_norm"].map(
-        lambda value: exact_label_bonus(
-            query_features["query_formula_slot_norm"], value
-        )
-    )
-    out["offering_overlap"] = out["offering_items_norm"].map(
-        lambda value: pipe_overlap_score(
-            query_features["query_offering_items_norm"], value
-        )
-    )
-    out["recipient_bonus"] = out["recipient_norm"].map(
-        lambda value: exact_label_bonus(query_features["query_recipient_norm"], value)
-    )
-    out["aesthetic_bonus"] = out["aesthetic_arrangement_flag_bool"].map(
-        lambda value: 0.03 if value and query_reading_order_norm else 0.0
     )
     # Renormalise over the signals that actually discriminate for this query. A
     # signal that is zero for every candidate — an empty metadata column, or the
@@ -385,4 +301,7 @@ def combine_scores(
         for column, weight in active.items():
             score = score + (weight / total_weight) * out[column]
         out["final_score"] = score
-    return out.sort_values("final_score", ascending=False)
+    # Stable sort: for short queries thousands of rows tie at 0.0, and the default
+    # quicksort made everything past the last positive score — and therefore the
+    # tail of the visible results — depend on the input order of the frame.
+    return out.sort_values("final_score", ascending=False, kind="mergesort")

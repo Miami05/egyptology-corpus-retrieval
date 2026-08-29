@@ -99,22 +99,6 @@ class Annotation(Base):
     example: Mapped["Example"] = relationship(back_populates="annotations")
 
 
-class RetrievalRun(Base):
-    __tablename__ = "retrieval_runs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    query_mdc: Mapped[str] = mapped_column(Text)
-    query_mdc_norm: Mapped[str] = mapped_column(Text)
-    query_reading_order: Mapped[str] = mapped_column(Text, default="")
-    query_reading_order_norm: Mapped[str] = mapped_column(Text, default="")
-    top_example_ids: Mapped[str] = mapped_column(Text)
-    top_scores: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(UTC),
-    )
-
-
 class EvaluationResult(Base):
     __tablename__ = "evaluation_results"
 

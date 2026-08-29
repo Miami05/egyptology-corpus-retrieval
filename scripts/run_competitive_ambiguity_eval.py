@@ -178,7 +178,6 @@ def main() -> None:
             query_mdc=query_input,
             query_reading_order=query_reading_order,
             top_n=3,
-            include_query_candidate=False,
         )
         candidates = [suggestion.candidate_transliteration for suggestion in suggestions]
         expected = str(bench_row["expected_transliteration"])
