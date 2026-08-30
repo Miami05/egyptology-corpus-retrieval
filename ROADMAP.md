@@ -674,6 +674,14 @@ Three things the merge required, each a small instance of a Phase 0 lesson:
 - **Importer parameterised** (`--language-stage`, `--id-prefix`) so one schema serves
   several TLA corpora without mislabelling a stage or colliding on ids.
 
+**What the New Kingdom rows actually are.** Of the 2,998 New Kingdom rows, **55 fall
+in the Dynasty-18 window and 2,938 are Ramesside (Dyn. 19–20)**; with the 9 already
+present, the merged corpus holds **64 Dynasty-18-dated sentences**. So "New Kingdom
+9 → 2,998" is true but must not be read as "Camilla's period is now covered": Urk. IV
+is early Dynasty 18 and in Middle Egyptian, while the new material is largely later
+and in Late Egyptian. It still helps her — recurring phrases like `ḏd =ꞽ n =tn` now
+have New Kingdom parallels — but Dynasty 18 proper remains thin.
+
 **Honest measurement.** On the *same* 20 questions the score is **unchanged** —
 top-1 useful 0.55, top-3 0.70, MRR 0.60 on both corpus sizes. The added material is a
 different language stage: it neither helps nor hurts Earlier Egyptian questions. A v3
