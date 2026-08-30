@@ -169,3 +169,18 @@ def test_corpus_explorer_does_not_render_two_different_slices():
     source = (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
     assert "filtered.head(30)" not in source
     assert "whyptology_corpus_page_rows" in source
+
+
+def test_late_egyptian_corpus_is_cited():
+    """The corpus now merges two TLA datasets; CC BY-SA 4.0 requires attribution for
+    each, not just the one the project started with."""
+    doc = (PROJECT_ROOT / "DATA-LICENSE.md").read_text()
+    assert "Late Egyptian" in doc
+    assert "v19" in doc
+
+
+def test_suffix_marker_unification_is_declared_as_a_modification():
+    """Rewriting ⸗ to = changes the licensed text, so §3(a)(1)(B) requires saying so."""
+    doc = (PROJECT_ROOT / "DATA-LICENSE.md").read_text()
+    assert "suffix-pronoun marker" in doc
+    assert "⸗" in doc

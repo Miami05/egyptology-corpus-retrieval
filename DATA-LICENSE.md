@@ -35,6 +35,17 @@ The dataset's own citation recommendation is:
 
 Licensed under CC BY-SA 4.0. TLA homepage: <https://thesaurus-linguae-aegyptiae.de>.
 
+The corpus also contains the **Late Egyptian** TLA corpus, whose citation is:
+
+> Thesaurus Linguae Aegyptiae, Original Late Egyptian sentences, corpus v19,
+> premium,
+> <https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/tla-Late_Egyptian_original-v19-premium>,
+> ed. by Tonio Sebastian Richter & Daniel A. Werning on behalf of the
+> Berlin-Brandenburgische Akademie der Wissenschaften and Hans-Werner Fischer-Elfert &
+> Peter Dils on behalf of the Sächsische Akademie der Wissenschaften zu Leipzig.
+
+Licensed under CC BY-SA 4.0.
+
 ```bibtex
 @misc{tlaEarlierEgyptianOriginalV18premium,
  editor = {{Berlin-Brandenburgische Akademie der Wissenschaften} and {Sächsische Akademie der Wissenschaften zu Leipzig} and Richter, Tonio Sebastian and Werning, Daniel A. and Hans-Werner Fischer-Elfert and Peter Dils},
@@ -63,6 +74,16 @@ as follows:
   `source_ref` pointing back to the originating row in the downloaded parquet.
 - `review_status` and any annotations recorded through the app are this project's own
   editorial additions and are not part of the TLA data.
+
+- **Merged two TLA corpora** (2026-08-30): the Earlier Egyptian corpus (12,772 rows)
+  and the Late Egyptian corpus (3,601 rows, after dropping 5 sentences already
+  present verbatim), giving 16,373 rows. Rows carry their originating corpus in
+  `language_stage` and an id prefix (`TLA_EARLIER_*` / `TLA_LATE_*`).
+- **Unified the suffix-pronoun marker.** The Earlier corpus writes it `=` (11,671
+  occurrences), the Late corpus `⸗` (4,390). They denote the same morpheme. All
+  imported rows now use `=`. Without this the same sentence read `n =tn` or `n ⸗tn`
+  depending only on which corpus attested that spelling more often — an artefact of
+  merging, not of the language.
 
 Translations in the corpus are the German translations from TLA.
 
@@ -95,7 +116,8 @@ Attribution must reach the person viewing the data, not only this file. The app
 displays the attribution in the sidebar. Do not remove it, and do not present the
 corpus as this project's own work.
 
-The other TLA datasets referenced in `scripts/download_all_sources.py`
-(`tla-late_egyptian-v19-premium`, `tla-demotic-v18-premium`) are also CC BY-SA 4.0.
-They are downloaded but are **not** currently part of `examples.csv`, which contains
-Earlier Egyptian only. If you build them into the corpus, add their citations here too.
+The Demotic dataset referenced in `scripts/download_all_sources.py`
+(`tla-demotic-v18-premium`) is also CC BY-SA 4.0. It is downloaded but is **not** part
+of `examples.csv`: it carries no hieroglyphic writings (0 of 13,383 rows), so it
+cannot support the sign-based reading this tool provides. If you build it in, add its
+citation here too.

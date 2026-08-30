@@ -235,6 +235,35 @@ class ReadingModel:
         vocabulary = max(len(counts), 1)
         return log((counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * vocabulary))
 
+    def related_attested_groups(
+        self, sign: str, limit: int = 4, min_similarity: float = 0.15
+    ) -> list[tuple[str, float, str, int]]:
+        """Attested groups that share glyphs with an unattested one.
+
+        Used for the groups the model refuses to read: below the fallback threshold
+        there is not enough evidence to borrow a reading, but "unreadable" on its own
+        is a dead end for a reader who wants to know *why*. This reports what the
+        corpus does contain — which attested groups share these signs, how they are
+        read and how often — without proposing any of them as the reading of this
+        group. Returns (group, similarity, commonest reading, attestations).
+        """
+        if sign in self.sign_reading:
+            return []
+        candidates: set[str] = set()
+        for glyph in set(sign):
+            candidates |= self.glyph_to_groups.get(glyph, set())
+        scored: list[tuple[str, float, str, int]] = []
+        for candidate in sorted(candidates):
+            score = glyph_similarity(sign, candidate)
+            if score < min_similarity:
+                continue
+            counts = self.sign_reading.get(candidate, Counter())
+            total = sum(counts.values())
+            reading = counts.most_common(1)[0][0] if counts else ""
+            scored.append((candidate, score, reading, total))
+        scored.sort(key=lambda row: (-row[1], -row[3], row[0]))
+        return scored[:limit]
+
     def nearest_known_group(self, sign: str) -> tuple[str, float]:
         """Closest attested sign group to an unattested one, by order-aware glyph overlap.
 

@@ -154,6 +154,57 @@ def upsert_examples(df: pd.DataFrame) -> dict[str, object]:
     }
 
 
+def sync_new_examples(df: pd.DataFrame) -> dict[str, int]:
+    """Insert corpus rows the database does not have yet, and touch nothing else.
+
+    The upsert path issues a SELECT and a write per row — fine for a first import
+    into an empty SQLite file, punishing against hosted Postgres: growing the corpus
+    from 12,772 to 16,373 rows would be 16,373 round trips on a free tier that has
+    already hit its transfer quota once. This reads the existing keys in one query
+    (four columns, the same call `attach_db_ids` uses) and bulk-inserts only what is
+    missing, so adding a corpus costs a handful of statements.
+
+    Existing rows keep their `id`, so every saved annotation stays attached. Use
+    `upsert_examples` instead when the *content* of existing rows has changed.
+    """
+    create_tables()
+    session = SessionLocal()
+    try:
+        existing = {
+            (source, text_id, sentence_id)
+            for _, source, text_id, sentence_id in ExampleRepo(
+                session
+            ).list_example_keys()
+        }
+    finally:
+        session.close()
+
+    missing = [
+        example_payload(row)
+        for _, row in df.iterrows()
+        if (row["source"], row["source_text_id"], row["source_sentence_id"])
+        not in existing
+    ]
+    if missing:
+        session = SessionLocal()
+        try:
+            for start in range(0, len(missing), BULK_CHUNK):
+                session.bulk_insert_mappings(
+                    Example, missing[start : start + BULK_CHUNK]
+                )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+    return {
+        "already_present": len(df) - len(missing),
+        "inserted": len(missing),
+        "total": len(df),
+    }
+
+
 def ensure_corpus_ready(df: pd.DataFrame) -> int:
     """Make the database usable, then report how many corpus rows it holds.
 

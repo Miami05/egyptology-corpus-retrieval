@@ -40,9 +40,22 @@ NON_GROUP_CHAR_RE = re.compile(f"[^{SIGN_CLASS}{PLACEHOLDER_CLASS}\\s]")
 DELETE_IN_GROUP_RE = re.compile(f"[{FORMAT_CONTROL_CLASS}{VARIATION_SELECTOR_CLASS}]")
 PLACEHOLDER_RE = re.compile(f"[{PLACEHOLDER_CLASS}]")
 
-# TLA writes a sign that has no Unicode codepoint as <g>GARDINER_ID</g>. Only this
-# exact shape occurs in the corpus (2,577 tags, 586 distinct IDs, verified 2026-08-29).
+# TLA writes a sign that has no Unicode codepoint as <g>GARDINER_ID</g>. The Late
+# Egyptian corpus also nests them — <g><g>US9No2VARA</g></g> — so the inner tag is
+# unwrapped first and the outer one then matches normally.
+G_NESTED_RE = re.compile(r"<g>\s*(<g>[^<>]*</g>)\s*</g>")
 G_MARKUP_RE = re.compile(r"<g>([^<>]*)</g>")
+
+# A run of non-glyph characters sitting *directly between two signs*, with no space
+# on either side, is noise inside one sign group — an editorial bracket, a stray
+# Latin letter left in the source, a doubled parenthesis. Turning it into a space
+# (the default for anything non-glyph) would split the group and misalign the whole
+# sentence, which is the same defect the <g> handling exists to prevent. Whitespace
+# around such a character still separates groups, so "(1) 𓊵𓏙 — 𓇓𓏏" is unaffected.
+INTRA_GROUP_NOISE_RE = re.compile(
+    f"(?<=[{SIGN_CLASS}{PLACEHOLDER_CLASS}])[^{SIGN_CLASS}{PLACEHOLDER_CLASS}\\s]+"
+    f"(?=[{SIGN_CLASS}{PLACEHOLDER_CLASS}])"
+)
 
 # Visually identical or interchangeable codepoints, folded to one canonical form on
 # both the corpus and the query side. Each entry needs a reason; do not fold signs
@@ -152,17 +165,20 @@ def normalize_hieroglyphs(value: object) -> str:
          without a Unicode codepoint stays one sign instead of vanishing or
          splitting its group.
       3. Format controls, variation selectors and editorial brackets ⟦⟧ are
-         deleted (not spaced), so they never split a group.
+         deleted (not spaced), so they never split a group — as is any other
+         non-glyph run sitting directly between two signs.
       4. Variant codepoints are folded to their canonical sign.
       5. Anything else that is not a sign becomes a space.
     """
     text = nfc(value)
     if not text.strip():
         return ""
+    text = G_NESTED_RE.sub(lambda m: m.group(1), text)
     text = G_MARKUP_RE.sub(lambda m: markup_to_placeholder(m.group(1)), text)
     text = BARE_GARDINER_TOKEN_RE.sub(lambda m: markup_to_placeholder(m.group(0)), text)
     text = DELETE_IN_GROUP_RE.sub("", text)
     text = EDITORIAL_BRACKETS_RE.sub("", text)
+    text = INTRA_GROUP_NOISE_RE.sub("", text)
     text = text.translate(_SIGN_VARIANT_TABLE)
     text = NON_GROUP_CHAR_RE.sub(" ", text)
     return normalize_whitespace(text)

@@ -1035,7 +1035,17 @@ def render_workspace(df: pd.DataFrame) -> None:
                             if p.is_fallback
                             else f"attested {p.attested_count}×"
                             if p.was_seen
-                            else "no evidence"
+                            # Not attested and too different to borrow from: say what
+                            # the corpus does hold rather than leaving a dead end.
+                            else (
+                                "unattested — closest attested groups: "
+                                + ", ".join(
+                                    f"{display_sign_group(g)} = {r} ({n}×)"
+                                    for g, _, r, n in model.related_attested_groups(p.sign, limit=2)
+                                )
+                                if model.related_attested_groups(p.sign, limit=2)
+                                else "unattested — no group in the corpus shares these signs"
+                            )
                         ),
                         "Multivalent": "yes" if p.is_ambiguous else "",
                         "Alternatives": ", ".join(
@@ -1060,6 +1070,21 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "the corpus to support even a guess. They are reported as "
                     "unreadable rather than invented."
                 )
+                # Show the evidence that does exist. A reader can often recognise the
+                # word from a near neighbour even when the model will not commit to
+                # one, and seeing the corpus is not silent is more useful than a blank.
+                for p in unreadable:
+                    related = model.related_attested_groups(p.sign)
+                    if not related:
+                        continue
+                    shown = " · ".join(
+                        f"{display_sign_group(g)} = *{r}* ({n}×, {s:.0%} shared signs)"
+                        for g, s, r, n in related
+                    )
+                    st.markdown(
+                        f"- **{display_sign_group(p.sign)}** is not attested. "
+                        f"Groups in the corpus sharing its signs: {shown}"
+                    )
             if ambiguous:
                 st.markdown(
                     '<div class="panel-title">Where the choice actually mattered</div>',

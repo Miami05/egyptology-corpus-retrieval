@@ -344,6 +344,24 @@ def _row_value(row: pd.Series, aliases: list[str]) -> str:
     return ""
 
 
+# The TLA corpora disagree on how to write the suffix-pronoun marker: the Earlier
+# Egyptian corpus uses "=" (11,671 occurrences), the Late Egyptian one the Leiden
+# double oblique hyphen "⸗" (4,390). They mean the same thing. Left as they are, one
+# corpus's convention wins per sign group by attestation count and the same sentence
+# reads "n =tn" or "n ⸗tn" depending on which corpus happens to attest that spelling
+# more — an artefact of the merge, not of the language. Unifying on "=" keeps the
+# 12,772 rows already published (and every benchmark expectation) stable; the strict
+# reading key folds the two forms together anyway, so search is unaffected either way.
+# Recorded as an adaptation in DATA-LICENSE.md, as CC BY-SA 4.0 §3(a)(1)(B) requires.
+SUFFIX_MARKER_VARIANTS = {"⸗": "="}
+
+
+def unify_suffix_marker(text: str) -> str:
+    for variant, canonical in SUFFIX_MARKER_VARIANTS.items():
+        text = text.replace(variant, canonical)
+    return text
+
+
 def content_id(row: pd.Series, prefix: str = "TLA_EARLIER") -> str:
     """A stable identifier derived from the source row's own content.
 
@@ -370,8 +388,19 @@ def _row_from_parquet(
     output_index: int,
     input_path: Path,
     stable_ids: bool = False,
+    language_stage: str = "Earlier Egyptian",
+    id_prefix: str = "TLA_EARLIER",
 ) -> tuple[dict[str, str], bool, bool] | None:
-    transliteration = _row_value(row, PARQUET_ALIASES["transliteration_gold"])
+    """One corpus row from one parquet row.
+
+    `language_stage` and `id_prefix` are parameters because the same schema serves
+    several TLA corpora (Earlier Egyptian, Late Egyptian). Stamping every import with
+    "Earlier Egyptian" would mislabel the language stage, and reusing one id prefix
+    across corpora risks two different sentences claiming the same identifier.
+    """
+    transliteration = unify_suffix_marker(
+        _row_value(row, PARQUET_ALIASES["transliteration_gold"])
+    )
     if not transliteration:
         return None
 
@@ -381,11 +410,13 @@ def _row_from_parquet(
     generated_sentence_id = not bool(source_sentence_id)
     if generated_text_id:
         source_text_id = (
-            content_id(row) if stable_ids else f"TLA_EARLIER_{output_index:03d}"
+            content_id(row, id_prefix)
+            if stable_ids
+            else f"{id_prefix}_{output_index:03d}"
         )
     if generated_sentence_id:
         source_sentence_id = (
-            f"S{content_id(row).rsplit('_', 1)[-1]}"
+            f"S{content_id(row, id_prefix).rsplit('_', 1)[-1]}"
             if stable_ids
             else f"S{output_index:03d}"
         )
@@ -404,7 +435,7 @@ def _row_from_parquet(
         date_note = f"dateNotBefore={date_not_before}; dateNotAfter={date_not_after}"
     # The dataset dates every sentence, so derive a real period instead of stamping
     # every row with the language stage (which made the period filter useless).
-    period = _derive_period(date_not_before, date_not_after) or "Earlier Egyptian"
+    period = _derive_period(date_not_before, date_not_after) or language_stage
 
     out = {column: "" for column in FINAL_COLUMNS}
     out.update(
@@ -412,7 +443,7 @@ def _row_from_parquet(
             "source": "TLA",
             "source_text_id": source_text_id,
             "source_sentence_id": source_sentence_id,
-            "language_stage": "Earlier Egyptian",
+            "language_stage": language_stage,
             "script_type": "hieroglyphic/hieratic",
             "genre": _row_value(row, PARQUET_ALIASES["genre"]) or "unknown",
             "period": period,
@@ -440,7 +471,11 @@ def _row_from_parquet(
 
 
 def _load_parquet_input(
-    input_path: Path, limit: int, stable_ids: bool = False
+    input_path: Path,
+    limit: int,
+    stable_ids: bool = False,
+    language_stage: str = "Earlier Egyptian",
+    id_prefix: str = "TLA_EARLIER",
 ) -> tuple[pd.DataFrame, int, int]:
     df = pd.read_parquet(input_path)
     rows: list[dict[str, str]] = []
@@ -449,7 +484,9 @@ def _load_parquet_input(
     seen_keys: set[tuple[str, str, str]] = set()
 
     for _, row in df.iterrows():
-        mapped = _row_from_parquet(row, len(rows) + 1, input_path, stable_ids)
+        mapped = _row_from_parquet(
+            row, len(rows) + 1, input_path, stable_ids, language_stage, id_prefix
+        )
         if mapped is None:
             continue
         out_row, generated_text_id, generated_sentence_id = mapped
@@ -480,6 +517,19 @@ def main() -> None:
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument(
+        "--language-stage",
+        default="Earlier Egyptian",
+        help="Language stage stamped on every imported row (e.g. 'Late Egyptian').",
+    )
+    parser.add_argument(
+        "--id-prefix",
+        default="TLA_EARLIER",
+        help=(
+            "Prefix for generated source_text_ids. Use a distinct prefix per corpus "
+            "so two sentences from different corpora cannot share an id."
+        ),
+    )
+    parser.add_argument(
         "--stable-ids",
         action="store_true",
         help=(
@@ -504,6 +554,8 @@ def main() -> None:
             input_path=input_path,
             limit=args.limit,
             stable_ids=args.stable_ids,
+            language_stage=args.language_stage,
+            id_prefix=args.id_prefix,
         )
     else:
         dataset_path = Path(args.dataset_path)

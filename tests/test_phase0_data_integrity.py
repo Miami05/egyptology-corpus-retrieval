@@ -214,3 +214,65 @@ def test_fallback_source_is_deterministic():
     df = frame([("𓆓𓂧𓆑𓏛", "ḏdf"), ("𓆓𓂧𓆑𓅪", "ḏdf")])
     picks = {train_reading_model(df).predict_sequence(["𓆑𓆓𓂧"])[0].fallback_from for _ in range(5)}
     assert picks == {"𓆓𓂧𓆑𓅪"}  # sorted() order: 𓅪 U+1316A < 𓏛 U+133DB
+
+
+# ---------- merging a second TLA corpus (2026-08-30) ----------
+
+
+def test_nested_g_markup_becomes_one_placeholder():
+    """The Late Egyptian corpus nests the markup: <g><g>ID</g></g>."""
+    groups = normalize_hieroglyphs("𓅓<g><g>US9No2VARA</g></g>𓏌").split()
+    assert len(groups) == 1
+    assert placeholder_to_markup(groups[0][1]) == "US9No2VARA"
+
+
+def test_non_glyph_run_between_two_signs_does_not_split_the_group():
+    """A stray Latin letter or a doubled parenthesis inside a group used to become a
+    space and misalign the whole sentence — the same defect as the <g> shredding."""
+    assert normalize_hieroglyphs("𓄂𓏏Y𓄣𓏤").split() == ["𓄂𓏏𓄣𓏤"]
+    assert len(normalize_hieroglyphs("𓅷𓏤((𓏲))𓅯").split()) == 1
+
+
+def test_whitespace_still_separates_groups_around_noise():
+    """The rule is only about characters *between* two signs with no space; a
+    separator surrounded by spaces must still split."""
+    assert normalize_hieroglyphs("(1) 𓊵𓏙 — 𓇓𓏏 [sic]") == "𓊵𓏙 𓇓𓏏"
+
+
+def test_shipped_corpus_is_fully_aligned():
+    """The merged corpus must lose no row to normalisation."""
+    from app.data.loader import load_examples_csv
+
+    df = load_examples_csv("data/processed/examples.csv")
+    report = df.attrs["alignment"]
+    assert report.misaligned_rows == 0, report.misaligned_indices[:5]
+    assert report.total_rows > 16_000
+
+
+def test_both_language_stages_are_present_and_labelled():
+    from app.data.loader import load_examples_csv
+
+    df = load_examples_csv("data/processed/examples.csv")
+    stages = set(df["language_stage"])
+    assert {"Earlier Egyptian", "Late Egyptian"} <= stages
+    # New Kingdom coverage is the point of the merge: it was 9 rows before.
+    assert (df["period"] == "New Kingdom").sum() > 2_000
+
+
+def test_suffix_marker_is_uniform_across_the_corpus():
+    """Two conventions for one morpheme made the same sentence read `n =tn` or
+    `n ⸗tn` depending only on which corpus attested the spelling more often."""
+    from app.data.loader import load_examples_csv
+
+    df = load_examples_csv("data/processed/examples.csv")
+    assert not df["transliteration_gold"].astype(str).str.contains("⸗").any()
+
+
+def test_corpus_ids_are_unique_and_prefixed_per_source():
+    from app.data.loader import load_examples_csv
+
+    df = load_examples_csv("data/processed/examples.csv")
+    keys = df[["source", "source_text_id", "source_sentence_id"]]
+    assert not keys.duplicated().any()
+    prefixes = {str(v).rsplit("_", 1)[0] for v in df["source_text_id"]}
+    assert {"TLA_EARLIER", "TLA_LATE"} <= prefixes

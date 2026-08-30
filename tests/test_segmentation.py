@@ -231,3 +231,34 @@ def test_trial_sentence_reads_correctly_from_any_spacing(real_corpus_model, past
     assert " ".join(p.predicted for p in predictions) == "ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t"
     assert not any(p.is_fallback for p in predictions)
     assert all(p.was_seen for p in predictions)
+
+
+# ---------- unattested groups report what the corpus does hold ----------
+
+
+def test_unattested_group_reports_related_attested_groups():
+    """"Unreadable" alone is a dead end. Below the borrowing threshold the model
+    still knows which attested groups share these signs, and saying so is evidence,
+    not invention."""
+    model = train_reading_model(
+        corpus([("ABCD", "known-word"), ("ABCX", "other-word")] * 2)
+    )
+    related = model.related_attested_groups("ABCZ")
+    assert related, "expected the shared-glyph neighbours to be reported"
+    groups = [g for g, _, _, _ in related]
+    assert "ABCD" in groups and "ABCX" in groups
+    # Sorted by similarity, and each carries its reading and attestation count.
+    for group, similarity, reading, count in related:
+        assert 0.0 < similarity <= 1.0
+        assert reading and count >= 1
+
+
+def test_attested_group_reports_no_neighbours():
+    """The list is only meaningful for a group the model refuses to read."""
+    model = train_reading_model(corpus([("AB", "x")] * 3))
+    assert model.related_attested_groups("AB") == []
+
+
+def test_group_sharing_nothing_reports_nothing():
+    model = train_reading_model(corpus([("AB", "x")] * 3))
+    assert model.related_attested_groups("ZZ") == []
