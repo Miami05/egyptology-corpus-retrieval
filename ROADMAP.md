@@ -647,6 +647,60 @@ spellings as unreadable rather than guessing — the honest behaviour.
 once-attested spellings held out of the corpus read as unreadable (by design); Urk. IV
 and most Dynasty 18 material are not in this corpus (see the AES note under Phase 5).
 
+## Both known limits closed — 2026-08-30
+
+The two limits documented before the second trial are no longer open.
+
+**Coverage.** `tla_late.parquet` was already downloaded and never imported: 3,606 rows,
+every one with hieroglyphs, 2,993 in the New Kingdom. Imported as a second corpus
+(3,601 after dropping 5 sentences already present): **12,772 → 16,373 rows, New
+Kingdom 9 → 2,998.**
+
+AES was evaluated first and rejected on evidence: 101,796 sentences but **only 23
+contain any hieroglyph** — its "mdc" field is ASCII transliteration, not sign codes —
+so it cannot support the sign-based reading this tool exists for. The Demotic parquet
+has no hieroglyphs at all. This corrects the Phase 5 note, which assumed AES would be
+usable once found.
+
+Three things the merge required, each a small instance of a Phase 0 lesson:
+- **Suffix marker unified.** Earlier writes `=`, Late writes the Leiden `⸗`. Merged
+  untouched, the same sentence read `n =tn` or `n ⸗tn` depending only on which corpus
+  attested that spelling more often. Declared in `DATA-LICENSE.md` per §3(a)(1)(B),
+  with the Late Egyptian citation.
+- **Nested `<g><g>ID</g></g>`** unwrapped, and a non-glyph run *directly between two
+  signs* (a stray Latin letter, a doubled parenthesis) deleted rather than spaced.
+  Those were the only 3 misalignments in the new corpus; the merged corpus is
+  **16,373/16,373 aligned**.
+- **Importer parameterised** (`--language-stage`, `--id-prefix`) so one schema serves
+  several TLA corpora without mislabelling a stage or colliding on ids.
+
+**Honest measurement.** On the *same* 20 questions the score is **unchanged** —
+top-1 useful 0.55, top-3 0.70, MRR 0.60 on both corpus sizes. The added material is a
+different language stage: it neither helps nor hurts Earlier Egyptian questions. A v3
+benchmark rebuilt on the new corpus scores 0.70/0.85/0.758, but that is a *different,
+easier sample* and must not be quoted as an improvement. The gain is coverage, and it
+is large where it matters: New Kingdom parallels for the trial line **0 → 8**, for
+`ḏd =ꞽ n =tn` **0 → 9**, for a New Kingdom phrase **1 → 17**.
+
+**Unattested groups are no longer a dead end.** `related_attested_groups` reports which
+attested groups share an unreadable group's signs, with readings and counts, in the
+Evidence column and under the warning — for example `𓆞𓊖𓊜𓎱𓏤 is not attested. Groups in
+the corpus sharing its signs: 𓊖𓏏𓏤 = nʾ.t (22×) · 𓉺𓏤𓊖 = ꞽwn.w (1×)`. It proposes
+nothing; it reports what the corpus holds, which is the line between evidence and
+invention.
+
+**Database sync.** `scripts/import_examples.py` gained a fast path — read existing keys
+in one query, bulk-insert only what is missing. Growing the corpus cost **5 queries
+instead of 16,373**; the per-row upsert stays behind `--refresh-existing`.
+
+Suite **190/190**; expert paste eval 8/8; the trial line still reads correctly from all
+five spacings with zero borrowed readings.
+
+> **Production note:** the deployed database holds the original 12,772 rows. The app
+> works unchanged — the new rows are searchable and readable — but annotations cannot
+> be attached to them until the sync is run once against production:
+> `DATABASE_URL='postgresql://…' python scripts/import_examples.py`
+
 ## Checked and clean
 
 For the record, the verification pass re-confirmed: no SQL injection (SQLAlchemy Core/ORM
