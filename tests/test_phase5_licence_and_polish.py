@@ -74,13 +74,41 @@ def test_both_export_paths_use_the_same_notice():
 # ---------- attribution reaches the viewer ----------
 
 
+def test_every_corpus_source_is_credited_in_the_app():
+    """CC BY-SA 4.0 §3(a) attribution must reach the viewer for *every* corpus loaded,
+    not only the one the project started with. Importing a new source without adding
+    its citation is a licence breach, so this fails loudly when that happens."""
+    import pandas as pd
+
+    from app.ui.whyptology_app import CORPUS_CREDITS, corpus_credit_html
+
+    corpus = pd.read_csv(PROJECT_ROOT / "data" / "processed" / "examples.csv")
+    sources = {str(s).strip() for s in corpus["source"] if str(s).strip()}
+    missing = sources - set(CORPUS_CREDITS)
+    assert not missing, f"corpora present but not credited in the app: {missing}"
+
+    rendered = corpus_credit_html(corpus)
+    for source in sources:
+        assert source in rendered or CORPUS_CREDITS[source][:40] in rendered
+    assert "CC" in rendered and "BY-SA" in rendered
+
+
+def test_credit_names_both_tla_corpora_and_aes():
+    from app.ui.whyptology_app import CORPUS_CREDITS
+
+    tla = CORPUS_CREDITS["TLA"]
+    assert "v18" in tla and "v19" in tla, "both TLA corpora are in use"
+    aes = CORPUS_CREDITS["AES"]
+    assert "AED-TEI" in aes and "Schweitzer" in aes
+
+
 def test_every_page_renders_the_attribution_footer():
     """The sidebar credit is collapsed by default on a phone, so a footer carries the
     attribution on every page."""
     app_source = (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
     assert "def render_attribution_footer" in app_source
     # Called unconditionally at module level, after whichever page rendered.
-    assert app_source.rstrip().endswith("render_attribution_footer()")
+    assert app_source.rstrip().endswith("render_attribution_footer(corpus)")
     assert "page-footer" in (PROJECT_ROOT / "app" / "ui" / "whyptology_theme.css").read_text()
 
 
@@ -88,7 +116,17 @@ def test_sidebar_attribution_is_still_present():
     """The footer supplements the sidebar credit; it does not replace it."""
     app_source = (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
     assert "corpus-credit" in app_source
-    assert app_source.count("thesaurus-linguae-aegyptiae.de") >= 2
+    # Both surfaces render the same generated citation block, so assert on what a
+    # viewer actually sees rather than on how many times a URL appears in the source.
+    import pandas as pd
+
+    from app.ui.whyptology_app import corpus_credit_html
+
+    rendered = corpus_credit_html(
+        pd.DataFrame({"source": ["TLA", "AES"]})
+    )
+    assert "thesaurus-linguae-aegyptiae.de" in rendered
+    assert "AED-TEI" in rendered
 
 
 def test_data_licence_lists_every_copy_of_the_corpus():

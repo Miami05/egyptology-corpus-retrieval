@@ -157,7 +157,46 @@ def inject_theme() -> None:
     )
 
 
-def render_attribution_footer() -> None:
+# One citation per corpus that can appear in `source`. CC BY-SA 4.0 §3(a) requires the
+# attribution to reach whoever views the data, so every corpus actually loaded has to be
+# named — not just the one the project started with. `test_every_corpus_source_is_credited`
+# fails if a new source is imported without adding its citation here.
+CORPUS_CREDITS: dict[str, str] = {
+    "TLA": (
+        '<a href="https://thesaurus-linguae-aegyptiae.de" target="_blank" '
+        'rel="noopener">Thesaurus Linguae Aegyptiae</a>, Earlier Egyptian corpus v18 '
+        "and Late Egyptian corpus v19, ed. Richter &amp; Werning (BBAW) and "
+        "Fischer-Elfert &amp; Dils (SAW Leipzig)"
+    ),
+    "AES": (
+        '<a href="https://github.com/simondschweitzer/aed-tei" target="_blank" '
+        "rel=\"noopener\">AES — Ancient Egyptian Sentences</a>, derived from AED-TEI "
+        "(S. Schweitzer and contributors, BBAW/SAW)"
+    ),
+}
+
+LICENCE_LINK = (
+    '<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" '
+    'rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>'
+)
+
+
+def corpus_credit_html(df: pd.DataFrame) -> str:
+    """Citations for exactly the corpora present, in a stable order."""
+    sources = sorted({str(s).strip() for s in df.get("source", []) if str(s).strip()})
+    cited = [CORPUS_CREDITS[s] for s in sources if s in CORPUS_CREDITS]
+    if not cited:
+        cited = list(CORPUS_CREDITS.values())
+    return (
+        "Corpus data: "
+        + "; ".join(cited)
+        + f". Licensed {LICENCE_LINK}. Adapted: normalised, re-segmented, "
+        "transliteration conventions unified, and extended with derived fields — "
+        "see DATA-LICENSE.md."
+    )
+
+
+def render_attribution_footer(df: pd.DataFrame | None = None) -> None:
     """Corpus credit at the foot of every page.
 
     The sidebar credit is the primary attribution, but the sidebar is collapsed by
@@ -166,17 +205,8 @@ def render_attribution_footer() -> None:
     person viewing the data. Streamlit has no footer slot, so this is called at the
     end of each page render.
     """
-    st.markdown(
-        '<div class="page-footer">'
-        'Corpus data: <a href="https://thesaurus-linguae-aegyptiae.de" '
-        'target="_blank" rel="noopener">Thesaurus Linguae Aegyptiae</a>, '
-        "Earlier Egyptian corpus v18, ed. Richter &amp; Werning (BBAW) and "
-        "Fischer-Elfert &amp; Dils (SAW Leipzig) — licensed "
-        '<a href="https://creativecommons.org/licenses/by-sa/4.0/" '
-        'target="_blank" rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>, adapted '
-        "(normalised, re-segmented, extended with derived fields).</div>",
-        unsafe_allow_html=True,
-    )
+    body = corpus_credit_html(df if df is not None else pd.DataFrame())
+    st.markdown(f'<div class="page-footer">{body}</div>', unsafe_allow_html=True)
 
 
 def corpus_signature(df: pd.DataFrame) -> str:
@@ -307,9 +337,10 @@ def go_to(page: str) -> None:
     st.session_state["page"] = page
 
 
-def sidebar() -> str:
+def sidebar(sidebar_df: pd.DataFrame | None = None) -> str:
     if "page" not in st.session_state:
         st.session_state["page"] = "Home"
+    sidebar_df = sidebar_df if sidebar_df is not None else pd.DataFrame()
 
     with st.sidebar:
         st.markdown(
@@ -375,16 +406,8 @@ def sidebar() -> str:
               Open research access<br>
               <small>No account required to read</small>
             </div>
-            <div class="corpus-credit">
-              Corpus data: <a href="https://thesaurus-linguae-aegyptiae.de"
-                 target="_blank" rel="noopener">Thesaurus Linguae Aegyptiae</a>,
-              Earlier Egyptian, corpus v18, ed. Richter &amp; Werning
-              (BBAW) and Fischer-Elfert &amp; Dils (SAW Leipzig).
-              Licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/"
-                 target="_blank" rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>.
-              Adapted: normalised, re-segmented and extended with derived fields.
-            </div>
-            """,
+            <div class="corpus-credit">__CORPUS_CREDIT__</div>
+            """.replace("__CORPUS_CREDIT__", corpus_credit_html(sidebar_df)),
             unsafe_allow_html=True,
         )
 
@@ -1904,7 +1927,7 @@ if query_page in {"home", "workspace", "corpus", "projects", "reviews", "signs"}
     # buttons set and navigation would be dead for the rest of the session.
     del st.query_params["view"]
 
-page = sidebar()
+page = sidebar(corpus)
 if page == "Home":
     render_home(corpus)
 elif page == "Workspace":
@@ -1920,4 +1943,4 @@ else:
 
 # Attribution has to reach the viewer on every page, including on a phone where
 # the sidebar starts collapsed.
-render_attribution_footer()
+render_attribution_footer(corpus)
