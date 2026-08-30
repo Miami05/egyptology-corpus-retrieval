@@ -899,10 +899,17 @@ def render_workspace(df: pd.DataFrame) -> None:
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",
                 )
-            # No st.rerun() here: the results are already in session state and the
-            # rest of this script run renders them. Rerunning doubled the cost of
-            # every search — a second theme injection, corpus access and annotation
-            # round trip for no visible change.
+            # No st.rerun(): rerunning doubled the cost of every search. But the
+            # tabs below read `results`/`suggestions`, which were captured from
+            # session state at the top of this function *before* the search wrote
+            # them — so they must be refreshed here, or the tabs render the previous
+            # search's state and the user has to click twice. (Found by the
+            # pre-release test pass; the removed rerun had been masking this.)
+            results = st.session_state.get("whyptology_results")
+            suggestions = st.session_state.get("whyptology_suggestions", [])
+            top_row = (
+                results.iloc[0] if results is not None and not results.empty else None
+            )
 
     decode_tab, suggestions_tab, parallels_tab, analysis_tab, source_tab = st.tabs(
         [

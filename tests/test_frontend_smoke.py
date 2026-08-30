@@ -159,3 +159,22 @@ def test_mobile_breakpoints_cover_navigation_and_dense_views() -> None:
     assert ".workspace-head {\n    flex-direction: column;" in css
     assert "min-height: 2.75rem;" in css
     assert "flex-wrap: wrap;" in css
+
+
+def test_one_click_populates_every_tab():
+    """Regression: after Phase 3 removed the post-search st.rerun(), the tabs kept
+    reading `results`/`suggestions`/`top_row` captured *before* the search wrote them,
+    so a visitor had to click Suggest twice. Every tab must be populated after one.
+    """
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "workspace"
+    app.run()
+    app.text_area[0].set_value("𓆓𓂧 𓆑𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏼 𓂋𓍿 𓀀 𓏼𓎟𓏏").run()
+    [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
+    assert_clean(app)
+    text = "\n".join(m.value for m in app.markdown)
+    assert text.count('class="suggestion-card"') >= 2, "suggestion cards missing"
+    assert len(app.expander) >= 1, "corpus parallels missing"
+    assert app.dataframe, "results table / analysis missing"
+    stale = [i.value for i in app.info if i.value.startswith("Run a query")]
+    assert not stale, f"tabs still showing pre-search placeholders: {stale}"
