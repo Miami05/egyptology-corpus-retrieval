@@ -44,6 +44,7 @@ from app.ui.review_common import (
     build_row_key,
     coerce_bool,
     annotated_example_count,
+    LICENCE_NOTICE,
     annotated_example_ids,
     annotation_history_to_df,
     load_annotation_state,
@@ -152,6 +153,28 @@ def inject_theme() -> None:
     # here would silently invalidate it. @font-face has no such ordering constraint.
     st.markdown(
         f"<style>{theme_css()}\n{translit_font_face()}</style>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_attribution_footer() -> None:
+    """Corpus credit at the foot of every page.
+
+    The sidebar credit is the primary attribution, but the sidebar is collapsed by
+    default on a phone, so a mobile visitor could read the whole corpus without ever
+    seeing whose work it is. CC BY-SA 4.0 §3(a) requires the attribution to reach the
+    person viewing the data. Streamlit has no footer slot, so this is called at the
+    end of each page render.
+    """
+    st.markdown(
+        '<div class="page-footer">'
+        'Corpus data: <a href="https://thesaurus-linguae-aegyptiae.de" '
+        'target="_blank" rel="noopener">Thesaurus Linguae Aegyptiae</a>, '
+        "Earlier Egyptian corpus v18, ed. Richter &amp; Werning (BBAW) and "
+        "Fischer-Elfert &amp; Dils (SAW Leipzig) — licensed "
+        '<a href="https://creativecommons.org/licenses/by-sa/4.0/" '
+        'target="_blank" rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>, adapted '
+        "(normalised, re-segmented, extended with derived fields).</div>",
         unsafe_allow_html=True,
     )
 
@@ -972,10 +995,19 @@ def render_workspace(df: pd.DataFrame) -> None:
             unreadable = [p for p in unseen if not p.is_fallback]
             ambiguous = [p for p in predictions if p.is_ambiguous]
 
+            # The badge must reflect what the reading is worth: a tick claims every
+            # group was attested, which is false the moment anything was borrowed or
+            # could not be read at all.
+            if unreadable:
+                badge, badge_title = "!", "some sign groups could not be read"
+            elif fallbacks:
+                badge, badge_title = "~", "some readings were inferred from similar groups"
+            else:
+                badge, badge_title = "✓", "every sign group is attested in the corpus"
             st.markdown(
                 '<div class="suggestion-card">'
                 '<div class="suggestion-head">'
-                '<span class="suggestion-rank">✓</span>'
+                f'<span class="suggestion-rank" title="{badge_title}">{badge}</span>'
                 f'<span class="suggestion-reading">{escape(reading) or "—"}</span>'
                 "</div>"
                 f'<div class="suggestion-support">{len(signs)} sign groups · '
@@ -1340,6 +1372,7 @@ def render_corpus(df: pd.DataFrame) -> None:
 
         start = (page - 1) * CORPUS_PAGE_SIZE
         window = filtered.iloc[start : start + CORPUS_PAGE_SIZE]
+        st.session_state["whyptology_corpus_page_rows"] = window
 
         header = "".join(
             f"<th>{escape(CORPUS_COLUMN_LABELS.get(col, col))}</th>" for col in columns
@@ -1371,8 +1404,14 @@ def render_corpus(df: pd.DataFrame) -> None:
             last = min(start + CORPUS_PAGE_SIZE, total)
             st.caption(f"Showing {first:,}–{last:,} of {total:,} matching records.")
 
-    with st.container(key="corpus_cards"):
-        for _, row in filtered.head(30).iterrows():
+    # The card list below repeated the same rows the table above already shows. It
+    # is kept only for the narrow screens where the table scrolls awkwardly, and
+    # shows the current page rather than a second, unrelated slice of the corpus.
+    page_rows = st.session_state.get("whyptology_corpus_page_rows")
+    if page_rows is None or page_rows.empty:
+        return
+    with st.expander(f"Card view of this page ({len(page_rows)} records)"):
+        for _, row in page_rows.iterrows():
             source_label = escape(value(row, "source", "Unknown source"))
             text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
             period_label = escape(value(row, "period", "Period unknown"))
@@ -1724,8 +1763,14 @@ def render_reviews() -> None:
         # `data=build_reviewed_export_csv()` re-queried the database and
         # re-materialised the whole CSV on every rerun of this page, whether or not
         # anyone ever clicked the button.
+        st.caption(
+            "The export carries corpus text under CC BY-SA 4.0; a licence column "
+            "travels with every row so the attribution reaches whoever receives it."
+        )
         if st.button("Prepare CSV export", width="stretch"):
-            st.session_state["whyptology_export_csv"] = reviewed.to_csv(index=False)
+            st.session_state["whyptology_export_csv"] = with_licence_notice(
+                reviewed
+            ).to_csv(index=False)
         export_csv = st.session_state.get("whyptology_export_csv")
         if export_csv:
             st.download_button(
@@ -1800,3 +1845,7 @@ elif page == "Signs":
     render_signs(corpus)
 else:
     render_reviews()
+
+# Attribution has to reach the viewer on every page, including on a phone where
+# the sidebar starts collapsed.
+render_attribution_footer()

@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.ui.review_common import with_licence_notice
 from app.storage.db import SessionLocal
 from app.storage.repo import AnnotationRepo, ExampleRepo
 
@@ -78,7 +79,9 @@ def main() -> None:
                 }
             )
 
-        df = pd.DataFrame(export_rows)
+        # Same CC BY-SA notice the in-app export carries: this file redistributes
+        # adapted TLA text, so the attribution has to travel with it.
+        df = with_licence_notice(pd.DataFrame(export_rows))
         Path("data/processed").mkdir(parents=True, exist_ok=True)
         df.to_csv(OUTPUT_PATH, index=False)
         print(f"Exported {len(df)} reviewed rows to {OUTPUT_PATH}")

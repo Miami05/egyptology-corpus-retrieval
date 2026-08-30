@@ -18,6 +18,31 @@ from app.storage.repo import AnnotationRepo, ExampleRepo
 
 ANNOTATION_STATUSES = ["accepted", "edited", "rejected", "uncertain"]
 
+# CC BY-SA 4.0 §3(a) applies to every distribution of adapted material, not just to
+# the repository. The reviewed export carries `transliteration_gold` and `translation`
+# — TLA text, not this project's own work — so a copy that leaves the app must carry
+# the attribution, the licence, the statement that it is adapted, and a link to the
+# original. Shipped as a column rather than a comment header because a `#` line
+# breaks `pd.read_csv` for anyone downstream.
+LICENCE_NOTICE = (
+    "Corpus text (transliteration_gold, translation) derived from the Thesaurus "
+    "Linguae Aegyptiae, Earlier Egyptian corpus v18, ed. Richter & Werning (BBAW) "
+    "and Fischer-Elfert & Dils (SAW Leipzig); https://thesaurus-linguae-aegyptiae.de "
+    "— licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). "
+    "Adapted: normalised, re-segmented and extended with derived fields; see "
+    "DATA-LICENSE.md. Annotation columns are this project's own editorial additions. "
+    "Redistribution of this file must keep this notice and stay under CC BY-SA 4.0. "
+    "No warranties are given; the licence may not give you all the permissions "
+    "necessary for your intended use."
+)
+
+
+def with_licence_notice(frame: pd.DataFrame) -> pd.DataFrame:
+    """Attach the CC BY-SA notice to every row of an export."""
+    out = frame.copy()
+    out["licence"] = LICENCE_NOTICE
+    return out
+
 HISTORY_COLUMNS = [
     "id",
     "status",
@@ -281,7 +306,9 @@ def reviewed_annotation_rows() -> list[dict]:
 
 def build_reviewed_export_csv() -> str:
     buffer = StringIO()
-    pd.DataFrame(reviewed_annotation_rows()).to_csv(buffer, index=False)
+    with_licence_notice(pd.DataFrame(reviewed_annotation_rows())).to_csv(
+        buffer, index=False
+    )
     return buffer.getvalue()
 
 

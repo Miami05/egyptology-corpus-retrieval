@@ -7,7 +7,7 @@ licences. Read this before publishing, redistributing or deploying publicly.**
 |---|---|
 | Source code (`app/`, `scripts/`, `tests/`) | MIT — see `LICENSE` |
 | Corpus data (`data/`, incl. `data/processed/examples.csv`) | **CC BY-SA 4.0** — see below |
-| `app/ui/static/GentiumPlus-Regular.subset.woff2` | SIL Open Font License 1.1 — see `app/ui/static/GentiumPlus-OFL.txt` |
+| `app/ui/static/GentiumPlus-Translit.woff2` | SIL Open Font License 1.1 — see `app/ui/static/GentiumPlus-OFL.txt` |
 
 ## Why the data is not MIT
 
@@ -65,6 +65,29 @@ as follows:
   editorial additions and are not part of the TLA data.
 
 Translations in the corpus are the German translations from TLA.
+
+## Every copy of the data in this repository
+
+CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
+
+| File | What it is |
+|---|---|
+| `data/processed/examples.csv` | the built corpus |
+| `data/raw/real_examples_worklist.csv` | an earlier full copy of the same source rows |
+| `data/processed/reviewed_annotations_export.csv` | corpus text plus this project's annotations |
+| `data/benchmarks/*.csv` | queries and expectations derived from corpus readings |
+
+Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence`
+column repeating the attribution, because a file that leaves the repository loses
+sight of this one.
+
+## Warranty disclaimer (CC BY-SA 4.0 §5)
+
+Unless otherwise separately undertaken, the licensor offers the licensed material
+as-is and makes no representations or warranties of any kind concerning it. Where
+disclaimers of warranties are not allowed in full or in part, this disclaimer may not
+apply. The full text is at
+<https://creativecommons.org/licenses/by-sa/4.0/legalcode>.
 
 ## If you deploy this publicly
 

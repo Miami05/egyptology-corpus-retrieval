@@ -516,13 +516,13 @@ least one query the pipeline didn't generate for itself.
   `tests/__init__.py` happening to put the root on the path.
 - Suite **161/161** (23 new).
 
-## Phase 5 — Product and licence polish
+## Phase 5 — Product and licence polish — DONE 2026-08-30
 
-- [ ] **Delete `app/ui/streamlit_app.py`** (512 lines, 0 mentions of TLA/BY-SA, 0
+- [x] **Delete `app/ui/streamlit_app.py`** (512 lines, 0 mentions of TLA/BY-SA, 0
       cache calls). *Correction:* do not move its benchmark tab — it is the only
       consumer of the phase-3 chain that scores zero, and the only caller of
       `app/services/evaluation.evaluate_benchmark`, which can go with it.
-- [ ] **Attribution in every distribution.** Confirmed: the CSV export
+- [x] **Attribution in every distribution.** Confirmed: the CSV export
       (`review_common.py:192-195`, `export_reviewed.py:81-83`) includes
       `transliteration_gold` and `translation` — TLA-licensed text, not just user
       annotations — with no notice. **Three more copies the first draft missed:** the
@@ -537,7 +537,7 @@ least one query the pipeline didn't generate for itself.
       no footer anywhere; Streamlit has no footer slot, so the credit must be appended
       to every `render_*`. A comment line in the CSV breaks `pd.read_csv` for
       consumers — prefer a `licence` column or a README in a zip.
-- [ ] **UI paper cuts — two withdrawn.** Confirmed: the explorer renders the same rows
+- [x] **UI paper cuts — two withdrawn.** Confirmed: the explorer renders the same rows
       twice (HTML table `:1097-1102`, then cards `:1112-1135`); the ✓ badge at
       `:724-735` is unconditional while the fallback warning appears only below `:760`;
       the `top_k` mismatch (see Phase 2 — it is in the search handler, not the tabs).
@@ -548,22 +548,65 @@ least one query the pipeline didn't generate for itself.
       `max_value` changes and resets to page 1; no bug. Also: `st.markdown(f"**{…}**")`
       at `:874-890,:962` renders corpus text as Markdown unescaped — not XSS (Streamlit
       sanitises), but a `*` or `_` in a translation mangles the display.
-- [ ] **Urkunden IV — needs a new data source, not stable IDs.** *Correction:* the
+- [x] **Urkunden IV — needs a new data source, not stable IDs.** *Correction:* the
       Hugging Face parquet the importer reads has **no text/title/ID column** and
       contains **9** New-Kingdom-dated rows out of 12,773; searching for Ahmose son of
       Ibana (`ꞽꜥḥ-ms`, `ꞽbꜣn`, `ḏd =f ḏd =ꞽ`, "Ahmose"/"Ibana") returns 0 hits.
-      `data/raw/aes` is an empty directory, not the 600 MB clone `.gitignore` describes.
+      `data/raw/aes` holds the AES corpus after all — see the Phase 5 correction; the
+  earlier "empty directory" reading was iCloud eviction, not a missing download.
       Importing Urk. IV means a new source (TLA/AES export, or M.-J. Nederhof's
       sign-aligned St Andrews corpus — the very PDF Camilla linked in her trial
       document), a new importer, and an updated `DATA-LICENSE.md` citation. Size:
       Large, and independent of Phase 4's ID work. Treat as its own project after
       Phases 0–4.
-- [ ] **Docs.** README says `data/raw` is "~465 MB, regenerable"; actual is 4.2 MB,
+- [x] **Docs.** README says `data/raw` is "~465 MB, regenerable"; actual is 4.2 MB,
       `.gitignore` says 600 MB, and regeneration fails on the missing `datasets`
       dependency. Reconcile after Phase 4.
 
 Done when: one entrypoint, attribution travels with every copy of the data including
 the two committed CSVs, and the docs describe the repo that exists.
+
+**Result (2026-08-30):**
+
+- **One entry point.** `app/ui/streamlit_app.py` deleted — 512 lines that rendered no
+  TLA attribution at all, a licence-noncompliant second front door in a public repo.
+  `app/services/evaluation.py` went with it (its only remaining consumer). A test
+  asserts nothing imports either.
+- **The licence now travels with the data.** `LICENCE_NOTICE` is attached as a
+  `licence` **column** (a `#` comment header would break `pd.read_csv` for whoever
+  receives the file) to both export paths — the in-app download and
+  `scripts/export_reviewed.py` — and to the committed
+  `reviewed_annotations_export.csv`. It names the attribution, the licence and its
+  URL, the link to the original, the fact of adaptation, and the §5 warranty
+  position.
+- **Attribution reaches the viewer on every page.** The sidebar credit is collapsed
+  by default on a phone, so a mobile reader could have browsed the whole corpus
+  without seeing whose work it is. A footer now renders on all six pages; a test
+  checks each one.
+- **`DATA-LICENSE.md` corrected and completed**: the font filename matched no file on
+  disk (`GentiumPlus-Regular.subset.woff2` → `GentiumPlus-Translit.woff2`); every
+  copy of corpus data in the repo is now listed, not just `examples.csv`; the §5
+  warranty disclaimer is stated.
+- **Paper cuts.** The ✓ badge was unconditional — it claimed every sign group was
+  attested even when readings had been borrowed or nothing could be read; it is now
+  ✓ / ~ / ! with a tooltip. The corpus explorer rendered `filtered.head(30)` as cards
+  *below* a paginated table, so page 5 showed page 1's cards; the card view now
+  follows the current page and is collapsed by default.
+- **Urk. IV — feasibility re-checked, and a correction.** The audit reported
+  `data/raw/aes` as an empty directory. It is not: it holds the **AES corpus**
+  (Ancient Egyptian Sentences, 100,000+ sentences, CC BY-SA 4.0, with Unicode
+  hieroglyphic encodings and AED lemma IDs). The earlier reading was an artifact of
+  iCloud having evicted the file contents — the same environment problem that caused
+  the move to `~/Projects`. README's "~465 MB" for `data/raw` is likewise correct.
+
+  However, Ahmose son of Ibana is **not** in the 16 AES subcorpora present here
+  (the historical-biographical one included is `bbawhistbiospzt`, Late Period), so
+  the conclusion stands for a different reason: Urk. IV needs a source the repo does
+  not have. **Importing AES itself is the natural next project** — it would multiply
+  the corpus roughly eightfold and is exactly the coverage problem an expert keeps
+  hitting — but it needs its own importer, schema mapping and licence citation, so it
+  is out of scope for a polish phase.
+- Suite **177/177** (16 new).
 
 ## Checked and clean
 

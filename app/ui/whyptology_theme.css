@@ -1252,3 +1252,16 @@ div[data-testid="stDataFrame"] {
   font-size: 1.35rem; line-height: 1.6;
 }
 .seg-chip-unattested { border-style: dashed; opacity: 0.75; }
+
+/* Corpus attribution at the foot of every page. The sidebar credit is primary, but
+   the sidebar is collapsed by default on narrow screens — CC BY-SA 4.0 requires the
+   attribution to reach the person looking at the data. */
+.page-footer {
+  margin: 3rem 0 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line, #d9d4c5);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted, #6b6b60);
+}
+.page-footer a { color: inherit; text-decoration: underline; }

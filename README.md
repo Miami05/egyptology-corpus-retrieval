@@ -115,5 +115,7 @@ The corpus is derived from the [Thesaurus Linguae
 Aegyptiae](https://thesaurus-linguae-aegyptiae.de) (CC BY-SA 4.0). Share-alike means the
 derived data cannot be relicensed as MIT, attribution is required, and the changes made
 to it must be stated — all of which is recorded in
-[DATA-LICENSE.md](DATA-LICENSE.md). The attribution shown in the app sidebar is a
-licence condition, not decoration.
+[DATA-LICENSE.md](DATA-LICENSE.md). The attribution shown in the app sidebar **and in
+the footer of every page** is a licence condition, not decoration, and every CSV the
+app or `scripts/export_reviewed.py` writes carries a `licence` column so the notice
+travels with the data.
