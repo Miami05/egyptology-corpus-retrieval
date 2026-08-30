@@ -1265,3 +1265,50 @@ div[data-testid="stDataFrame"] {
   color: var(--muted, #6b6b60);
 }
 .page-footer a { color: inherit; text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   Alert boxes (st.warning / st.info / st.error / st.success).
+
+   These carry the messages the tool exists to deliver — "no attested parallel in
+   this corpus", "read-only mode", "annotations are not stored durably". They were
+   unreadable: Streamlit colours its own components from the *viewer's* system
+   dark/light preference, while this stylesheet paints a fixed light surface, so on a
+   machine in dark mode the alert text came out near-white on a pale tint.
+   config.toml now pins the light theme; these rules make the contrast explicit as
+   well, so a future Streamlit default cannot make the text vanish again.
+   --------------------------------------------------------------------------- */
+[data-testid="stAlert"] {
+  border-radius: 10px;
+  border: 1px solid rgba(20, 35, 31, .16);
+}
+[data-testid="stAlert"],
+[data-testid="stAlert"] p,
+[data-testid="stAlert"] li,
+[data-testid="stAlert"] span,
+[data-testid="stAlert"] strong,
+[data-testid="stAlert"] code,
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+  color: #14231f !important;
+}
+[data-testid="stAlert"] strong { font-weight: 700; }
+[data-testid="stAlert"] code {
+  background: rgba(20, 35, 31, .08) !important;
+  color: #14231f !important;
+}
+/* Keep each severity distinguishable by its own tint, with text that always reads. */
+[data-testid="stAlert"][class*="warning"], div[data-baseweb="notification"][kind="warning"] {
+  background: #fdf3d7 !important;
+  border-color: #d9b568 !important;
+}
+[data-testid="stAlert"][class*="info"], div[data-baseweb="notification"][kind="info"] {
+  background: #e4eef4 !important;
+  border-color: #9fbdcd !important;
+}
+[data-testid="stAlert"][class*="error"], div[data-baseweb="notification"][kind="negative"] {
+  background: #f7e0dc !important;
+  border-color: #c98d82 !important;
+}
+[data-testid="stAlert"][class*="success"], div[data-baseweb="notification"][kind="positive"] {
+  background: #e2efe4 !important;
+  border-color: #8fbb96 !important;
+}

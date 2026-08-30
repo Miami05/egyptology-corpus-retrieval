@@ -8,3 +8,17 @@ maxUploadSize = 20
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+# Pin the light theme. Without this Streamlit follows the *viewer's* system
+# dark/light preference for its own components, while whyptology_theme.css paints a
+# fixed light content surface — so on a machine set to dark mode Streamlit rendered
+# alert text in its near-white dark-theme colour on a pale alert tint, making every
+# st.warning / st.info unreadable. Those alerts carry the messages this tool exists
+# to deliver: "no attested parallel", "read-only mode", "annotations are not stored
+# durably". Invisible honesty is worse than none.
+base = "light"
+backgroundColor = "#fbf9f4"
+secondaryBackgroundColor = "#f2eee4"
+textColor = "#14231f"
+primaryColor = "#1f6f5c"

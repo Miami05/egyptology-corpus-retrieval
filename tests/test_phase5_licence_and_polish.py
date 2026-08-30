@@ -184,3 +184,27 @@ def test_suffix_marker_unification_is_declared_as_a_modification():
     doc = (PROJECT_ROOT / "DATA-LICENSE.md").read_text()
     assert "suffix-pronoun marker" in doc
     assert "⸗" in doc
+
+
+# ---------- the honest messages have to be readable ----------
+
+
+def test_streamlit_theme_is_pinned():
+    """Without a pinned theme Streamlit colours its own components from the viewer's
+    system dark/light setting, while the stylesheet paints a fixed light surface —
+    which rendered every st.warning and st.info as near-white text on a pale tint."""
+    config = (PROJECT_ROOT / ".streamlit" / "config.toml").read_text()
+    assert "[theme]" in config
+    assert 'base = "light"' in config
+    assert "textColor" in config
+
+
+def test_alert_text_contrast_is_stated_explicitly():
+    """Belt and braces: even if a future Streamlit default changes, the alerts that
+    carry 'no attested parallel' and 'not stored durably' must stay readable."""
+    css = (PROJECT_ROOT / "app" / "ui" / "whyptology_theme.css").read_text()
+    assert '[data-testid="stAlert"]' in css
+    alert_block = css.split('[data-testid="stAlert"]', 1)[1]
+    assert "#14231f !important" in alert_block, "alert text colour not forced"
+    for kind in ("warning", "info", "error", "success"):
+        assert kind in alert_block, f"no explicit styling for {kind} alerts"
