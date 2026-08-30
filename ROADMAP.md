@@ -709,6 +709,40 @@ five spacings with zero borrowed readings.
 > be attached to them until the sync is run once against production:
 > `DATABASE_URL='postgresql://…' python scripts/import_examples.py`
 
+## Dynasty 18 coverage — the JSON was hiding the corpus (2026-08-30)
+
+The Phase 5 note said AES was unusable: 101,796 sentences, 23 with a hieroglyph. That
+was true of the **JSON export** and wrong about the corpus. The same download ships a
+**relANNIS export** carrying a `hiero_unicode` annotation the JSON drops — **241,414
+tokens of it**. Read from there, AES yields **14,824 sentences whose hieroglyphs align
+one-to-one with their transliteration**, including `bbawamarna`, which is Dynasty 18.
+
+`scripts/import_aes_relannis.py` imports it. After dropping 5,001 sentences already
+present from TLA, **9,823 rows were added: 16,373 → 26,196, all 26,196 aligned.**
+New Kingdom rows **2,998 → 5,629**, including **494 Amarna** sentences.
+
+**The transliteration had to be converted, and the conversion was validated rather
+than assumed.** AES writes the yod `j` where TLA writes `ꞽ`, the morpheme separator as
+a comma, the suffix marker `≡`, plural `,pl`, and capitalises proper nouns. Left alone,
+the sign model would read `=j` and `=ꞽ` as two different readings of the same sign.
+1,342 sentences occur in **both** corpora independently, which makes a test set: the
+conversion reproduces the TLA form exactly for **85%** of them and **disagrees on a
+letter in none**. The remaining 15% differ only in editorial judgement between two
+editions (`bš(ꜣ)` vs `bšꜣ`, `ḥtp-ḏi̯-nswt` vs `ḥtp-ḏi̯ nswt`) and were left as AES has
+them. Declared in `DATA-LICENSE.md`, with the AES/AED-TEI citation and its ~30 editors.
+
+Also kept honest: periods stay coarse (`Old Kingdom / First Intermediate Period`)
+because AES does not claim a single one, and `language_stage` is left
+`Unspecified (AES)` rather than guessed from an era label.
+
+**Regression:** the trial line still reads `ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t` from all
+four spacings with zero borrowed readings; expert paste eval 8/8; suite 195/195.
+
+**Still honest about the limit:** Amarna is *late* Dynasty 18 and Urk. IV is *early*
+Dynasty 18 in Middle Egyptian. The gap is much smaller than it was — 494 Dynasty-18
+sentences where there were 64 — but Ahmose son of Ibana's own text is still not in the
+corpus, and no source we hold contains it.
+
 ## Checked and clean
 
 For the record, the verification pass re-confirmed: no SQL injection (SQLAlchemy Core/ORM

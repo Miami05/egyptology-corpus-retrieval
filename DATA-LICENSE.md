@@ -87,6 +87,44 @@ as follows:
 
 Translations in the corpus are the German translations from TLA.
 
+## Third corpus: AES (Ancient Egyptian Sentences)
+
+`data/processed/examples.csv` also contains sentences from the **AES corpus**, imported
+from its relANNIS export by `scripts/import_aes_relannis.py`:
+
+> AES — Ancient Egyptian Sentences. Derived from
+> [AED-TEI](https://github.com/simondschweitzer/aed-tei), based on the *Teilauszug der
+> Datenbank des Vorhabens "Strukturen und Transformationen des Wortschatzes der
+> ägyptischen Sprache"* (Jan. 2018), with contributions by Burkhard Backes, Susanne
+> Beck, Anke Blöbaum, Angela Böhme, Marc Brose, Adelheid Burkhardt, Roberto A. Díaz
+> Hernández, Peter Dils, Roland Enmarch, Frank Feder, Heinz Felber, Silke Grallert,
+> Stefan Grunert, Ingelore Hafemann, Anne Herzberg, John M. Iskander, Ines Köhler,
+> Maxim Kupreyev, Renata Landgrafova, Verena Lepper, Lutz Popko, Alexander Schütze,
+> Simon Schweitzer, Stephan Seidlmayer, Gunnar Sperveslage, Susanne Töpfer, Doris
+> Topmann and Anja Weber.
+
+Licensed CC BY-SA 4.0. Each imported row records its originating subcorpus, editor and
+findspot in `grammar_notes`, and its AES text and sentence identifiers in `source_ref`.
+
+### Changes made to the AES data
+
+- **Only fully aligned sentences were taken.** A sentence is imported only when every
+  word carries both a transliteration and a Unicode hieroglyphic writing; sentences
+  with partial coverage are discarded, not patched. 14,824 of 101,796 qualify.
+- **Transliteration rewritten into the convention already used by this corpus.** AES
+  writes the yod as `j`, the morpheme separator as a comma, the suffix marker as `≡`,
+  plural and dual as `,pl` / `,du`, and capitalises proper nouns; the TLA rows use
+  `ꞽ`, `.`, `=`, `.PL` / `.DU` and lower case. Validated against the 1,342 sentences
+  present in both corpora: the conversion reproduces the TLA form exactly for 85% and
+  **disagrees on a letter in none**. The remaining 15% differ only in editorial
+  judgement between the two editions and were left as AES has them.
+- **Periods kept coarse.** AES dates documents as "OK & FIP", "MK & SIP", "NK",
+  "TIP - Roman times"; these are expanded to readable labels but not narrowed to a
+  single period, because the source does not claim one.
+- **Language stage left unclaimed** (`Unspecified (AES)`): AES does not state one per
+  sentence and deriving it from a coarse era label would be a guess.
+- Sentences already present from a TLA corpus were dropped (5,001 of them).
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:

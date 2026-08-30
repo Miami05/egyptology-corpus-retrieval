@@ -1,8 +1,8 @@
 # Whyptology
 
 A corpus-based reading-suggestion tool for Ancient Egyptian. Given a transliteration,
-Manuel de Codage, or a sign sequence, it finds real parallels in a 16,373-sentence
-corpus (Earlier and Late Egyptian, Predynastic to Late Period), ranks the readings those parallels attest, shows the evidence behind each one,
+Manuel de Codage, or a sign sequence, it finds real parallels in a 26,196-sentence
+corpus (TLA Earlier and Late Egyptian plus the AES corpus; Predynastic to Roman), ranks the readings those parallels attest, shows the evidence behind each one,
 and records expert corrections.
 
 **It is not OCR and it is not machine translation.** Every suggestion is grouped from
@@ -92,7 +92,7 @@ each is understood and scheduled in [ROADMAP.md](ROADMAP.md):
   (boundary F1 0.86 on held-out sentences vs 0.67 for trusting the spaces), shows
   where it disagreed with the paste, and lets you edit the grouping.
 - ~~`<g>…</g>` markup breaks glyph/reading alignment~~ — fixed (Phase 0): markup for
-  signs without a Unicode codepoint is now one placeholder glyph, so all 16,373
+  signs without a Unicode codepoint is now one placeholder glyph, so all 26,196
   rows are aligned and used; the loader reports the count on every start.
 - ~~No Unicode variant folding~~ — fixed (Phase 0): text is NFC-normalised and the
   plural-strokes variants U+133E5/U+133FC fold together. Other visually identical

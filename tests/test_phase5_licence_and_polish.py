@@ -208,3 +208,12 @@ def test_alert_text_contrast_is_stated_explicitly():
     assert "#14231f !important" in alert_block, "alert text colour not forced"
     for kind in ("warning", "info", "error", "success"):
         assert kind in alert_block, f"no explicit styling for {kind} alerts"
+
+
+def test_aes_corpus_is_cited_and_its_changes_declared():
+    """A third corpus with its own editors and its own transliteration convention."""
+    doc = (PROJECT_ROOT / "DATA-LICENSE.md").read_text()
+    assert "AES" in doc and "AED-TEI" in doc
+    assert "Simon Schweitzer" in doc
+    assert "fully aligned sentences were taken" in doc
+    assert "disagrees on a letter in none" in doc
