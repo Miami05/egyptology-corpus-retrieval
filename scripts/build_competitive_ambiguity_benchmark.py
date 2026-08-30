@@ -1,7 +1,23 @@
+"""Build the competitive ambiguity benchmark.
+
+A benchmark row must have real rivals in the corpus but *no near-identical twin*:
+the eval excludes the target row, so if a duplicate remains in the corpus the
+expected reading is handed over for free and the score measures memorisation.
+
+The twin check runs against the **whole corpus**, not a scan pool. It used to run
+only inside the builder's 2,000-row candidate pool while the eval loaded all 12,772
+rows, so a twin outside the pool was invisible to the guard and present at eval time
+— 11 of the 20 selected rows turned out to have one, 7 of them identical. An
+inverted index over rare tokens makes the full-corpus check affordable: instead of
+163 million pairwise comparisons, each row is compared only with rows that share at
+least one of its tokens.
+"""
+
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -42,13 +58,63 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pool-size",
         type=int,
-        default=2000,
+        default=0,
         help=(
-            "Rows scanned when looking for rivals. Selection compares every row with "
-            "every other, so the full corpus would take hours; 0 scans everything."
+            "Rows considered as benchmark *candidates* (0 = all). Twin detection "
+            "always runs against the full corpus regardless of this value."
         ),
     )
     return parser.parse_args()
+
+
+def build_token_index(token_sets: list[set[str]]) -> dict[str, list[int]]:
+    """token -> row indices containing it."""
+    index: dict[str, list[int]] = defaultdict(list)
+    for row_index, tokens in enumerate(token_sets):
+        for token in tokens:
+            index[token].append(row_index)
+    return index
+
+
+def rivals_for(
+    row_index: int,
+    token_sets: list[set[str]],
+    token_index: dict[str, list[int]],
+    min_overlap: float,
+    max_candidates_per_token: int = 4000,
+) -> tuple[int, float]:
+    """(number of rivals above min_overlap, best overlap) against the whole corpus.
+
+    Only rows sharing at least one token can reach a positive Jaccard overlap, so
+    the index gives an exact answer while touching a small fraction of the corpus.
+    Ubiquitous tokens (particles present in thousands of rows) are skipped for
+    candidate *generation* only — a row sharing nothing but `n` cannot reach the
+    overlap threshold anyway.
+    """
+    target = token_sets[row_index]
+    if not target:
+        return 0, 0.0
+    candidates: set[int] = set()
+    for token in target:
+        postings = token_index.get(token, ())
+        if len(postings) > max_candidates_per_token:
+            continue
+        candidates.update(postings)
+    candidates.discard(row_index)
+
+    rivals = 0
+    best = 0.0
+    for other in candidates:
+        other_tokens = token_sets[other]
+        shared = len(target & other_tokens)
+        if not shared:
+            continue
+        score = shared / len(target | other_tokens)
+        if score >= min_overlap:
+            rivals += 1
+            if score > best:
+                best = score
+    return rivals, best
 
 
 def _tokens(value: object) -> list[str]:
@@ -89,6 +155,26 @@ def _strip_some_endings(tokens: list[str]) -> list[str]:
     return out
 
 
+# A generated query must carry enough signal to be answerable at all. A single
+# ubiquitous token ("z" is in thousands of rows) asks the ranker to pick one of
+# thousands of equally-matching sentences — the resulting failure measures nothing.
+# One *rare* token is a fair question, so the rule is: at least two tokens, or one
+# token appearing in under this share of the corpus.
+MAX_SINGLE_TOKEN_DOC_SHARE = 0.005
+
+
+def query_has_signal(
+    query: str, frequencies: dict[str, int], corpus_size: int
+) -> bool:
+    tokens = _tokens(query)
+    if len(tokens) >= 2:
+        return True
+    if not tokens:
+        return False
+    share = frequencies.get(tokens[0], 0) / max(corpus_size, 1)
+    return share <= MAX_SINGLE_TOKEN_DOC_SHARE
+
+
 def _competitive_query(row: pd.Series, row_num: int) -> tuple[str, str, str]:
     loose = loose_reading_form(row["transliteration_gold"])
     tokens = _strip_some_endings(_tokens(loose))
@@ -120,14 +206,6 @@ def _competitive_query(row: pd.Series, row_num: int) -> tuple[str, str, str]:
 def main() -> None:
     args = _parse_args()
     df = load_examples_csv(args.examples)
-    # Rival detection compares every row against every other, so cap the scan. The
-    # benchmark only needs enough rows to find competitive cases, not the whole corpus.
-    if args.pool_size and len(df) > args.pool_size:
-        print(
-            f"Corpus has {len(df)} rows; scanning the first {args.pool_size} for rival "
-            "detection (selection compares every row with every other)."
-        )
-        df = df.head(args.pool_size)
     prepared = df.copy()
     prepared["competitive_tokens"] = prepared["transliteration_gold"].map(
         lambda value: _token_set(loose_reading_form(value))
@@ -135,24 +213,34 @@ def main() -> None:
     prepared["competitive_lemma_ids"] = prepared["lemma_sequence"].map(_lemma_ids)
     prepared["competitive_canonical"] = prepared["transliteration_gold"].map(canonical_reading)
 
+    # Twin detection always sees the whole corpus — the eval does, so the guard must.
+    corpus_token_sets = list(prepared["competitive_tokens"])
+    token_index = build_token_index(corpus_token_sets)
+    print(
+        f"Twin detection over the full corpus: {len(corpus_token_sets)} rows, "
+        f"{len(token_index)} distinct tokens."
+    )
+
+    # Candidate rows may be capped for speed; the twin check above is not.
+    candidate_positions = range(len(prepared))
+    if args.pool_size and len(prepared) > args.pool_size:
+        print(f"Considering the first {args.pool_size} rows as benchmark candidates.")
+        candidate_positions = range(args.pool_size)
+
+    positional_index = list(prepared.index)
     candidates: list[tuple[int, float, int]] = []
     skipped_near_duplicate = 0
     skipped_no_distractor = 0
     skipped_too_short = 0
-    for index, row in prepared.iterrows():
-        target_tokens = row["competitive_tokens"]
+    for position in candidate_positions:
+        index = positional_index[position]
+        target_tokens = corpus_token_sets[position]
         if len(target_tokens) < 2:
             skipped_too_short += 1
             continue
-        distractors = 0
-        best_overlap = 0.0
-        for other_index, other in prepared.iterrows():
-            if other_index == index:
-                continue
-            score = _overlap(target_tokens, other["competitive_tokens"])
-            if score >= 0.16:
-                distractors += 1
-                best_overlap = max(best_overlap, score)
+        distractors, best_overlap = rivals_for(
+            position, corpus_token_sets, token_index, min_overlap=0.16
+        )
         if distractors == 0:
             skipped_no_distractor += 1
             continue
@@ -176,22 +264,37 @@ def main() -> None:
             continue
         seen_readings.add(reading)
         selected_indices.append(index)
-        if len(selected_indices) >= args.limit:
+        # Take a surplus: the signal filter below drops some, and the benchmark
+        # should still end up with `limit` usable rows.
+        if len(selected_indices) >= args.limit * 3:
             break
     selected = prepared.loc[selected_indices, :].copy()
 
     print(
-        f"Candidate pool: {len(prepared)} rows -> {len(candidates)} eligible "
-        f"(skipped {skipped_too_short} too short, {skipped_no_distractor} without "
-        f"distractors, {skipped_near_duplicate} with a near-identical twin at "
-        f"overlap >= {args.max_twin_overlap})"
+        f"Candidates considered: {len(list(candidate_positions))} rows -> "
+        f"{len(candidates)} eligible (skipped {skipped_too_short} too short, "
+        f"{skipped_no_distractor} without distractors, {skipped_near_duplicate} "
+        f"with a near-identical twin anywhere in the corpus at overlap >= "
+        f"{args.max_twin_overlap})"
     )
 
+    # Document frequencies over the loose forms, for the single-token signal rule.
+    token_document_frequency: dict[str, int] = defaultdict(int)
+    for tokens in corpus_token_sets:
+        for token in tokens:
+            token_document_frequency[token] += 1
+
     rows: list[dict[str, str]] = []
+    skipped_no_signal = 0
     for row_num, (_, row) in enumerate(selected.iterrows(), start=1):
         key_tokens = sorted(row["competitive_tokens"])
         lemma_ids = row["competitive_lemma_ids"]
         query_input, query_type, notes = _competitive_query(row, row_num)
+        if not query_has_signal(
+            query_input, token_document_frequency, len(corpus_token_sets)
+        ):
+            skipped_no_signal += 1
+            continue
         threshold = 0.34 if len(key_tokens) <= 4 else 0.26
         rows.append(
             {
@@ -206,6 +309,14 @@ def main() -> None:
                 "acceptable_token_overlap_threshold": f"{threshold:.2f}",
                 "notes": notes,
             }
+        )
+        if len(rows) >= args.limit:
+            break
+
+    if skipped_no_signal:
+        print(
+            f"Dropped {skipped_no_signal} selected rows whose generated query was a "
+            "single ubiquitous token (no retrievable signal)."
         )
 
     output_path = Path(args.output)

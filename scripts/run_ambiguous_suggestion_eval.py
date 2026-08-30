@@ -1,3 +1,18 @@
+"""SANITY CHECK — not an accuracy measurement.
+
+This eval leaves the expected row *in* the corpus, so retrieval can return the
+answer by finding the row the query was generated from. It reports ~1.00 across the
+board by construction, and that number must never be quoted as accuracy.
+
+What it is good for: catching a pipeline that has broken outright — if this drops
+below 1.00, something is wrong with retrieval or grouping, because finding a row
+that is literally present should be trivial.
+
+The reportable metric is the competitive ambiguity benchmark, whose builder excludes
+rows with a near-identical twin anywhere in the corpus and whose runner excludes the
+expected row. See data/benchmarks/CORPUS_SCALING_REPORT.md.
+"""
+
 from __future__ import annotations
 
 import sys

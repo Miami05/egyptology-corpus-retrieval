@@ -20,3 +20,6 @@ pyarrow==21.0.0
 
 # Test suite (tests/): pytest tests/ -q
 pytest==9.1.1
+# Only needed to regenerate data/raw from the upstream Hugging Face datasets
+# (scripts/download_all_sources.py); the app itself never imports it.
+datasets>=2.19,<3

@@ -88,6 +88,29 @@ Fix applied in `scripts/build_competitive_ambiguity_benchmark.py`:
 > a measurement, and version the benchmark file rather than overwriting it — a re-run
 > re-selects all 20 items and breaks comparability with every number in this report.
 
+> **Resolved (2026-08-30).** The guard now runs against the full corpus using an
+> inverted token index (29 s, not hours), and the rebuilt benchmark is versioned
+> rather than overwritten:
+>
+> | | v1 (`competitive_ambiguity_eval_queries.csv`) | v2 (`…_v2.csv`) |
+> |---|---|---|
+> | items with a twin ≥ 0.9 anywhere in the corpus | **11 of 20** (6 identical) | **0 of 20** |
+> | top-1 useful family | 0.55 | **0.55** |
+> | top-3 useful family | 0.75 | **0.70** |
+> | MRR | 0.64 | **0.60** |
+>
+> **v2 is the reportable number from now on.** The builder also gained a signal
+> floor: a generated query of one ubiquitous token (`z`, in thousands of rows) asks
+> the ranker to choose between thousands of equally-matching sentences, so such rows
+> are dropped rather than scored — v1 shipped three of them. v1 is kept in the repo
+> so every figure quoted above stays reproducible, and
+> `tests/test_phase4_evaluation.py` asserts both properties: that v2 has no twins and
+> that v1 still does.
+>
+> The honest reading of this table: removing 11 contaminated items cost about
+> 5 points of top-3 and 4 of MRR. Less than feared, but the earlier numbers were
+> still measuring partly memorisation, and only v2 can be quoted.
+
 ## 4. Two other evals that are not accuracy measures
 
 - `run_ambiguous_suggestion_eval` reports 1.00 across the board because the expected

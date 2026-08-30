@@ -413,15 +413,15 @@ banner on the Workspace and a fully working Corpus/Signs page.
 - Suite 138/138 (18 new Phase 3 tests); competitive benchmark unchanged
   (0.05/0.05/0.55/0.75, MRR 0.6417); 311-query fuzz harness still deterministic.
 
-## Phase 4 — Evaluation and tests
+## Phase 4 — Evaluation and tests — DONE 2026-08-30
 
-- [ ] **A benchmark of real pastes.** Confirmed: all 45 benchmark queries across three
+- [x] **A benchmark of real pastes.** Confirmed: all 45 benchmark queries across three
       files contain 0 hieroglyph codepoints; the only glyph eval
       (`run_sign_reading_eval.py`) uses corpus `hieroglyphs` verbatim, i.e. TLA
       spacing. Add Urk. IV 1 three ways (messy paste, cleanly grouped, unspaced) with
       expected `ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t`, plus glyph pastes from PDFs and
       other tools.
-- [ ] **Close the twin-leak window — it is more than half the benchmark.** Measured
+- [x] **Close the twin-leak window — it is more than half the benchmark.** Measured
       with the builder's own metric (loose-token Jaccard ≥ 0.9) over all 12,772 rows:
       **11 of 20** competitive items have a twin outside the 2,000-row pool
       (`build_competitive_ambiguity_benchmark.py:44-51,138-144,176-178`) — 7 at 1.00,
@@ -433,7 +433,7 @@ banner on the Workspace and a fully working Corpus/Signs page.
       `CORPUS_SCALING_REPORT.md` — **version the benchmark file**, don't overwrite.
       `run_sign_reading_eval.py:75-97` already has an `--exclude-duplicates` pattern
       to reuse.
-- [ ] **Stable importer IDs — by content hash, with a production migration.**
+- [x] **Stable importer IDs — by content hash, with a production migration.**
       `import_tla_dataset.py:360-362,421` builds `TLA_EARLIER_{n}` from output
       position; `--limit` default 100 at `:450`. Corrections: the dedupe at `:425-431`
       can never fire (its key contains the generated ID); only the empty-transliteration
@@ -449,13 +449,13 @@ banner on the Workspace and a fully working Corpus/Signs page.
       critically — **the `examples` table already seeded in Neon**, whose `annotations`
       attach by DB `id`; bootstrap seeds only when empty, so prod keeps old IDs while
       the CSV changes. Write the migration before changing the importer.
-- [ ] **Tests for what actually broke.** Suite: 52 passed in 7.4 s wall / 4.1 s CPU.
+- [x] **Tests for what actually broke.** Suite: 52 passed in 7.4 s wall / 4.1 s CPU.
       No `conftest.py`. No test for non-TLA spacing, variant codepoints, or
       `suggest_top_readings`; the only ranking test is
       `test_idf_overlap_prefers_rare_shared_tokens`. `test_normalizer.py:25-28` pins
       the current whitespace behaviour and must be rewritten in Phase 1. Add the
       Phase 2 regression fixtures (rows 1105/4763, 3× repetition, junk query).
-- [ ] **Clear the dead weight and the stale results.** `scripts/run_eval.py:4` imports
+- [x] **Clear the dead weight and the stale results.** `scripts/run_eval.py:4` imports
       `evaluate_leave_one_out`, which no longer exists — ImportError. `phase3_eval_queries.csv`
       expects text ID `MORHQGR3SNBI3KHAF6YOW5WLL4`, 0 occurrences in the corpus, yet the
       committed `phase3_eval_results.csv` shows hits — stale numbers published in the
@@ -469,6 +469,52 @@ banner on the Workspace and a fully working Corpus/Signs page.
 Done when: a fresh clone can re-run every quoted number, no committed results file
 shows a number the current corpus cannot reproduce, and the eval suite contains at
 least one query the pipeline didn't generate for itself.
+
+**Result (2026-08-30):**
+
+- **The twin leak is closed and quantified.** Rival detection now runs against the
+  **whole corpus** via an inverted token index — 29 seconds, not the hours the O(n²)
+  scan would have taken — and the rebuilt benchmark is **versioned, not overwritten**
+  (`competitive_ambiguity_eval_queries_v2.csv`).
+
+  | | v1 (shipped) | v2 |
+  |---|---|---|
+  | items with a twin ≥ 0.9 anywhere in the corpus | **11 / 20** (6 identical) | **0 / 20** |
+  | top-1 useful family | 0.55 | 0.55 |
+  | top-3 useful family | 0.75 | **0.70** |
+  | MRR | 0.64 | **0.60** |
+
+  v1 is kept so the numbers already quoted in `CORPUS_SCALING_REPORT.md` stay
+  reproducible; a test asserts that v2 has no twins *and* that v1 still does.
+  The builder also gained a **signal floor**: a query of one ubiquitous token (`z`)
+  is unanswerable by construction, and v1 shipped three such rows.
+- **A benchmark of real pastes** — `data/benchmarks/expert_paste_queries.csv` plus
+  `scripts/run_expert_paste_eval.py`, which exits non-zero on any regression.
+  Eight queries the pipeline did not generate for itself: the expert's paste
+  verbatim, the same line grouped by word, unspaced, and TLA-spaced; a layout-editor
+  export with real U+13431 quadrat joiners; a paste with a line number attached; a
+  genuinely NFD transliteration; and signs the corpus does not contain. **8/8 pass**,
+  and this is now the first benchmark that could ever have caught the trial's
+  failure class.
+- **Stable importer ids.** `content_id()` hashes every source column (not just the
+  transliteration — four rows are string-identical there) into
+  `TLA_EARLIER_<hash>`, behind `--stable-ids`. Verified: ids are unchanged between
+  `--limit 50` and `--limit 200`, and a test shows a skipped upstream row renumbering
+  every positional id while content ids stay put. **Not switched on for the shipped
+  corpus**: renaming ids would orphan every annotation in the production database,
+  so `scripts/migrate_example_ids.py` does the rename in place (matching rows by
+  content, refusing to run unless the mapping is one-to-one) and must be run first.
+- **Dead weight removed**: `run_eval.py` (crashed on import), the whole phase-3
+  chain (`run_phase3_eval.py` + its queries, which expected ids from the retired
+  importer and scored zero forever), and the committed result files that published
+  numbers the current corpus cannot reproduce (`phase3_eval_results.csv`,
+  `ambiguous_suggestion_eval_results.csv`) and the orphaned `tuning_benchmark_80.csv`.
+  The ambiguous eval now opens with **"SANITY CHECK — not an accuracy measurement"**.
+  `datasets` added to requirements, so "regenerable corpus" is true from a clean
+  clone.
+- **`tests/conftest.py`** added: imports resolved only by accident before, via
+  `tests/__init__.py` happening to put the root on the path.
+- Suite **161/161** (23 new).
 
 ## Phase 5 — Product and licence polish
 

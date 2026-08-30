@@ -39,7 +39,8 @@ app/
 data/
   processed/   examples.csv — the built corpus (committed)
   raw/         downloaded sources (gitignored, ~465MB, regenerable)
-  benchmarks/  evaluation sets and results
+  benchmarks/  evaluation sets and results (see CORPUS_SCALING_REPORT.md for which
+               numbers are quotable — the v2 competitive set is the reportable one)
 scripts/       importers, corpus builders, benchmark and evaluation runners
 ```
 
@@ -61,6 +62,19 @@ iCloud-synced folder — iCloud evicts package file contents, which breaks panda
 scikit-learn in ways that look like dependency bugs.
 
 Tests: `pytest tests/ -q`
+
+Evaluation:
+
+```bash
+python scripts/run_expert_paste_eval.py          # real hieroglyph pastes, exits non-zero on regression
+python scripts/run_competitive_ambiguity_eval.py \
+  --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v2.csv
+```
+
+The **v2** competitive benchmark is the reportable one: its rows are guaranteed to
+have no near-identical twin anywhere in the corpus, so excluding the target does not
+hand the answer back. v1 is kept only so previously published figures stay
+reproducible.
 
 Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
 secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is

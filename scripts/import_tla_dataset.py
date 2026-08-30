@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import csv
 import json
 import sys
@@ -343,10 +344,32 @@ def _row_value(row: pd.Series, aliases: list[str]) -> str:
     return ""
 
 
+def content_id(row: pd.Series, prefix: str = "TLA_EARLIER") -> str:
+    """A stable identifier derived from the source row's own content.
+
+    The old scheme numbered rows by their position in the *output*
+    (`TLA_EARLIER_007`), so the id of a sentence depended on how many earlier rows
+    had been skipped, deduplicated or cut off by `--limit`. Any upstream change
+    silently re-pointed every benchmark expectation, the expert review sheet and the
+    database rows that annotations attach to.
+
+    The hash covers every source column, not just the transliteration: four rows in
+    this dataset are string-identical in their transliteration and would otherwise
+    collide. The source row number is deliberately *not* included — that would make
+    the id positional again.
+    """
+    parts = []
+    for column in sorted(row.index):
+        parts.append(f"{column}={_safe_str(row.get(column))}")
+    digest = hashlib.blake2b("\x1f".join(parts).encode("utf-8"), digest_size=6)
+    return f"{prefix}_{digest.hexdigest().upper()}"
+
+
 def _row_from_parquet(
     row: pd.Series,
     output_index: int,
     input_path: Path,
+    stable_ids: bool = False,
 ) -> tuple[dict[str, str], bool, bool] | None:
     transliteration = _row_value(row, PARQUET_ALIASES["transliteration_gold"])
     if not transliteration:
@@ -357,9 +380,15 @@ def _row_from_parquet(
     generated_text_id = not bool(source_text_id)
     generated_sentence_id = not bool(source_sentence_id)
     if generated_text_id:
-        source_text_id = f"TLA_EARLIER_{output_index:03d}"
+        source_text_id = (
+            content_id(row) if stable_ids else f"TLA_EARLIER_{output_index:03d}"
+        )
     if generated_sentence_id:
-        source_sentence_id = f"S{output_index:03d}"
+        source_sentence_id = (
+            f"S{content_id(row).rsplit('_', 1)[-1]}"
+            if stable_ids
+            else f"S{output_index:03d}"
+        )
 
     translit_ascii = normalize_transliteration(transliteration)
     mdc = normalize_mdc(translit_ascii)
@@ -410,7 +439,9 @@ def _row_from_parquet(
     return out, generated_text_id, generated_sentence_id
 
 
-def _load_parquet_input(input_path: Path, limit: int) -> tuple[pd.DataFrame, int, int]:
+def _load_parquet_input(
+    input_path: Path, limit: int, stable_ids: bool = False
+) -> tuple[pd.DataFrame, int, int]:
     df = pd.read_parquet(input_path)
     rows: list[dict[str, str]] = []
     generated_text_ids = 0
@@ -418,7 +449,7 @@ def _load_parquet_input(input_path: Path, limit: int) -> tuple[pd.DataFrame, int
     seen_keys: set[tuple[str, str, str]] = set()
 
     for _, row in df.iterrows():
-        mapped = _row_from_parquet(row, len(rows) + 1, input_path)
+        mapped = _row_from_parquet(row, len(rows) + 1, input_path, stable_ids)
         if mapped is None:
             continue
         out_row, generated_text_id, generated_sentence_id = mapped
@@ -448,6 +479,17 @@ def main() -> None:
     parser.add_argument("--dataset-path", default=DEFAULT_DATASET_PATH)
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument(
+        "--stable-ids",
+        action="store_true",
+        help=(
+            "Derive source_text_id from the source row's content instead of its "
+            "position in the output, so a re-import with a different --limit or a "
+            "changed upstream row does not renumber every sentence. Changing the "
+            "scheme renames rows: run scripts/migrate_example_ids.py against any "
+            "database that already holds annotations before importing."
+        ),
+    )
     args = parser.parse_args()
 
     generated_text_ids = 0
@@ -461,6 +503,7 @@ def main() -> None:
         out, generated_text_ids, generated_sentence_ids = _load_parquet_input(
             input_path=input_path,
             limit=args.limit,
+            stable_ids=args.stable_ids,
         )
     else:
         dataset_path = Path(args.dataset_path)
