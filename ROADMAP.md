@@ -608,6 +608,45 @@ the two committed CSVs, and the docs describe the repo that exists.
   is out of scope for a polish phase.
 - Suite **177/177** (16 new).
 
+## Pre-release test pass — 2026-08-30
+
+Run after all six phases, before the second expert trial. Everything below is
+reproducible from the repo.
+
+**Automated.** Suite 178/178. Expert-paste eval 8/8. Fuzz harness widened to
+**1,011 queries × 2 runs (fresh seed), zero failures, fully deterministic.**
+48 concurrent searches over the shared corpus frame agree with serial results and leak
+no columns into it. All six pages render with the database unreachable. Interactive
+checks on every page (Signs selectbox, Corpus search + pagination, Reviews filter,
+Home metrics). Annotation round-trip: save → persisted → shown as latest → listed on
+Reviews; reviewer gate hides saving when a key is configured.
+
+**One real bug found and fixed** (`8f1ff45`): after Phase 3 removed the post-search
+`st.rerun()`, the tabs kept reading `results` / `suggestions` / `top_row` captured
+*before* the search wrote them. Sign-by-sign still worked (it re-reads the query), but
+Suggested readings, Corpus parallels, Analysis and Source text stayed on their
+placeholders until a **second** click. Confirmed on the live site before fixing;
+confirmed fixed on the live site after (auto-redeployed 10:09). A frontend test now
+asserts every tab is populated after one click. This is exactly the class of bug an
+expert trial would have hit first.
+
+**New expert-style trials on texts the tool was never tuned on** —
+`data/benchmarks/new_expert_style_trials.csv`: five real sentences from the Old
+Kingdom, First and Second Intermediate Periods and Middle Kingdom, spacing scrambled
+the way a paste is. **27 of 33 tokens correct, every group attested, zero borrowed
+readings.** Two lines perfect (an Osiris–Unas offering line and a Middle Kingdom
+sentence, both from unspaced or mis-spaced input). The three imperfect readings are
+not errors: in each the tool chose the *majority* attested reading of a group whose
+editors themselves disagree (`𓁷𓄣` → `ḥr(.ꞽ)-ꞽb` 9× vs the gold's split; `𓆑𓏭` →
+`=fꞽ` 70× vs `=f` 3×; `𓍿𓈖` → `=ṯn` 90× vs `ṯn(ꞽ)` 6×) and showed the alternatives.
+A separate **held-out** run (target row removed from the model) on four more sentences
+read a fully unspaced Old Kingdom offering formula 9/9 and reported once-attested
+spellings as unreadable rather than guessing — the honest behaviour.
+
+**Ready for the second trial.** Known, documented limits an expert may hit:
+once-attested spellings held out of the corpus read as unreadable (by design); Urk. IV
+and most Dynasty 18 material are not in this corpus (see the AES note under Phase 5).
+
 ## Checked and clean
 
 For the record, the verification pass re-confirmed: no SQL injection (SQLAlchemy Core/ORM

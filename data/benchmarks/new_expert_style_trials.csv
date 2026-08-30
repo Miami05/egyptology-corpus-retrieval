@@ -1,0 +1,6 @@
+trial,period,pasted_as,gold_reading,tool_reading,tokens_correct,regrouped_exactly,borrowed,unreadable,translation
+NEWTRIAL_1,Old Kingdom,𓊨𓁹 𓍹𓃹𓈖𓇋𓋴𓍺𓌇𓈖 𓎡 𓁹 𓅃,(w)sꞽr wnꞽs m n =k ꞽr(.t)-ḥr.w,(w)sꞽr wnꞽs m n =k ꞽr(.t)-ḥr.w,6/6,True,0,0,"Osiris Unas, nimm dir das Horusauge."
+NEWTRIAL_2,Middle Kingdom,𓐙𓌳𓂝 𓏏 𓏛 𓊪𓅱𓁷 𓄣𓈖 𓊹𓀭,mꜣꜥ.t pw ḥr ꞽb n(.ꞽ) nṯr,mꜣꜥ.t pw ḥr(.ꞽ)-ꞽb n(.ꞽ) nṯr,2/6,False,0,0,Maat ist es im Herzen (d.h. nach der Meinung) des Gottes.
+NEWTRIAL_3,Second Intermediate Period,𓂞 𓆑 𓊃𓈖𓆑𓂐 𓏥 𓅓𓂊𓂊𓆑𓏭 𓅓𓄔𓄔𓆑𓏭,ḏi̯ =f snf m msꜣḏ.t.DU =fꞽ m msḏr.DU =f,ḏi̯ =f snf m msꜣḏ.t.DU =fꞽ m msḏr.DU =fꞽ,8/9,True,0,0,"(indem/wobei) er (d.h. der Patient) aus seinen Nasenlöchern/Nasenhöhlen und seinen Ohren blutet (wörtl.: er gibt Blut),"
+NEWTRIAL_4,First Intermediate Period,𓇋𓏎𓈖𓅱 𓇋 𓂋𓆑𓅓𓂧𓄿𓅓𓍢 𓋴 𓍿 𓈖,ꞽni̯.w ꞽr =f mdꜣm =s ṯn(ꞽ),ꞽni̯.w ꞽr =f mdꜣm =s =ṯn,5/6,True,0,0,"""Woher soll denn ihr Riemen(?)/ihre Einfassung(?) geholt werden?"""
+NEWTRIAL_5,Middle Kingdom,𓇋 𓂋𓉐𓂋𓂻𓅓𓅓𓂝 𓌨𓂋𓉐𓏤 𓈖 𓅧𓈎𓂻𓈖,ꞽr pri̯ m mẖr n ꜥq.n,ꞽr pri̯ m mẖr n ꜥq.n,6/6,True,0,0,"Wenn (etwas) aus dem Speicher herauskommt, dann kehrt es (normalerweise) nicht (wieder) zurück."
