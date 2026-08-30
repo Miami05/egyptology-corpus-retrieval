@@ -35,7 +35,7 @@ from app.services.signs import (
 )
 from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
-from app.storage.db import DatabaseUnavailable, SessionLocal
+from app.storage.db import IS_SQLITE, DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
@@ -574,6 +574,31 @@ def render_suggestion_card(rank: int, suggestion) -> None:
     )
 
 
+def storage_is_ephemeral() -> bool:
+    """True when saved annotations will not outlive the process.
+
+    A SQLite file is perfectly fine locally. On a hosted platform it lives inside the
+    container filesystem, which Streamlit Community Cloud recreates on every reboot
+    and redeploy — so an expert's correction is accepted, shown as saved, and then
+    silently lost. Nothing in the UI said so; a reviewer had no way to know their work
+    was not being kept.
+    """
+    return IS_SQLITE
+
+
+def render_storage_warning() -> None:
+    """Say plainly whether corrections are being kept."""
+    if not storage_is_ephemeral():
+        return
+    st.warning(
+        "**Annotations are not stored durably.** This deployment is using a local "
+        "SQLite file, which is recreated whenever the app restarts — corrections "
+        "saved here will be lost. Point `DATABASE_URL` at a managed Postgres "
+        "database to keep them.",
+        icon="⚠️",
+    )
+
+
 def annotations_unlocked() -> bool:
     """Whether this visitor may write annotations.
 
@@ -725,6 +750,8 @@ def render_annotation_form(
     if not annotations_unlocked():
         st.caption("Saving is limited to reviewers — unlock it in the sidebar.")
         return
+
+    render_storage_warning()
 
     if st.button("Save annotation", key=f"save_{row_key}", type="primary"):
         if example_id is None:
@@ -1701,6 +1728,7 @@ def render_reviews() -> None:
     )
     st.markdown("")
 
+    render_storage_warning()
     try:
         rows = reviewed_annotation_rows()
     except DatabaseUnavailable:

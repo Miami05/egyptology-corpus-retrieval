@@ -292,3 +292,29 @@ def test_search_does_not_mutate_the_corpus_frame():
     retrieve_top_k(df, query_mdc="htp dji nswt", k=5, index=index)
     retrieve_top_k(df, query_mdc="", k=5, query_hieroglyphs_norm="A B C", index=index)
     pd.testing.assert_frame_equal(df, before)
+
+
+# ---------- durability of saved corrections ----------
+
+
+def test_sqlite_storage_is_reported_as_ephemeral():
+    """A SQLite file inside a hosted container is recreated on every redeploy, so a
+    reviewer's correction is accepted and then silently lost. The UI must say so."""
+    import app.ui.whyptology_app as app_module
+
+    source = (
+        __import__("pathlib").Path(app_module.__file__).read_text()
+    )
+    assert "def storage_is_ephemeral" in source
+    assert "def render_storage_warning" in source
+    # Shown on both surfaces where someone would trust that a correction was kept.
+    assert source.count("render_storage_warning()") >= 3
+
+
+def test_warning_tracks_the_configured_engine(monkeypatch):
+    import app.ui.whyptology_app as app_module
+
+    monkeypatch.setattr(app_module, "IS_SQLITE", True)
+    assert app_module.storage_is_ephemeral() is True
+    monkeypatch.setattr(app_module, "IS_SQLITE", False)
+    assert app_module.storage_is_ephemeral() is False
