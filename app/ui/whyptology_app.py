@@ -586,10 +586,20 @@ def storage_is_ephemeral() -> bool:
     return IS_SQLITE
 
 
-def render_storage_warning() -> None:
-    """Say plainly whether corrections are being kept."""
+def render_storage_warning(once_key: str = "") -> None:
+    """Say plainly whether corrections are being kept.
+
+    `once_key` keeps the notice to one per page: the Workspace renders an annotation
+    form per parallel, and repeating the same warning five times reads as breakage
+    rather than as information.
+    """
     if not storage_is_ephemeral():
         return
+    if once_key:
+        seen = st.session_state.setdefault("_storage_warning_shown", set())
+        if once_key in seen:
+            return
+        seen.add(once_key)
     st.warning(
         "**Annotations are not stored durably.** This deployment is using a local "
         "SQLite file, which is recreated whenever the app restarts — corrections "
@@ -751,7 +761,7 @@ def render_annotation_form(
         st.caption("Saving is limited to reviewers — unlock it in the sidebar.")
         return
 
-    render_storage_warning()
+    render_storage_warning(once_key="workspace")
 
     if st.button("Save annotation", key=f"save_{row_key}", type="primary"):
         if example_id is None:
@@ -1728,7 +1738,7 @@ def render_reviews() -> None:
     )
     st.markdown("")
 
-    render_storage_warning()
+    render_storage_warning(once_key="reviews")
     try:
         rows = reviewed_annotation_rows()
     except DatabaseUnavailable:
@@ -1874,6 +1884,8 @@ def render_reviews() -> None:
 
 
 inject_theme()
+# One notice per page per run, not one per annotation form.
+st.session_state["_storage_warning_shown"] = set()
 corpus, database_status = load_corpus()
 if database_status != "ok":
     st.warning(

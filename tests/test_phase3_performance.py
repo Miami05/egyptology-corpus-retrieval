@@ -307,8 +307,10 @@ def test_sqlite_storage_is_reported_as_ephemeral():
     )
     assert "def storage_is_ephemeral" in source
     assert "def render_storage_warning" in source
-    # Shown on both surfaces where someone would trust that a correction was kept.
-    assert source.count("render_storage_warning()") >= 3
+    # Shown on both surfaces where someone would trust a correction was kept — and
+    # once per page, not once per annotation form.
+    assert 'render_storage_warning(once_key="workspace")' in source
+    assert 'render_storage_warning(once_key="reviews")' in source
 
 
 def test_warning_tracks_the_configured_engine(monkeypatch):
