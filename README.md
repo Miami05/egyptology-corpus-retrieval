@@ -62,6 +62,12 @@ scikit-learn in ways that look like dependency bugs.
 
 Tests: `pytest tests/ -q`
 
+Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
+secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is
+fully open, which is the default for local use. If the database is unreachable the
+app drops to read-only: searching, sign-by-sign readings and the corpus explorer keep
+working, and a banner explains that annotations are unavailable.
+
 ## Known limitations
 
 An external expert trial (Urk. IV 1, August 2026) exposed the current weak points —

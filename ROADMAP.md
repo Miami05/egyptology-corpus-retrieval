@@ -304,18 +304,18 @@ after dedup; only the deduplicated number can arbitrate.)*
   (`tests/test_pipeline_fuzz.py`) covering hostile and corpus-derived inputs with
   determinism checks.
 
-## Phase 3 — Performance and the free-tier database
+## Phase 3 — Performance and the free-tier database — DONE 2026-08-30
 
 Measured against a local SQLite bootstrap; the production URL was not touched.
 
-- [ ] **Cache the interactive hot spots.** `build_sign_index` is called bare at
+- [x] **Cache the interactive hot spots.** `build_sign_index` is called bare at
       `whyptology_app.py:1233` — 0.41 s `iterrows` per Signs-page widget change. Theme
       CSS is read from disk every rerun (`:135`). `load_corpus` is `st.cache_data`
       (`:151`): the pickled frame is **11.1 MB** (first draft: 7.9), `pickle.loads`
       costs 26 ms per rerun, and each concurrent session holds a **~28 MB** copy —
       the real cost is memory, not CPU. Retrieval never mutates `df` in place, so
       `cache_resource` is safe today; leave a comment saying so.
-- [ ] **Cut database round-trips.** Verified counts per rerun: Workspace **10**
+- [x] **Cut database round-trips.** Verified counts per rerun: Workspace **10**
       SELECTs (`load_annotation_state` in `review_common.py:104-115` calls
       `get_latest_for_example` + `list_for_example`; `repo.py:167-169` implements
       "latest" by re-running the full history query — the same SELECT twice per row,
@@ -327,14 +327,14 @@ Measured against a local SQLite bootstrap; the production URL was not touched.
       SQL `DISTINCT ON`/window for latest; lazy download. **Do not TTL-cache** the
       annotation reads: after a save the reviewer's own annotation would show as
       missing until the TTL expires, unless every save path calls `.clear()`.
-- [ ] **Gate the annotation write path — name the mechanism.** No auth; any visitor
+- [x] **Gate the annotation write path — name the mechanism.** No auth; any visitor
       inserts 11 unbounded `Text` fields (`whyptology_app.py:532-559`); `status` is
       free text and the FK is not enforced on SQLite. Streamlit exposes no visitor IP
       and session-state counters reset on refresh, so "rate-limit" has nothing to key
       on. Realistic options: a shared reviewer secret in `st.secrets` entered once per
       session, or an "expert mode" toggle that reveals the form. Cap field lengths at
       the model. (The search log is deleted in Phase 0.)
-- [ ] **Precompute the query-independent half of search.** A search takes **0.40 s**
+- [x] **Precompute the query-independent half of search.** A search takes **0.40 s**
       end to end. `tfidf.py:36-41` is misnamed — it computes plain char-n-gram cosine
       with no IDF — and rebuilds all 12,772 Counters per query (~50% of time).
       `document_frequencies` runs at `scorer.py:291` always and `:308` for glyph
@@ -347,7 +347,7 @@ Measured against a local SQLite bootstrap; the production URL was not touched.
       every search cost two full reruns. Precompute Counters, token sets and document
       frequencies once in `load_corpus` (check RSS first — 12,772 Counters is tens of
       MB); eliminate the copies and dead sorts, which is the cheaper, bigger win.
-- [ ] **Degraded read-only mode — split `load_corpus` first.** Zero `except` clauses
+- [x] **Degraded read-only mode — split `load_corpus` first.** Zero `except` clauses
       around DB calls (only `try/finally` session closes). Because `ensure_corpus_ready`
       runs *inside* the cached `load_corpus` (`:151-158`), an unreachable database
       raises `OperationalError` at module level (`:1477`) and kills **every** page,
@@ -357,12 +357,12 @@ Measured against a local SQLite bootstrap; the production URL was not touched.
       half, set a connect timeout, banner on failure. Wrapping without splitting would
       cache a frame with no `id` column and every later save would fail with the
       misleading "run import_examples" error at `:534`.
-- [ ] **Memory budget.** One process is **270 MB** RSS after corpus + DB + reading
+- [x] **Memory budget.** One process is **270 MB** RSS after corpus + DB + reading
       model + sign index, before Streamlit's own ~100–150 MB; plus 28 MB per session
       and 5 × 48 MB transient copies per search. Two or three simultaneous searches
       can plausibly exceed the 1 GB Community Cloud container. The copy elimination
       above and `cache_resource` are the fix; measure before and after.
-- [ ] Residual per-rerun reads after commit `65ec840`: `list_all_annotations` full
+- [x] Residual per-rerun reads after commit `65ec840`: `list_all_annotations` full
       history on Home/Projects/Reviews; `list_examples_by_ids` fetching all 41 columns
       twice on Reviews; the legacy `streamlit_app.py` still uses the old full-download
       path if anyone runs it against production (so its deletion in Phase 5 is also a
@@ -373,6 +373,45 @@ Measured against a local SQLite bootstrap; the production URL was not touched.
 Done when: a Workspace rerun issues ≤1 DB query, the Signs page responds instantly to
 the selectbox, a search completes in well under 0.2 s, and killing the DB yields a
 banner on the Workspace and a fully working Corpus/Signs page.
+
+**Result (2026-08-30):**
+
+| | before | after |
+|---|---|---|
+| Workspace rerun, 5 parallels | 10 queries | **1** |
+| Workspace rerun, 50 parallels | 100 queries | **1** |
+| Home / Projects (per sidebar click) | 2 each, full-table scan | **1** each, `count`/`distinct` |
+| Reviews page | 4 queries + CSV built twice | **3**, export built on demand |
+| Text search | 293 ms | **95 ms** |
+| Corpus frame per session | ~28 MB copy each | shared (`cache_resource`) |
+
+- **Round trips.** `get_latest_for_example` is one `LIMIT 1` query (it used to re-run
+  the full history query, so every visible row cost two); `load_annotation_states`
+  fetches every visible parallel's history in a single `IN (...)`; Home and Projects
+  use `count(distinct)` / `distinct` instead of pulling every annotation ever
+  written; `list_latest_annotations_only` selects the newest ids in SQL.
+- **Caching.** Corpus in `cache_resource` (one shared frame, no per-session pickle);
+  theme CSS, sign index and the new search index cached per corpus signature. The
+  post-search `st.rerun()` is gone — every search used to cost two full script runs.
+- **Precomputation.** `SearchIndex` holds document frequencies and character n-gram
+  vectors, built once (0.22 s, ~60 MB) instead of per query; the tokenizer is
+  `lru_cache`d (one search called it ~64,000 times); retrieval makes **one** frame
+  copy instead of five and no wasted sorts. Verified identical rankings and scores
+  with and without the index.
+- **Write gating.** Optional shared reviewer passphrase (`reviewer_key` in Streamlit
+  secrets or `REVIEWER_KEY`); with none configured the app stays fully open, so
+  local development is unchanged. All annotation fields are clipped to 2,000
+  characters, empty readings are rejected, and a failed save shows a message instead
+  of a traceback.
+- **Degraded read-only mode.** `load_corpus` is split into a database-free CSV load
+  and a separate id-attachment step, and the DB helpers raise `DatabaseUnavailable`.
+  Verified end to end against an unreachable database: **all six pages render**, the
+  banner appears, and a search still returns `ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t`.
+  Previously an outage raised inside the cached loader at import time and took down
+  every page, including the ones that need no database. `connect_timeout=10` stops a
+  black-holed endpoint from hanging the script thread.
+- Suite 138/138 (18 new Phase 3 tests); competitive benchmark unchanged
+  (0.05/0.05/0.55/0.75, MRR 0.6417); 311-query fuzz harness still deterministic.
 
 ## Phase 4 — Evaluation and tests
 

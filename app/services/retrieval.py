@@ -8,11 +8,39 @@ from app.data.normalizer import (
     normalize_mdc,
     normalize_sign_sequence,
 )
+from dataclasses import dataclass
+
+from rapidfuzz import fuzz
+
 from app.retrieval.evidence import build_evidence
-from app.retrieval.exact import exact_match_candidates
-from app.retrieval.fuzzy import fuzzy_candidate
-from app.retrieval.scorer import DEFAULT_WEIGHTS, ScoreWeights, combine_scores
-from app.retrieval.tfidf import tfidf_candidates
+from app.retrieval.scorer import (
+    DEFAULT_WEIGHTS,
+    CorpusStats,
+    ScoreWeights,
+    build_corpus_stats,
+    combine_scores,
+)
+from app.retrieval.tfidf import char_ngram_vector, build_document_vectors, cosine_score
+
+
+@dataclass(frozen=True)
+class SearchIndex:
+    """Everything about the corpus that does not depend on the query.
+
+    Built once and reused: document frequencies for the IDF signals and the
+    character n-gram vectors for the cosine signal. Rebuilding these per search was
+    roughly half the cost of a query.
+    """
+
+    stats: CorpusStats
+    document_vectors: list
+
+
+def build_search_index(df: pd.DataFrame) -> SearchIndex:
+    return SearchIndex(
+        stats=build_corpus_stats(df),
+        document_vectors=build_document_vectors(df["mdc_norm"]),
+    )
 
 
 def retrieve_top_k(
@@ -22,6 +50,7 @@ def retrieve_top_k(
     k: int = 3,
     weights: ScoreWeights = DEFAULT_WEIGHTS,
     query_hieroglyphs_norm: str | None = None,
+    index: SearchIndex | None = None,
 ) -> pd.DataFrame:
     # A query written in hieroglyphs must be matched against the sign columns:
     # normalize_mdc strips those codepoints, so treating it as transliteration
@@ -39,36 +68,26 @@ def retrieve_top_k(
     # says so when it happens.
     query_mdc_norm = "" if query_hieroglyphs_norm else normalize_mdc(query_mdc)
     query_reading_order_norm = normalize_sign_sequence(query_reading_order)
+    # One copy of the frame, not five. The old path built a separate sorted copy per
+    # signal and merged them back on three key columns, discarding each sort; the
+    # signals are per-row and can simply be assigned as columns.
     merged = df.copy()
     if query_mdc_norm:
-        exact_df = exact_match_candidates(df, query_mdc_norm)
-        fuzzy_df = fuzzy_candidate(df, query_mdc_norm)
-        tfidf_df = tfidf_candidates(df, query_mdc_norm)
-        merged = merged.merge(
-            fuzzy_df[["source", "source_text_id", "source_sentence_id", "fuzzy_score"]],
-            on=["source", "source_text_id", "source_sentence_id"],
-            how="left",
-        )
-        merged = merged.merge(
-            tfidf_df[["source", "source_text_id", "source_sentence_id", "tfidf_score"]],
-            on=["source", "source_text_id", "source_sentence_id"],
-            how="left",
-        )
-        merged["fuzzy_score"] = merged["fuzzy_score"].fillna(0.0)
-        merged["tfidf_score"] = merged["tfidf_score"].fillna(0.0)
-        exact_keys = set(
-            zip(
-                exact_df["source"],
-                exact_df["source_text_id"],
-                exact_df["source_sentence_id"],
-            )
-        )
-        merged["exact_bonus"] = [
-            1.0 if key in exact_keys else 0.0
-            for key in zip(
-                merged["source"], merged["source_text_id"], merged["source_sentence_id"]
-            )
+        candidates = merged["mdc_norm"].astype(str)
+        merged["fuzzy_score"] = [
+            fuzz.ratio(query_mdc_norm, value) / 100.0 for value in candidates
         ]
+        document_vectors = (
+            index.document_vectors
+            if index is not None and len(index.document_vectors) == len(merged)
+            else build_document_vectors(candidates)
+        )
+        query_vector, query_norm = char_ngram_vector(query_mdc_norm)
+        merged["tfidf_score"] = [
+            cosine_score(query_vector, query_norm, vector, norm)
+            for vector, norm in document_vectors
+        ]
+        merged["exact_bonus"] = (candidates == query_mdc_norm).astype(float)
     else:
         # No usable text query. Without this guard an empty string is a perfect
         # match for an empty candidate: fuzz.ratio("", "") is 100 and the cosine of
@@ -83,6 +102,7 @@ def retrieve_top_k(
         query_reading_order_norm=query_reading_order_norm,
         weights=weights,
         query_hieroglyphs_norm=query_hieroglyphs_norm,
+        corpus_stats=index.stats if index is not None else None,
     )
     # Honest empty state: a row with no shared evidence at all must not be shown as
     # a "parallel" just because k rows were requested. The floor is on raw evidence

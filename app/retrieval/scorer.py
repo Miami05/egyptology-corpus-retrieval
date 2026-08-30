@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from math import log
 
 import pandas as pd
@@ -96,9 +97,19 @@ DEFAULT_WEIGHTS = ScoreWeights()
 # them.
 
 
+@lru_cache(maxsize=100_000)
+def _tokenize_cached(raw: str) -> tuple[str, ...]:
+    return tuple(tok for tok in TOKEN_SPLIT_RE.split(raw) if tok)
+
+
 def tokenize_query(text: str) -> list[str]:
-    raw = str(text).strip().lower()
-    return [tok for tok in TOKEN_SPLIT_RE.split(raw) if tok]
+    """Split a query or candidate into content tokens.
+
+    Cached: one search used to call this ~64,000 times — roughly five times per
+    corpus row, because the overlap, IDF-overlap and document-frequency passes each
+    re-split the same strings.
+    """
+    return list(_tokenize_cached(str(text).strip().lower()))
 
 
 def effective_surplus_penalty(query: str, penalty: float) -> float:
@@ -138,6 +149,25 @@ def token_overlap_score(
     if denominator <= 0:
         return 0.0
     return shared / denominator
+
+
+@dataclass(frozen=True)
+class CorpusStats:
+    """Query-independent statistics, computed once per corpus."""
+
+    mdc_frequencies: dict[str, int]
+    glyph_frequencies: dict[str, int]
+
+
+def build_corpus_stats(df: pd.DataFrame) -> CorpusStats:
+    return CorpusStats(
+        mdc_frequencies=document_frequencies(df["mdc_norm"]),
+        glyph_frequencies=(
+            document_frequencies(df["hieroglyphs_norm"])
+            if "hieroglyphs_norm" in df.columns
+            else {}
+        ),
+    )
 
 
 def document_frequencies(values: pd.Series) -> dict[str, int]:
@@ -200,7 +230,14 @@ def combine_scores(
     query_reading_order_norm: str = "",
     weights: ScoreWeights = DEFAULT_WEIGHTS,
     query_hieroglyphs_norm: str = "",
+    corpus_stats: "CorpusStats | None" = None,
 ) -> pd.DataFrame:
+    """Score every candidate row against the query.
+
+    `corpus_stats` carries the query-independent half of the work (document
+    frequencies per column). Recomputing it per query re-tokenised the whole corpus
+    two or three times for every search; it only changes when the corpus does.
+    """
     out = df.copy()
     if "fuzzy_score" not in out.columns:
         out["fuzzy_score"] = 0.0
@@ -211,7 +248,11 @@ def combine_scores(
     out["overlap_score"] = out["mdc_norm"].map(
         lambda value: token_overlap_score(query_mdc_norm, value)
     )
-    frequencies = document_frequencies(out["mdc_norm"])
+    frequencies = (
+        corpus_stats.mdc_frequencies
+        if corpus_stats is not None
+        else document_frequencies(out["mdc_norm"])
+    )
     corpus_size = len(out)
     text_penalty = effective_surplus_penalty(
         query_mdc_norm, weights.idf_surplus_penalty
@@ -228,7 +269,11 @@ def combine_scores(
 
     # Sign-sequence matching, used when the query is written in hieroglyphs.
     if query_hieroglyphs_norm and "hieroglyphs_norm" in out.columns:
-        glyph_frequencies = document_frequencies(out["hieroglyphs_norm"])
+        glyph_frequencies = (
+            corpus_stats.glyph_frequencies
+            if corpus_stats is not None
+            else document_frequencies(out["hieroglyphs_norm"])
+        )
         out["glyph_overlap_score"] = out["hieroglyphs_norm"].map(
             lambda value: token_overlap_score(query_hieroglyphs_norm, value)
         )

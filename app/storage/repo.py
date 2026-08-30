@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections import OrderedDict
-
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.storage.models import Annotation, EvaluationResult, Example
@@ -165,8 +163,69 @@ class AnnotationRepo:
         return list(self.session.scalars(stmt).all())
 
     def get_latest_for_example(self, example_id: int) -> Annotation | None:
-        rows = self.list_for_example(example_id)
-        return rows[0] if rows else None
+        """Most recent annotation for one example, in one query.
+
+        This used to call `list_for_example`, so asking for "the latest" re-ran the
+        full history query — the Workspace issued the same SELECT twice per result
+        row, on every rerun, including every keystroke in a note field.
+        """
+        stmt = (
+            select(Annotation)
+            .where(Annotation.example_id == example_id)
+            .order_by(Annotation.created_at.desc(), Annotation.id.desc())
+            .limit(1)
+        )
+        return self.session.scalars(stmt).first()
+
+    def latest_ids(self) -> list[int]:
+        """Ids of the newest annotation per example, computed in the database.
+
+        The Python version pulled *every* annotation ever written to pick one per
+        example — the query that grows without bound as the tool is used.
+        """
+        newest = (
+            select(func.max(Annotation.id).label("id"))
+            .group_by(Annotation.example_id)
+            .subquery()
+        )
+        return [row[0] for row in self.session.execute(select(newest.c.id)).all()]
+
+    def annotated_example_ids(self) -> list[int]:
+        """Distinct example ids that have at least one annotation.
+
+        Home and Projects only need the count of reviewed examples; fetching whole
+        annotation rows to count them is what made a sidebar click scan the table.
+        """
+        stmt = select(Annotation.example_id).distinct()
+        return [row[0] for row in self.session.execute(stmt).all()]
+
+    def count_annotated_examples(self) -> int:
+        stmt = select(func.count(func.distinct(Annotation.example_id)))
+        return int(self.session.execute(stmt).scalar_one())
+
+    def latest_for_examples(self, example_ids: list[int]) -> dict[int, Annotation]:
+        """Latest annotation for each of many examples, in one round trip."""
+        if not example_ids:
+            return {}
+        newest = (
+            select(func.max(Annotation.id).label("id"))
+            .where(Annotation.example_id.in_(example_ids))
+            .group_by(Annotation.example_id)
+            .subquery()
+        )
+        stmt = select(Annotation).join(newest, Annotation.id == newest.c.id)
+        return {row.example_id: row for row in self.session.scalars(stmt).all()}
+
+    def list_for_examples(self, example_ids: list[int]) -> list[Annotation]:
+        """Full annotation history for several examples, newest first, in one query."""
+        if not example_ids:
+            return []
+        stmt = (
+            select(Annotation)
+            .where(Annotation.example_id.in_(example_ids))
+            .order_by(Annotation.created_at.desc(), Annotation.id.desc())
+        )
+        return list(self.session.scalars(stmt).all())
 
     def list_all_annotations(self) -> list[Annotation]:
         stmt = select(Annotation).order_by(
@@ -175,13 +234,16 @@ class AnnotationRepo:
         return list(self.session.scalars(stmt).all())
 
     def list_latest_annotations_only(self) -> list[Annotation]:
-        rows = self.list_all_annotations()
-        latest_by_example: OrderedDict[int, Annotation] = OrderedDict()
-        for row in rows:
-            if row.example_id not in latest_by_example:
-                latest_by_example[row.example_id] = row
-
-        return list(latest_by_example.values())
+        """Newest annotation per example, selected in the database."""
+        ids = self.latest_ids()
+        if not ids:
+            return []
+        stmt = (
+            select(Annotation)
+            .where(Annotation.id.in_(ids))
+            .order_by(Annotation.created_at.desc(), Annotation.id.desc())
+        )
+        return list(self.session.scalars(stmt).all())
 
 
 class EvaluationRepo:

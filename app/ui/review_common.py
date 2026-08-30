@@ -13,7 +13,7 @@ from io import StringIO
 
 import pandas as pd
 
-from app.storage.db import SessionLocal
+from app.storage.db import DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo, ExampleRepo
 
 ANNOTATION_STATUSES = ["accepted", "edited", "rejected", "uncertain"]
@@ -45,8 +45,16 @@ def coerce_bool(value: object) -> bool:
 
 
 def attach_db_ids(df: pd.DataFrame) -> pd.DataFrame:
-    """Add the SQLite `id` for each CSV row, so annotations can be attached."""
-    session = SessionLocal()
+    """Add the database `id` for each CSV row, so annotations can be attached.
+
+    Raises DatabaseUnavailable rather than propagating a driver error, so the caller
+    can decide to carry on read-only. A frame without an `id` column is still fully
+    usable for reading, searching and browsing — only saving needs the ids.
+    """
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
     try:
         repo = ExampleRepo(session)
         id_map = {
@@ -55,20 +63,18 @@ def attach_db_ids(df: pd.DataFrame) -> pd.DataFrame:
                 repo.list_example_keys()
             )
         }
-        out = df.copy()
-        out["id"] = out.apply(
-            lambda row: id_map.get(
-                (
-                    row["source"],
-                    row["source_text_id"],
-                    row["source_sentence_id"],
-                )
-            ),
-            axis=1,
-        )
-        return out
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
     finally:
         session.close()
+
+    out = df.copy()
+    # Vectorised: the per-row .apply() over 12,772 rows was pure overhead.
+    keys = pd.MultiIndex.from_arrays(
+        [out["source"], out["source_text_id"], out["source_sentence_id"]]
+    )
+    out["id"] = [id_map.get(key) for key in keys]
+    return out
 
 
 def build_row_key(row: pd.Series, position: int) -> str:
@@ -102,22 +108,102 @@ def annotation_history_to_df(rows: list) -> pd.DataFrame:
 
 
 def load_annotation_state(example_id: int | None) -> tuple[object | None, pd.DataFrame]:
-    """Return (latest annotation, full history) for one example."""
+    """Return (latest annotation, full history) for one example.
+
+    One query, not two: the history is fetched and the newest row taken from it in
+    Python. Asking the database for "latest" separately meant running the same
+    ordered SELECT twice for every result row on every rerun.
+    """
     if example_id is None:
         return None, annotation_history_to_df([])
-    session = SessionLocal()
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
     try:
         repo = AnnotationRepo(session)
-        latest = repo.get_latest_for_example(example_id)
-        history = annotation_history_to_df(repo.list_for_example(example_id))
-        return latest, history
+        rows = repo.list_for_example(example_id)
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
+    finally:
+        session.close()
+    return (rows[0] if rows else None), annotation_history_to_df(rows)
+
+
+def annotated_example_count() -> int:
+    """How many examples carry at least one annotation.
+
+    Home and Projects only need this number. They used to call
+    `reviewed_annotation_rows()`, which pulls every annotation ever written *and*
+    the full corpus row for each annotated example — on every sidebar click.
+    """
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
+    try:
+        return AnnotationRepo(session).count_annotated_examples()
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
     finally:
         session.close()
 
 
+def annotated_example_ids() -> set[int]:
+    """Ids of examples with at least one annotation (for badges in listings)."""
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
+    try:
+        return set(AnnotationRepo(session).annotated_example_ids())
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
+    finally:
+        session.close()
+
+
+def load_annotation_states(
+    example_ids: list[int],
+) -> dict[int, tuple[object | None, pd.DataFrame]]:
+    """Latest annotation and history for many examples, in one query.
+
+    The Workspace shows several parallels at once and each needs its own annotation
+    state; fetching them one at a time meant a round trip per visible row on every
+    rerun — including every keystroke in a note field.
+    """
+    wanted = [int(i) for i in example_ids if i is not None]
+    if not wanted:
+        return {}
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
+    try:
+        rows = AnnotationRepo(session).list_for_examples(wanted)
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
+    finally:
+        session.close()
+
+    grouped: dict[int, list] = {example_id: [] for example_id in wanted}
+    for row in rows:
+        grouped.setdefault(row.example_id, []).append(row)
+    return {
+        example_id: (
+            (history[0] if history else None),
+            annotation_history_to_df(history),
+        )
+        for example_id, history in grouped.items()
+    }
+
+
 def reviewed_annotation_rows() -> list[dict]:
     """Every example that has at least one saved annotation, base + latest."""
-    session = SessionLocal()
+    try:
+        session = SessionLocal()
+    except Exception as exc:  # pragma: no cover - driver-level failure
+        raise DatabaseUnavailable(str(exc)) from exc
     try:
         example_repo = ExampleRepo(session)
         annotation_repo = AnnotationRepo(session)
@@ -185,6 +271,10 @@ def reviewed_annotation_rows() -> list[dict]:
                 }
             )
         return export_rows
+    except DatabaseUnavailable:
+        raise
+    except Exception as exc:
+        raise DatabaseUnavailable(str(exc)) from exc
     finally:
         session.close()
 

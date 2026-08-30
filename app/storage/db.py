@@ -48,6 +48,11 @@ else:
         "max_overflow": 2,
         "pool_recycle": 300,
         "connect_args": {
+            # Fail fast instead of hanging forever. Neon suspends an idle compute
+            # and the wake-up takes a second or two, but a black-holed endpoint
+            # would otherwise block the Streamlit script thread indefinitely — the
+            # app would look frozen rather than degraded.
+            "connect_timeout": 10,
             # Works with a connection-pooler endpoint as well as a direct one.
             # Neon's `-pooler` host runs PgBouncer in transaction mode, where a
             # server connection is handed to a different client between statements.
@@ -63,3 +68,26 @@ else:
 engine = create_engine(DATABASE_URL, **_engine_kwargs)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class DatabaseUnavailable(RuntimeError):
+    """The database could not be reached.
+
+    Raised by the read/write helpers so the UI can fall back to a read-only mode
+    with a plain-language banner. Before this existed, an unreachable database
+    raised OperationalError inside the cached corpus loader at import time, which
+    took down every page — including Corpus and Sign readings, which need no
+    database at all.
+    """
+
+
+def database_available() -> bool:
+    """One cheap round trip to see whether the database answers."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False

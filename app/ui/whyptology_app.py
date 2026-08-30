@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
+import secrets
 from html import escape
 from pathlib import Path
 import sys
@@ -23,7 +25,7 @@ from app.data.normalizer import (
     normalize_mdc,
 )
 from app.services.annotations import save_annotation
-from app.services.retrieval import retrieve_top_k
+from app.services.retrieval import build_search_index, retrieve_top_k
 from app.services.reading_model import train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream
 from app.services.signs import (
@@ -33,7 +35,7 @@ from app.services.signs import (
 )
 from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
-from app.storage.db import SessionLocal
+from app.storage.db import DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
@@ -41,7 +43,11 @@ from app.ui.review_common import (
     build_reviewed_export_csv,
     build_row_key,
     coerce_bool,
+    annotated_example_count,
+    annotated_example_ids,
+    annotation_history_to_df,
     load_annotation_state,
+    load_annotation_states,
     reviewed_annotation_rows,
     safe_str,
     score_breakdown_lines,
@@ -134,12 +140,18 @@ def translit_font_face() -> str:
     )
 
 
+@st.cache_data(show_spinner=False)
+def theme_css() -> str:
+    """Stylesheet text, read from disk once per session rather than per rerun."""
+    return THEME_PATH.read_text()
+
+
 def inject_theme() -> None:
     # The font face is appended AFTER the stylesheet, never before: the theme starts
     # with an @import, and @import is only valid before any other rule. Prepending
     # here would silently invalidate it. @font-face has no such ordering constraint.
     st.markdown(
-        f"<style>{THEME_PATH.read_text()}\n{translit_font_face()}</style>",
+        f"<style>{theme_css()}\n{translit_font_face()}</style>",
         unsafe_allow_html=True,
     )
 
@@ -187,14 +199,77 @@ def resegment_query(df: pd.DataFrame, query: str):
     return segmenter.segment(as_pasted), as_pasted, model, segmenter
 
 
-@st.cache_data(show_spinner="Preparing the corpus…")
-def load_corpus() -> pd.DataFrame:
-    # attach_db_ids adds the SQLite id per row; without it annotations cannot be
-    # saved against a retrieved parallel. The database file is gitignored, so on a
-    # fresh deployment ensure_corpus_ready has to build and seed it first.
-    df = load_examples_csv(str(DATA_PATH))
-    ensure_corpus_ready(df)
-    return attach_db_ids(df)
+@st.cache_resource(show_spinner="Preparing the corpus…")
+def load_corpus_csv() -> pd.DataFrame:
+    """The corpus frame, independent of any database.
+
+    `cache_resource`, not `cache_data`: cache_data pickles a fresh 11 MB copy for
+    every session that touches it (~28 MB resident each), which is the largest
+    single memory cost on a 1 GB container. Nothing in the retrieval stack mutates
+    this frame in place — every stage does its own `.copy()` — so one shared
+    instance is safe. Anything added here must keep that true.
+    """
+    return load_examples_csv(str(DATA_PATH))
+
+
+@st.cache_resource(show_spinner=False)
+def load_corpus_with_ids(_df: pd.DataFrame, signature: str) -> pd.DataFrame:
+    """The corpus with database ids attached, or the plain frame if the DB is down.
+
+    Deliberately separate from `load_corpus_csv`. These used to be one cached
+    function, so an unreachable database raised inside it at module scope and took
+    down every page — including Corpus and Sign readings, which need no database.
+    Splitting them means a database outage costs exactly the features that need a
+    database: saving annotations and the review pages.
+    """
+    ensure_corpus_ready(_df)
+    return attach_db_ids(_df)
+
+
+def load_corpus() -> tuple[pd.DataFrame, str]:
+    """(corpus frame, database status). Status is "ok" or a failure message."""
+    df = load_corpus_csv()
+    try:
+        return load_corpus_with_ids(df, corpus_signature(df)), "ok"
+    except DatabaseUnavailable as exc:
+        return df, str(exc)
+    except Exception as exc:  # bootstrap/driver failures land here too
+        return df, str(exc)
+
+
+@st.cache_resource(show_spinner=False)
+def load_search_index(_df: pd.DataFrame, signature: str):
+    """Query-independent search statistics, built once per corpus."""
+    return build_search_index(_df)
+
+
+@st.cache_resource(show_spinner=False)
+def load_sign_index(_df: pd.DataFrame, signature: str):
+    """Sign-to-reading index, built once per corpus.
+
+    A full-frame `iterrows` — 0.4 s — that used to re-run on every interaction with
+    the Sign readings page, including moving its own selectbox.
+    """
+    return build_sign_index(_df)
+
+
+# Longest accepted annotation field. Every note column is unbounded TEXT, so a
+# single visitor could otherwise write megabytes per save to a free-tier database.
+MAX_ANNOTATION_FIELD = 2000
+
+
+def configured_reviewer_key() -> str:
+    """Shared reviewer passphrase, from Streamlit secrets or the environment."""
+    try:
+        value = st.secrets.get("reviewer_key", "")
+    except Exception:
+        value = ""
+    return str(value or os.getenv("REVIEWER_KEY", ""))
+
+
+def clip(text: object) -> str:
+    """Trim a user-supplied field to the accepted maximum."""
+    return str(text or "")[:MAX_ANNOTATION_FIELD]
 
 
 def value(row: pd.Series, key: str, fallback: str = "—") -> str:
@@ -266,6 +341,7 @@ def sidebar() -> str:
         st.button("◫  Dictionary — soon", width="stretch", disabled=True)
         st.button("⌘  Sign list — soon", width="stretch", disabled=True)
         st.button("▱  Collections — soon", width="stretch", disabled=True)
+        render_reviewer_gate()
         # CC BY-SA 4.0 requires that attribution reach the viewer of the data, not
         # just a file in the repo. Do not remove this: the corpus is not our work.
         # See DATA-LICENSE.md for the full citation and the record of modifications.
@@ -274,7 +350,7 @@ def sidebar() -> str:
             <div class="open-access-note">
               <span class="open-access-dot"></span>
               Open research access<br>
-              <small>No account required</small>
+              <small>No account required to read</small>
             </div>
             <div class="corpus-credit">
               Corpus data: <a href="https://thesaurus-linguae-aegyptiae.de"
@@ -378,7 +454,10 @@ def render_home(df: pd.DataFrame) -> None:
 
     # Every figure below is counted from the loaded corpus and the annotation
     # database, so the page cannot claim coverage the data does not have.
-    annotated = len({row["example_id"] for row in reviewed_annotation_rows()})
+    try:
+        annotated = annotated_example_count()
+    except DatabaseUnavailable:
+        annotated = 0
     with_translation = int(
         df["translation"].astype(str).str.strip().ne("").sum()
         if "translation" in df.columns
@@ -472,12 +551,64 @@ def render_suggestion_card(rank: int, suggestion) -> None:
     )
 
 
-def render_annotation_form(row: pd.Series, position: int) -> None:
-    """Accept / edit / reject / uncertain workflow for one corpus parallel."""
+def annotations_unlocked() -> bool:
+    """Whether this visitor may write annotations.
+
+    The app is public and unauthenticated, yet every visitor could insert unbounded
+    rows into a free-tier database that has already had one quota outage. Streamlit
+    exposes no per-visitor identity and session counters reset on refresh, so
+    rate-limiting has nothing to key on; a shared reviewer passphrase is the
+    mechanism that actually fits. Set `reviewer_key` in Streamlit secrets (or the
+    REVIEWER_KEY environment variable) to require it. With no key configured the
+    app stays open, exactly as before, so local development is unaffected.
+    """
+    expected = str(configured_reviewer_key() or "")
+    if not expected:
+        return True
+    return st.session_state.get("whyptology_reviewer_ok", False)
+
+
+def render_reviewer_gate() -> None:
+    """Passphrase box shown once per session when a reviewer key is configured."""
+    expected = str(configured_reviewer_key() or "")
+    if not expected or st.session_state.get("whyptology_reviewer_ok", False):
+        return
+    with st.expander("Reviewer access — unlock annotation saving"):
+        st.caption(
+            "Reading, searching and browsing need no key. Saving annotations writes "
+            "to the shared project database, so it is limited to reviewers."
+        )
+        entered = st.text_input(
+            "Reviewer key", type="password", key="whyptology_reviewer_key_input"
+        )
+        if st.button("Unlock", key="whyptology_reviewer_unlock"):
+            if entered and secrets.compare_digest(entered, expected):
+                st.session_state["whyptology_reviewer_ok"] = True
+                st.rerun()
+            else:
+                st.error("That key was not recognised.")
+
+
+def render_annotation_form(
+    row: pd.Series,
+    position: int,
+    states: dict | None = None,
+) -> None:
+    """Accept / edit / reject / uncertain workflow for one corpus parallel.
+
+    `states` is the batch prefetched for all visible rows; without it this falls
+    back to a single-row query, which is what the older UI does.
+    """
     row_id = row.get("id")
     example_id = int(row_id) if pd.notna(row_id) else None
     row_key = build_row_key(row, position)
-    latest, history = load_annotation_state(example_id)
+    if states is not None:
+        latest, history = states.get(example_id, (None, annotation_history_to_df([])))
+    else:
+        try:
+            latest, history = load_annotation_state(example_id)
+        except DatabaseUnavailable:
+            latest, history = None, annotation_history_to_df([])
 
     def default(field: str, row_field: str | None = None, fallback: str = "") -> str:
         if latest is not None:
@@ -568,34 +699,48 @@ def render_annotation_form(row: pd.Series, position: int) -> None:
         key=aesthetic_key,
     )
 
+    if not annotations_unlocked():
+        st.caption("Saving is limited to reviewers — unlock it in the sidebar.")
+        return
+
     if st.button("Save annotation", key=f"save_{row_key}", type="primary"):
         if example_id is None:
             st.error(
-                "This row has no SQLite ID yet. Run "
-                "`python -m scripts.import_examples` to sync the database."
+                "This row is not linked to the project database, so the annotation "
+                "cannot be saved. If the database is offline, try again later."
             )
+        elif not str(transliteration).strip():
+            st.error("Enter a reading before saving.")
         else:
-            session = SessionLocal()
             try:
-                save_annotation(
-                    repo=AnnotationRepo(session),
-                    example_id=example_id,
-                    transliteration=transliteration,
-                    uncertainty_note=uncertainty_note or "",
-                    grammar_note=grammar_note or "",
-                    status=status,
-                    display_sequence=display_sequence or "",
-                    normalized_reading_order=normalized_reading_order or "",
-                    alt_transliterations=alt_transliterations or "",
-                    variant_writing_note=variant_writing_note or "",
-                    morphology_note=morphology_note or "",
-                    syntax_note=syntax_note or "",
-                    aesthetic_arrangement_flag=coerce_bool(
-                        st.session_state.get(aesthetic_key, aesthetic_flag)
-                    ),
+                session = SessionLocal()
+                try:
+                    save_annotation(
+                        repo=AnnotationRepo(session),
+                        example_id=example_id,
+                        transliteration=clip(transliteration),
+                        uncertainty_note=clip(uncertainty_note),
+                        grammar_note=clip(grammar_note),
+                        status=status,
+                        display_sequence=clip(display_sequence),
+                        normalized_reading_order=clip(normalized_reading_order),
+                        alt_transliterations=clip(alt_transliterations),
+                        variant_writing_note=clip(variant_writing_note),
+                        morphology_note=clip(morphology_note),
+                        syntax_note=clip(syntax_note),
+                        aesthetic_arrangement_flag=coerce_bool(
+                            st.session_state.get(aesthetic_key, aesthetic_flag)
+                        ),
+                    )
+                finally:
+                    session.close()
+            except Exception as exc:
+                st.error(
+                    "Could not save: the project database is not reachable right "
+                    "now. Your text is still in the form — try again in a moment."
                 )
-            finally:
-                session.close()
+                st.caption(f"({type(exc).__name__})")
+                return
             # The rerun below reloads the form with the saved values as defaults, so
             # the confirmation has to survive it via session state.
             st.session_state["whyptology_saved_notice"] = (
@@ -718,6 +863,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     query_reading_order=reading_order,
                     k=max(settings.top_k, 50),
                     query_hieroglyphs_norm=regrouped,
+                    index=load_search_index(df, corpus_signature(df)),
                 )
                 st.session_state["whyptology_results"] = pool.head(
                     max(settings.top_k, 5)
@@ -730,7 +876,10 @@ def render_workspace(df: pd.DataFrame) -> None:
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",
                 )
-            st.rerun()
+            # No st.rerun() here: the results are already in session state and the
+            # rest of this script run renders them. Rerunning doubled the cost of
+            # every search — a second theme injection, corpus access and annotation
+            # round trip for no visible change.
 
     decode_tab, suggestions_tab, parallels_tab, analysis_tab, source_tab = st.tabs(
         [
@@ -955,6 +1104,18 @@ def render_workspace(df: pd.DataFrame) -> None:
                 "Decisions are saved to the project database and appear in the "
                 "reviewed export."
             )
+            # One query for every visible parallel's annotation state, instead of
+            # one per row per rerun.
+            try:
+                annotation_states = load_annotation_states(
+                    [
+                        int(v)
+                        for v in results.get("id", pd.Series(dtype=float)).tolist()
+                        if pd.notna(v)
+                    ]
+                )
+            except DatabaseUnavailable:
+                annotation_states = {}
             for position, (_, row) in enumerate(results.reset_index(drop=True).iterrows()):
                 label = value(row, "transliteration_gold", "Untitled reading")
                 score = row.get("final_score")
@@ -999,7 +1160,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                                 st.write(line)
 
                     st.markdown("---")
-                    render_annotation_form(row, position)
+                    render_annotation_form(row, position, annotation_states)
 
     with analysis_tab:
         if top_row is None:
@@ -1255,7 +1416,10 @@ def render_projects(df: pd.DataFrame) -> None:
     )
     st.markdown("")
 
-    reviewed_ids = {row["example_id"] for row in reviewed_annotation_rows()}
+    try:
+        reviewed_ids = annotated_example_ids()
+    except DatabaseUnavailable:
+        reviewed_ids = set()
     if "id" in df.columns:
         reviewed_mask = df["id"].isin(reviewed_ids)
     else:
@@ -1333,7 +1497,7 @@ def render_signs(df: pd.DataFrame) -> None:
     )
     st.markdown("")
 
-    index = build_sign_index(df)
+    index = load_sign_index(df, corpus_signature(df))
     summary = multivalence_summary(index)
     alignment = df.attrs.get("alignment")
     if alignment is not None:
@@ -1466,7 +1630,14 @@ def render_reviews() -> None:
     )
     st.markdown("")
 
-    rows = reviewed_annotation_rows()
+    try:
+        rows = reviewed_annotation_rows()
+    except DatabaseUnavailable:
+        st.warning(
+            "The project database is not reachable, so saved reviews cannot be "
+            "shown. Reading, searching and browsing the corpus still work."
+        )
+        return
     if not rows:
         st.info(
             "No expert annotations saved yet. Search a reading in the workspace, open a "
@@ -1549,14 +1720,22 @@ def render_reviews() -> None:
             "One row per annotated example, with the base corpus fields alongside the "
             "latest expert decision."
         )
-        st.download_button(
-            label="Download reviewed annotations CSV",
-            data=build_reviewed_export_csv(),
-            file_name="reviewed_annotations_export.csv",
-            mime="text/csv",
-            type="primary",
-            width="stretch",
-        )
+        # Built from the rows already fetched above, and only when asked for:
+        # `data=build_reviewed_export_csv()` re-queried the database and
+        # re-materialised the whole CSV on every rerun of this page, whether or not
+        # anyone ever clicked the button.
+        if st.button("Prepare CSV export", width="stretch"):
+            st.session_state["whyptology_export_csv"] = reviewed.to_csv(index=False)
+        export_csv = st.session_state.get("whyptology_export_csv")
+        if export_csv:
+            st.download_button(
+                label="Download reviewed annotations CSV",
+                data=export_csv,
+                file_name="reviewed_annotations_export.csv",
+                mime="text/csv",
+                type="primary",
+                width="stretch",
+            )
         st.markdown(
             '<div class="panel-title">Edited readings</div>', unsafe_allow_html=True
         )
@@ -1590,7 +1769,15 @@ def render_reviews() -> None:
 
 
 inject_theme()
-corpus = load_corpus()
+corpus, database_status = load_corpus()
+if database_status != "ok":
+    st.warning(
+        "**Read-only mode.** The project database is not reachable, so annotations "
+        "cannot be loaded or saved right now. Everything that reads the corpus — "
+        "search, sign-by-sign readings, the corpus explorer and sign readings — "
+        "works normally.",
+        icon="⚠️",
+    )
 
 query_page = st.query_params.get("view")
 if query_page in {"home", "workspace", "corpus", "projects", "reviews", "signs"}:
