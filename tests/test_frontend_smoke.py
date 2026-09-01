@@ -197,6 +197,133 @@ def test_palette_inserts_a_character_and_keeps_what_was_typed() -> None:
     assert app.text_area[0].value == "aHa.n stẖ"
 
 
+def workspace() -> AppTest:
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "workspace"
+    app.run()
+    return app
+
+
+def heading_html(app: AppTest) -> str:
+    for md in app.markdown:
+        if 'class="workspace-title"' in md.value:
+            return md.value
+    raise AssertionError("workspace header not rendered")
+
+
+def searched(app: AppTest) -> bool:
+    text = "\n".join(m.value for m in app.markdown)
+    return 'class="suggestion-card"' in text
+
+
+def query_param(app: AppTest, name: str) -> str:
+    """AppTest hands query parameters back as lists; the app sets scalars."""
+    raw = app.query_params[name]
+    return raw[0] if isinstance(raw, list) else raw
+
+
+def test_example_button_fills_the_box_and_searches_in_one_click() -> None:
+    """A blank box makes a first-time visitor guess a notation; the tester who
+    reported "found nothing" had guessed one we mishandled. One click on a worked
+    example must both show the text and run it."""
+    app = workspace()
+    next(b for b in app.button if b.label == "aHa.n stX Hr Dd").click().run()
+    assert_clean(app)
+    assert app.text_area[0].value == "aHa.n stX Hr Dd"
+    assert searched(app), "the example must run the search, not only fill the box"
+    assert any("Manuel de Codage" in c.value for c in app.caption)
+
+
+def test_shared_link_runs_the_query_once_and_stays_in_the_url() -> None:
+    """?q= lets an expert send "this one is wrong" as a link. It must run the search
+    on arrival, land on the workspace, stay in the URL so the link remains copyable —
+    and be consumed once, or the user could never type anything else."""
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["q"] = "ꜥḥꜥ.n stẖ ḥr ḏd n =f"
+    app.run()
+    assert_clean(app)
+    assert app.session_state["page"] == "Workspace"
+    assert app.text_area[0].value == "ꜥḥꜥ.n stẖ ḥr ḏd n =f"
+    assert searched(app)
+    assert query_param(app, "q") =="ꜥḥꜥ.n stẖ ḥr ḏd n =f"
+
+    # Consumed: editing the box afterwards must not be overwritten by the link.
+    app.text_area[0].set_value("htp di nsw").run()
+    assert_clean(app)
+    assert app.text_area[0].value == "htp di nsw"
+
+
+def test_a_search_writes_a_shareable_query_parameter() -> None:
+    app = workspace()
+    app.text_area[0].set_value("htp di nsw").run()
+    [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
+    assert_clean(app)
+    assert query_param(app, "q") =="htp di nsw"
+
+
+def test_heading_names_the_top_result_in_the_same_run_as_the_search() -> None:
+    """The header used to be rendered before the search block from stale session
+    state, so results appeared under a title still saying "Enter a reading…"."""
+    app = workspace()
+    assert "Reading workspace" in heading_html(app)
+    app.text_area[0].set_value("ꜥḥꜥ.n stẖ ḥr ḏd n =f").run()
+    [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
+    assert_clean(app)
+    header = heading_html(app)
+    assert "Reading workspace" not in header
+    assert "Enter a reading to search the corpus" not in header
+    assert "TLA_" in header, header
+
+
+def test_ephemeral_storage_makes_the_annotation_form_read_only() -> None:
+    """Locally the database is SQLite, which is exactly the deployed situation the
+    gating exists for: a correction saved to a container-local file is lost at the
+    next restart. Every annotation control must be disabled and the reason stated."""
+    app = workspace()
+    app.text_area[0].set_value("ꜥḥꜥ.n stẖ ḥr ḏd n =f").run()
+    [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
+    assert_clean(app)
+    decisions = [s for s in app.selectbox if s.label == "Decision"]
+    assert decisions, "annotation form not rendered"
+    assert all(s.disabled for s in decisions)
+    fields = [t for t in app.text_input if t.label == "Transliteration"]
+    assert fields and all(t.disabled for t in fields)
+    assert any(
+        "cannot be stored on this deployment" in w.value for w in app.warning
+    )
+
+
+def test_tab_labels_fit_a_phone() -> None:
+    app = workspace()
+    assert [t.label for t in app.tabs] == [
+        "Readings", "Sign by sign", "Parallels", "Analysis", "Source",
+    ]
+
+
+def test_palette_has_nine_quiet_keys() -> None:
+    app = workspace()
+    keys = [b.label for b in app.button if len(b.label) == 1 and b.label.isalpha()]
+    assert keys == ["ꜣ", "ꜥ", "ꞽ", "ḥ", "ḫ", "ẖ", "š", "ṯ", "ḏ"]
+    assert any("Tap to insert" in c.value for c in app.caption)
+
+
+def test_corpus_cards_offer_copyable_hieroglyphs() -> None:
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "corpus"
+    app.run()
+    assert_clean(app)
+    assert any("copy hieroglyphs" in e.label for e in app.expander)
+    assert app.code, "each card must render its hieroglyphs in a copyable block"
+
+
+def test_translation_is_labelled_as_german_corpus_data() -> None:
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "corpus"
+    app.run()
+    table = next(md.value for md in app.markdown if 'class="corpus-table"' in md.value)
+    assert "Translation (German, from the corpus)" in table
+
+
 def test_the_query_box_and_the_search_button_submit_together() -> None:
     """Pins the "it gave me no response" bug: a bare text area only sends its value
     on blur, so the tap that blurred it was swallowed and the search never ran. The
