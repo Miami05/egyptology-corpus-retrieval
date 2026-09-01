@@ -642,3 +642,59 @@ larger corpus offers closer neighbours to borrow from.
   and the remainder are flagged inferences correct about a quarter of the time.
 - 37 tests cover this, including tests that pin both the successful behaviour and the
   negative result.
+
+# 17. v2 and v3 retired as reportable numbers (2026-09-01)
+
+Two things changed on 2026-09-01, and each one alone would have ended the comparability
+of the v2/v3 competitive benchmarks. Their per-query results are kept for the record,
+but **neither set may be quoted as accuracy from this date**.
+
+**(i) The search fold changed.** Query and index are now reduced by one function,
+`search_fold`, and the yod is folded rather than deleted: `ꞽ`, `j` and `i` all become
+`i`. The v2/v3 benchmark files store `query_input` and `expected_key_tokens`
+*pre-folded in the old space* — `m n k r` for `m(ꞽ) n =k ꞽr(.t)-ḥr.w`, with every yod
+already gone. Replaying them against the new index compares two different alphabets,
+so any movement in their numbers after this date measures the mismatch, not the tool.
+
+**(ii) The searchable corpus changed twice in one day.**
+- 9,823 AES rows became reachable by transliteration query. They had always been in
+  `examples.csv`, but the index was built from a column they ship empty, so a third
+  of the corpus was invisible to text search. The AES fix added competition to every
+  v2/v3 query without those queries having been drawn from it.
+- Rows from `phiwi/bbaw_egyptian` (CC BY-SA 4.0; BBAW January-2018 snapshot) are being
+  added — 35,503 rows with word-aligned hieroglyphs, deduplicated against the existing
+  corpus. That is a different corpus again, and the one v4 must be drawn from.
+
+For the record, the last v2/v3 replays *before* the fold change (after the AES fix)
+were: v2 top-1 useful 0.60 / top-3 0.80 / MRR 0.683 / 4 failures; v3 0.75 / 0.90 /
+0.808 / 2. Those are the final numbers of that lineage.
+
+## v4 — to be cut on the final corpus
+
+Build **after** the bbaw_egyptian import has landed and the fold change is in, never
+before: a benchmark drawn from a corpus that is about to change is the mistake §3
+documents. Use the twin-exclusion builder exactly as for v2/v3:
+
+```bash
+python scripts/build_competitive_ambiguity_benchmark.py \
+  --output data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
+python scripts/verify_release.py \
+  --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
+```
+
+Record the builder's "skipped with a near-identical twin" count alongside the result;
+§3 explains why that number is part of the evidence.
+
+| v4 (final corpus) | value |
+|---|---|
+| corpus rows | _pending_ |
+| queries | _pending_ |
+| skipped: near-identical twin | _pending_ |
+| top-1 useful-family | _pending_ |
+| top-3 useful-family (**the reportable number**) | _pending_ |
+| MRR | _pending_ |
+| failures | _pending_ |
+
+Until that table is filled in, the honest statement is: *"the tool has no current
+reportable accuracy figure; v2/v3 were retired on 2026-09-01 when the fold and the
+corpus changed."*
