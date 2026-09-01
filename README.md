@@ -85,8 +85,9 @@ app/
 data/
   processed/   examples.csv — the built corpus (committed)
   raw/         downloaded sources (gitignored, ~465MB, regenerable)
-  benchmarks/  evaluation sets and results (see CORPUS_SCALING_REPORT.md for which
-               numbers are quotable — the v2 competitive set is the reportable one)
+  benchmarks/  evaluation sets and results (see CORPUS_SCALING_REPORT.md §17 for
+               which numbers are quotable — v2/v3 were retired on 2026-09-01; v4 is
+               cut on the final corpus)
 scripts/       importers, corpus builders, benchmark and evaluation runners
 ```
 
@@ -114,13 +115,17 @@ Evaluation:
 ```bash
 python scripts/run_expert_paste_eval.py          # real hieroglyph pastes, exits non-zero on regression
 python scripts/run_competitive_ambiguity_eval.py \
-  --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v2.csv
+  --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
+python scripts/verify_release.py   # tests + both evaluations, one summary, non-zero on failure
 ```
 
-The **v2** competitive benchmark is the reportable one: its rows are guaranteed to
-have no near-identical twin anywhere in the corpus, so excluding the target does not
-hand the answer back. v1 is kept only so previously published figures stay
-reproducible.
+The competitive benchmark is the reportable one: its rows are guaranteed to have no
+near-identical twin anywhere in the corpus, so excluding the target does not hand the
+answer back. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
+folds to `i`) and the searchable corpus changed twice the same day — so their numbers
+no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 is
+cut on the final corpus. Every evaluation writes to a temporary path when run through
+`verify_release.py` or the test suite, so a release check never dirties `data/benchmarks`.
 
 Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
 secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is

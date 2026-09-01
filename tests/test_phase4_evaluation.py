@@ -151,16 +151,29 @@ def test_no_other_benchmark_contains_a_hieroglyph():
             ), f"{name} unexpectedly contains a glyph query"
 
 
-def test_expert_paste_eval_passes_end_to_end():
-    """The runner exits non-zero if any paste regresses, so this is the gate."""
+def test_expert_paste_eval_passes_end_to_end(tmp_path):
+    """The runner exits non-zero if any paste regresses, so this is the gate.
+
+    Results go to a temp path on purpose. Without `--results` the runner rewrote the
+    *committed* data/benchmarks/expert_paste_eval_results.csv on every test run, so a
+    plain `pytest` left the working tree dirty and a scoring change could slip into a
+    commit unreviewed, hidden inside a benchmark file nobody meant to touch.
+    """
+    results_path = tmp_path / "expert_paste_eval_results.csv"
     result = subprocess.run(
-        [sys.executable, "scripts/run_expert_paste_eval.py"],
+        [
+            sys.executable,
+            "scripts/run_expert_paste_eval.py",
+            "--results",
+            str(results_path),
+        ],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "passed 8/8" in result.stdout
+    assert results_path.exists(), "runner did not write to the requested results path"
 
 
 # ---------- stable importer ids ----------
