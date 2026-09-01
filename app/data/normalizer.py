@@ -7,6 +7,8 @@ import zlib
 WHITESPACE_RE = re.compile(r"\s+")
 # `=` (and the Egyptological `⸗`) mark a suffix pronoun. They separate tokens.
 SUFFIX_MARKER_RE = re.compile(r"[=\u2e17]")
+# An editorially supplied yod: `(ꞽ)`, `(.ꞽ)`, `(j)`, `(.j)` — see normalize_transliteration.
+PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjı]\)")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
 
@@ -220,8 +222,26 @@ def normalize_transliteration(value: str) -> str:
     readings — see `strict_reading_key` in app.services.suggestions for that.
     NFC runs first (inside normalize_text) so a decomposed ẖ folds to kh like its
     precomposed twin instead of leaking through as a bare h.
+
+    The yod is folded to `i`, never deleted. Until 2026-09-01 `ꞽ` fell through to
+    `normalize_mdc`, which stripped it, so `ꞽri̯.n` was indexed as `rin`: 71% of corpus
+    rows contain ꞽ, ASCII typists write `i`, MdC and Gardiner-school typists write
+    `j`, and the bbaw_egyptian and Ramses datasets write `j` — none of them could
+    match. `ꞽ`, `j`, dotless `ı` (+ its combining half ring U+0357) all become `i`;
+    `ṱ` becomes `t` and `ḳ` becomes `q` for the same reason.
     """
     value = normalize_text(value)
+    # `n(.ꞽ).t`, `(ꞽ)r(.ꞽ)-pꜥ.t`: a yod in round brackets is one the editor supplied,
+    # not one written on the wall. It is dropped so `n.t` and `n(.ꞽ).t` stay one
+    # search key — which they always were, because the old fold deleted every yod;
+    # keeping written yods must not split 4,438 rows away from what a reader types.
+    value = PARENTHESISED_YOD_RE.sub("", value)
+    value = value.replace("\u0357", "")  # combining right half ring on ı
+    value = value.replace("ꞽ", "i")
+    value = value.replace("ı", "i")
+    value = value.replace("j", "i")
+    value = value.replace("ṱ", "t")
+    value = value.replace("ḳ", "q")
     value = value.replace("ꜣ", "a")
     value = value.replace("ꜥ", "a")
     value = value.replace("ḥ", "h")

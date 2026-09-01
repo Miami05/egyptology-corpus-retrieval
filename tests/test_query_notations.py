@@ -153,3 +153,75 @@ def test_a_unicode_query_is_reported_as_unicode(index) -> None:
     parse = parse_query(UNICODE_QUERY, vocabulary=index.vocabulary)
     assert parse.notation == "unicode"
     assert parse.reading == UNICODE_QUERY
+
+
+# --- the yod (2026-09-01) --------------------------------------------------------
+
+
+def test_the_yod_is_folded_to_i_in_every_notation() -> None:
+    """71% of corpus rows contain ꞽ. It used to be deleted, so `ꞽri̯.n` was indexed
+    as `rin` and neither an ASCII `irin` nor a Gardiner-school `jrj.n` could match."""
+    assert search_fold("ꞽri̯.n") == search_fold("irin") == search_fold("jrj.n") == "irin"
+    assert search_fold("ı͗rı͗") == "iri"  # dotless i + combining half ring
+    assert search_fold("bꞽꜣ.t.ṱ") == "biatt"
+    assert search_fold("ḳd") == "qd"
+
+
+def test_the_yod_fold_leaves_the_reported_query_unchanged() -> None:
+    assert search_fold(UNICODE_QUERY) == "ahan stkh qnd r djw aa wr"
+
+
+def test_a_parenthesised_yod_is_an_editorial_mark_not_a_letter() -> None:
+    """`n(.ꞽ).t` and `n.t` were one key when every yod was deleted; they must stay one
+    key now that written yods are kept — the bracketed one was never on the wall."""
+    assert search_fold("n(.ꞽ).t") == search_fold("n.t") == "nt"
+    assert search_fold("(ꞽ)r(.ꞽ)-pꜥ.t") == search_fold("r-pꜥ.t")
+
+
+def test_ascii_digraphs_are_resolved_by_corpus_evidence(index) -> None:
+    """With the yod folding to `i`, ASCII `dji` is ambiguous: ḏi̯ in the app's own
+    digraph convention, or d + yod + i. The corpus decides, as it does for MdC."""
+    parse = parse_query("htp dji nswt", vocabulary=index.vocabulary)
+    assert parse.notation == "ascii"
+    assert parse.search_key == "htp dji nswt"
+    assert parse.reading == "htp ḏi nswt"
+    # and without a vocabulary the documented convention is the default
+    assert parse_query("htp dji nswt").search_key == "htp dji nswt"
+    # a Gardiner-school yod is still read as a yod where the corpus says so
+    assert parse_query("jrj.n =f", vocabulary=index.vocabulary).search_key == "irin f"
+
+
+def test_ascii_yod_finds_the_corpus_row(corpus, index) -> None:
+    """`iri.n =f` returned `sꞽn rn =f` before the fold kept the yod."""
+    top = retrieve_top_k(corpus, query_mdc="iri.n =f", k=3, index=index)
+    assert not top.empty
+    assert any("ꞽri̯" in str(r["transliteration_gold"]) for _, r in top.iterrows())
+
+
+# --- evidence text -------------------------------------------------------------
+
+
+def test_shared_tokens_are_shown_as_the_corpus_unicode_words() -> None:
+    from app.services.suggestions import unfold_shared_tokens
+
+    assert unfold_shared_tokens(["aha", "n", "stkh"], "ꜥḥꜥ.n stẖ ḥr ḏd n =s") == [
+        "ꜥḥꜥ.n",
+        "stẖ",
+    ]
+    # a token the candidate does not contain falls back to its folded form
+    assert unfold_shared_tokens(["zzz"], "ꜥḥꜥ.n") == ["zzz"]
+
+
+def test_shared_lemma_ids_contain_only_ids() -> None:
+    """`id|lemma` cells were split on the bar too, so folded lemmas (`ndj`) sat in
+    the "shared lemma IDs" list beside the numbers."""
+    from app.services.suggestions import lemma_ids
+
+    assert lemma_ids("90880|nḏ 51510|wdi̯ 91901|r 10090|=s") == {
+        "90880",
+        "51510",
+        "91901",
+        "10090",
+    }
+    assert lemma_ids("55500 64190") == {"55500", "64190"}
+    assert lemma_ids("") == set()
