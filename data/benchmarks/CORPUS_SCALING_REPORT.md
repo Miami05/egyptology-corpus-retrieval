@@ -669,7 +669,7 @@ For the record, the last v2/v3 replays *before* the fold change (after the AES f
 were: v2 top-1 useful 0.60 / top-3 0.80 / MRR 0.683 / 4 failures; v3 0.75 / 0.90 /
 0.808 / 2. Those are the final numbers of that lineage.
 
-## v4 — to be cut on the final corpus
+## v4 — cut 2026-09-01 on the final corpus (31,565 rows)
 
 Build **after** the bbaw_egyptian import has landed and the fold change is in, never
 before: a benchmark drawn from a corpus that is about to change is the mistake §3
@@ -687,13 +687,13 @@ Record the builder's "skipped with a near-identical twin" count alongside the re
 
 | v4 (final corpus) | value |
 |---|---|
-| corpus rows | _pending_ |
-| queries | _pending_ |
-| skipped: near-identical twin | _pending_ |
-| top-1 useful-family | _pending_ |
-| top-3 useful-family (**the reportable number**) | _pending_ |
-| MRR | _pending_ |
-| failures | _pending_ |
+| corpus rows | 31,565 (TLA 16,373 · AES 9,823 · BBAW 5,369) |
+| queries | 20 |
+| skipped: near-identical twin | 7,557 of 31,565 (23.9%) |
+| top-1 useful-family | 0.70 |
+| top-3 useful-family (**the reportable number**) | **0.95** |
+| MRR | 0.800 |
+| failures | 1 |
 
 Until that table is filled in, the honest statement is: *"the tool has no current
 reportable accuracy figure; v2/v3 were retired on 2026-09-01 when the fold and the

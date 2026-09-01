@@ -2,7 +2,7 @@
 
 A corpus-based reading-suggestion tool for Ancient Egyptian. Given a transliteration
 (Unicode, Manuel de Codage or plain ASCII) or a sign sequence, it finds real parallels
-in a 26,196-sentence corpus (TLA Earlier and Late Egyptian plus the AES corpus;
+in a 31,565-sentence corpus (TLA Earlier and Late Egyptian, the AES corpus and the BBAW 2018 corpus;
 Predynastic to Roman), ranks the readings those parallels attest, shows the evidence
 behind each one, and records expert corrections.
 
@@ -58,7 +58,10 @@ it understood.
 
 Manuel de Codage is told from plain ASCII by evidence, not by a rule about capital
 letters: both readings are folded and whichever yields more tokens the corpus actually
-contains wins. `.`, `=` and `⸗` are optional — `ḏd=f`, `ḏd =f` and `ḏdf` all match.
+contains wins. The same evidence rule settles the ASCII digraphs: since the yod now
+folds to `i` (so `ꞽ`, `j` and `i` are one letter to the search — `ꞽri̯.n`, `irin` and
+`jrj.n` all match), `dji` could be ḏi̯ or d + yod + i, and the corpus decides. `.`, `=`
+and `⸗` are optional — `ḏd=f`, `ḏd =f` and `ḏdf` all match.
 
 Until 2026-09-01 only the third row worked. The query was cleaned with `normalize_mdc`,
 which **deletes** every Egyptological letter rather than folding it, so
