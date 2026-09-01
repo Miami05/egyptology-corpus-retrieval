@@ -24,7 +24,10 @@ from app.storage.repo import ExampleRepo
 
 # Chunk size for the bulk seed. Large enough that a remote round trip is amortised,
 # small enough that one statement does not exceed a provider's query size limits.
-BULK_CHUNK = 1000
+# 2,000 rows x 41 text columns is well under Postgres's 65,535 bind-parameter limit
+# only because SQLAlchemy's bulk_insert_mappings renders executemany, not one giant
+# VALUES list; do not switch it to a single multi-row INSERT without re-checking.
+BULK_CHUNK = 2000
 
 
 def create_tables() -> None:
@@ -101,6 +104,11 @@ def bulk_insert_examples(df: pd.DataFrame) -> int:
     """
     payloads = [example_payload(row) for _, row in df.iterrows()]
 
+    # One transaction for the whole seed, on purpose. `ensure_corpus_ready` seeds only
+    # when the table is empty, so a seed that committed half its chunks and then lost
+    # the connection would leave a partially filled table that the guard treats as
+    # "already seeded" on every later boot — a corpus permanently missing rows, with
+    # no error anywhere. Atomic means the table is either complete or still empty.
     session = SessionLocal()
     try:
         for start in range(0, len(payloads), BULK_CHUNK):

@@ -26,71 +26,104 @@ changed behaviour on the live app, not just that the deploy "went through".
 
 ## Making annotations survive (required for real review work)
 
-**Without this step, every annotation is lost when the app sleeps or redeploys.**
-Streamlit Cloud containers have no persistent disk, so the SQLite file is temporary.
-The corpus itself is fine — it re-seeds from the committed CSV on boot — but expert
-annotations are irreplaceable, and they are what the Reviews workflow exists to record.
+**Status on 2026-09-01: the live app does NOT keep annotations.** Its `DATABASE_URL`
+secret points at `sqlite:///egyptology.db`, a file inside the Streamlit Cloud container.
+That container is recreated on every reboot and every redeploy (one happened today), so
+an expert's correction is accepted, shown as saved, and gone at the next restart. The
+app now says so in a banner and disables saving while this is true; the banner goes away
+the moment the steps below are done. Check at any time with:
 
-The code is already Postgres-ready. It needs one thing: a database URL.
+```bash
+~/venvs/egyptology/bin/python scripts/check_database.py   # exit 0 durable, 1 ephemeral, 2 unreachable
+```
 
-1. Create a free Postgres database. [Neon](https://neon.tech) has a free tier that
-   suits this (project → get the connection string). Supabase or Render work too.
-   *You have to do this step — it needs an account, and account creation is yours.*
-   When creating the Neon project: pick a **US East** region. The latency that matters
-   is app-to-database, and the app runs on Streamlit Cloud in the US — choosing an EU
-   region because you are in Europe adds a transatlantic hop to every query and helps
-   nobody. Leave Neon Auth off; this app does not use it.
-2. Copy the connection string. Prefer the **direct** endpoint over the pooled one —
-   the `-pooler` host runs PgBouncer in transaction mode, and the app keeps its own
-   small SQLAlchemy pool so it gains nothing from Neon's:
+### What went wrong with Neon, so it does not happen again
 
-   ```
-   ep-xxx-123456.us-east-2.aws.neon.tech          <- direct, prefer this
-   ep-xxx-123456-pooler.us-east-2.aws.neon.tech   <- pooled
-   ```
+The intended store is a Neon free-tier Postgres (US East). It exceeded its **monthly
+data-transfer (egress) quota** on 2026-08-20 and again on 2026-08-30, after which Neon
+refuses every connection with `You have exceeded the data transfer quota`. The cause was
+one query: `attach_db_ids` used to download *every column of every corpus row* on each
+boot just to build a three-column → id map. That is fixed — `ExampleRepo.list_example_keys`
+selects four columns and a regression test (`tests/test_storage_seeding.py`) fails if a
+boot-time path ever pulls full rows again. The one remaining full-table read is in
+`scripts/migrate_example_ids.py`, a hand-run maintenance script, not the app.
 
-   Either will work: `db.py` sets `prepare_threshold=None`, which disables psycopg's
-   automatic prepared statements. Under a transaction-mode pooler those statement
-   names collide or disappear between statements, causing intermittent "prepared
-   statement already exists" failures that only appear under load.
-3. In Streamlit Cloud: **Manage app → Settings → Secrets**, add the line below and
-   save. Paste the string exactly as the provider gave it — `postgres://` is handled.
+The quota resets with Neon's monthly billing cycle. With the fix in place, normal use is
+tiny: a boot reads ~55k × 4 short columns (a few MB), and every other query is per row.
+
+**The `neondb_owner` password was pasted into a chat transcript on 2026-08-30. Rotate it
+before reusing the project** — step 1 below.
+
+### Steps — only the account owner can do these
+
+1. **Rotate the password.** Neon console → project → *Roles* → `neondb_owner` → *Reset
+   password*. Copy the new connection string it shows. Nothing in the repo needs to
+   change; the secret lives only in Streamlit.
+2. **Confirm the quota has reset.** Neon console → *Usage* → data transfer. If it is
+   still over, wait for the cycle date or use an alternative (below). From a laptop:
+   `DATABASE_URL="postgres://…" ~/venvs/egyptology/bin/python scripts/check_database.py`
+   must print `reachable: yes`.
+3. **Set the secret.** Streamlit Cloud → *Manage app* → *Settings* → *Secrets*:
 
    ```toml
-   DATABASE_URL = "postgres://user:password@host/dbname?sslmode=require"
+   DATABASE_URL = "postgres://neondb_owner:NEW_PASSWORD@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
    ```
-4. The app restarts, creates its tables, and bulk-seeds the 12,772 corpus rows on
-   first boot (about a second against a warm database). Annotations then persist
-   across sleeps and redeploys.
 
-Keep `DATABASE_URL` out of the repo. `.env` is gitignored; production reads it from
-the Secrets box only.
+   Prefer the **direct** endpoint over `-pooler` (the app keeps its own small pool;
+   `db.py` disables prepared statements so either works). Paste `postgres://` as given —
+   it is rewritten to the SQLAlchemy dialect on load.
+4. **Reboot** (*Manage app* → ⋮ → *Reboot app*). Wait the ~1 minute Streamlit needs for
+   a secret to propagate *before* testing — an annotation saved too early lands in the
+   still-running SQLite container and vanishes on reboot, which looks exactly like a
+   broken Postgres setup when nothing is wrong.
+5. **First boot seeds the corpus.** `ensure_corpus_ready` finds an empty `examples`
+   table and bulk-inserts every row in one transaction, 2,000 rows per statement. On
+   local SQLite the 26,196-row corpus seeds in **1.7 s**; the ~55k-row corpus after the
+   BBAW import is a few seconds. Against Neon expect **tens of seconds, under a minute**
+   — roughly 28 statements plus one commit, dominated by the transatlantic round trips.
+   The first page load will spin for that long, once. The seed is atomic on purpose: a
+   half-seeded table would satisfy the empty-table guard forever and silently leave rows
+   missing.
+6. **Verify.** Save an annotation in the workspace, *Reboot*, and check it is still
+   listed under **Reviews**. Or run `scripts/check_database.py` with the production URL
+   from a laptop: `verdict : DURABLE` and a non-zero `annotations` count.
 
-### Verifying it worked
+A quick way to tell which engine served a saved annotation: the review-card timestamp.
+Postgres `timestamptz` renders with an offset (`20:10:11.598071+00:00`); SQLite has none.
 
-Save an annotation via the workspace, then *Manage app → Reboot*. If it is still
-listed under **Reviews** afterwards, persistence is live.
+### If Neon stays over quota
 
-**Wait for the secret to propagate before testing.** Streamlit says changes take about
-a minute, and it is not a formality: testing too early writes the annotation into the
-still-running SQLite container, the reboot then discards it, and the result looks
-exactly like a failed Postgres setup when nothing is wrong. Confirmed this way once —
-the annotation "vanished" purely because it had never reached Postgres.
+Any hosted Postgres works — the code only needs a URL. The thing to check on a free tier
+is the **egress** allowance, because that, not storage, is what this app consumed:
 
-A quick way to tell which engine actually served a saved annotation: look at the
-timestamp on the review card. Postgres `timestamptz` renders with an offset
-(`20:10:11.598071+00:00`); SQLite has none (`20:01:10.391991`).
+- **Supabase** (free): 500 MB storage, ~5 GB egress/month, US East available. Use the
+  *Session* pooler URL or the direct one; `db.py` handles both. The `postgres://` string
+  pastes straight in.
+- **Neon paid Launch tier**: removes the egress cap; the cheapest fix if you want to keep
+  the existing project and its region.
+- **Turso / libSQL**: a hosted SQLite; would need the `sqlalchemy-libsql` dialect and has
+  not been tried here — listed only so it is not re-researched from scratch.
+
+Whatever the provider: it must be **US East**, because the app runs on Streamlit Cloud in
+the US and every query is app→database. Picking Europe because you are in Europe adds a
+transatlantic hop to each of them.
 
 ### How the code handles it
 
 - `app/storage/db.py` rewrites `postgres://` to `postgresql+psycopg://` (SQLAlchemy
-  rejects the bare `postgres` dialect name — this is the single most common cause of a
-  baffling crash on first deploy), and enables `pool_pre_ping` because hosted Postgres
-  suspends idle connections.
+  rejects the bare `postgres` dialect name — the single most common cause of a baffling
+  first-deploy crash), enables `pool_pre_ping` because hosted Postgres suspends idle
+  connections, and sets a 10 s connect timeout so a dead endpoint degrades to read-only
+  instead of freezing the app.
 - `app/storage/bootstrap.py` seeds in bulk when, and only when, the corpus table is
-  empty. The empty-table guard is what stops a redeploy from re-importing over live
-  annotations — do not remove it.
+  empty. The empty-table guard stops a redeploy from re-importing over live annotations
+  — do not remove it. `sync_new_examples` adds rows a grown corpus is missing without
+  touching existing ids.
+- `app/ui/review_common.attach_db_ids` builds the id map from the four-column select.
 - Nothing changes for local development: with no `DATABASE_URL`, it stays on SQLite.
+
+Keep `DATABASE_URL` out of the repo. `.env` is gitignored; production reads it from the
+Secrets box only.
 
 ## Local development
 
