@@ -178,3 +178,34 @@ def test_one_click_populates_every_tab():
     assert app.dataframe, "results table / analysis missing"
     stale = [i.value for i in app.info if i.value.startswith("Run a query")]
     assert not stale, f"tabs still showing pre-search placeholders: {stale}"
+
+
+def test_palette_inserts_a_character_and_keeps_what_was_typed() -> None:
+    """The click-to-insert row is the answer to "I don't have that keyboard", so it
+    has to survive the query box living inside a form.
+
+    Two earlier arrangements silently dropped every insert: a plain button outside
+    the form (a widget inside a form ignores session-state writes from outside it),
+    then a submit button whose callback tried to read the freshly submitted text.
+    """
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "workspace"
+    app.run()
+    app.text_area[0].set_value("aHa.n st").run()
+    next(b for b in app.button if b.label == "ẖ").click().run()
+    assert_clean(app)
+    assert app.text_area[0].value == "aHa.n stẖ"
+
+
+def test_the_query_box_and_the_search_button_submit_together() -> None:
+    """Pins the "it gave me no response" bug: a bare text area only sends its value
+    on blur, so the tap that blurred it was swallowed and the search never ran. The
+    box and the button must belong to one form, whose submit carries both."""
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "workspace"
+    app.run()
+    assert app.text_area[0].form_id, "the query box must live in a form"
+    search = next(b for b in app.button if b.label.startswith("Suggest top"))
+    assert search.form_id == app.text_area[0].form_id, (
+        "the search button must submit the same form as the query box"
+    )

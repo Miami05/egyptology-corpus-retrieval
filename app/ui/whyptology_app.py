@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.config import settings
 from app.data.loader import load_examples_csv
+from app.data.query import parse_query
 from app.data.normalizer import (
     contains_hieroglyphs,
     display_sign_group,
@@ -836,6 +837,54 @@ def render_annotation_form(
             st.dataframe(history, hide_index=True, width="stretch")
 
 
+# The letters an Egyptological transliteration needs and a Latin keyboard does not
+# have. `=` is here too: it separates a suffix pronoun, and on a phone it is buried
+# under a symbol layer.
+TRANSLITERATION_PALETTE = [
+    "ꜣ", "ꜥ", "ꞽ", "ḥ", "ḫ", "ẖ", "š", "ṯ", "ḏ", "ṱ", "=",
+]
+
+
+# The query text the app controls, and a counter that forces the text area to take
+# it. A Streamlit widget keeps its own state under its key and ignores `value=` on
+# every rerun after the first, so the only reliable way to put a character *into*
+# the box is to render a widget under a new key. The counter is that key.
+QUERY_TEXT_KEY = "whyptology_query_text"
+QUERY_NONCE_KEY = "whyptology_query_nonce"
+PENDING_INSERTS_KEY = "whyptology_pending_inserts"
+
+
+def query_widget_key() -> str:
+    return f"whyptology_query_{st.session_state.get(QUERY_NONCE_KEY, 0)}"
+
+
+def queue_palette_character(character: str) -> None:
+    """Remember a tapped character; `apply_palette_inserts` puts it in the box.
+
+    The tap is a form submit, so it arrives with whatever the user has typed. The
+    character is only *queued* here because a callback cannot reliably read a form
+    widget's freshly submitted value — the first attempt did, and silently dropped
+    every insert. Applying it in the script body, where the submitted text is an
+    ordinary variable, has no such ordering question.
+
+    Buttons rather than `st.pills`: a single-select pill with nothing selected
+    cannot be serialised by Streamlit's own AppTest harness, which took the whole
+    front-end smoke suite down.
+    """
+    if character:
+        st.session_state.setdefault(PENDING_INSERTS_KEY, []).append(character)
+
+
+def apply_palette_inserts(submitted_text: str) -> bool:
+    """Append any queued characters to the submitted text. True if it changed."""
+    pending = st.session_state.pop(PENDING_INSERTS_KEY, [])
+    if not pending:
+        return False
+    st.session_state[QUERY_TEXT_KEY] = submitted_text + "".join(pending)
+    st.session_state[QUERY_NONCE_KEY] = st.session_state.get(QUERY_NONCE_KEY, 0) + 1
+    return True
+
+
 def render_workspace(df: pd.DataFrame) -> None:
     saved_notice = st.session_state.pop("whyptology_saved_notice", None)
     if saved_notice:
@@ -878,53 +927,111 @@ def render_workspace(df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    query_col, action_col = st.columns([2.2, 1])
-    with query_col:
-        st.markdown(
-            '<div class="panel-title">Query · Transliteration, MdC or sign sequence</div>',
-            unsafe_allow_html=True,
-        )
+    # One column, not two: on a phone the old side-by-side layout pushed the search
+    # button below the fold, under an optional field, so a reviewer typed a query,
+    # pressed return — which does nothing in a text area — and reported that the app
+    # gave no response at all.
+    st.markdown(
+        '<div class="panel-title">Query · Transliteration, MdC or hieroglyphs</div>',
+        unsafe_allow_html=True,
+    )
+    # A form, and this is the fix for "it didn't give me any response". A bare
+    # `st.text_area` only sends its value when it loses focus, so tapping the search
+    # button did two things at once: the blur committed the text and triggered a
+    # rerun, and the click that caused it was swallowed by that rerun. Verified
+    # against the old build in a browser: text typed, button tapped *twice*, and the
+    # suggestions panel still read "Run a query…" — the search never ran. A form
+    # sends the text and the submit together, in one round trip, always.
+    with st.form("whyptology_search", border=False):
         query = st.text_area(
             "Reading query",
             height=110,
-            placeholder="Paste hieroglyphs (𓊵𓏙 𓇓𓏏 …) or a transliteration (htp-dji nswt)",
+            value=st.session_state.get(QUERY_TEXT_KEY, ""),
+            key=query_widget_key(),
+            placeholder="ꜥḥꜥ.n stẖ …  ·  aHa.n stX …  ·  htp di nsw  ·  𓊵𓏙 𓇓𓏏 …",
             label_visibility="collapsed",
         )
-        reading_order = st.text_input(
-            "Normalized reading order (optional)",
-            placeholder="Use when the visual arrangement differs from the reading order",
-        )
-        # Tell the user which index the query will hit; the two are matched against
-        # different columns, so silently guessing wrong looks like a broken search.
-        if query.strip():
-            if contains_hieroglyphs(query):
-                signs = normalize_hieroglyphs(query).split()
-                st.caption(
-                    f"Detected **hieroglyphs** · {len(signs)} sign group"
-                    f"{'s' if len(signs) != 1 else ''} as pasted · your spaces are "
-                    "treated as hints: signs are regrouped against the corpus before "
-                    "reading, and you can correct the grouping afterwards"
+        # A click-to-insert row, because the alternative is switching keyboards: an
+        # Egyptologist working from a phone has no ꜣ or ẖ key, which is the single
+        # most common reason a transliteration gets typed in ASCII and then fails to
+        # match. These are *submit* buttons, not ordinary ones: a form takes no
+        # ordinary buttons, and a widget inside a form ignores session-state writes
+        # from outside it — so an outside palette silently stopped appending. As
+        # submitters they commit whatever is typed first, then append to it.
+        with st.container(horizontal=True, key="translit_palette"):
+            for character in TRANSLITERATION_PALETTE:
+                st.form_submit_button(
+                    character,
+                    on_click=queue_palette_character,
+                    args=(character,),
+                    help=f"Insert {character}",
                 )
-                if normalize_mdc(query):
-                    st.caption(
-                        "The Latin text in this paste is ignored for matching — a "
-                        "hieroglyph query is matched on signs only."
-                    )
-            else:
-                st.caption(
-                    "Detected **transliteration / MdC** · matched against the corpus "
-                    "reading index"
-                )
-    with action_col:
-        st.markdown('<div class="panel-title">&nbsp;</div>', unsafe_allow_html=True)
-        search = st.button(
+        search = st.form_submit_button(
             f"Suggest top {settings.top_k} readings", type="primary", width="stretch"
         )
-        st.caption(
-            "Suggestions are grouped from real corpus parallels. Nothing is generated."
+    # Tell the user which index the query will hit and, for transliteration, which
+    # notation it was read as — the two are matched against different columns and
+    # the notations fold differently, so guessing silently looks like a broken
+    # search. Showing the interpretation back is what makes a misread visible.
+    parse = parse_query(query, vocabulary=load_search_index(df, corpus_signature(df)).vocabulary)
+    if not parse.is_empty:
+        if parse.is_hieroglyphic:
+            groups = parse.hieroglyphs_norm.split()
+            st.caption(
+                f"Detected **hieroglyphs** · {len(groups)} sign group"
+                f"{'s' if len(groups) != 1 else ''} as pasted · your spaces are "
+                "treated as hints: signs are regrouped against the corpus before "
+                "reading, and you can correct the grouping afterwards"
+            )
+            if normalize_mdc(query):
+                st.caption(
+                    "The Latin text in this paste is ignored for matching — a "
+                    "hieroglyph query is matched on signs only."
+                )
+        elif parse.reading and parse.notation == "mdc":
+            st.caption(
+                f"Read as **Manuel de Codage** → {parse.reading} · "
+                f"searched as `{parse.search_key}`"
+            )
+        else:
+            st.caption(
+                f"Detected **{parse.notation_label}** · searched as `{parse.search_key}`"
+            )
+
+    with st.expander("Normalized reading order (optional)"):
+        reading_order = st.text_input(
+            "Normalized reading order",
+            placeholder="Use when the visual arrangement differs from the reading order",
+            label_visibility="collapsed",
+        )
+    st.caption(
+        "Suggestions are grouped from real corpus parallels. Nothing is generated."
+    )
+
+    with st.expander("Which transliteration does this expect?"):
+        st.markdown(
+            "The corpus follows **TLA / Berlin conventions**: "
+            "`ꜣ ꜥ ꞽ ḥ ḫ ẖ š q ṯ ḏ`, yod written `ꞽ`, `q` rather than `ḳ`, and suffix "
+            "pronouns written as separate tokens (`ḏd =f`, not `ḏd=f`).\n\n"
+            "You do not have to type it that way. All four of these are read as the "
+            "same query:\n\n"
+            "| You type | Notation |\n|---|---|\n"
+            "| `ꜥḥꜥ.n stẖ qnd` | Unicode, TLA conventions |\n"
+            "| `aHa.n stX qnd` | Manuel de Codage, as JSesh writes it |\n"
+            "| `aha.n stkh qnd` | plain ASCII, no special keys |\n"
+            "| `𓊢𓂝𓈖 𓋴𓏏𓅆` | Unicode hieroglyphs |\n\n"
+            "Whichever you use, the caption above the results says how it was read. "
+            "`=` and `.` are optional — `ḏd=f`, `ḏd =f` and `ḏdf` all match `ḏd =f`."
         )
 
+    # A palette tap submits the form like any other button, so it lands here with
+    # the typed text. Apply the insert and rerun so the box shows it; nothing is
+    # searched, because the user asked for a character, not a query.
+    if apply_palette_inserts(query):
+        st.rerun()
+
     if search:
+        st.session_state[QUERY_TEXT_KEY] = query
         if not query.strip():
             st.warning("Enter a transliteration, MdC string or sign sequence first.")
         else:
@@ -952,9 +1059,22 @@ def render_workspace(df: pd.DataFrame) -> None:
                     max(settings.top_k, 5)
                 ).copy()
                 st.session_state["whyptology_last_query"] = query
+                # The parse of the query that was actually *searched*, kept so the
+                # empty state can say what was looked for even after the box has
+                # been edited. `parse` above tracks the box, not the search.
+                searched = parse_query(
+                    query,
+                    vocabulary=load_search_index(df, corpus_signature(df)).vocabulary,
+                    hieroglyphs_norm=regrouped,
+                )
+                st.session_state["whyptology_last_parse"] = searched
                 st.session_state["whyptology_suggestions"] = suggest_top_readings(
                     pool,
-                    query_mdc=query,
+                    # Manuel de Codage and plain ASCII are not readings, so the
+                    # suggestion layer — which compares readings as strings of
+                    # sounds — is given the transliteration the query was
+                    # understood as, falling back to the text as typed.
+                    query_mdc=searched.reading or query,
                     query_reading_order=reading_order,
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",
@@ -971,15 +1091,31 @@ def render_workspace(df: pd.DataFrame) -> None:
                 results.iloc[0] if results is not None and not results.empty else None
             )
 
-    decode_tab, suggestions_tab, parallels_tab, analysis_tab, source_tab = st.tabs(
-        [
-            "Sign-by-sign reading",
-            "Suggested readings",
-            "Corpus parallels & review",
-            "Analysis",
-            "Source text",
-        ]
-    )
+    # Tab order follows the query. "Sign-by-sign reading" is deliberately empty for
+    # a transliteration query — there is nothing to decode when the reading is
+    # already given — so leading with it showed a reviewer who had typed a
+    # transliteration an empty panel, and she reported that no analysis was
+    # produced. The suggestions are the answer to her query, so they come first.
+    last_query = st.session_state.get("whyptology_last_query", "")
+    decode_first = contains_hieroglyphs(last_query) if last_query else False
+    # Kept short on purpose: at a 500px viewport the previous labels ran to 596px,
+    # so "Analysis" and "Source" sat off-screen behind a horizontal scroll — the
+    # same failure mode as leading with an empty tab, one scroll further along.
+    tab_titles = [
+        "Sign by sign",
+        "Suggested readings",
+        "Parallels & review",
+        "Analysis",
+        "Source",
+    ]
+    if not decode_first:
+        tab_titles[0], tab_titles[1] = tab_titles[1], tab_titles[0]
+    tabs = st.tabs(tab_titles)
+    if decode_first:
+        decode_tab, suggestions_tab = tabs[0], tabs[1]
+    else:
+        suggestions_tab, decode_tab = tabs[0], tabs[1]
+    parallels_tab, analysis_tab, source_tab = tabs[2], tabs[3], tabs[4]
 
     with decode_tab:
         st.markdown(
@@ -991,7 +1127,7 @@ def render_workspace(df: pd.DataFrame) -> None:
             "with, scored by the surrounding context rather than by frequency alone. "
             "This is the multivalence step: one sign, several possible readings."
         )
-        last_query = st.session_state.get("whyptology_last_query", "")
+        # `last_query` is read once above, where it also decides the tab order.
         if not last_query or not contains_hieroglyphs(last_query):
             st.info(
                 "Paste hieroglyphs above and search to get a sign-by-sign reading. "
@@ -1169,10 +1305,30 @@ def render_workspace(df: pd.DataFrame) -> None:
             for rank, suggestion in enumerate(suggestions, start=1):
                 render_suggestion_card(rank, suggestion)
         elif results is not None:
+            # "Nothing found" has two very different meanings and the user cannot
+            # tell them apart from a blank panel: the reading may be unattested, or
+            # the text may simply be outside the subset we are licensed to hold.
+            # Say which, name what was searched for, and say how big the haystack is.
+            searched = st.session_state.get("whyptology_last_parse")
+            looked_for = ""
+            if searched is not None and not searched.is_hieroglyphic:
+                looked_for = (
+                    f" for **{searched.reading or searched.raw}** "
+                    f"(searched as `{searched.search_key}`)"
+                )
+            elif searched is not None:
+                looked_for = f" for **{searched.hieroglyphs_norm}**"
             st.warning(
-                "No attested parallel in this corpus for this query. Nothing shares "
-                "a sign group or a reading token with it — an honest empty result, "
-                "not a weak match."
+                f"No parallel in this corpus{looked_for}. Nothing here shares a sign "
+                "group or a reading token with it — an honest empty result, not a "
+                "weak match."
+            )
+            st.caption(
+                f"That means it is absent from the {len(df):,} sentences this tool "
+                f"holds ({', '.join(sorted(set(df['source'].astype(str))))}), which is "
+                "the openly licensed part of the TLA and AES corpora — not that it is "
+                "unattested in Egyptian. A text outside that subset cannot be found "
+                "here however it is typed."
             )
         else:
             st.info("Run a query to see ranked reading suggestions with evidence.")
@@ -1270,7 +1426,11 @@ def render_workspace(df: pd.DataFrame) -> None:
                             "</div></div>",
                             unsafe_allow_html=True,
                         )
-                    st.markdown(f"**MdC key:** `{value(row, 'mdc')}`")
+                    # Not "MdC key": the stored column is an ASCII fold of the
+                    # reading, not Manuel de Codage, and it is empty for every AES
+                    # row. What matters to a user is the key the row is *searched*
+                    # under, which is what `mdc_norm` holds.
+                    st.markdown(f"**Search key:** `{value(row, 'mdc_norm')}`")
                     st.markdown(
                         f"**Normalized reading order:** {value(row, 'normalized_reading_order')}"
                     )
@@ -1363,7 +1523,7 @@ def render_corpus(df: pd.DataFrame) -> None:
     )
     query = st.text_input(
         "Search the corpus",
-        placeholder="Search a reading, translation, text ID or MdC key…",
+        placeholder="Search a reading (any notation), translation or text ID…",
     )
 
     # Only offer a filter when the corpus actually varies along that column. A
@@ -1409,7 +1569,6 @@ def render_corpus(df: pd.DataFrame) -> None:
             for col in [
                 "source",
                 "source_text_id",
-                "mdc",
                 "transliteration_gold",
                 "translation",
                 "deity",
@@ -1420,6 +1579,20 @@ def render_corpus(df: pd.DataFrame) -> None:
         mask = filtered[searchable].fillna("").astype(str).apply(
             lambda col: col.str.contains(query, case=False, regex=False)
         ).any(axis=1)
+        # A literal substring match over the raw columns only finds a reading typed
+        # exactly as the corpus writes it — so `aha.n stkh` and `aHa.n stX` found
+        # nothing here even though both name a row that exists. Matching the folded
+        # key as well makes the explorer accept the same four notations the
+        # workspace does.
+        parse = parse_query(query, vocabulary=load_search_index(df, corpus_signature(df)).vocabulary)
+        if parse.search_key and "mdc_norm" in filtered.columns:
+            mask |= filtered["mdc_norm"].fillna("").astype(str).str.contains(
+                parse.search_key, case=False, regex=False
+            )
+        if parse.hieroglyphs_norm and "hieroglyphs_norm" in filtered.columns:
+            mask |= filtered["hieroglyphs_norm"].fillna("").astype(str).str.contains(
+                parse.hieroglyphs_norm, regex=False
+            )
         filtered = filtered[mask]
 
     st.caption(f"{len(filtered):,} matching corpus records")

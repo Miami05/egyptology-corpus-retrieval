@@ -1312,3 +1312,12 @@ div[data-testid="stDataFrame"] {
   background: #e2efe4 !important;
   border-color: #8fbb96 !important;
 }
+
+/* Transliteration palette. Streamlit sizes a button to its label, which for a
+   single character is about 30px wide — under the 44px a thumb needs, and this row
+   exists precisely for people typing on a phone. Scoped to the container key so no
+   other button changes size. */
+.st-key-translit_palette button {
+  min-width: 44px !important;
+  min-height: 44px !important;
+}

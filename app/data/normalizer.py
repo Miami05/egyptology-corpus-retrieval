@@ -5,6 +5,8 @@ import unicodedata
 import zlib
 
 WHITESPACE_RE = re.compile(r"\s+")
+# `=` (and the Egyptological `⸗`) mark a suffix pronoun. They separate tokens.
+SUFFIX_MARKER_RE = re.compile(r"[=\u2e17]")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
 
@@ -196,6 +198,11 @@ def normalize_text(value: str) -> str:
 def normalize_mdc(value: str) -> str:
     value = normalize_text(value)
     value = value.replace("*", ":")
+    # A suffix pronoun is a token of its own in the corpus (`ḏd =f` is indexed as
+    # `djd f`), so a `=` typed without a space in front of it has to separate rather
+    # than vanish: deleting it turned `ḏd=f` into the single token `djdf`, which
+    # matches nothing. The corpus side is unaffected — no stored value contains `=`.
+    value = SUFFIX_MARKER_RE.sub(" ", value)
     value = NON_ALNUM_KEEP_COLON_RE.sub("", value)
     value = MULTI_COLON_RE.sub(":", value)
     return normalize_whitespace(value)
@@ -224,6 +231,20 @@ def normalize_transliteration(value: str) -> str:
     value = value.replace("ṯ", "tj")
     value = value.replace("ḏ", "dj")
     return normalize_whitespace(value)
+
+
+def search_fold(value: object) -> str:
+    """The one key both the corpus index and a query are reduced to.
+
+    `normalize_transliteration` folds the Egyptological letters to ASCII and
+    `normalize_mdc` drops the editorial apparatus (dots, brackets, breves) and
+    splits on the suffix marker. Running them in this order is what makes a typed
+    reading comparable to a corpus row — and both sides must call *this* function,
+    not one of the halves. They did not: the corpus was indexed with the pair and
+    the query was cleaned with `normalize_mdc` alone, which does not fold, it
+    deletes, so `ꜥḥꜥ.n stẖ qnd` reached the search as `n st qnd`.
+    """
+    return normalize_mdc(normalize_transliteration(str(value)))
 
 
 def normalize_label(value: str) -> str:

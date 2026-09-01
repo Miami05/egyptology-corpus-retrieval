@@ -2,12 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.data.normalizer import (
-    contains_hieroglyphs,
-    normalize_hieroglyphs,
-    normalize_mdc,
-    normalize_sign_sequence,
-)
+from app.data.normalizer import normalize_sign_sequence
+from app.data.query import QueryParse, parse_query
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
@@ -35,6 +31,12 @@ class SearchIndex:
     stats: CorpusStats
     document_vectors: list
 
+    @property
+    def vocabulary(self) -> set[str]:
+        """Every token the corpus is indexed under — how `parse_query` tells
+        Manuel de Codage from plain ASCII without guessing."""
+        return set(self.stats.mdc_frequencies)
+
 
 def build_search_index(df: pd.DataFrame) -> SearchIndex:
     return SearchIndex(
@@ -52,21 +54,24 @@ def retrieve_top_k(
     query_hieroglyphs_norm: str | None = None,
     index: SearchIndex | None = None,
 ) -> pd.DataFrame:
-    # A query written in hieroglyphs must be matched against the sign columns:
-    # normalize_mdc strips those codepoints, so treating it as transliteration
-    # would leave an empty query that matches nothing. The caller may pass the
-    # resegmented sign groups (see app.services.segmentation) so that the parallels
-    # are matched on corpus-style groups rather than on the paste's spacing.
-    if query_hieroglyphs_norm is None:
-        query_hieroglyphs_norm = (
-            normalize_hieroglyphs(query_mdc) if contains_hieroglyphs(query_mdc) else ""
-        )
+    # Every notation goes through one parser, which also decides whether this is a
+    # sign query (matched on the sign columns) or a text query (matched on the
+    # reading index), and folds the text with the same function the index was built
+    # with. The caller may pass the resegmented sign groups (see
+    # app.services.segmentation) so that the parallels are matched on corpus-style
+    # groups rather than on the paste's spacing.
+    parse = parse_query(
+        query_mdc,
+        vocabulary=index.vocabulary if index is not None else None,
+        hieroglyphs_norm=query_hieroglyphs_norm,
+    )
     # A hieroglyph query is matched on the sign columns only. Any Latin residue in
     # the same paste (a line number, a stray note) used to leak into the text
     # signals and *lower* an exact sign match — appending " wad" to an exact glyph
     # query dropped it from 1.000 to 0.732. It is deliberately ignored here; the UI
     # says so when it happens.
-    query_mdc_norm = "" if query_hieroglyphs_norm else normalize_mdc(query_mdc)
+    query_hieroglyphs_norm = parse.hieroglyphs_norm
+    query_mdc_norm = parse.search_key
     query_reading_order_norm = normalize_sign_sequence(query_reading_order)
     # One copy of the frame, not five. The old path built a separate sorted copy per
     # signal and merged them back on three key columns, discarding each sort; the

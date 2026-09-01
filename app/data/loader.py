@@ -13,6 +13,7 @@ from app.data.normalizer import (
     normalize_pipe_list,
     normalize_sign_sequence,
     normalize_transliteration,
+    search_fold,
     parse_bool,
 )
 
@@ -96,7 +97,18 @@ def load_examples_csv(path: str) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = ""
     df = df.fillna("")
-    df["mdc_norm"] = df["mdc"].astype(str).map(normalize_mdc)
+    # The search index is folded from the transliteration, not from the stored
+    # `mdc` column, so that one function defines the key on both sides (see
+    # `search_fold`). Trusting the column was two bugs at once: every one of the
+    # 9,823 AES rows ships with `mdc` empty, so 37% of the corpus could not be
+    # reached by any transliteration query — searching an AES sentence verbatim
+    # returned five other rows and never itself — and the TLA rows that do have a
+    # value were folded by a slightly different rule (ẖ → h there, ẖ → kh here),
+    # so the same word indexed differently depending on which corpus it came from.
+    # The column is still displayed and still used where no transliteration exists.
+    folded = df["transliteration_gold"].astype(str).map(search_fold)
+    stored = df["mdc"].astype(str).map(normalize_mdc)
+    df["mdc_norm"] = folded.where(folded.str.strip() != "", stored)
     df["sign_sequence_norm"] = (
         df["sign_sequence"].astype(str).map(normalize_sign_sequence)
     )
