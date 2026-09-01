@@ -794,39 +794,69 @@ is 14% of the corpus and no open source exists for it except the Ramses corpus
 (CC BY-NC-SA, one email to Liège). Middle Kingdom literary text exists machine-readably
 at St Andrews (unlicensed; Nederhof emailed 2026-09-01).
 
-## Plan for 2026-09-02
+## Nederhof's reply — 2026-09-02
 
-In this order; each step has its own measurement and none is started before the
-previous one is verified.
+Mark-Jan Nederhof answered the 30 August email. Four criticisms, each checked against the
+corpus, and a permission with a condition:
 
-1. **Memory diet, cheap half** — drop the nine dead columns at load, categorical dtypes
-   for source/period/stage, sparse document vectors (scikit-learn is a dependency), no
-   `df.copy()` per query. Target: 78k rows under ~800 MB peak and a query under 0.6 s.
-   Measure with the fresh-process script from 2026-09-01 (in the session notes), before
-   and after, at 31,565 and at 78,453 rows.
-2. **Loader: "no hieroglyphs" is text-only, not misaligned.** The alignment report must
-   keep counting only rows that *have* signs and don't line up; a text-only row is a
-   different, legitimate state. Add the count of text-only rows to the report and a test.
-3. **Import the text-only BBAW rows** (`--include-text-only --append`), and the 13,383
-   TLA Demotic rows the same way, with `language_stage` set so both are filterable and
-   the Demotic never mixes into hieroglyphic sign statistics. Re-run v4 (queries stay
-   valid; numbers will move — record them as v4 at 78k, not as a new version), the
-   segmentation eval, and `verify_release.py`.
-4. **Hosting decision: Hugging Face Spaces** (free CPU basic: 2 vCPU, 16 GB; Streamlit
-   SDK; the corpora already live on HF). Prepare in-repo: Space README metadata,
-   `app_file`, a GitHub Action mirroring `main` to the Space. User-side: create the
-   Space and a write token. Known cost: free Spaces sleep after ~48 h idle and cold-start
-   in ~1–2 min — either accept, keep-alive, or the cheapest paid tier. Keep the
-   Streamlit URL alive with a one-line redirect for the people who already have it.
-   Annotations still need a remote DB on either host.
-5. **Neon** (user-only): rotate the leaked `neondb_owner` password, confirm the quota
-   reset, set `DATABASE_URL`, reboot, verify with `scripts/check_database.py`.
-6. **When Nederhof answers**: importer for the St Andrews files (`corpus.xml` →
-   `texts/*.xml` → `resources/*Hi.xml` + `*Tr.txt`), with its own Hannig → TLA
-   convention table verified on 𓀀 𓂋 𓇋 before trusting it; Urkunden citations as ids;
-   Stauder 2013 §7.2 datings as an *attributed* `period_source` column, never
-   overwriting TLA periods.
-7. **Email Liège / Rosmorduc** for a CC BY-SA grant on the Ramses corpus, mentioning that
-   the Helsinki lexicon derived from it is already in use under Helsinki's CC BY release.
+1. **`.PL` is treated as distinct from `.w`.** True: TLA writes `sr.PL` (1,973 rows), AES
+   and BBAW write `sr.pl`/`sr.w`; the fold gives `srpl` vs `srw`, so a search for `sr.w`
+   misses every `.PL` row and the suggestions show `nṯr.PL` / `nṯr.w` as two readings.
+   181 stems occur both ways in the corpus. Same class of bug as the yod.
+2. **Proper nouns are not normalised**, so "alternatives" are one name in different forms.
+   True; partly fixable with variant-marker normalisation, fully only with lemma IDs.
+3. **Segmentation is often wrong** and should come from a model of how the writing system
+   works (determinatives close words, phonetic complements follow their sign). He saw the
+   pre-lexicon build (unspaced F1 0.854; now 0.931), but the point stands: the lattice is
+   a unigram over attested groups and knows nothing about sign function.
+4. **We delete the Unicode format controls** (U+13430–1345F). They carry the quadrat
+   structure of a paste — the segmentation hint we are missing. Keep them as hints for the
+   segmenter; strip them only for matching.
 
-Not planned: photo/OCR input (wait for Sophie's answer), machine translation of any kind.
+**Permission:** "happy for you to use the St Andrews corpus for non-commercial purposes",
+informally, by email; no licence on the pages. Non-commercial and informal means the St
+Andrews rows can **never enter `data/processed/examples.csv` or the public repository**
+(CC BY-SA cannot carry NC material). They live in a separate, non-redistributed file
+loaded at runtime, labelled "used with permission of Mark-Jan Nederhof, non-commercial,
+not redistributable", each row cited to him and to the edition. Still to confirm with
+him: that public display in the app is within "use" (reply drafted 2026-09-02).
+
+## Plan for 2026-09-02 (revised after Nederhof's reply)
+
+In this order; each step measured before the next starts.
+
+1. **Plural marker.** Fold `.PL`/`.pl` to `.w` in `search_fold` and in
+   `strict_reading_key` (his argument: for masculine nouns they are the same thing).
+   Test: `sr.PL`, `sr.pl`, `sr.w` share a token; a query `sr.w` returns `.PL` rows;
+   suggestions no longer list them as two readings. Re-run v4 and record.
+2. **St Andrews importer** (`scripts/import_st_andrews.py`): `corpus.xml` → `texts/*.xml`
+   → `resources/*Hi.xml` (RES/MdC → Unicode via the existing Gardiner mapper) +
+   `*Tr.txt` (`;`-separated transliteration/translation blocks, Hannig ASCII → TLA via a
+   per-source table verified on 𓀀 𓂋 𓇋 first). Urkunden/edition citations as ids.
+   Output to a **private path outside the repo** (gitignored `data/private/`), loaded by
+   the app when present. Own attribution in the UI footer and DATA-LICENSE ("used with
+   permission…"). Stauder 2013 §7.2 datings as an attributed `period_source` column.
+   Email his clarification question the same day; do not wait for the answer to build.
+3. **Format controls as hints.** Before normalisation, read U+13430–1345F joiners in a
+   paste as quadrat boundaries and pass them to the segmenter as (weak) hints; keep
+   deleting them for matching. Measure on the expert-paste set and the segmentation eval
+   with a `--no-format-hints` switch.
+4. **Loader: text-only is a state, not a misalignment**, and the **memory diet, cheap
+   half** (dead columns, categorical dtypes, sparse vectors, no per-query copy).
+   Baseline: 31,565 rows → 622 MB / 0.32 s; 78,453 → 1,110 MB / 1.01 s; cap 1 GB.
+5. **Import the text-only BBAW rows (46,888 net-new) and TLA Demotic (13,383)**,
+   filterable by stage, Demotic kept out of sign statistics; re-run v4 at the new size,
+   segmentation, `verify_release.py`.
+6. **Hosting → Hugging Face Spaces** (16 GB; sleeps after ~48 h idle). Repo side: Space
+   README metadata + sync Action; user side: Space, token, secrets. Redirect note on
+   the Streamlit URL. Annotations still need Neon on either host.
+7. **Neon** (user-only): rotate the leaked password, check quota, set `DATABASE_URL`,
+   verify `DURABLE`.
+8. **Email Liège / Rosmorduc** for a CC BY-SA grant on Ramses (mention the Helsinki
+   lexicon already in use under Helsinki's CC BY release).
+
+Research items opened by his mail, not scheduled: proper-noun normalisation beyond
+markers (needs lemma IDs); a segmentation model with sign-function knowledge
+(determinatives, phonetic complements, quadrat structure).
+
+Not planned: photo/OCR input (wait for Sophie), machine translation of any kind.
