@@ -8,6 +8,7 @@ from math import sqrt
 
 import pandas as pd
 
+from app.data.query import parse_query
 from app.data.normalizer import (
     nfc,
     normalize_mdc,
@@ -81,6 +82,44 @@ def _safe_str(value: object) -> str:
 def _token_set(value: object) -> set[str]:
     text = normalize_transliteration(_safe_str(value))
     return {token for token in TOKEN_RE.split(text) if token}
+
+
+def lemma_ids(value: object) -> set[str]:
+    """The lemma IDs in a `lemma_sequence` cell.
+
+    Cells are whitespace-separated `id|lemma` pairs (TLA) or bare ids (AES). The old
+    code ran `_token_set` over the cell, which splits on `|` as well, so the folded
+    lemma strings (`ndj`, `aha`) landed in the "shared lemma IDs" list beside the
+    numbers. Only the part before the bar is an id.
+    """
+    ids: set[str] = set()
+    for part in _safe_str(value).split():
+        head = part.split("|", 1)[0].strip()
+        if head:
+            ids.add(head)
+    return ids
+
+
+def unfold_shared_tokens(shared: list[str], candidate_transliteration: object) -> list[str]:
+    """Show shared *folded* tokens as the candidate's own Unicode words.
+
+    The overlap is computed on the loose ASCII fold (`ꜥḥꜥ.n` → `aha n`), so the raw
+    shared tokens read `aha, n, stkh` — to an Egyptologist that looks broken. Map
+    each back to the whitespace-separated word of `candidate_transliteration` whose
+    loose fold contains it, keep first-occurrence order, and fall back to the folded
+    form for anything that does not map (e.g. a token only the query had).
+    """
+    words = _safe_str(candidate_transliteration).split()
+    by_fold: dict[str, str] = {}
+    for word in words:
+        for folded in tokenize_query(loose_reading_form(word)):
+            by_fold.setdefault(folded, word)
+    shown: list[str] = []
+    for token in shared:
+        word = by_fold.get(token, token)
+        if word not in shown:
+            shown.append(word)
+    return shown
 
 
 def strict_reading_key(value: object) -> str:
@@ -222,13 +261,13 @@ def _evidence_summary(
     if query_tokens and candidate_tokens:
         shared = sorted(query_tokens & candidate_tokens)
         if shared:
-            shown = ", ".join(shared[:8])
+            shown = ", ".join(unfold_shared_tokens(shared, candidate_transliteration)[:8])
             bits.append(f"shared transliteration tokens: {shown}")
 
     lemma_sets = [
-        _token_set(row.get("lemma_sequence"))
+        lemma_ids(row.get("lemma_sequence"))
         for _, row in group.iterrows()
-        if _token_set(row.get("lemma_sequence"))
+        if lemma_ids(row.get("lemma_sequence"))
     ]
     shared_lemmas = set.intersection(*lemma_sets) if lemma_sets else set()
     if shared_lemmas:
@@ -275,6 +314,13 @@ def suggest_top_readings(
     now leave the denominator (mirroring combine_scores), and glyph queries get
     their own similarity and exactness signals in the vacated slots.
     """
+    # A Manuel de Codage or ASCII-digraph query is not a reading, and this layer
+    # compares readings as strings of sounds. Resolve it to the transliteration it
+    # was understood as first (`htp dji nswt` → `htp ḏi nswt`), so "same simplified
+    # query reading" fires for a query typed in the app's own ASCII convention. A
+    # Unicode query comes back unchanged.
+    query_mdc = parse_query(query_mdc).reading or query_mdc
+
     if retrieval_results.empty:
         return []
 

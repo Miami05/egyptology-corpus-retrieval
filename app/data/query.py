@@ -92,6 +92,26 @@ class QueryParse:
         }[self.notation]
 
 
+# The plain-ASCII digraphs the app documents (`aha.n stkh qnd`, `htp dji nswt`).
+# Now that the yod folds to `i`, an ASCII `j` is ambiguous: `dji` is either ḏi̯
+# written with our digraph or d + yod + i. `_pick_notation` folds both readings and
+# lets the corpus decide, exactly as it does for Manuel de Codage.
+ASCII_DIGRAPHS: tuple[tuple[str, str], ...] = (
+    ("kh", "ḫ"),
+    ("sh", "š"),
+    ("tj", "ṯ"),
+    ("dj", "ḏ"),
+)
+
+
+def ascii_digraphs_to_transliteration(text: str) -> str:
+    """Read `kh sh tj dj` as ḫ š ṯ ḏ — the app's own documented ASCII convention."""
+    out = nfc(text)
+    for digraph, letter in ASCII_DIGRAPHS:
+        out = out.replace(digraph, letter)
+    return out
+
+
 def mdc_to_transliteration(text: str) -> str:
     """Rewrite Manuel de Codage letters as the Unicode transliteration they encode."""
     return "".join(MDC_TO_TRANSLITERATION.get(char, char) for char in nfc(text))
@@ -132,17 +152,34 @@ def _pick_notation(text: str, vocabulary: Container[str] | None) -> tuple[str, s
         return plain_notation, plain_key, plain_reading
     mdc_reading = mdc_to_transliteration(text)
     mdc_key = search_fold(mdc_reading)
-    if mdc_key == plain_key:
+    # Third reading, ASCII only: our documented digraphs. Since the yod folds to
+    # `i`, `htp dji nswt` at face value is `htp dii nswt`; read with digraphs it is
+    # ḥtp ḏi̯ nswt → `htp dji nswt`, which is what the corpus holds.
+    digraph_key = "" if has_egyptological else search_fold(ascii_digraphs_to_transliteration(text))
+    if digraph_key == plain_key:
+        digraph_key = ""
+    if mdc_key == plain_key and not digraph_key:
         return plain_notation, plain_key, plain_reading
     if vocabulary is None:
         if looks_like_mdc(text):
             return "mdc", mdc_key, mdc_reading
+        if digraph_key:
+            return "ascii", digraph_key, ascii_digraphs_to_transliteration(text)
         return plain_notation, plain_key, plain_reading
-    if _known_token_count(mdc_key, vocabulary) > _known_token_count(
-        plain_key, vocabulary
-    ):
-        return "mdc", mdc_key, mdc_reading
-    return plain_notation, plain_key, plain_reading
+    plain_hits = _known_token_count(plain_key, vocabulary)
+    best_notation, best_key, best_reading, best_hits = (
+        plain_notation, plain_key, plain_reading, plain_hits,
+    )
+    if digraph_key and _known_token_count(digraph_key, vocabulary) >= best_hits:  # a tie goes to our documented convention
+        best_notation, best_key, best_reading, best_hits = (
+            "ascii",
+            digraph_key,
+            ascii_digraphs_to_transliteration(text),
+            _known_token_count(digraph_key, vocabulary),
+        )
+    if mdc_key != plain_key and _known_token_count(mdc_key, vocabulary) > best_hits:
+        best_notation, best_key, best_reading = "mdc", mdc_key, mdc_reading
+    return best_notation, best_key, best_reading
 
 
 def parse_query(

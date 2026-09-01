@@ -117,9 +117,11 @@ def test_v1_benchmark_is_kept_and_still_contaminated(corpus_tokens):
             continue
         _, best = rivals_for(position[key], token_sets, index, min_overlap=0.9)
         contaminated += int(best >= 0.9)
-    assert contaminated >= 10, (
-        "v1 was measured at 11 of 20 contaminated; if this changed, the corpus "
-        "changed and the report's numbers need revisiting"
+    # 11 of 20 under the yod-deleting fold; 7 of 20 once the yod is kept (2026-09-01),
+    # because token sets that used to collide on `rin` now differ. Still contaminated.
+    assert contaminated >= 7, (
+        "v1 was measured at 7 of 20 contaminated under the 2026-09-01 fold; if this "
+        "changed, the corpus or the fold changed and the report's numbers need revisiting"
     )
 
 
