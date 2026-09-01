@@ -125,6 +125,51 @@ transatlantic hop to each of them.
 Keep `DATABASE_URL` out of the repo. `.env` is gitignored; production reads it from the
 Secrets box only.
 
+## Option: Hugging Face Spaces (when the corpus outgrows 1 GB)
+
+Measured 2026-09-01 in a fresh process holding everything the app holds (corpus, search
+index, reading model, segmenter, lexicon):
+
+| corpus rows | peak RSS | one query |
+|---|---|---|
+| 31,565 (live) | 622 MB | 0.32 s |
+| 78,453 (with the text-only BBAW rows) | **1,110 MB** | 1.01 s |
+
+Streamlit Community Cloud gives the app **1 GB**, so the larger corpus would be killed on
+boot; St Andrews (+~14k) and Ramses (+71k) would never fit. Hugging Face Spaces' free
+"CPU basic" tier gives **2 vCPU and 16 GB**, supports Streamlit natively (`sdk: streamlit`
+in the Space README's front matter), and is where the corpora already live.
+
+What changes and what does not:
+
+- **Not**: the code. The same `app/ui/whyptology_app.py` runs; `requirements.txt` is read
+  as is. Secrets are set in the Space's settings, same names.
+- **Not**: the annotation problem. Free Spaces have no persistent disk either; SQLite is
+  wiped on restart. A remote database (Neon or equivalent) is needed on either host.
+- **Changes**: the URL (`huggingface.co/spaces/<user>/<space>`); keep the Streamlit app
+  alive for a while showing a one-line redirect, because the people you have written to
+  hold the old link.
+- **Cost to know about**: free Spaces **sleep after ~48 hours without a visitor** and
+  cold-start in one to two minutes. For an expert who opens your link days later that is
+  the first thing they see. Options: accept it, a keep-alive ping, or the cheapest paid
+  tier, which also removes the sleep.
+
+Steps, when the decision is made:
+
+1. *(account owner)* Create the Space (Streamlit SDK, CPU basic) and a write token.
+2. *(repo)* Add the Space front matter to a `README.md` at the Space root — or a
+   `space/README.md` copied by the sync — with `sdk: streamlit`, `app_file:
+   app/ui/whyptology_app.py`, `python_version: 3.12`.
+3. *(repo)* A GitHub Action on push to `main` that pushes the tree to the Space repo
+   (the token as a GitHub secret). One repository stays the source of truth.
+4. *(account owner)* Set `DATABASE_URL` and the reviewer passphrase in the Space's secrets.
+5. Verify exactly as for Streamlit Cloud: load the app, run a Unicode and an MdC query,
+   `scripts/check_database.py` against the production URL.
+
+Regardless of host, do the cheap memory work first (drop the nine empty columns at load,
+sparse document vectors, no per-query frame copy): at 78k rows a query is 1 s because of
+how the index is held, not because of the row count, and that is true on a 16 GB box too.
+
 ## Local development
 
 The virtualenv lives **outside** the project on purpose — `~/Desktop` is

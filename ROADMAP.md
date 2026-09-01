@@ -754,3 +754,79 @@ introduced by the normaliser); the FastAPI app in `app/api` is not deployed (it 
 the CSV per request and has no auth — harmless while undeployed, a footgun if exposed);
 `session_state` does not grow; the in-process bootstrap is race-free; test suite 52/52
 in 4.1 s CPU.
+
+## 2026-09-01 — state of play after the second expert trial
+
+A second Egyptologist (Sophie) tried the tool on a phone and on the web with the same
+sentence in two notations and got nothing both times. Everything below traces back to
+that message.
+
+**Fixed and live** (`egyptology-corpus-retrieval.streamlit.app`, commit `e0532ab`):
+
+- The query fold deleted every Egyptological letter (`ꜥḥꜥ.n stẖ` reached the search as
+  `n st`); the index was built from a column all 9,823 AES rows ship empty (37% of the
+  corpus unreachable); "MdC" named a scheme that was never implemented; and a bare text
+  area only sends its value on blur, so one tap on the search button did nothing.
+  One fold (`search_fold`) on both sides, one parser (`app/data/query.py`) for
+  hieroglyphs / Unicode / MdC / ASCII, decided by corpus evidence; the box and the
+  button are one form. The yod (`ꞽ`/`j`/`i`) is one letter to the search.
+- 5,369 aligned sentences from `phiwi/bbaw_egyptian` (CC BY-SA 4.0), converted from
+  Gardiner codes and to TLA convention → **31,565 rows**.
+- The Helsinki AES+Ramses lexicon (CC BY 4.0, 84,532 spellings) as a labelled fallback
+  for groups this corpus never attests, and as segmenter cut points at weight 0.2:
+  unseen-group accuracy 0.287 → 0.346, unspaced segmentation F1 0.854 → 0.931,
+  expert-paste gate 8/8.
+- Ten UI fixes (example queries, `?q=` deep links, live heading, ephemeral-storage
+  gating, copy-able glyphs, quiet palette, translation label, short tabs, credits,
+  Unicode evidence tokens). v4 benchmark on the final corpus: top-3 useful **0.95**.
+- 261 tests; `scripts/verify_release.py` is the one-command gate.
+
+**Measured but not done — the row count question.** The BBAW export has 100,736 rows;
+65,226 have no hieroglyphs. After dedup **46,888** of those would be new. They would
+serve transliteration search only. At 78,453 rows: query 0.32 s → 1.01 s, and peak
+memory **622 MB → 1,110 MB** in a fresh process — over Streamlit Community Cloud's 1 GB.
+So the import is one command (`--include-text-only`, dry-run done) but cannot ship on
+the current host without a memory diet, or at all without a bigger one.
+
+**Still true:** annotations are wiped on every reboot (the `DATABASE_URL` secret still
+points at container SQLite — runbook in DEPLOYMENT.md, user-only steps). Late Egyptian
+is 14% of the corpus and no open source exists for it except the Ramses corpus
+(CC BY-NC-SA, one email to Liège). Middle Kingdom literary text exists machine-readably
+at St Andrews (unlicensed; Nederhof emailed 2026-09-01).
+
+## Plan for 2026-09-02
+
+In this order; each step has its own measurement and none is started before the
+previous one is verified.
+
+1. **Memory diet, cheap half** — drop the nine dead columns at load, categorical dtypes
+   for source/period/stage, sparse document vectors (scikit-learn is a dependency), no
+   `df.copy()` per query. Target: 78k rows under ~800 MB peak and a query under 0.6 s.
+   Measure with the fresh-process script from 2026-09-01 (in the session notes), before
+   and after, at 31,565 and at 78,453 rows.
+2. **Loader: "no hieroglyphs" is text-only, not misaligned.** The alignment report must
+   keep counting only rows that *have* signs and don't line up; a text-only row is a
+   different, legitimate state. Add the count of text-only rows to the report and a test.
+3. **Import the text-only BBAW rows** (`--include-text-only --append`), and the 13,383
+   TLA Demotic rows the same way, with `language_stage` set so both are filterable and
+   the Demotic never mixes into hieroglyphic sign statistics. Re-run v4 (queries stay
+   valid; numbers will move — record them as v4 at 78k, not as a new version), the
+   segmentation eval, and `verify_release.py`.
+4. **Hosting decision: Hugging Face Spaces** (free CPU basic: 2 vCPU, 16 GB; Streamlit
+   SDK; the corpora already live on HF). Prepare in-repo: Space README metadata,
+   `app_file`, a GitHub Action mirroring `main` to the Space. User-side: create the
+   Space and a write token. Known cost: free Spaces sleep after ~48 h idle and cold-start
+   in ~1–2 min — either accept, keep-alive, or the cheapest paid tier. Keep the
+   Streamlit URL alive with a one-line redirect for the people who already have it.
+   Annotations still need a remote DB on either host.
+5. **Neon** (user-only): rotate the leaked `neondb_owner` password, confirm the quota
+   reset, set `DATABASE_URL`, reboot, verify with `scripts/check_database.py`.
+6. **When Nederhof answers**: importer for the St Andrews files (`corpus.xml` →
+   `texts/*.xml` → `resources/*Hi.xml` + `*Tr.txt`), with its own Hannig → TLA
+   convention table verified on 𓀀 𓂋 𓇋 before trusting it; Urkunden citations as ids;
+   Stauder 2013 §7.2 datings as an *attributed* `period_source` column, never
+   overwriting TLA periods.
+7. **Email Liège / Rosmorduc** for a CC BY-SA grant on the Ramses corpus, mentioning that
+   the Helsinki lexicon derived from it is already in use under Helsinki's CC BY release.
+
+Not planned: photo/OCR input (wait for Sophie's answer), machine translation of any kind.
