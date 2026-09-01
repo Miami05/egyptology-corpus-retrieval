@@ -126,10 +126,20 @@ class ReadingPrediction:
     # Glyph overlap between this group and the group it borrowed from, so a reader can
     # judge how far the guess reaches.
     fallback_similarity: float = 0.0
+    # Set when the corpus has never attested this group but the external sign-reading
+    # lexicon has (app.services.lexicon). The reading is then an attested count from
+    # another corpus — real evidence, but not a sentence we can show — and the UI
+    # labels it as such. `was_seen` stays False: it was not seen *here*.
+    lexicon_count: int = 0
+    lexicon_source: str = ""
 
     @property
     def is_fallback(self) -> bool:
         return bool(self.fallback_from)
+
+    @property
+    def is_lexicon(self) -> bool:
+        return self.lexicon_count > 0 and not self.was_seen
 
     @property
     def confidence(self) -> float:
@@ -159,6 +169,12 @@ class ReadingModel:
     # Individual glyph -> the sign groups it occurs in, used to read an unattested
     # group by falling back to the closest attested one.
     glyph_to_groups: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    # External spelling → reading counts (see app.services.lexicon), consulted only for
+    # groups the corpus has never attested. Kept apart from `sign_reading` on purpose:
+    # the corpus counts are what "attested" means everywhere else in the app, and the
+    # lexicon must never make an unattested group look attested.
+    lexicon: dict[str, Counter] = field(default_factory=dict)
+    lexicon_sources: dict[str, str] = field(default_factory=dict)
     sentences_seen: int = 0
     # Rows skipped because sign groups and readings did not align. Reported, not
     # hidden: on a clean load this must be 0 (see app.data.loader.alignment_report).
@@ -190,10 +206,22 @@ class ReadingModel:
                 previous_sign = sign
         return self
 
+    def attach_lexicon(self, readings: dict[str, Counter], sources: dict[str, str] | None = None) -> ReadingModel:
+        """Make an external lexicon available for groups the corpus does not attest."""
+        self.lexicon = dict(readings)
+        self.lexicon_sources = dict(sources or {})
+        return self
+
     # ---------- inspection ----------
 
     def candidates_for(self, sign: str) -> list[tuple[str, int]]:
         return self.sign_reading.get(sign, Counter()).most_common()
+
+    def lexicon_candidates_for(self, sign: str) -> list[tuple[str, int]]:
+        return self.lexicon.get(sign, Counter()).most_common()
+
+    def in_lexicon(self, sign: str) -> bool:
+        return sign in self.lexicon and sign not in self.sign_reading
 
     def is_ambiguous(self, sign: str) -> bool:
         return len(self.sign_reading.get(sign, Counter())) > 1
@@ -206,6 +234,14 @@ class ReadingModel:
 
     def _emission(self, sign: str, reading: str) -> float:
         counts = self.sign_reading.get(sign, Counter())
+        total = sum(counts.values())
+        vocabulary = max(len(counts), 1)
+        numerator = counts.get(reading, 0) + SMOOTHING
+        return log(numerator / (total + SMOOTHING * vocabulary))
+
+    def _lexicon_emission(self, sign: str, reading: str) -> float:
+        """Same estimate as `_emission`, over the external lexicon's counts."""
+        counts = self.lexicon.get(sign, Counter())
         total = sum(counts.values())
         vocabulary = max(len(counts), 1)
         numerator = counts.get(reading, 0) + SMOOTHING
@@ -327,36 +363,54 @@ class ReadingModel:
         if fallback_threshold is None:
             fallback_threshold = FALLBACK_THRESHOLD
 
-        # Resolve which group's statistics each position will use.
-        # (group whose statistics are used, fallback origin or "", glyph similarity)
-        sources: list[tuple[str, str, float]] = []
+        # Resolve which group's statistics each position will use, in order of how
+        # much the evidence is worth: attested in this corpus → attested in the
+        # external lexicon → borrowed from the most similar attested group → nothing.
+        # (group whose statistics are used, fallback origin or "", glyph similarity, kind)
+        sources: list[tuple[str, str, float, str]] = []
         for sign in signs:
             if sign in self.sign_reading:
-                sources.append((sign, "", 1.0))
+                sources.append((sign, "", 1.0, "corpus"))
+            elif sign in self.lexicon:
+                sources.append((sign, "", 1.0, "lexicon"))
             elif use_fallback:
                 group, score = self.nearest_known_group(sign)
                 # Require real glyph overlap; a token sharing almost nothing is not
                 # evidence for anything.
                 if group and score >= fallback_threshold:
-                    sources.append((group, group, score))
+                    sources.append((group, group, score, "fallback"))
                 else:
-                    sources.append(("", "", 0.0))
+                    sources.append(("", "", 0.0, "none"))
             else:
-                sources.append(("", "", 0.0))
+                sources.append(("", "", 0.0, "none"))
+
+        def counts_for(position: int) -> Counter:
+            group, _, _, kind = sources[position]
+            if kind == "lexicon":
+                return self.lexicon.get(group, Counter())
+            return self.sign_reading.get(group, Counter())
 
         # (score, previous_state_index) per candidate at each position.
         lattice: list[list[tuple[float, int, str]]] = []
         for position, sign in enumerate(signs):
             source_group = sources[position][0]
-            options = [reading for reading, _ in self.candidates_for(source_group)]
+            options = [reading for reading, _ in counts_for(position).most_common()]
             if not options:
                 options = [""]
             next_sign = signs[position + 1] if position + 1 < len(signs) else BOUNDARY
             column: list[tuple[float, int, str]] = []
             for reading in options:
                 # Terms depending only on this position, not on the previous state.
+                # A lexicon group has no corpus context statistics, so only its
+                # emission carries information there; the context terms fall back to
+                # their smoothing defaults, which is the honest amount of knowledge.
+                emission = (
+                    self._lexicon_emission(source_group, reading)
+                    if sources[position][3] == "lexicon"
+                    else self._emission(source_group, reading)
+                )
                 local = (
-                    emission_weight * self._emission(source_group, reading)
+                    emission_weight * emission
                     + next_sign_weight
                     * self._next_sign_context(source_group, next_sign, reading)
                 )
@@ -401,8 +455,8 @@ class ReadingModel:
 
         predictions: list[ReadingPrediction] = []
         for position, (sign, reading) in enumerate(zip(signs, path)):
-            source_group, fallback_from, similarity = sources[position]
-            counts = self.sign_reading.get(source_group, Counter())
+            source_group, fallback_from, similarity, kind = sources[position]
+            counts = counts_for(position)
             total = sum(counts.values()) or 1
             candidates = [(r, n / total) for r, n in counts.most_common(5)]
             predictions.append(
@@ -410,13 +464,18 @@ class ReadingModel:
                     sign=sign,
                     predicted=reading,
                     candidates=candidates,
-                    attested_count=sum(counts.values()),
+                    # Corpus attestations only. For a lexicon group this is 0: the
+                    # count lives in `lexicon_count`, so the two are never confused.
+                    attested_count=sum(counts.values()) if kind != "lexicon" else 0,
                     is_ambiguous=len(counts) > 1,
-                    # "Seen" means this exact group was attested. A fallback reading is
-                    # a lead from a similar group, not an attestation of this one.
+                    # "Seen" means this exact group was attested in this corpus. A
+                    # fallback reading is a lead from a similar group, and a lexicon
+                    # reading is an attestation elsewhere — neither is one of ours.
                     was_seen=sign in self.sign_reading,
                     fallback_from=fallback_from,
                     fallback_similarity=round(similarity, 3) if fallback_from else 0.0,
+                    lexicon_count=sum(counts.values()) if kind == "lexicon" else 0,
+                    lexicon_source=self.lexicon_sources.get(sign, "") if kind == "lexicon" else "",
                 )
             )
         return predictions
@@ -430,5 +489,14 @@ class ReadingModel:
         return out
 
 
-def train_reading_model(df: pd.DataFrame) -> ReadingModel:
-    return ReadingModel().fit(df)
+def train_reading_model(df: pd.DataFrame, lexicon=None) -> ReadingModel:
+    """Fit on the corpus; optionally attach an `app.services.lexicon.Lexicon`.
+
+    The lexicon is an argument rather than loaded here so that every evaluation can
+    run with and without it and report the difference, and so the model's own counts
+    stay a pure function of the corpus.
+    """
+    model = ReadingModel().fit(df)
+    if lexicon is not None and len(lexicon):
+        model.attach_lexicon(lexicon.readings, lexicon.sources)
+    return model

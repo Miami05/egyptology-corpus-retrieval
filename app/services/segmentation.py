@@ -75,6 +75,21 @@ class SegmentationWeights:
     # Good-Turing style discount applied to a count of exactly 1. Counts of 2 or more
     # are used as they are; see module docstring.
     singleton_discount: float = 0.39
+    # Pseudo-count for a group attested only in the external lexicon (never in this
+    # corpus). It must sit BELOW the singleton discount: at 0.39 a lexicon group
+    # outbid the corpus's own three-way split of Camilla's Urk. IV line
+    # (𓆓𓂧 𓀀 𓈖 = ḏd =ꞽ n, attested thousands of times) with the Ramses-normalised
+    # merge ḏd(.t).n, and the expert-paste gate fell to 7/8. Swept 2026-09-01 on 288
+    # held-out sentences (31,565-row corpus) with the gate as a hard constraint:
+    #
+    #   weight   unspaced F1 / exact   scrambled F1 / exact   Urk. IV gate
+    #   none        0.854 / 0.309         0.862 / 0.316         8/8
+    #   0.39        0.931 / 0.590         0.943 / 0.628         7/8  <- fails
+    #   0.2         0.931 / 0.590         0.944 / 0.635         8/8  <- chosen
+    #   0.1         0.929 / 0.569         0.941 / 0.615         8/8
+    #   0.05        0.928 / 0.552         0.940 / 0.597         8/8
+    #   0.02        0.927 / 0.549         0.938 / 0.576         8/8
+    lexicon_weight: float = 0.2
 
     def replace(self, **changes: float) -> SegmentationWeights:
         return SegmentationWeights(**{**self.__dict__, **changes})
@@ -123,6 +138,7 @@ class Segmenter:
         model: ReadingModel,
         weights: SegmentationWeights = DEFAULT_SEGMENTATION_WEIGHTS,
         max_group_glyphs: int = MAX_GROUP_GLYPHS,
+        use_lexicon: bool = True,
     ) -> None:
         self.model = model
         self.weights = weights
@@ -130,9 +146,24 @@ class Segmenter:
         self.group_counts: Counter[str] = Counter(
             {group: sum(readings.values()) for group, readings in model.sign_reading.items()}
         )
+        # A group the external lexicon attests is a legitimate span to cut at, even
+        # though this corpus never saw it. It is kept apart from the corpus counts and
+        # enters the unigram model at `weights.lexicon_weight`, below a corpus
+        # singleton: the lexicon's own frequencies come from corpora of a different
+        # size and period and would swamp a model estimated from our own tokens, and
+        # even parity with a singleton proved too strong (see SegmentationWeights).
+        self.lexicon_groups: set[str] = (
+            {group for group in model.lexicon if group not in self.group_counts}
+            if use_lexicon
+            else set()
+        )
         self.total = sum(self.group_counts.values())
-        self.vocabulary = len(self.group_counts)
+        self.vocabulary = len(self.group_counts) + len(self.lexicon_groups)
         self._log_prob_cache: dict[str, float] = {}
+
+    def is_known(self, group: str) -> bool:
+        """Attested in this corpus or in the lexicon — i.e. a span worth proposing."""
+        return group in self.group_counts or group in self.lexicon_groups
 
     # ---------- unigram group model ----------
 
@@ -143,6 +174,10 @@ class Segmenter:
             return cached
         count = self.group_counts.get(group)
         if not count:
+            if group in self.lexicon_groups:
+                value = log(self.weights.lexicon_weight / (self.total + self.vocabulary))
+                self._log_prob_cache[group] = value
+                return value
             return None
         effective = self.weights.singleton_discount if count == 1 else float(count)
         # Vocabulary smoothing in the denominator keeps the total mass below 1 so
@@ -213,7 +248,7 @@ class Segmenter:
 
         crossed = sorted(hints - boundaries)
         inserted = sorted(boundaries - hints)
-        unattested = [g for g in groups if g not in self.group_counts]
+        unattested = [g for g in groups if not self.is_known(g)]
         return Segmentation(
             groups=groups,
             score=best[n][0],

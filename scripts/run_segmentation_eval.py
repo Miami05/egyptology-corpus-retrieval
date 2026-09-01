@@ -31,6 +31,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.data.loader import load_examples_csv  # noqa: E402
+from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.reading_model import train_reading_model  # noqa: E402
 from app.services.segmentation import (  # noqa: E402
     DEFAULT_SEGMENTATION_WEIGHTS,
@@ -73,9 +74,10 @@ def evaluate(
     test: pd.DataFrame,
     weights: SegmentationWeights,
     seed: int = 7,
+    use_lexicon: bool = True,
 ) -> dict[str, dict[str, float]]:
-    model = train_reading_model(train)
-    segmenter = Segmenter(model, weights)
+    model = train_reading_model(train, load_lexicon() if use_lexicon else None)
+    segmenter = Segmenter(model, weights, use_lexicon=use_lexicon)
     rng = random.Random(seed)
     tallies = {
         name: {"tp": 0, "fp": 0, "fn": 0, "exact": 0, "n": 0}
@@ -130,6 +132,16 @@ def main() -> None:
     parser.add_argument("--examples", default=EXAMPLES_PATH)
     parser.add_argument("--grid", action="store_true", help="Sweep a few weight settings.")
     parser.add_argument("--limit", type=int, default=0, help="Evaluate at most N test sentences.")
+    parser.add_argument(
+        "--no-lexicon",
+        action="store_true",
+        help="Segment over corpus-attested groups only, without the Helsinki lexicon's groups.",
+    )
+    parser.add_argument(
+        "--lexicon-weights",
+        default="",
+        help="Comma-separated lexicon_weight values to sweep (e.g. 0.39,0.2,0.1,0.05).",
+    )
     args = parser.parse_args()
 
     df = load_examples_csv(str(args.examples))
@@ -149,9 +161,14 @@ def main() -> None:
             ("unattested_8", base.replace(unattested_per_glyph=8.0)),
             ("unattested_6_nodisc", base.replace(unattested_per_glyph=6.0, singleton_discount=1.0)),
         ]
+    if args.lexicon_weights:
+        configs = [
+            (f"lexicon_weight_{value}", DEFAULT_SEGMENTATION_WEIGHTS.replace(lexicon_weight=float(value)))
+            for value in args.lexicon_weights.split(",")
+        ]
 
     for name, weights in configs:
-        results = evaluate(train, test, weights)
+        results = evaluate(train, test, weights, use_lexicon=not args.no_lexicon)
         print(f"[{name}] {weights}")
         for case, metrics in results.items():
             print(

@@ -166,6 +166,44 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
 - **Metadata not claimed.** The export states no period, genre or language stage per
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
 
+## Sign-reading lexicon: the Helsinki "Transliteration Model" word lists (CC BY 4.0)
+
+`data/processed/helsinki_lexicon.csv` is built by `scripts/import_helsinki_lexicon.py`
+from two files published by the University of Helsinki:
+
+> Jauhiainen, Heidi & Jauhiainen, Tommi (2023). *Transliteration Model for Egyptian
+> Words.* University of Helsinki, Department of Digital Humanities (funded by the Kone
+> Foundation). Zenodo, <https://doi.org/10.5281/zenodo.7991241>;
+> <https://github.com/MaReTEgyptologists/TranslitModels> (`AESModel.json`,
+> `RamsesTrainingSetModel.json`). Licensed **CC BY 4.0**.
+
+They tabulate, for every hieroglyphic word in two corpora, the transliterations it
+carries and how often. The underlying corpora, which must be credited with them:
+
+- **AES** — Schweitzer, S., *Ancient Egyptian Sentences*, <https://github.com/simondschweitzer/aes>
+  (BBAW, CC BY-SA 4.0).
+- **Ramses Transliteration Corpus v. 2019-09-01** — Rosmorduc, S. / Université de Liège,
+  Projet Ramsès, <https://doi.org/10.5281/zenodo.4954597>. Its own README licenses the
+  corpus CC BY-NC-SA 4.0; the University of Helsinki released these derived word
+  statistics as CC BY 4.0, and this project relies on that release in good faith. If
+  Liège objects, the Ramses-derived rows (`source` = `Ramses`) can be dropped by
+  re-running the import with the AES file only.
+
+The app uses the lexicon only for sign groups this corpus does not attest, labels every
+such reading as "lexicon N× — no sentence in this corpus", and never counts it as an
+attestation of this corpus.
+
+### Changes made to the lexicon data
+
+- Gardiner codes converted to Unicode signs (codes without a codepoint kept as
+  `<g>CODE</g>` placeholders), then normalised like the corpus.
+- Transliterations converted from Manuel de Codage ASCII to the corpus's Unicode
+  convention. The two files write the yod differently and were converted with their
+  own rules: AES `y` → ꞽ (its `i` is the weak radical), Ramses `i`/`j` → ꞽ (its `y` is
+  the double reed). Capitalised proper names lower-cased after conversion.
+- Counts for the same (group, reading) summed across the two files, with the
+  contributing source(s) recorded per row.
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:

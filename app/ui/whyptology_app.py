@@ -27,6 +27,7 @@ from app.data.normalizer import (
 )
 from app.services.annotations import save_annotation
 from app.services.retrieval import build_search_index, retrieve_top_k
+from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
 from app.services.reading_model import train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream
 from app.services.signs import (
@@ -197,13 +198,18 @@ def corpus_credit_html(df: pd.DataFrame) -> str:
     cited = [CORPUS_CREDITS[s] for s in sources if s in CORPUS_CREDITS]
     if not cited:
         cited = list(CORPUS_CREDITS.values())
-    return (
+    credit = (
         "Corpus data: "
         + "; ".join(cited)
         + f". Licensed {LICENCE_LINK}. Adapted: normalised, re-segmented, "
         "transliteration conventions unified, and extended with derived fields — "
         "see DATA-LICENSE.md."
     )
+    # CC BY 4.0 makes attribution a condition, and the lexicon is only in play when
+    # its file shipped with this deployment.
+    if len(load_sign_lexicon()):
+        credit += " " + LEXICON_CREDIT
+    return credit
 
 
 def render_attribution_footer(df: pd.DataFrame | None = None) -> None:
@@ -240,8 +246,18 @@ def load_reading_model(signature: str, _df: pd.DataFrame):
     it; `signature` carries the identity instead), so the CSV is not parsed a second
     time. Training is fast (well under a second on the full corpus) but it should
     not run on every rerun.
+
+    The external sign-reading lexicon is attached here so that a group this corpus
+    never attests can still be read from an attested count elsewhere — labelled as
+    such everywhere it appears (see app.services.lexicon).
     """
-    return train_reading_model(_df)
+    return train_reading_model(_df, load_sign_lexicon())
+
+
+@st.cache_resource(show_spinner=False)
+def load_sign_lexicon():
+    """The Helsinki AES+Ramses lexicon; empty (and harmless) if the file is absent."""
+    return load_lexicon()
 
 
 @st.cache_resource(show_spinner=False)
@@ -1324,16 +1340,23 @@ def render_workspace(df: pd.DataFrame) -> None:
             reading = " ".join(p.predicted for p in predictions if p.predicted)
             unseen = [p for p in predictions if not p.was_seen]
             fallbacks = [p for p in predictions if p.is_fallback]
-            unreadable = [p for p in unseen if not p.is_fallback]
+            from_lexicon = [p for p in predictions if p.is_lexicon]
+            unreadable = [p for p in unseen if not p.is_fallback and not p.is_lexicon]
             ambiguous = [p for p in predictions if p.is_ambiguous]
 
             # The badge must reflect what the reading is worth: a tick claims every
-            # group was attested, which is false the moment anything was borrowed or
-            # could not be read at all.
+            # group was attested in THIS corpus, which is false the moment anything
+            # was borrowed, taken from the external lexicon, or could not be read.
             if unreadable:
                 badge, badge_title = "!", "some sign groups could not be read"
             elif fallbacks:
                 badge, badge_title = "~", "some readings were inferred from similar groups"
+            elif from_lexicon:
+                badge, badge_title = (
+                    "◇",
+                    f"some readings come from the {LEXICON_LABEL}, not from a "
+                    "sentence in this corpus",
+                )
             else:
                 badge, badge_title = "✓", "every sign group is attested in the corpus"
             st.markdown(
@@ -1343,8 +1366,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                 f'<span class="suggestion-reading">{escape(reading) or "—"}</span>'
                 "</div>"
                 f'<div class="suggestion-support">{len(signs)} sign groups · '
-                f"{len(ambiguous)} multivalent · {len(fallbacks)} inferred from a "
-                f"similar sign · {len(unreadable)} unreadable</div>"
+                f"{len(ambiguous)} multivalent · {len(from_lexicon)} from the lexicon · "
+                f"{len(fallbacks)} inferred from a similar sign · "
+                f"{len(unreadable)} unreadable</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -1360,6 +1384,11 @@ def render_workspace(df: pd.DataFrame) -> None:
                             if p.is_fallback
                             else f"attested {p.attested_count}×"
                             if p.was_seen
+                            # An attested count from another corpus: real evidence, but
+                            # not a sentence we can show, and it says so.
+                            else f"lexicon {p.lexicon_count}× ({p.lexicon_source}) — "
+                            "no sentence in this corpus"
+                            if p.is_lexicon
                             # Not attested and too different to borrow from: say what
                             # the corpus does hold rather than leaving a dead end.
                             else (
@@ -1382,6 +1411,16 @@ def render_workspace(df: pd.DataFrame) -> None:
             )
             st.dataframe(table, hide_index=True, width="stretch")
 
+            if from_lexicon:
+                st.info(
+                    f"{len(from_lexicon)} sign group(s) are not attested in this corpus "
+                    f"but are in the {LEXICON_LABEL} — word-level spelling→reading "
+                    "counts from the AES and Ramses corpora (University of Helsinki, "
+                    "CC BY 4.0). The reading shown is the one most often attested "
+                    "there; there is no sentence here to show as a parallel. Ramses "
+                    "readings are normalised to the grammatically expected form of "
+                    "the word, not to the exact spelling."
+                )
             if fallbacks:
                 st.info(
                     f"{len(fallbacks)} sign group(s) are not attested in the corpus, so "

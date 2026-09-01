@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv
+from app.services.lexicon import load_lexicon
 from app.services.reading_model import train_reading_model
 
 EXAMPLES_PATH = "data/processed/examples.csv"
@@ -48,6 +49,11 @@ def main() -> None:
     parser.add_argument("--examples", default=EXAMPLES_PATH)
     parser.add_argument("--results", default=RESULTS_PATH)
     parser.add_argument("--errors", default=ERRORS_PATH)
+    parser.add_argument(
+        "--no-lexicon",
+        action="store_true",
+        help="Read with the corpus alone, without the Helsinki sign-reading lexicon.",
+    )
     parser.add_argument(
         "--sizes",
         default="300,500,1000,2000,5000,0",
@@ -97,7 +103,9 @@ def main() -> None:
             if test.empty:
                 continue
 
-        model = train_reading_model(train)
+        # The lexicon is the variable under test here: held-out groups the training
+        # split never saw are exactly where it is consulted.
+        model = train_reading_model(train, None if args.no_lexicon else load_lexicon())
         ambiguous = model.ambiguous_signs
 
         totals = {
@@ -106,6 +114,7 @@ def main() -> None:
             "unseen": 0,
             "single": 0,
             "fallback": 0,
+            "lexicon": 0,
         }
         correct = {
             "freq_all": 0,
@@ -114,6 +123,7 @@ def main() -> None:
             "ctx_ambiguous": 0,
             "left_only_ambiguous": 0,
             "fallback": 0,
+            "lexicon": 0,
         }
 
         for _, row in test.iterrows():
@@ -141,6 +151,13 @@ def main() -> None:
                         totals["fallback"] += 1
                         if prediction.predicted == truth:
                             correct["fallback"] += 1
+                    # A lexicon reading: the group is unattested here but attested in
+                    # the Helsinki AES+Ramses word lists. Scored separately so the two
+                    # ways of reading an unseen group can be compared directly.
+                    elif prediction.is_lexicon:
+                        totals["lexicon"] += 1
+                        if prediction.predicted == truth:
+                            correct["lexicon"] += 1
                     continue
                 if sign in ambiguous:
                     totals["ambiguous"] += 1
@@ -190,6 +207,12 @@ def main() -> None:
             "acc_ambiguous_most_frequent": round(correct["freq_ambiguous"] / amb, 4),
             "acc_ambiguous_left_only": round(correct["left_only_ambiguous"] / amb, 4),
             "acc_ambiguous_context": round(correct["ctx_ambiguous"] / amb, 4),
+            "lexicon_predictions": totals["lexicon"],
+            "lexicon_share_of_unseen": round(totals["lexicon"] / (totals["unseen"] or 1), 4),
+            "acc_lexicon": round(correct["lexicon"] / (totals["lexicon"] or 1), 4),
+            "coverage_with_lexicon_and_fallback": round(
+                (seen + totals["lexicon"] + totals["fallback"]) / (totals["all"] or 1), 4
+            ),
             # Fallback readings for sign groups that were never attested: previously
             # no reading could be offered for these at all.
             "fallback_predictions": totals["fallback"],
@@ -220,8 +243,9 @@ def main() -> None:
             f"+right {row_out['acc_ambiguous_context']:.3f} "
             f"(right {row_out['right_context_gain']:+.3f}) | "
             f"coverage {row_out['coverage_before_fallback']:.1%} -> "
-            f"{row_out['coverage_with_fallback']:.1%} "
-            f"(fallback acc {row_out['acc_fallback']:.3f})"
+            f"{row_out['coverage_with_lexicon_and_fallback']:.1%} "
+            f"(lexicon {row_out['lexicon_predictions']} @ acc {row_out['acc_lexicon']:.3f}; "
+            f"fallback {row_out['fallback_predictions']} @ acc {row_out['acc_fallback']:.3f})"
         )
 
     summary = pd.DataFrame(summary_rows)

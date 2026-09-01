@@ -41,9 +41,10 @@ from app.data.normalizer import (  # noqa: E402
     contains_hieroglyphs,
     normalize_hieroglyphs,
 )
+from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.reading_model import train_reading_model  # noqa: E402
 from app.services.retrieval import build_search_index, retrieve_top_k  # noqa: E402
-from app.services.segmentation import Segmenter  # noqa: E402
+from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS, Segmenter  # noqa: E402
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 
 EXAMPLES_PATH = "data/processed/examples.csv"
@@ -132,11 +133,26 @@ def main() -> None:
     parser.add_argument("--examples", default=EXAMPLES_PATH)
     parser.add_argument("--queries", default=QUERIES_PATH)
     parser.add_argument("--results", default=RESULTS_PATH)
+    parser.add_argument(
+        "--no-lexicon",
+        action="store_true",
+        help="Read with the corpus alone, without the Helsinki sign-reading lexicon.",
+    )
+    parser.add_argument(
+        "--lexicon-weight",
+        type=float,
+        default=None,
+        help="Override SegmentationWeights.lexicon_weight (for sweeps).",
+    )
     args = parser.parse_args()
 
     df = load_examples_csv(args.examples)
-    model = train_reading_model(df)
-    segmenter = Segmenter(model)
+    lexicon = None if args.no_lexicon else load_lexicon()
+    model = train_reading_model(df, lexicon)
+    weights = DEFAULT_SEGMENTATION_WEIGHTS
+    if args.lexicon_weight is not None:
+        weights = weights.replace(lexicon_weight=args.lexicon_weight)
+    segmenter = Segmenter(model, weights, use_lexicon=not args.no_lexicon)
     index = build_search_index(df)
     queries = pd.read_csv(args.queries)
 

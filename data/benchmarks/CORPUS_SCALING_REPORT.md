@@ -698,3 +698,35 @@ Record the builder's "skipped with a near-identical twin" count alongside the re
 Until that table is filled in, the honest statement is: *"the tool has no current
 reportable accuracy figure; v2/v3 were retired on 2026-09-01 when the fold and the
 corpus changed."*
+
+## 18. The sign-reading lexicon (2026-09-01)
+
+`data/processed/helsinki_lexicon.csv` — the University of Helsinki "Transliteration
+Model" word lists (CC BY 4.0; AES + Ramses), 84,532 spellings, 53,457 of them never
+attested in our corpus (41,508 Late Egyptian). Consulted by the reading model only for a
+group this corpus does not attest, and by the segmenter as cut points at a discounted
+weight. Same 31,565-row corpus before and after; `--no-lexicon` reproduces "before".
+
+**Reading unseen groups** (`run_reading_model_eval.py --sizes 0 --exclude-duplicates`,
+5,431 held-out sentences, 40,846 sign instances, 6,064 of them unseen in training):
+
+| | before | after |
+|---|---|---|
+| unseen groups read by the similar-group fallback | 5,448 (90%) @ acc **0.287** | 1,290 (21%) @ acc 0.286 |
+| unseen groups read from the lexicon | — | 4,593 (76%) @ acc **0.346** |
+| coverage (seen + lexicon + fallback) | 98.5% | **99.6%** |
+| accuracy on seen groups (context model) | 0.8865 | 0.8864 (unchanged, as it must be) |
+
+Honest reading: an unseen group is still hard (about one in three right), but the
+lexicon is a better source for it than borrowing a similar group's readings, and it
+reaches three quarters of them. Exact-match scoring also undercounts it slightly: the
+Ramses half normalises to the expected grammatical form (`ꞽrꞽ.t`) where the corpus
+writes the spelling (`ꞽri̯.t`).
+
+**Segmentation** (`run_segmentation_eval.py --limit 300`, 288 held-out sentences):
+unspaced F1 0.854 → **0.931**, exact 0.309 → **0.590**; scrambled F1 0.862 → **0.944**,
+exact 0.316 → **0.635**; as-pasted unchanged (hints dominate). The lexicon weight was
+swept against the expert-paste gate (Camilla's Urk. IV line from four spacings, 8/8
+required): 0.39 fails (a Ramses merge `ḏd(.t).n` outbids the corpus split `ḏd =ꞽ n`),
+0.2 passes with the best F1 and is the default. Full table in
+`app/services/segmentation.py`.

@@ -22,6 +22,20 @@ Live app: <https://egyptology-corpus-retrieval.streamlit.app>
 | Sign readings | Which signs are genuinely multivalent, and how the reading model chooses between readings |
 | Projects / Reviews | Corpus composition by period, and the record of expert annotations |
 
+## The sign-reading lexicon
+
+`data/processed/helsinki_lexicon.csv` (built by `scripts/import_helsinki_lexicon.py`) holds
+84,532 hieroglyphic spellings with every transliteration attested for them in the AES and
+Ramses corpora, and how often — the University of Helsinki "Transliteration Model" word
+lists, CC BY 4.0. 53,457 of those spellings never occur in our corpus, 41,508 of them
+Late Egyptian. The reading model consults it **only** for a sign group this corpus does
+not attest, after the corpus and before guessing from a similar group; the segmenter
+accepts its groups as cut points at singleton weight. Every such reading is labelled
+"lexicon N× — no sentence in this corpus" and gets its own badge (◇), because it is an
+attested count from elsewhere, not a parallel we can show. The two source files write the
+yod differently (AES `y`, Ramses `i`/`j`) and are converted with their own rules — see
+DATA-LICENSE.md, which also records the Ramses provenance caveat.
+
 ## Typing a query is a form, on purpose
 
 The query box and the search button are one `st.form`. A bare `st.text_area` only
