@@ -125,6 +125,43 @@ findspot in `grammar_notes`, and its AES text and sentence identifiers in `sourc
   sentence and deriving it from a coarse era label would be a guess.
 - Sentences already present from a TLA corpus were dropped (5,001 of them).
 
+## Fourth corpus: the BBAW 2018 snapshot (`phiwi/bbaw_egyptian`)
+
+`data/processed/examples.csv` also contains 5,525 sentences imported by
+`scripts/import_bbaw_egyptian.py` from the Hugging Face dataset `phiwi/bbaw_egyptian`
+(<https://huggingface.co/datasets/phiwi/bbaw_egyptian>), licensed CC BY-SA 4.0:
+> Teilauszug der Datenbank des Vorhabens *"Strukturen und Transformationen des
+> Wortschatzes der ägyptischen Sprache"*, Berlin-Brandenburgische Akademie der
+> Wissenschaften, January 2018, as published in AED-TEI
+> (<https://github.com/simondschweitzer/aed-tei>, Simon Schweitzer et al.) and
+> redistributed as `phiwi/bbaw_egyptian`. Same contributors as the AES corpus above.
+
+Each imported row records `source = BBAW`, `source_text_id = bbaw_egyptian_2018` and
+the dataset's row index as `source_sentence_id` (`B004065`), because the export carries
+no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0.
+
+### Changes made to the BBAW data
+
+- **Hieroglyphs converted from Manuel de Codage sign codes to Unicode.** The export
+  writes Gardiner codes with layout operators (`D54 *Z7 -M17 *N35`); each code is
+  mapped to its Unicode Egyptian Hieroglyph by name, layout operators and editorial
+  brackets are dropped, and the words are regrouped so one space-separated group
+  corresponds to one transliteration token. Codes with no Unicode codepoint (`Ff1`,
+  `Ff100`, `R8A`, numerals) are kept as `<g>CODE</g>` placeholder markup.
+- **Transliteration conventions aligned with the rest of the corpus:** the comma
+  morpheme separator becomes a dot (`sḫ,tj` → `sḫ.tj`), `{,pl}` / `{,du}` become
+  `.pl` / `.du`, and `≡` becomes `=`. The yod is left as the editors wrote it (`j`);
+  everything else — brackets, restorations, capitalised names — is verbatim.
+- **Only fully aligned sentences were kept.** Of 35,503 rows with hieroglyphs, 22,927
+  yield exactly one sign group per transliteration token. Dropped, not patched: 9,121
+  with a lacuna (`//`), 612 with an unreadable sign (`"?"`, `"⸮"`), 2,842 whose group
+  and token counts differ, 1 with an empty group. A further 3,904 duplicated another
+  row of the export and 13,498 were already present in this corpus (matched on a
+  yod-insensitive reading or identical signs). The 65,226 rows without hieroglyphs
+  are not imported by default (`--include-text-only` exists for them).
+- **Metadata not claimed.** The export states no period, genre or language stage per
+  sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
