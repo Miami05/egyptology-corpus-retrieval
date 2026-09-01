@@ -74,7 +74,9 @@ CORPUS_COLUMN_LABELS = {
     "period": "Period",
     "language_stage": "Language stage",
     "transliteration_gold": "Reading",
-    "translation": "Translation",
+    # Every open source we hold translates into German. Saying so where the column
+    # is labelled stops an English reader taking it for a defect.
+    "translation": "Translation (German, from the corpus)",
 }
 
 
@@ -173,6 +175,13 @@ CORPUS_CREDITS: dict[str, str] = {
         '<a href="https://github.com/simondschweitzer/aed-tei" target="_blank" '
         "rel=\"noopener\">AES — Ancient Egyptian Sentences</a>, derived from AED-TEI "
         "(S. Schweitzer and contributors, BBAW/SAW)"
+    ),
+    "BBAW": (
+        '<a href="https://huggingface.co/datasets/phiwi/bbaw_egyptian" target="_blank" '
+        'rel="noopener">BBAW Egyptian corpus</a>, derived from the AED-TEI publication '
+        "of the project “Strukturen und Transformationen des Wortschatzes der "
+        "ägyptischen Sprache” (Berlin-Brandenburgische Akademie der Wissenschaften), "
+        "January 2018 snapshot"
     ),
 }
 
@@ -684,6 +693,21 @@ def render_annotation_form(
     row_id = row.get("id")
     example_id = int(row_id) if pd.notna(row_id) else None
     row_key = build_row_key(row, position)
+    # When storage is a container-local file, a saved correction is accepted, shown
+    # as saved and lost at the next restart. Rather than pretend, the form goes
+    # read-only: every control is disabled and the reason is stated once per page.
+    ephemeral = storage_is_ephemeral()
+    if ephemeral:
+        seen = st.session_state.setdefault("_storage_warning_shown", set())
+        if "annotation-readonly" not in seen:
+            seen.add("annotation-readonly")
+            st.warning(
+                "**Corrections cannot be stored on this deployment.** The database "
+                "is a local file that is recreated on every restart, so anything "
+                "saved here would be lost; the form is read-only until a managed "
+                "database is configured. Searching and browsing are unaffected.",
+                icon="⚠️",
+            )
     if states is not None:
         latest, history = states.get(example_id, (None, annotation_history_to_df([])))
     else:
@@ -719,11 +743,13 @@ def render_annotation_form(
         index=status_index,
         key=f"status_{row_key}",
         help="accepted keeps the corpus reading, edited stores your correction.",
+        disabled=ephemeral,
     )
     transliteration = st.text_input(
         "Transliteration",
         value=default("transliteration", "transliteration_gold"),
         key=f"translit_{row_key}",
+        disabled=ephemeral,
     )
     col_a, col_b = st.columns(2)
     with col_a:
@@ -731,42 +757,50 @@ def render_annotation_form(
             "Display / visual sequence",
             value=default("display_sequence"),
             key=f"display_sequence_{row_key}",
+            disabled=ephemeral,
         )
         normalized_reading_order = st.text_input(
             "Normalized reading order",
             value=default("normalized_reading_order"),
             key=f"reading_order_{row_key}",
+            disabled=ephemeral,
         )
         alt_transliterations = st.text_input(
             "Alternate readings (pipe-separated)",
             value=default("alt_transliterations"),
             key=f"alt_{row_key}",
+            disabled=ephemeral,
         )
         variant_writing_note = st.text_input(
             "Variant writing note",
             value=default("variant_writing_note"),
             key=f"variant_{row_key}",
+            disabled=ephemeral,
         )
     with col_b:
         morphology_note = st.text_input(
             "Morphology note",
             value=default("morphology_note"),
             key=f"morphology_{row_key}",
+            disabled=ephemeral,
         )
         syntax_note = st.text_input(
             "Syntax note",
             value=default("syntax_note"),
             key=f"syntax_{row_key}",
+            disabled=ephemeral,
         )
         uncertainty_note = st.text_input(
             "Uncertainty note",
             value=safe_str(latest.uncertainty_note) if latest is not None else "",
             key=f"uncertainty_{row_key}",
+            disabled=ephemeral,
         )
         grammar_note = st.text_input(
             "Grammar note",
             value=safe_str(latest.grammar_note) if latest is not None else "",
             key=f"grammar_{row_key}",
+            disabled=ephemeral,
         )
 
     aesthetic_key = f"aesthetic_{row_key}"
@@ -779,6 +813,7 @@ def render_annotation_form(
         "Aesthetic arrangement affects reading order",
         value=aesthetic_default,
         key=aesthetic_key,
+        disabled=ephemeral,
     )
 
     if not annotations_unlocked():
@@ -787,7 +822,17 @@ def render_annotation_form(
 
     render_storage_warning(once_key="workspace")
 
-    if st.button("Save annotation", key=f"save_{row_key}", type="primary"):
+    if st.button(
+        "Save annotation",
+        key=f"save_{row_key}",
+        type="primary",
+        disabled=ephemeral,
+        help=(
+            "Disabled: this deployment cannot keep corrections."
+            if ephemeral
+            else None
+        ),
+    ):
         if example_id is None:
             st.error(
                 "This row is not linked to the project database, so the annotation "
@@ -841,7 +886,18 @@ def render_annotation_form(
 # have. `=` is here too: it separates a suffix pronoun, and on a phone it is buried
 # under a symbol layer.
 TRANSLITERATION_PALETTE = [
-    "ꜣ", "ꜥ", "ꞽ", "ḥ", "ḫ", "ẖ", "š", "ṯ", "ḏ", "ṱ", "=",
+    "ꜣ", "ꜥ", "ꞽ", "ḥ", "ḫ", "ẖ", "š", "ṯ", "ḏ",
+]
+# `ṱ` (516 rows) and `=` were dropped: `=` is folded away, so typing it changes no
+# result, and nine keys fit one row on a phone where eleven wrapped.
+
+# One example per notation the parser accepts. A first-time visitor faces an empty
+# box and guesses — the expert who reported "found nothing" had guessed a notation we
+# mishandled. One click shows what the tool takes and what it gives back.
+EXAMPLE_QUERIES: list[tuple[str, str]] = [
+    ("ꜥḥꜥ.n stẖ ḥr ḏd n =f", "Unicode transliteration"),
+    ("aHa.n stX Hr Dd", "Manuel de Codage"),
+    ("𓊵𓏙 𓇓𓏏", "Hieroglyphs"),
 ]
 
 
@@ -852,6 +908,16 @@ TRANSLITERATION_PALETTE = [
 QUERY_TEXT_KEY = "whyptology_query_text"
 QUERY_NONCE_KEY = "whyptology_query_nonce"
 PENDING_INSERTS_KEY = "whyptology_pending_inserts"
+# An example button or a ?q= link wants two things a form submit cannot do at once:
+# put text in the box *and* search it. They queue the text here; the script body
+# swaps it in under a new widget key and sets AUTO_SEARCH_KEY, and the next run
+# searches exactly what the box now shows.
+PENDING_EXAMPLE_KEY = "whyptology_pending_example"
+AUTO_SEARCH_KEY = "whyptology_auto_search"
+# ?q= is consumed once per session. Without this guard the parameter — which is
+# deliberately left in the URL so the link stays shareable — would re-run the same
+# search on every rerun and the user could never type anything else.
+QUERY_PARAM_CONSUMED_KEY = "whyptology_q_param_consumed"
 
 
 def query_widget_key() -> str:
@@ -885,6 +951,31 @@ def apply_palette_inserts(submitted_text: str) -> bool:
     return True
 
 
+def queue_example_query(text: str) -> None:
+    """Callback for an example button: remember the text, apply it in the body."""
+    if text:
+        st.session_state[PENDING_EXAMPLE_KEY] = text
+
+
+def set_query_and_search(text: str) -> None:
+    """Put `text` in the box under a fresh widget key and search it on the next run."""
+    st.session_state[QUERY_TEXT_KEY] = text
+    st.session_state[QUERY_NONCE_KEY] = st.session_state.get(QUERY_NONCE_KEY, 0) + 1
+    st.session_state[AUTO_SEARCH_KEY] = True
+
+
+def consume_query_param() -> bool:
+    """Load a shared ?q= link once: fill the box and arm a search. True if it did."""
+    if st.session_state.get(QUERY_PARAM_CONSUMED_KEY):
+        return False
+    shared = st.query_params.get("q")
+    st.session_state[QUERY_PARAM_CONSUMED_KEY] = True
+    if not shared or not str(shared).strip():
+        return False
+    set_query_and_search(str(shared))
+    return True
+
+
 def render_workspace(df: pd.DataFrame) -> None:
     saved_notice = st.session_state.pop("whyptology_saved_notice", None)
     if saved_notice:
@@ -896,36 +987,47 @@ def render_workspace(df: pd.DataFrame) -> None:
         results.iloc[0] if results is not None and not results.empty else None
     )
 
-    if top_row is None:
-        heading, meta = "Reading workspace", "Enter a reading to search the corpus"
-    else:
-        heading = value(top_row, "source_text_id", "Reading workspace")
-        meta = " · ".join(
-            part
-            for part in [
-                value(top_row, "language_stage", ""),
-                value(top_row, "period", ""),
-                value(top_row, "script_type", ""),
-                value(top_row, "source", ""),
-            ]
-            if part and part != "—"
+    # The header is painted into a placeholder *after* the search block below. It
+    # used to be rendered here, from session state as it stood before the search
+    # ran, so the title kept naming the previous query's text until the next
+    # interaction — a search returned results under a heading that still said
+    # "Enter a reading to search the corpus".
+    header_slot = st.empty()
+
+    def paint_header(current_top_row) -> None:
+        if current_top_row is None:
+            heading, meta = "Reading workspace", "Enter a reading to search the corpus"
+        else:
+            heading = value(current_top_row, "source_text_id", "Reading workspace")
+            meta = " · ".join(
+                part
+                for part in [
+                    value(current_top_row, "language_stage", ""),
+                    value(current_top_row, "period", ""),
+                    value(current_top_row, "script_type", ""),
+                    value(current_top_row, "source", ""),
+                ]
+                if part and part != "—"
+            )
+        header_slot.markdown(
+            dedent(
+                f"""
+                <header class="workspace-head">
+                  <div>
+                    <div class="breadcrumbs">Workspace &nbsp;›&nbsp; Reading suggestions</div>
+                    <h1 class="workspace-title">{escape(heading)}</h1>
+                    <div class="workspace-meta">{escape(meta)}</div>
+                  </div>
+                  <div class="status-pill">●&nbsp; {len(df):,} corpus rows</div>
+                </header>
+                """
+            ).strip(),
+            unsafe_allow_html=True,
         )
 
-    st.markdown(
-        dedent(
-            f"""
-            <header class="workspace-head">
-              <div>
-                <div class="breadcrumbs">Workspace &nbsp;›&nbsp; Reading suggestions</div>
-                <h1 class="workspace-title">{escape(heading)}</h1>
-                <div class="workspace-meta">{escape(meta)}</div>
-              </div>
-              <div class="status-pill">●&nbsp; {len(df):,} corpus rows</div>
-            </header>
-            """
-        ).strip(),
-        unsafe_allow_html=True,
-    )
+    # A shared link (?q=…) fills the box and arms a search — once per session, so
+    # the parameter can stay in the URL without pinning the query.
+    consume_query_param()
 
     # One column, not two: on a phone the old side-by-side layout pushed the search
     # button below the fold, under an optional field, so a reviewer typed a query,
@@ -951,6 +1053,17 @@ def render_workspace(df: pd.DataFrame) -> None:
             placeholder="ꜥḥꜥ.n stẖ …  ·  aHa.n stX …  ·  htp di nsw  ·  𓊵𓏙 𓇓𓏏 …",
             label_visibility="collapsed",
         )
+        # Worked examples, one per notation. Also submit buttons (a form takes no
+        # other kind); they queue the text and the body swaps it in and searches.
+        st.caption("Try an example:")
+        with st.container(horizontal=True, key="example_queries"):
+            for example_text, example_label in EXAMPLE_QUERIES:
+                st.form_submit_button(
+                    example_text,
+                    on_click=queue_example_query,
+                    args=(example_text,),
+                    help=example_label,
+                )
         # A click-to-insert row, because the alternative is switching keyboards: an
         # Egyptologist working from a phone has no ꜣ or ẖ key, which is the single
         # most common reason a transliteration gets typed in ASCII and then fails to
@@ -958,6 +1071,7 @@ def render_workspace(df: pd.DataFrame) -> None:
         # ordinary buttons, and a widget inside a form ignores session-state writes
         # from outside it — so an outside palette silently stopped appending. As
         # submitters they commit whatever is typed first, then append to it.
+        st.caption("No ꜣ on your keyboard? Tap to insert.")
         with st.container(horizontal=True, key="translit_palette"):
             for character in TRANSLITERATION_PALETTE:
                 st.form_submit_button(
@@ -1029,8 +1143,16 @@ def render_workspace(df: pd.DataFrame) -> None:
     # searched, because the user asked for a character, not a query.
     if apply_palette_inserts(query):
         st.rerun()
+    # An example button works the same way as a palette key, but replaces the text
+    # and arms a search; the next run finds AUTO_SEARCH_KEY set and searches what
+    # the box then shows.
+    pending_example = st.session_state.pop(PENDING_EXAMPLE_KEY, None)
+    if pending_example:
+        set_query_and_search(pending_example)
+        st.rerun()
 
-    if search:
+    run_search = bool(search) or bool(st.session_state.pop(AUTO_SEARCH_KEY, False))
+    if run_search:
         st.session_state[QUERY_TEXT_KEY] = query
         if not query.strip():
             st.warning("Enter a transliteration, MdC string or sign sequence first.")
@@ -1059,6 +1181,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                     max(settings.top_k, 5)
                 ).copy()
                 st.session_state["whyptology_last_query"] = query
+                # Make the URL shareable: an expert can now send "this one is wrong"
+                # as a link instead of describing the query.
+                st.query_params["q"] = query
                 # The parse of the query that was actually *searched*, kept so the
                 # empty state can say what was looked for even after the box has
                 # been edited. `parse` above tracks the box, not the search.
@@ -1091,6 +1216,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                 results.iloc[0] if results is not None and not results.empty else None
             )
 
+    # Now that the search block has run, the header can name this run's top result.
+    paint_header(top_row)
+
     # Tab order follows the query. "Sign-by-sign reading" is deliberately empty for
     # a transliteration query — there is nothing to decode when the reading is
     # already given — so leading with it showed a reviewer who had typed a
@@ -1098,13 +1226,14 @@ def render_workspace(df: pd.DataFrame) -> None:
     # produced. The suggestions are the answer to her query, so they come first.
     last_query = st.session_state.get("whyptology_last_query", "")
     decode_first = contains_hieroglyphs(last_query) if last_query else False
-    # Kept short on purpose: at a 500px viewport the previous labels ran to 596px,
+    # Kept short on purpose: at a 500px viewport the original labels ran to 596px,
     # so "Analysis" and "Source" sat off-screen behind a horizontal scroll — the
     # same failure mode as leading with an empty tab, one scroll further along.
+    # These five fit a 375px phone.
     tab_titles = [
         "Sign by sign",
-        "Suggested readings",
-        "Parallels & review",
+        "Readings",
+        "Parallels",
         "Analysis",
         "Source",
     ]
@@ -1356,7 +1485,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "source_text_id": "Text",
                     "period": "Period",
                     "transliteration_gold": "Reading",
-                    "translation": "Translation",
+                    "translation": "Translation (German, from the corpus)",
                     "final_score": "Match",
                 }
             )
@@ -1418,7 +1547,10 @@ def render_workspace(df: pd.DataFrame) -> None:
                         column.markdown(f"**{value(row, field)}**")
 
                     st.markdown(f"**Reading:** {value(row, 'transliteration_gold')}")
-                    st.markdown(f"**Translation:** {value(row, 'translation')}")
+                    st.markdown(
+                        "**Translation (German, from the corpus):** "
+                        f"{value(row, 'translation')}"
+                    )
                     if value(row, "hieroglyphs") != "—":
                         st.markdown(
                             '<div class="hieroglyph-panel"><div class="glyph-line">'
@@ -1483,10 +1615,17 @@ def render_workspace(df: pd.DataFrame) -> None:
                         "</div></div>",
                         unsafe_allow_html=True,
                     )
+                    # st.code renders Streamlit's copy button, which is the only
+                    # clipboard access a Streamlit page has. Typing hieroglyphs is
+                    # the thing testers say they will not do; copying is how they
+                    # actually get a sign sequence into the box.
+                    st.caption("Copy these hieroglyphs to reuse them as a query:")
+                    st.code(glyphs, language=None)
                 else:
                     st.caption("No hieroglyphs recorded for this row.")
                 st.markdown(
-                    '<div class="panel-title">Translation</div>', unsafe_allow_html=True
+                    '<div class="panel-title">Translation · German, from the corpus</div>',
+                    unsafe_allow_html=True,
                 )
                 st.markdown(
                     f'<div class="translation-line"><span>1</span>'
@@ -1675,7 +1814,13 @@ def render_corpus(df: pd.DataFrame) -> None:
     page_rows = st.session_state.get("whyptology_corpus_page_rows")
     if page_rows is None or page_rows.empty:
         return
-    with st.expander(f"Card view of this page ({len(page_rows)} records)"):
+    with st.expander(
+        f"Card view of this page · copy hieroglyphs ({len(page_rows)} records)"
+    ):
+        st.caption(
+            "Each card shows its hieroglyphs in a copyable block — paste them into "
+            "the workspace to see what the tool makes of a sign sequence."
+        )
         for _, row in page_rows.iterrows():
             source_label = escape(value(row, "source", "Unknown source"))
             text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
@@ -1700,6 +1845,11 @@ def render_corpus(df: pd.DataFrame) -> None:
                 """,
                 unsafe_allow_html=True,
             )
+            glyphs = value(row, "hieroglyphs", "")
+            if glyphs and glyphs != "—":
+                # The copy button on st.code is the clipboard; the HTML card above
+                # cannot offer one.
+                st.code(glyphs, language=None)
         if len(filtered) > 30:
             st.caption(f"Showing the first 30 of {len(filtered):,} matching records.")
 
@@ -2099,6 +2249,14 @@ if query_page in {"home", "workspace", "corpus", "projects", "reviews", "signs"}
     # rerun, so leaving ?view= in the URL would overwrite whatever the sidebar
     # buttons set and navigation would be dead for the rest of the session.
     del st.query_params["view"]
+# A shared query link (?q=…) lands on the workspace, whatever page the session was
+# on. Only on first sight: the workspace consumes the parameter once and leaves it
+# in the URL so the link stays copyable.
+if (
+    st.query_params.get("q")
+    and not st.session_state.get(QUERY_PARAM_CONSUMED_KEY)
+):
+    st.session_state["page"] = "Workspace"
 
 page = sidebar(corpus)
 if page == "Home":
