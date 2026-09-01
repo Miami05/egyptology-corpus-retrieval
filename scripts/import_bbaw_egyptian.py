@@ -23,10 +23,10 @@ What is different from the corpus, and what is done about it:
                 become `<g>CODE</g>` markup, which `normalize_hieroglyphs` already
                 turns into a stable placeholder sign.
   transcription Older BBAW convention: comma as morpheme separator (`sḫ,tj`), `{,pl}`
-                for plural, `≡` beside `=` as the suffix marker. Commas become dots,
-                braces around plural/dual markers are dropped, `≡` becomes `=`. The
-                yod is written `j` where TLA writes `ꞽ`; it is kept as `j` (the search
-                fold treats them as one letter) — see the note in the report.
+                for plural, `≡` beside `=` as the suffix marker, and `j` for the yod
+                where TLA writes `ꞽ`. Commas become dots, braces around plural/dual
+                markers are dropped, `≡` becomes `=`, and `j` becomes `ꞽ` so that
+                `strict_reading_key` agrees across sources (as for AES).
 
 Strictness, as in the AES importer: a sentence is kept only when every word has a
 sign group and the counts match. Rows with a lacuna (`//`), an unreadable sign
@@ -208,21 +208,33 @@ PLURAL_BRACES_RE = re.compile(r"\{[,.](pl|du)\}")
 
 
 def to_corpus_convention(transcription: str) -> str:
-    """The corpus's dot-and-`=` conventions; everything else stays as edited.
+    """The corpus's conventions for the yod, the dot and the suffix marker.
 
-    The yod stays `j`. Rewriting it to `ꞽ` was validated for AES against 1,342
-    sentences present in both corpora, but here the search fold treats `j`, `ꞽ` and
-    `i` as one letter, so the reading is left as the editors wrote it.
+    The yod is rewritten `j` → `ꞽ` (and `J` → `Ꞽ` in capitalised names), exactly as
+    the AES importer does. The search fold would treat `j` and `ꞽ` as one letter, but
+    `strict_reading_key` — the identity the suggestion grouping and the sign-reading
+    statistics rest on — would not, so left as `j` the same word would count as two
+    readings depending on which corpus it came from. The AES conversion was validated
+    on 1,342 sentences present in both corpora with no letter disagreement. Only the
+    letter is touched: `i̯` (i + U+032F) and `y` are different letters and stay.
+    Brackets wrap transliteration here too, so a restored `[tp,j]` converts as well.
+    Everything else — brackets, restorations, capitalisation — is verbatim.
     """
     text = str(transcription).replace("≡", "=").replace("⸗", "=")
     text = PLURAL_BRACES_RE.sub(lambda m: f".{m.group(1)}", text)
     text = text.replace(",", ".")
+    text = text.replace("j", "ꞽ").replace("J", "Ꞽ")
     return re.sub(r"\s+", " ", text).strip()
 
 
 def dedup_key(transliteration: str) -> str:
-    """Search fold made yod-insensitive, so `jwi̯` and `ꞽwi̯` count as one sentence."""
-    return search_fold(str(transliteration).replace("ꞽ", "i").replace("j", "i"))
+    """Search fold made yod-insensitive, so `jwi̯` and `ꞽwi̯` count as one sentence.
+
+    Lower-cased first: a capitalised name's `J`/`Ꞽ` must reach the fold as the same
+    letter as `j`/`ꞽ`, or the key would depend on the yod spelling after all.
+    """
+    text = str(transliteration).lower().replace("ꞽ", "i").replace("j", "i")
+    return search_fold(text)
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +279,7 @@ class ImportReport:
     dropped_empty_group: int = 0
     dropped_mismatch: int = 0
     dropped_empty_transcription: int = 0
+    dropped_unsearchable: int = 0
     text_only: int = 0
     unknown_codes: collections.Counter = field(default_factory=collections.Counter)
     mismatch_samples: list[tuple[str, str, int, int]] = field(default_factory=list)
@@ -279,6 +292,13 @@ def convert(frame: pd.DataFrame, include_text_only: bool) -> tuple[pd.DataFrame,
         transcription = to_corpus_convention(record.transcription or "")
         if not transcription:
             report.dropped_empty_transcription += 1
+            continue
+        if not search_fold(transcription):
+            # A reading that folds to nothing (the bare interjection `ꞽ`) can never be
+            # reached by a transliteration query, and the loader's reachability test
+            # rightly refuses such a row. Six sentences in this export, one of them
+            # net-new; the others duplicate rows already dropped for the same reason.
+            report.dropped_unsearchable += 1
             continue
         glyph_field = str(record.hieroglyphs or "").strip()
         if not glyph_field:
@@ -370,6 +390,7 @@ def main() -> None:
     print(f"    dropped: count mismatch    {report.dropped_mismatch:>8,}")
     print(f"  text only (no hieroglyphs)   {report.text_only:>8,}  {'included' if args.include_text_only else 'skipped (--include-text-only)'}")
     print(f"  empty transcription          {report.dropped_empty_transcription:>8,}")
+    print(f"  unsearchable reading         {report.dropped_unsearchable:>8,}")
     print(f"duplicates within the export   {internal_dupes:>8,}")
     print(f"already in {Path(args.existing).name if args.existing else '-':<19} {existing_dupes:>8,}")
     print(f"NET NEW                        {len(frame):>8,}")

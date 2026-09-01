@@ -105,13 +105,25 @@ def test_lacuna_and_unreadable_sign_mark_the_row_for_dropping() -> None:
 
 
 def test_comma_becomes_dot_and_plural_braces_are_dropped() -> None:
-    assert to_corpus_convention("sḫ,tj pn ḥm{,pl}-nṯr ≡f") == "sḫ.tj pn ḥm.pl-nṯr =f"
-    assert to_corpus_convention("jwi̯.jn r =f") == "jwi̯.jn r =f"
+    assert to_corpus_convention("sḫ,tj pn ḥm{,pl}-nṯr ≡f") == "sḫ.tꞽ pn ḥm.pl-nṯr =f"
 
 
-def test_dedup_key_is_yod_insensitive() -> None:
-    """The same sentence written `jwi̯` (BBAW) and `ꞽwi̯` (TLA) must count once."""
+def test_yod_is_converted_to_tla_convention_and_nothing_else_is() -> None:
+    """`j` → `ꞽ` (and `J` → `Ꞽ` in names) as the AES importer does, so the strict
+    reading key agrees across sources. `i̯` (i + U+032F) and `y` are other letters
+    and must survive untouched; a restored `[tp,j]` is transliteration and converts."""
+    assert to_corpus_convention("jwi̯.jn r =f") == "ꞽwi̯.ꞽn r =f"
+    assert to_corpus_convention("Jnp,w [tp,j] mr,yt") == "Ꞽnp.w [tp.ꞽ] mr.yt"
+    converted = to_corpus_convention("jwi̯.jn r =f mri̯.y")
+    assert "i̯" in converted and "y" in converted and "j" not in converted
+
+
+def test_dedup_key_is_yod_insensitive_and_case_insensitive() -> None:
+    """The same sentence written `jwi̯` (BBAW) and `ꞽwi̯` (TLA) must count once, and a
+    capitalised name must not get a different key from its lower-case spelling — it
+    did, and 155 duplicates slipped through the first import for that reason."""
     assert dedup_key("jwi̯.jn r =f") == dedup_key("ꞽwi̯.jn r =f") == dedup_key("iwi.jn r =f")
+    assert dedup_key("Jnp.w") == dedup_key("Ꞽnp.w") == dedup_key("ꞽnp.w") == dedup_key("jnp.w")
 
 
 # --- end to end on a tiny frame -----------------------------------------------
@@ -133,7 +145,9 @@ def test_convert_keeps_aligned_rows_and_counts_the_rest() -> None:
     assert report.dropped_empty_transcription == 1
     assert list(rows["source"]) == ["BBAW"]
     assert rows.iloc[0]["source_sentence_id"] == "B000000"
-    assert rows.iloc[0]["transliteration_gold"] == "jwi̯.jn r =f sḫ.tj pn r spr n =f 4.nw sp"
+    assert rows.iloc[0]["transliteration_gold"] == "ꞽwi̯.ꞽn r =f sḫ.tꞽ pn r spr n =f 4.nw sp"
+    # Pins the convention for every imported row: no ASCII yod survives conversion.
+    assert not rows["transliteration_gold"].str.contains("[jJ]").any()
 
     rows, report = convert(frame, include_text_only=True)
     assert report.text_only == 1 and len(rows) == 2

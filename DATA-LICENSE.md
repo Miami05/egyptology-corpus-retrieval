@@ -127,7 +127,7 @@ findspot in `grammar_notes`, and its AES text and sentence identifiers in `sourc
 
 ## Fourth corpus: the BBAW 2018 snapshot (`phiwi/bbaw_egyptian`)
 
-`data/processed/examples.csv` also contains 5,525 sentences imported by
+`data/processed/examples.csv` also contains 5,369 sentences imported by
 `scripts/import_bbaw_egyptian.py` from the Hugging Face dataset `phiwi/bbaw_egyptian`
 (<https://huggingface.co/datasets/phiwi/bbaw_egyptian>), licensed CC BY-SA 4.0:
 > Teilauszug der Datenbank des Vorhabens *"Strukturen und Transformationen des
@@ -148,16 +148,20 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
   brackets are dropped, and the words are regrouped so one space-separated group
   corresponds to one transliteration token. Codes with no Unicode codepoint (`Ff1`,
   `Ff100`, `R8A`, numerals) are kept as `<g>CODE</g>` placeholder markup.
-- **Transliteration conventions aligned with the rest of the corpus:** the comma
-  morpheme separator becomes a dot (`sḫ,tj` → `sḫ.tj`), `{,pl}` / `{,du}` become
-  `.pl` / `.du`, and `≡` becomes `=`. The yod is left as the editors wrote it (`j`);
-  everything else — brackets, restorations, capitalised names — is verbatim.
+- **Transliteration conventions aligned with the rest of the corpus:** the yod `j`
+  becomes `ꞽ` (`J` → `Ꞽ` in capitalised names), as for AES, so that a word reads the
+  same whichever corpus it came from; the comma morpheme separator becomes a dot
+  (`sḫ,tj` → `sḫ.tꞽ`), `{,pl}` / `{,du}` become `.pl` / `.du`, and `≡` becomes `=`.
+  Only the letter `j` is touched — `i̯` and `y` are other letters and stay. Everything
+  else — brackets, restorations, capitalisation — is verbatim.
 - **Only fully aligned sentences were kept.** Of 35,503 rows with hieroglyphs, 22,927
   yield exactly one sign group per transliteration token. Dropped, not patched: 9,121
   with a lacuna (`//`), 612 with an unreadable sign (`"?"`, `"⸮"`), 2,842 whose group
-  and token counts differ, 1 with an empty group. A further 3,904 duplicated another
-  row of the export and 13,498 were already present in this corpus (matched on a
-  yod-insensitive reading or identical signs). The 65,226 rows without hieroglyphs
+  and token counts differ, 1 with an empty group. A further 3,911 duplicated another
+  row of the export and 13,646 were already present in this corpus (matched on a
+  yod- and case-insensitive reading, or on identical signs), and one sentence whose
+  whole reading is the interjection `ꞽ` was dropped because no transliteration query
+  can reach it. The 65,226 rows without hieroglyphs
   are not imported by default (`--include-text-only` exists for them).
 - **Metadata not claimed.** The export states no period, genre or language stage per
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
