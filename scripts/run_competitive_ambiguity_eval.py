@@ -1,3 +1,28 @@
+"""Run the competitive ambiguity benchmark (item A: --stage none/auto/declared).
+
+`data/benchmarks/competitive_ambiguity_eval_queries_v4.csv` carries a `language_stage`
+column, one stage per row, derived by `derive_v4_declared_stage` (see its docstring
+and `PERIOD_STAGE_KEYWORDS` for the exact rule) and computed once, not at eval time.
+To regenerate it after the benchmark or the corpus changes:
+
+    python -c "
+    import pandas as pd
+    from scripts.run_competitive_ambiguity_eval import derive_v4_declared_stage
+    from app.data.loader import load_examples_csv
+    bench = pd.read_csv('data/benchmarks/competitive_ambiguity_eval_queries_v4.csv')
+    corpus = load_examples_csv('data/processed/examples.csv')
+    keyed = corpus.set_index(['source_text_id', 'source_sentence_id'])['period']
+    def stage_for(row):
+        period = keyed.get((row.expected_source_text_id, row.expected_source_sentence_id), '')
+        return derive_v4_declared_stage(row.expected_source_text_id, period) or ''
+    bench['language_stage'] = bench.apply(stage_for, axis=1)
+    bench.to_csv('data/benchmarks/competitive_ambiguity_eval_queries_v4.csv', index=False)
+    "
+
+Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such column;
+`--stage declared` against one of them declares no stage for any row.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -12,7 +37,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
-from app.services.stage import compatible_frame, infer_stage
+from app.services.stage import (
+    compatible_frame,
+    infer_stage,
+    normalize_stage,
+    stage_base_rates,
+)
 from app.services.suggestions import canonical_reading, loose_reading_form, suggest_top_readings
 
 EXAMPLES_PATH = "data/processed/examples.csv"
@@ -20,21 +50,64 @@ BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
 RESULTS_PATH = "data/benchmarks/competitive_ambiguity_eval_results.csv"
 FAILURES_PATH = "data/benchmarks/competitive_ambiguity_eval_failures.csv"
 
-# expected_source_text_id prefix -> declared language_stage (item A, --stage declared).
-# Anything else (an id with no recognised prefix, or blank) declares no stage.
+# expected_source_text_id prefix -> declared language_stage. Takes priority over the
+# period-keyword rule below: a TLA row already carries its stage in its own id.
 DECLARED_STAGE_PREFIXES: list[tuple[str, str]] = [
     ("TLA_EARLIER_", "Earlier Egyptian"),
     ("TLA_LATE_", "Late Egyptian"),
     ("TLA_DEMOTIC_", "Demotic"),
 ]
 
+# `period` keyword -> stage, for a target row with no TLA prefix (AES, BBAW). A
+# period string is mapped to a stage only when every keyword it contains maps to the
+# *same* stage — e.g. "Middle Kingdom / Second Intermediate Period" matches two
+# keywords that both mean Earlier Egyptian, so it resolves; "Third Intermediate
+# Period to Roman" matches one Late Egyptian keyword and one Demotic keyword, so it
+# does not (that row's real period is a range spanning two stages, and guessing
+# which one the row actually is would not be a documented rule, it would be a
+# guess). Zero keyword matches (e.g. "unknown") also does not resolve. Either way
+# the column is left blank, exactly as "anything else or missing" requires.
+PERIOD_STAGE_KEYWORDS: list[tuple[str, str]] = [
+    ("Old Kingdom", "Earlier Egyptian"),
+    ("First Intermediate", "Earlier Egyptian"),
+    ("Middle Kingdom", "Earlier Egyptian"),
+    ("Second Intermediate", "Earlier Egyptian"),
+    ("New Kingdom", "Late Egyptian"),
+    ("Third Intermediate", "Late Egyptian"),
+    ("Late Period", "Late Egyptian"),
+    ("Ptolemaic", "Demotic"),
+    ("Roman", "Demotic"),
+]
+
+
+def _stage_from_period(period: object) -> str | None:
+    text = str(period)
+    stages = {stage for keyword, stage in PERIOD_STAGE_KEYWORDS if keyword in text}
+    if len(stages) == 1:
+        return stages.pop()
+    return None
+
 
 def _declared_stage(expected_source_text_id: object) -> str | None:
+    """TLA-prefix-only stage, used only when a `period` value is not available."""
     text = str(expected_source_text_id)
     for prefix, stage in DECLARED_STAGE_PREFIXES:
         if text.startswith(prefix):
             return stage
     return None
+
+
+def derive_v4_declared_stage(expected_source_text_id: object, period: object) -> str | None:
+    """The documented rule behind the v4 benchmark's `language_stage` column.
+
+    TLA prefix first (it already names its own stage); otherwise the target row's
+    `period` column via `_stage_from_period`. Used both to populate the column (see
+    the module docstring for the regeneration command) and to audit any single row.
+    """
+    prefix_stage = _declared_stage(expected_source_text_id)
+    if prefix_stage is not None:
+        return prefix_stage
+    return _stage_from_period(period)
 
 
 REQUIRED_COLUMNS = [
@@ -169,9 +242,11 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Language-stage handling (item A). 'none' (default) reproduces today's "
             "pooled retrieval exactly. 'declared' restricts the candidate pool to "
-            "rows compatible with the stage implied by expected_source_text_id's "
-            "prefix (TLA_EARLIER_/TLA_LATE_/TLA_DEMOTIC_). 'auto' infers the stage "
-            "per query from a first retrieval pass over the pooled pool."
+            "rows compatible with the benchmark's own `language_stage` column (see "
+            "derive_v4_declared_stage for how that column was populated; a "
+            "benchmark file with no such column declares no stage for any row). "
+            "'auto' infers the stage per query from a first retrieval pass over the "
+            "pooled pool."
         ),
     )
     return parser.parse_args()
@@ -189,6 +264,12 @@ def main() -> None:
     top3_useful_hits = 0
     reciprocal_rank_sum = 0.0
 
+    # Base rates for infer_stage's lift check (item A, 'auto'): computed once on the
+    # full corpus rather than per query — excluding one target row shifts a stage's
+    # share by a fraction of a percent, not enough to matter, and recomputing per
+    # query would cost one more full-column pass per query for no measurable gain.
+    pooled_base_rates = stage_base_rates(examples_df)
+
     stages_used: list[str] = []
     for _, bench_row in benchmark_df.iterrows():
         candidate_pool = _exclude_expected(examples_df, bench_row)
@@ -203,7 +284,11 @@ def main() -> None:
         # candidate_pool untouched, so that mode reproduces today's numbers exactly.
         stage: str | None = None
         if args.stage == "declared":
-            stage = _declared_stage(bench_row["expected_source_text_id"])
+            # Read the benchmark's own precomputed column (see
+            # derive_v4_declared_stage) rather than recomputing it here — a
+            # benchmark file without the column (v1/v2/v3) simply declares no
+            # stage for any row, via bench_row.get's default.
+            stage = normalize_stage(bench_row.get("language_stage", ""))
         elif args.stage == "auto":
             first_pass = retrieve_top_k(
                 candidate_pool,
@@ -211,7 +296,7 @@ def main() -> None:
                 query_reading_order=query_reading_order,
                 k=10,
             )
-            stage = infer_stage(first_pass)
+            stage = infer_stage(first_pass, base_rates=pooled_base_rates)
         stages_used.append(stage or "")
         if stage is not None:
             candidate_pool = compatible_frame(candidate_pool, stage)

@@ -49,6 +49,7 @@ from app.services.stage import (  # noqa: E402
     build_stage_resources,
     infer_stage,
     normalize_stage,
+    stage_base_rates,
 )
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 
@@ -95,7 +96,7 @@ def resolve_stage(
         query_hieroglyphs_norm=regrouped or None,
         index=pooled.index,
     )
-    stage = infer_stage(first_pass)
+    stage = infer_stage(first_pass, base_rates=stage_base_rates(pooled.frame))
     return stage, stage is not None
 
 
