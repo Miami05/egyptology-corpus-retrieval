@@ -11,8 +11,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pandas as pd
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -69,6 +67,29 @@ def test_capitalised_yod_mirrors_the_bbaw_convention() -> None:
 def test_dots_hyphens_and_suffix_marker_survive() -> None:
     assert convert_word("=f") == "=f"
     assert convert_word("qn-Hr-xpS.f") == "qn-ḥr-ḫpš.f"
+
+
+def test_plus_markup_around_a_foreign_name_is_stripped_but_l_is_kept() -> None:
+    """`+name+l` is Ramses's own markup wrapper around a handful of foreign or
+    hypocoristic personal names (e.g. `+tpA-di-mnTw+l`, real corpus text) — the `+`
+    characters are not transliteration and are deleted; `l`, unlike `+`, is a
+    legitimate Late Egyptian transliteration letter for such names and is kept. The
+    ordinary letter mapping (`A` -> `ꜣ`, `i` -> `ꞽ`, `T` -> `ṯ`, ...) still applies
+    inside the name — there is no way to tell "foreign word" from context, so `i` is
+    the yod there exactly as it is everywhere else in the corpus."""
+    assert convert_word("+tpA-di-mnTw+l") == "tpꜣ-dꞽ-mnṯwl"
+    assert "+" not in convert_word("+tqny-imn+l")
+    assert convert_word("+tqny-imn+l").endswith("l")
+
+
+def test_rare_foreign_name_letters_pass_through_verbatim() -> None:
+    """`e`, `u`, `F`, `o` have no defined TLA equivalent and appear only inside a
+    handful of foreign proper names (e.g. the Hittite name `tili-tesub` in the
+    Ramses-Hittite treaty text); they are kept exactly as written, never guessed at
+    or dropped. Ordinary letters elsewhere in the same word still convert as usual
+    (`i` -> `ꞽ`), since nothing marks a word as "foreign" for the mapping to skip."""
+    assert convert_word("tili-tesub") == "tꞽlꞽ-tesub"
+    assert convert_word("SrSr.two") == "šršr.two"
 
 
 # --- word splitting on `_` ------------------------------------------------------
@@ -138,21 +159,22 @@ def test_content_id_depends_on_every_input() -> None:
     assert content_id("train", 2, "ꞽw", "xyz") != base
 
 
-# --- text-only hieroglyphs field normalises to empty, never to a stray group -----
+# --- text-only rows carry no glyph display ---------------------------------------
 
 
-def test_text_only_display_field_normalises_to_empty_even_for_one_code() -> None:
-    """A whitespace-joined raw Gardiner code is indistinguishable from `<g>CODE</g>`
-    markup to `normalize_hieroglyphs` (`BARE_GARDINER_TOKEN_RE`) and would silently
-    turn into a one-sign group — this bit two real rows during development, both with
-    exactly one glyph-side code. The sentinel-wrapped, comma-joined field the
-    importer actually writes must normalise to '' regardless of how many codes it
-    holds, including exactly one."""
-    assert normalize_hieroglyphs("|Z1|") == ""
-    assert normalize_hieroglyphs("|N35,F20,O34|") == ""
-    assert normalize_hieroglyphs("|LACUNA,SHADED2,Ff100|") == ""
-    # the bug this guards against: space-joined bare codes do NOT normalise to ''
-    assert normalize_hieroglyphs("Z1") != ""
+def test_to_schema_keeps_hieroglyphs_and_display_sequence_independent() -> None:
+    """`hieroglyphs` is a display column the result card renders verbatim, so a
+    text-only row must leave it genuinely empty rather than stuffing it with
+    something that merely *normalises* to empty; `display_sequence` falls back to
+    the transliteration instead, matching the BBAW text-only convention."""
+    aligned_like = to_schema("train", 1, "ꞽw", "𓅱", "𓅱")
+    assert aligned_like["hieroglyphs"] == "𓅱"
+    assert aligned_like["display_sequence"] == "𓅱"
+
+    text_only_like = to_schema("train", 2, "ꞽw ꞽw =ꞽ", "", "ꞽw ꞽw =ꞽ")
+    assert text_only_like["hieroglyphs"] == ""
+    assert text_only_like["display_sequence"] == "ꞽw ꞽw =ꞽ"
+    assert normalize_hieroglyphs(text_only_like["hieroglyphs"]) == ""
 
 
 # --- end to end on the real corpus (small slice) ---------------------------------
@@ -189,12 +211,31 @@ def test_line_2_of_train_is_a_correctly_aligned_row() -> None:
     assert len(matches) == 1
     row = matches.iloc[0]
     assert row["transliteration_gold"] == "ꞽw ꞽw =ꞽ r swr m =f"
+    assert row["hieroglyphs"] != ""
     norm = normalize_hieroglyphs(row["hieroglyphs"])
     assert len(norm.split()) == 7
+    assert row["display_sequence"] == row["hieroglyphs"]
+
+
+@requires_raw
+def test_text_only_rows_from_the_real_corpus_have_no_glyph_display() -> None:
+    """Every text-only row (count mismatch or glyph-side lacuna) must have an empty
+    `hieroglyphs` — never a raw Gardiner-code dump the UI would render as ASCII
+    garbage — and `display_sequence` must fall back to the transliteration."""
+    frame, report = convert(RAW_DIR, ["train"], limit=500)
+    assert report.text_only > 0
+    text_only_rows = frame[frame["hieroglyphs"] == ""]
+    assert len(text_only_rows) == report.text_only
+    assert (text_only_rows["display_sequence"] == text_only_rows["transliteration_gold"]).all()
+    align = alignment_report(
+        frame.assign(hieroglyphs_norm=frame["hieroglyphs"].map(lambda v: normalize_hieroglyphs(v) if v else ""))
+    )
+    assert align.text_only_rows == report.text_only
+    assert align.misaligned_rows == 0
 
 
 def test_to_schema_carries_the_required_grammar_note() -> None:
-    row = to_schema("train", 1, "ꞽw", "𓅱")
+    row = to_schema("train", 1, "ꞽw", "𓅱", "𓅱")
     assert row["grammar_notes"] == (
         "Ramses transliteration is normalised to the expected grammatical form, not "
         "the attested spelling."

@@ -23,11 +23,17 @@ e.g. `M17 G17` (i + m) aligned to the word `m`, a documented Late Egyptian habit
 writing the preposition `m` with a redundant phonetic complement. So alignment is
 built per row, gated on an objective count check exactly like the BBAW/AES importers,
 never guessed: rows where the count agrees AND no glyph-side lacuna marker is present
-become aligned rows; every other row with clean transliteration becomes text-only
-(glyphs kept as raw Gardiner-code text in `hieroglyphs`, which normalises to "" so the
-loader counts it as text-only, never misaligned); rows whose *transliteration* itself
-contains a lacuna are dropped outright, because "LACUNA" as literal text is not a
-reading.
+become aligned rows; every other row with clean transliteration becomes text-only,
+exactly like the BBAW text-only rows — `hieroglyphs` is empty (it is a display column
+the result card renders; a raw Gardiner-code dump would show up as ASCII garbage) and
+`display_sequence` falls back to the transliteration instead. This means the 14,665
+text-only rows carry no glyph display at all, even though the source archive's `src`
+file does have a glyph line for them — a real loss, accepted because rendering a
+partial/unverified sign sequence next to a reading it does not align with is worse
+than showing nothing. (A separate "display-only glyphs" column the loader does not use
+for alignment is a plausible later loader feature; not built here.) Rows whose
+*transliteration* itself contains a lacuna are dropped outright, because "LACUNA" as
+literal text is not a reading.
 
 Transliteration-side lacuna markers, all three drop the row:
   - a whole word equal to `LACUNA` (or `MISSING`, not observed but checked defensively)
@@ -43,16 +49,15 @@ only disqualify it from word alignment, falling back to text-only, per the rules
 Character inventory. Verified over all five splits' `tgt-*.txt` (masking out the
 `LACUNA` token spelled `L A C U N A`): every character is in the expected MdC set
 (`A a i H x X S T D q k g t d b p f m n r h z s w y . - = ( ) [ ] < > / 0-9 ?`) with a
-handful of rare exceptions, all traced to specific, harmless causes (see the module
-docstring continuation in the importer's report and the final task report): 19 `j`
-(an alternate spelling of the yod inside the editorial `n(j)` genitive marker — folded
-to the same sign as `i`), 5 `I` (capitalised yod in a proper name, mirrors the BBAW
-importer's `J` -> `Ꞽ`), 131 `l` and 52 `+` (Ramses's own `+name+l` wrapper around a
-handful of foreign/hypocoristic personal names — meaning unclear, kept verbatim), 2 `e`
-and 2 `u` and the single instance of `F` outside `[_]` (all inside the Hittite name
-`tili-tesub` in the Ramses-Hittite treaty text; kept verbatim as a literal proper noun
-spelling), 1 `o` (kept verbatim). None of these are dropped or special-cased beyond
-"leave the character as written" — see `RAMSES_CHAR_MAP`.
+handful of rare exceptions, all traced to specific, harmless causes: 19 `j` (an
+alternate spelling of the yod inside the editorial `n(j)` genitive marker — folded to
+the same sign as `i`), 5 `I` (capitalised yod in a proper name, mirrors the BBAW
+importer's `J` -> `Ꞽ`), 131 `l` (a legitimate letter in the Late Egyptian
+transliteration of foreign/hypocoristic names, kept as-is) and 52 `+` (Ramses's own
+`+name+l` wrapper markup around those same names — not transliteration, stripped),
+2 `e` and 2 `u` and the single instance of `F` outside `[_]` (all inside the Hittite
+name `tili-tesub` in the Ramses-Hittite treaty text; kept verbatim as a literal proper
+noun spelling), 1 `o` (kept verbatim). See `RAMSES_CHAR_MAP`.
 
     python scripts/import_ramses.py                       # measure only
     python scripts/import_ramses.py --append               # append to --existing
@@ -103,11 +108,12 @@ GRAMMAR_NOTE = (
 # `n(j)` genitive marker) is folded to the same sign — it is the same letter, just an
 # alternate spelling of the same editorial convention `normalize_transliteration`
 # already strips via `PARENTHESISED_YOD_RE`. `I`, capitalised, mirrors BBAW's `J` ->
-# `Ꞽ` for a proper name. Everything else in `q k g t d b p f m n r h z s w y` and the
-# rare foreign-name letters `l + e u o F` is left exactly as written: `q k g t d b p f
-# m n r h z s w y` are already the corpus's own ASCII spelling for those letters, and
-# `l + e u o F` have no defined TLA equivalent (see module docstring) so are kept
-# verbatim rather than guessed at.
+# `Ꞽ` for a proper name. `+` is Ramses's own `+name+l` markup wrapper around a foreign
+# name (not a transliteration character) and is deleted, not kept, mapping to "".
+# Everything else — `q k g t d b p f m n r h z s w y` (already the corpus's own ASCII
+# spelling for those letters) and the rare foreign-name letters `l e u o F` (no
+# defined TLA equivalent; `l` in particular is a legitimate Late Egyptian
+# transliteration letter for foreign names, not markup) — is left exactly as written.
 RAMSES_CHAR_MAP: dict[str, str] = {
     "A": "ꜣ",
     "a": "ꜥ",
@@ -120,6 +126,7 @@ RAMSES_CHAR_MAP: dict[str, str] = {
     "T": "ṯ",
     "D": "ḏ",
     "I": "Ꞽ",
+    "+": "",
 }
 _RAMSES_TABLE = str.maketrans(RAMSES_CHAR_MAP)
 
@@ -215,7 +222,11 @@ def content_id(split: str, lineno: int, transliteration: str, hieroglyphs: str) 
 
 
 def to_schema(
-    split: str, lineno: int, transliteration: str, hieroglyphs: str
+    split: str,
+    lineno: int,
+    transliteration: str,
+    hieroglyphs: str,
+    display_sequence: str,
 ) -> dict:
     text_id = content_id(split, lineno, transliteration, hieroglyphs)
     out = {column: "" for column in REQUIRED_COLUMNS}
@@ -236,7 +247,7 @@ def to_schema(
             "grammar_notes": GRAMMAR_NOTE,
             "source_ref": f"ramses-trl {VERSION} {split} line {lineno}",
             "review_status": "seed",
-            "display_sequence": hieroglyphs,
+            "display_sequence": display_sequence,
             "aesthetic_arrangement_flag": False,
         }
     )
@@ -291,7 +302,10 @@ def convert(raw_dir: Path, splits: list[str], limit: int = 0) -> tuple[pd.DataFr
     report = ImportReport()
     rows: list[dict] = []
     for split in splits:
-        for lineno, stoks, sstoks, ttoks in _iter_split_lines(raw_dir, split):
+        # `stoks` (the unsegmented `src` line) is read for parity with `src-sep` and
+        # `tgt` but is not used: text-only rows carry no glyph display (see below),
+        # so there is nothing left that needs the unsegmented Gardiner-code line.
+        for lineno, _stoks, sstoks, ttoks in _iter_split_lines(raw_dir, split):
             report.total += 1
 
             if has_bracket_lacuna(ttoks):
@@ -332,35 +346,27 @@ def convert(raw_dir: Path, splits: list[str], limit: int = 0) -> tuple[pd.DataFr
                         signs.append(sign)
                     sign_groups.append("".join(signs))
                 hieroglyphs_field = " ".join(sign_groups)
+                display_sequence = hieroglyphs_field
                 report.aligned += 1
             else:
-                # Text-only: the raw (unsegmented) Gardiner-code line, kept verbatim
-                # for a specialist to read, comma-joined rather than space-joined.
-                # Space-joining would backfire: `normalize_hieroglyphs`'s
-                # `BARE_GARDINER_TOKEN_RE` treats a whitespace-bounded Gardiner-shaped
-                # ASCII token (`N35`, `F20`, ...) exactly like `<g>N35</g>` markup and
-                # turns each one into its own placeholder sign, one group per
-                # *individual sign* instead of per word — the opposite of empty, and
-                # guaranteed to misalign against the much shorter transliteration. A
-                # comma is not whitespace, so the same regex's `(?<!\S)`/`(?!\S)`
-                # boundaries never match for any *interior* token. The first and last
-                # token are still bounded by the string's edges, which the same
-                # lookarounds treat as whitespace — a lone code, or a list of exactly
-                # one, still matched and came back non-empty (2 rows, caught by the
-                # alignment check below). Wrapping the whole field in a non-whitespace
-                # sentinel removes that edge case too: every token, including the
-                # first and last, now has a non-whitespace neighbour, so nothing in
-                # the field falls inside `BARE_GARDINER_TOKEN_RE`'s boundaries. Every
-                # character then falls through `NON_GROUP_CHAR_RE` and becomes a
-                # space, and the field reduces to "" — a text-only row, never a
-                # misaligned one.
-                hieroglyphs_field = "|" + ",".join(stoks) + "|"
+                # Text-only, matching the BBAW convention exactly: `hieroglyphs` is
+                # empty (it is a display column the result card renders verbatim, and
+                # the source `src` line here is either mis-sized against the word
+                # count or carries a LACUNA/MISSING/SHADED code, so there is nothing
+                # trustworthy to show), and `display_sequence` falls back to the
+                # transliteration. The corpus's own glyph line for these 14,665 rows
+                # is simply not carried into the corpus — a real loss of glyph
+                # display, accepted rather than risking a stray or misleading render.
+                hieroglyphs_field = ""
+                display_sequence = transliteration
                 if not count_matches:
                     report.text_only_count_mismatch += 1
                 else:
                     report.text_only_glyph_lacuna += 1
 
-            rows.append(to_schema(split, lineno, transliteration, hieroglyphs_field))
+            rows.append(
+                to_schema(split, lineno, transliteration, hieroglyphs_field, display_sequence)
+            )
             if limit and len(rows) >= limit:
                 return pd.DataFrame(rows, columns=REQUIRED_COLUMNS), report
 
@@ -408,7 +414,7 @@ def main() -> None:
     print(f"  dropped: unsearchable reading {report.dropped_unsearchable:>7,}")
     print(f"  kept                         {report.aligned + report.text_only:>8,}")
     print(f"    aligned (sign groups)      {report.aligned:>8,}")
-    print(f"    text-only, total           {report.text_only:>8,}")
+    print(f"    text-only, total           {report.text_only:>8,}  (hieroglyphs empty; no glyph display)")
     print(f"      count mismatch           {report.text_only_count_mismatch:>8,}")
     print(f"      glyph-side lacuna        {report.text_only_glyph_lacuna:>8,}")
     print(f"duplicates within the import    {internal_dupes:>8,}")
