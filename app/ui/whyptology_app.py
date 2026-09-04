@@ -26,7 +26,7 @@ from app.data.normalizer import (
     normalize_mdc,
 )
 from app.services.annotations import save_annotation
-from app.services.retrieval import build_search_index, retrieve_top_k
+from app.services.retrieval import build_search_index, retrieve_top_k, retrieve_with_stage
 from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
 from app.services.reading_model import train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream
@@ -34,6 +34,13 @@ from app.services.signs import (
     build_sign_index,
     multivalence_summary,
     ranked_multivalent,
+)
+from app.services.stage import (
+    STAGES,
+    StageResources,
+    build_stage_resources,
+    infer_stage,
+    normalize_stage,
 )
 from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
@@ -374,14 +381,21 @@ def load_segmenter(signature: str, _model) -> Segmenter:
     return Segmenter(_model)
 
 
-def resegment_query(df: pd.DataFrame, query: str):
+def resegment_query(resources: StageResources, query: str):
     """Sign groups for a pasted glyph query: the paste's spaces are hints, not truth.
+
+    Reads and segments with `resources.reading_model`/`resources.segmenter` rather
+    than the pooled corpus, so a hieroglyph paste is read against the stage it was
+    actually searched with (`resources.stage`, `None` for the pooled/"All" case).
+    This is the change ROADMAP.md credits with rescuing most of the Urk. IV pastes
+    that a Late-Egyptian-diluted pooled corpus otherwise mis-segments: restricting
+    to one stage's own group counts fixes the sign grouping, not just which corpus
+    rows get shown as parallels afterwards.
 
     Returns (segmentation, groups_as_pasted, model, segmenter).
     """
-    signature = corpus_signature(df)
-    model = load_reading_model(signature, df)
-    segmenter = load_segmenter(signature, model)
+    model = resources.reading_model
+    segmenter = resources.segmenter
     as_pasted = normalize_hieroglyphs(query).split()
     return segmenter.segment(as_pasted), as_pasted, model, segmenter
 
@@ -470,6 +484,46 @@ def load_sign_index(_df: pd.DataFrame, signature: str):
     the Sign readings page, including moving its own selectbox.
     """
     return build_sign_index(_df)
+
+
+@st.cache_resource(show_spinner=False)
+def load_stage_resources(stage: str | None, signature: str, _df: pd.DataFrame) -> StageResources:
+    """`StageResources` for one language stage, built lazily and cached per stage.
+
+    Only the stage actually requested is ever built, and each is cached once — the
+    UI must never build all of `STAGES` up front (ROADMAP.md, "Item A core landed
+    2026-09-04": all four cached at once measured ~1.9 GB at 131k rows).
+
+    `stage=None` (the pooled corpus, i.e. "All (no stage)") is special-cased to wrap
+    the app's OWN pooled loaders — `load_search_index`, `load_reading_model`,
+    `load_segmenter`, `load_sign_index`, every one of them already `st.cache_resource`
+    — instead of calling `build_stage_resources`. `build_stage_resources(df, None,
+    ...)` would reproduce the pooled behaviour exactly (its own docstring says so:
+    `compatible_frame(df, None)` is `df` itself) but as brand-new objects, doubling
+    memory for the pooled path even though nothing about it differs. Routing
+    `stage=None` through the existing pooled loaders instead means a visitor who
+    never touches the stage selectbox costs no more memory than before this feature
+    existed — see `test_load_stage_resources_pooled_reuses_the_pooled_loaders` for
+    the object-identity guarantee this relies on.
+
+    A concrete stage has no pooled equivalent to reuse, so it goes through
+    `build_stage_resources`, with the same lexicon the pooled reading model already
+    uses (`load_sign_lexicon`) and `build_stage_resources`'s own default
+    segmentation weights — which are exactly `load_segmenter`'s defaults too
+    (`DEFAULT_SEGMENTATION_WEIGHTS`, `use_lexicon=True`), so a stage's resources
+    differ from the pooled ones only in which rows they were built from.
+    """
+    if stage is None:
+        reading_model = load_reading_model(signature, _df)
+        return StageResources(
+            stage=None,
+            frame=_df,
+            index=load_search_index(_df, signature),
+            reading_model=reading_model,
+            segmenter=load_segmenter(signature, reading_model),
+            sign_index=load_sign_index(_df, signature),
+        )
+    return build_stage_resources(_df, stage, lexicon=load_sign_lexicon())
 
 
 # Longest accepted annotation field. Every note column is unbounded TEXT, so a
@@ -1132,6 +1186,144 @@ def consume_query_param() -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Language stage (item A, UI half)
+#
+# The internal stage value has three shapes: "auto" (infer per query), None (no
+# restriction — search the pooled corpus, "All (no stage)" in the selectbox), or one
+# of STAGES ("Earlier Egyptian" / "Late Egyptian" / "Demotic", a declared stage).
+# The selectbox shows a fourth, human string ("Auto") for the first of these; the
+# ?stage= link uses a fifth, url-safe one ("auto"/"all"/the stage name) so the
+# param never collides with the empty string a missing param already means.
+# ---------------------------------------------------------------------------
+
+STAGE_STATE_KEY = "whyptology_stage"
+STAGE_SELECT_WIDGET_KEY = "whyptology_stage_select"
+STAGE_AUTO_LABEL = "Auto"
+STAGE_ALL_LABEL = "All (no stage)"
+STAGE_DISPLAY_OPTIONS: list[str] = [STAGE_AUTO_LABEL, *STAGES, STAGE_ALL_LABEL]
+
+
+def stage_display_to_internal(display: str) -> str | None:
+    """Selectbox label -> internal stage value ("auto" | None | a STAGES member)."""
+    if display == STAGE_ALL_LABEL:
+        return None
+    if display == STAGE_AUTO_LABEL:
+        return "auto"
+    return display
+
+
+def stage_internal_to_display(stage: str | None) -> str:
+    """Internal stage value -> selectbox label. Inverse of stage_display_to_internal."""
+    if stage is None:
+        return STAGE_ALL_LABEL
+    if stage == "auto":
+        return STAGE_AUTO_LABEL
+    return stage
+
+
+def stage_internal_to_param(stage: str | None) -> str:
+    """Internal stage value -> ?stage= text. "all" stands in for None: an empty
+    string is indistinguishable from a missing parameter, so None cannot round-trip
+    as itself."""
+    return "all" if stage is None else stage
+
+
+def stage_param_to_internal(param: str | None) -> str | None:
+    """?stage= text -> internal stage value. Anything unrecognised (missing,
+    empty, or not one of "auto"/"all"/a STAGES member — a hand-edited or stale
+    link) defaults to "auto" rather than silently restricting the search."""
+    if param == "all":
+        return None
+    if param in STAGES:
+        return param
+    return "auto"
+
+
+def init_stage_state() -> None:
+    """Seed the stage from ?stage= the first time this session sees it.
+
+    Mirrors `consume_query_param`'s "once per session" guard, but the stage is not
+    *cleared* from the URL the way ?q= is: a shared link should keep restricting the
+    search to the stage it names for as long as the tab is open, exactly like the
+    selectbox itself would once the visitor touched it.
+    """
+    if STAGE_STATE_KEY not in st.session_state:
+        st.session_state[STAGE_STATE_KEY] = stage_param_to_internal(
+            st.query_params.get("stage")
+        )
+
+
+def resolve_ui_stage(
+    selected: str | None,
+    query: str,
+    get_resources,
+) -> tuple[str | None, bool]:
+    """Which stage to search and read the query with, and whether it was inferred.
+
+    Declared ("Earlier Egyptian" etc.) and "All" (None) need no first pass: the
+    caller already knows which resources to use. "auto" runs a first retrieval pass
+    on the pooled resources — a glyph query is segmented with the pooled segmenter
+    first, since inference needs *some* grouping to search on — and infers the
+    stage with `app.services.stage.infer_stage`, exactly the function
+    `retrieve_with_stage`'s own "auto" branch uses. This mirrors `resolve_stage` in
+    scripts/run_expert_paste_eval.py rather than delegating to
+    `retrieve_with_stage(stage="auto", ...)` directly, because the final search
+    below must resegment a hieroglyph paste with the *resolved* stage's own
+    segmenter (see `resegment_query`), and `retrieve_with_stage` has no hook to
+    redo that resegmentation between its own first and second pass.
+    """
+    if selected != "auto":
+        return selected, False
+    pooled = get_resources(None)
+    regrouped = ""
+    if contains_hieroglyphs(query):
+        as_pasted = normalize_hieroglyphs(query).split()
+        regrouped = " ".join(pooled.segmenter.segment(as_pasted).groups)
+    first_pass = retrieve_top_k(
+        pooled.frame,
+        query_mdc=query,
+        k=10,
+        query_hieroglyphs_norm=regrouped or None,
+        index=pooled.index,
+    )
+    stage = infer_stage(first_pass)
+    return stage, stage is not None
+
+
+def stage_caption(requested: str | None, stage_used: str | None, inferred: bool) -> str | None:
+    """The one-line caption shown under the results, or None to show nothing.
+
+    A pure function so the four states are unit-testable without a live session:
+    `requested` is what the selectbox asked for ("auto" | None | a STAGES member —
+    i.e. `st.session_state[STAGE_STATE_KEY]` at search time); `stage_used` and
+    `inferred` come from resolving that request (`resolve_ui_stage`, or the matching
+    fields on a `StageRetrievalResult`). `requested` has to be passed separately
+    from a `StageRetrievalResult`: `stage_used=None, inferred=False` is what BOTH
+    "All (no stage)" and "auto found nothing" look like from the result alone, and
+    the two need different captions.
+    """
+    if requested is None:
+        return None
+    if requested == "auto":
+        if inferred and stage_used:
+            return f"Stage inferred: {stage_used} — change"
+        return "No stage could be inferred; showing all stages."
+    return f"Restricted to {requested} and rows without a stage label."
+
+
+def evidence_stage_label(raw_stage: object) -> str:
+    """A corpus row's `language_stage` -> the label shown next to its source.
+
+    Normalises through `app.services.stage.normalize_stage`, so `Unspecified
+    (AES)`, `Unspecified (BBAW)`, a blank cell and an unrecognised value all read
+    the same, honest way: the corpus does not record a stage for this row, rather
+    than repeating the raw import-specific placeholder text.
+    """
+    normalized = normalize_stage(raw_stage)
+    return normalized if normalized is not None else "stage not recorded"
+
+
 def render_workspace(df: pd.DataFrame) -> None:
     saved_notice = st.session_state.pop("whyptology_saved_notice", None)
     if saved_notice:
@@ -1158,7 +1350,11 @@ def render_workspace(df: pd.DataFrame) -> None:
             meta = " · ".join(
                 part
                 for part in [
-                    value(current_top_row, "language_stage", ""),
+                    # Normalised, not the raw cell: `Unspecified (AES)` etc. would
+                    # otherwise leak into this quiet meta line. An unrecorded stage
+                    # is dropped from the line entirely (the "if part" filter
+                    # below), same as any other empty field here.
+                    normalize_stage(current_top_row.get("language_stage")) or "",
                     value(current_top_row, "period", ""),
                     value(current_top_row, "script_type", ""),
                     value(current_top_row, "source", ""),
@@ -1184,6 +1380,33 @@ def render_workspace(df: pd.DataFrame) -> None:
     # A shared link (?q=…) fills the box and arms a search — once per session, so
     # the parameter can stay in the URL without pinning the query.
     consume_query_param()
+
+    # Resolves a stage (or None, the pooled corpus) to its StageResources, built
+    # lazily and cached per (stage, corpus signature) — see load_stage_resources.
+    # Recreated every rerun, but it is a thin closure; the caching lives in
+    # load_stage_resources itself, keyed on its own arguments.
+    signature = corpus_signature(df)
+
+    def get_resources(stage: str | None) -> StageResources:
+        return load_stage_resources(stage, signature, df)
+
+    init_stage_state()
+    st.markdown('<div class="panel-title">Language stage</div>', unsafe_allow_html=True)
+    chosen_display = st.selectbox(
+        "Language stage",
+        STAGE_DISPLAY_OPTIONS,
+        index=STAGE_DISPLAY_OPTIONS.index(
+            stage_internal_to_display(st.session_state[STAGE_STATE_KEY])
+        ),
+        key=STAGE_SELECT_WIDGET_KEY,
+        label_visibility="collapsed",
+        help=(
+            "Auto infers the stage from the first pass of results. A declared "
+            "stage restricts evidence to that stage plus rows with no stage "
+            "recorded. All searches the whole corpus, unrestricted."
+        ),
+    )
+    st.session_state[STAGE_STATE_KEY] = stage_display_to_internal(chosen_display)
 
     # One column, not two: on a phone the old side-by-side layout pushed the search
     # button below the fold, under an optional field, so a reviewer typed a query,
@@ -1314,38 +1537,68 @@ def render_workspace(df: pd.DataFrame) -> None:
             st.warning("Enter a transliteration, MdC string or sign sequence first.")
         else:
             with st.spinner("Searching corpus parallels…"):
+                # Which stage to search and read with (item A). "auto" runs its
+                # own first pass here — see resolve_ui_stage — rather than being
+                # forwarded to retrieve_with_stage(stage="auto", ...): the paste's
+                # hieroglyphs, below, must be resegmented with the *resolved*
+                # stage's own segmenter, and retrieve_with_stage has no hook to redo
+                # that resegmentation between its internal first and second pass.
+                requested_stage = st.session_state[STAGE_STATE_KEY]
+                resolved_stage, stage_inferred = resolve_ui_stage(
+                    requested_stage, query, get_resources
+                )
+                resources = get_resources(resolved_stage)
+                st.session_state["whyptology_resolved_stage"] = resolved_stage
+                st.session_state["whyptology_stage_outcome"] = (
+                    requested_stage,
+                    resolved_stage,
+                    stage_inferred,
+                )
+
                 # For a glyph query, regroup the signs first so the parallels are
                 # matched on corpus-style groups rather than on the paste's spacing.
+                # Read with this stage's own reading model/segmenter — restricting
+                # the group counts to one stage changes which grouping wins, which
+                # is what rescues most of the Urk. IV pastes a Late-Egyptian-diluted
+                # pooled corpus otherwise mis-segments (ROADMAP.md, "Item A core
+                # landed 2026-09-04").
                 regrouped: str | None = None
                 if contains_hieroglyphs(query):
-                    segmentation, _, _, _ = resegment_query(df, query)
+                    segmentation, _, _, _ = resegment_query(resources, query)
                     regrouped = " ".join(segmentation.groups)
                     st.session_state["whyptology_segments"] = segmentation.groups
                 else:
                     st.session_state.pop("whyptology_segments", None)
                 # Pool of 50: the evaluation scripts rank within 50, so what ships
                 # must rank within the same pool or the tuned behaviour differs.
-                pool = retrieve_top_k(
+                # stage=resolved_stage, never "auto": resolve_ui_stage above already
+                # did the auto inference, so this always retrieves on one concrete
+                # (or pooled/None) stage's resources.
+                stage_result = retrieve_with_stage(
                     df,
+                    resources_by_stage=get_resources,
                     query_mdc=query,
                     query_reading_order=reading_order,
+                    stage=resolved_stage,
                     k=max(settings.top_k, 50),
                     query_hieroglyphs_norm=regrouped,
-                    index=load_search_index(df, corpus_signature(df)),
                 )
+                pool = stage_result.results
                 st.session_state["whyptology_results"] = pool.head(
                     max(settings.top_k, 5)
                 ).copy()
                 st.session_state["whyptology_last_query"] = query
                 # Make the URL shareable: an expert can now send "this one is wrong"
-                # as a link instead of describing the query.
+                # as a link instead of describing the query. The stage travels with
+                # it, so re-opening the link searches the same evidence again.
                 st.query_params["q"] = query
+                st.query_params["stage"] = stage_internal_to_param(requested_stage)
                 # The parse of the query that was actually *searched*, kept so the
                 # empty state can say what was looked for even after the box has
                 # been edited. `parse` above tracks the box, not the search.
                 searched = parse_query(
                     query,
-                    vocabulary=load_search_index(df, corpus_signature(df)).vocabulary,
+                    vocabulary=resources.index.vocabulary,
                     hieroglyphs_norm=regrouped,
                 )
                 st.session_state["whyptology_last_parse"] = searched
@@ -1374,6 +1627,15 @@ def render_workspace(df: pd.DataFrame) -> None:
 
     # Now that the search block has run, the header can name this run's top result.
     paint_header(top_row)
+
+    # One line under the results saying how the stage was decided — nothing when
+    # the search restricted to nothing ("All") or hasn't run yet.
+    stage_outcome = st.session_state.get("whyptology_stage_outcome")
+    if results is not None and stage_outcome is not None:
+        requested_stage, resolved_stage, stage_inferred = stage_outcome
+        caption_text = stage_caption(requested_stage, resolved_stage, stage_inferred)
+        if caption_text:
+            st.caption(caption_text)
 
     # Tab order follows the query. "Sign-by-sign reading" is deliberately empty for
     # a transliteration query — there is nothing to decode when the reading is
@@ -1420,7 +1682,15 @@ def render_workspace(df: pd.DataFrame) -> None:
                 "already given."
             )
         else:
-            segmentation, as_pasted, model, segmenter = resegment_query(df, last_query)
+            # The same stage the search itself resolved to (item A), not a fresh
+            # pooled resegmentation — otherwise this tab could show a different
+            # grouping than the one the parallels/suggestions above were found with.
+            decode_resources = get_resources(
+                st.session_state.get("whyptology_resolved_stage")
+            )
+            segmentation, as_pasted, model, segmenter = resegment_query(
+                decode_resources, last_query
+            )
             suggested = " ".join(segmentation.groups)
 
             # --- segmentation editor -------------------------------------------
@@ -1650,6 +1920,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 col
                 for col in [
                     "source",
+                    "language_stage",
                     "source_text_id",
                     "period",
                     "transliteration_gold",
@@ -1658,9 +1929,16 @@ def render_workspace(df: pd.DataFrame) -> None:
                 ]
                 if col in results.columns
             ]
-            table = results.loc[:, show].rename(
+            table = results.loc[:, show].copy()
+            if "language_stage" in table.columns:
+                # Next to Source, in the same quiet style — normalised so an
+                # unspecified row reads "stage not recorded", not the raw
+                # per-import placeholder text.
+                table["language_stage"] = table["language_stage"].map(evidence_stage_label)
+            table = table.rename(
                 columns={
                     "source": "Source",
+                    "language_stage": "Stage",
                     "source_text_id": "Text",
                     "period": "Period",
                     "transliteration_gold": "Reading",
@@ -1717,13 +1995,20 @@ def render_workspace(df: pd.DataFrame) -> None:
                         meta_cols,
                         [
                             ("Source", "source"),
-                            ("Sentence", "source_sentence_id"),
+                            # Next to the source badge, same quiet style — see
+                            # evidence_stage_label for the normalised wording.
                             ("Language stage", "language_stage"),
+                            ("Sentence", "source_sentence_id"),
                             ("Script", "script_type"),
                         ],
                     ):
                         column.caption(caption)
-                        column.markdown(f"**{value(row, field)}**")
+                        text = (
+                            evidence_stage_label(row.get("language_stage"))
+                            if field == "language_stage"
+                            else value(row, field)
+                        )
+                        column.markdown(f"**{text}**")
 
                     st.markdown(f"**Reading:** {value(row, 'transliteration_gold')}")
                     st.markdown(
@@ -1964,7 +2249,13 @@ def render_corpus(df: pd.DataFrame) -> None:
         for _, row in window.iterrows():
             cells = []
             for col in columns:
-                cell = escape(value(row, col, "—"))
+                # Normalised wording for the stage column, matching the workspace's
+                # evidence rows — see evidence_stage_label.
+                cell = escape(
+                    evidence_stage_label(row.get("language_stage"))
+                    if col == "language_stage"
+                    else value(row, col, "—")
+                )
                 # Only the reading column gets the transliteration font; everything
                 # else stays in the interface font.
                 css_class = (
@@ -2004,9 +2295,10 @@ def render_corpus(df: pd.DataFrame) -> None:
             source_label = escape(value(row, "source", "Unknown source"))
             text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
             period_label = escape(value(row, "period", "Period unknown"))
-            language_label = escape(
-                value(row, "language_stage", "Language stage unknown")
-            )
+            # Same normalised wording as the workspace's evidence rows — see
+            # evidence_stage_label — rather than this card's own former "unknown"
+            # phrasing, so a reader sees one consistent label everywhere.
+            language_label = escape(evidence_stage_label(row.get("language_stage")))
             reading = escape(value(row, "transliteration_gold", "No reading"))
             translation = escape(value(row, "translation", "No translation available"))
             st.markdown(
