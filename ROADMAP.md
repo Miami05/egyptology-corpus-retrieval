@@ -818,8 +818,12 @@ informally, by email; no licence on the pages. Non-commercial and informal means
 Andrews rows can **never enter `data/processed/examples.csv` or the public repository**
 (CC BY-SA cannot carry NC material). They live in a separate, non-redistributed file
 loaded at runtime, labelled "used with permission of Mark-Jan Nederhof, non-commercial,
-not redistributable", each row cited to him and to the edition. Still to confirm with
-him: that public display in the app is within "use" (reply drafted 2026-09-02).
+not redistributable", each row cited to him and to the edition. Confirmed the same day in
+his second mail: **CC BY-NC-SA 4.0** ("sounds about right"), and the intended handling
+("sounds perfect"). He also stated his corpus follows Hannig's conventions (no z/s
+distinction, no dot before the feminine t), pointed to Rosmorduc's automatic-transliteration
+papers and his own sign-function research, and asked whether the site is academic
+research. Reply drafted as Email 3 in `docs/permission-requests.md`.
 
 ## Plan for 2026-09-02 (revised after Nederhof's reply)
 
@@ -860,3 +864,391 @@ markers (needs lemma IDs); a segmentation model with sign-function knowledge
 (determinatives, phonetic complements, quadrat structure).
 
 Not planned: photo/OCR input (wait for Sophie), machine translation of any kind.
+
+## Plan evaluated 2026-09-02 — five agents read the code before anything was built
+
+Each item of the plan above was checked against the repository and, where it mattered,
+against the live sources. What changed:
+
+**Order.** `1 fold → 4 loader + memory → 5 imports → 2 St Andrews → 3 format hints`.
+Items 6 (HF Spaces) deferred, 7 (Neon) today, 8 (email Liège) today.
+
+1. **`.PL` → `.w` fold — confirmed, ~2–3 h.** Corpus counts: `.PL` 2,842 tokens (TLA),
+   `.pl` 4,873 (AES/BBAW), 277 stems attested both ways (not 181). Trap: **1,127 tokens
+   are written `.w.PL`/`.w.pl`** (`sr.w.PL`), so a naive replace makes `srww`; the regex
+   must be `(?:\.w)?\.pl(?![^\W\d_])` → `.w`, applied in `normalize_transliteration`
+   (after lowercasing, before the yod rule) and in `strict_reading_key` before the dots
+   are dropped. `.PL.t` never occurs. Camilla's gate is untouched (no plural in it).
+   **The feminine `.t` is already ignored on both keys** (dots deleted), so Hannig `nbt`
+   already matches Berlin `nb.t`. **z/s:** 271 variant groups across sources (`zꜣ` 634 /
+   `sꜣ` 239), but genuinely distinct lemmas would merge (`zꞽ` "man" / `sꞽ` "she", `ꞽz`
+   "tomb" / `ꞽs` particle) — fold z→s in `search_fold` only, as a separate measured step
+   after v4 is re-run on the plural fold alone; never in the strict key. Must run before
+   the BBAW import because `dedup_key` uses `search_fold` (65 near-duplicates otherwise).
+2. **St Andrews importer — bigger than planned, ~13 h, and one thing the roadmap got
+   wrong.** Verified on the live files: `corpus.xml` lives at `texts/corpus/corpus.xml`,
+   ~94 texts, not all with hieroglyphs (Sinuhe is translit+English only). `*Hi.xml` is
+   **RES, not MdC** (`insert[s](I10,D46)-I9-…`, `cartouche(...)`, `[rotate=270]`), one
+   `<segment>` per Sethe line; a ~60-line sign-sequence tokenizer is needed, the BBAW MdC
+   parser does not apply, the Gardiner→Unicode table does. `*Tr.txt` is the "lite"
+   format: phrases separated by blank lines, `;` between transliteration and translation,
+   `<N>` line anchors *inside* words, `^` before names, HTML entities. **Alignment is at
+   the manuscript-line level, and phrases cross lines** — PhilologEg aligns at display
+   time. So the importer cannot produce word-aligned rows without an aligner (2–5 days,
+   research). Import two honest shapes: phrase rows (translit + English, no glyphs) and
+   line rows (glyphs + the translit between anchors, flagged "line-level"). Camilla's
+   paste is retrievable from the line rows: coord 2 decodes to `𓆓𓂧 𓆑 𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏤𓏤𓏤 …`.
+   Hannig→TLA: `A a j H x X S T D` → `ꜣ ꜥ ꞽ ḥ ḫ ẖ š ṯ ḏ`; `y` stays; `s` and undotted
+   `t` **left as written** (a wrong dot in a gold column is worse than a known absence).
+   Loading: the global "Licensed CC BY-SA 4.0" sentence in `corpus_credit_html` would
+   mislabel NC rows — credits must become per-source. Private rows are concatenated
+   **after** `ensure_corpus_ready`/`attach_db_ids`, so they never enter the DB, the
+   exports or the API. Delivery to the deployed app: a **private Hugging Face dataset
+   repo + read-only token in a secret + `hf_hub_download` at boot**, host-agnostic; the
+   Space repo itself is public and hub-sync deletes out-of-band files.
+3. **Format-control hints — last, and it cannot be measured on current data.** Exactly
+   one deletion site (`normalizer.py:183`); corpus has **0** controls, all raw sources
+   have 0, the segmentation eval has 0, and the only test row with controls (PASTE_005)
+   has joiners *inside* a word, so a hard "no cut inside a quadrat" rule drops the gate
+   to 7/8. Suffix pronouns (`=f`, `=tn`) share quadrats with the preceding sign, so the
+   hint is soft at best. BBAW's MdC `:`/`*` operators (22.5% of within-word adjacencies)
+   can be emitted as U+13430/13431 for an **upper-bound** measurement; realistic input
+   arrives only with St Andrews RES. Display with quadrat layout needs Nederhof's
+   hierojax (GPL JS) in an iframe per card — defer.
+4. **Memory — the plan's diagnosis was wrong about where the bytes are.** Measured:
+   `document_vectors` (one `Counter` of char n-grams per row) is **216 MB at 31k and
+   584 MB at 78k**; everything else is flat (lexicon 59, reading model 92, sign index
+   55, frame 105→232). Dropping the 9 dead columns saves **4 MB** (empty cells share one
+   `""` object; `memory_usage(deep=True)` overstates). **Categorical dtypes save 0 MB**
+   (the C parser already interns) **and break the explorer** (`fillna("")` raises on a
+   Categorical) — dropped from the plan. The real fix is a **sparse CSR matrix**
+   (sklearn `CountVectorizer(analyzer="char", ngram_range=(2,4))`, L2-normalised; cosine
+   as one matmul): −520 MB and 0.4 s → 0.011 s. Simulated 78k rows with CSR + streamlit
+   imported: **816 MB** — fits under 1 GB with ~180 MB headroom; +Demotic +St Andrews
+   ≈ 900 MB, nominal; Ramses does not fit. Text-only state: `loader.py:81-85` `not s`
+   → count as `text_only_rows`; `ReadingModel.sentences_skipped` needs the same split;
+   `example_payload` in bootstrap indexes dead columns directly (KeyError if dropped).
+5. **Imports.** BBAW text-only reproduces 46,888 net-new; `--append` also writes
+   `bbaw_rows.csv` (do not commit). Demotic parquet has **no hieroglyphs column at all**;
+   `import_tla_dataset.py` needs `--script-type Demotic`, a Roman Period range (dates run
+   to +250), `--limit` raised from 100, and an append/dedup path. "Kept out of sign
+   statistics" is automatic (no glyphs → never fitted) but Demotic tokens **do** enter
+   `mdc_frequencies` and change IDF for every query; the workspace has no stage filter,
+   only the explorer does — a score mask, not a filtered frame (filtering rebuilds all
+   vectors per query). Re-runs at 78k: v4 ≈ 1 min, `verify_release.py` ≈ 5–6 min.
+6. **HF Spaces — premise gone, defer.** Verified 2026-09-02: `sdk: streamlit` was
+   deprecated 2025-04-30 (Docker template now); **Docker/Gradio Spaces need a PRO account
+   ($9/month) since July 2026** — free accounts get static Spaces and ZeroGPU Gradio
+   only. CPU Basic is still 2 vCPU / 16 GB, sleeps after 48 h. Nothing in the app breaks
+   there (env-var secrets, `REVIEWER_KEY` name, port 8501, user 1000). Decision is a
+   spending one and is not needed until something beyond item 5 has to ship.
+   DEPLOYMENT.md lines 128–171 are stale on these facts.
+7. **Neon — runbook correct, no code change.** Egress fix verified in `list_example_keys`
+   + regression test; no real credential in git history (placeholders only), so rotation
+   is the whole remedy. `check_database.py` prints `UNREACHABLE` while the quota is
+   still exhausted — that is the signal to wait.
+
+## Final plan, week of 2026-09-02 (hosting decision: home server, not Hugging Face)
+
+Decided 2026-09-02 after the evaluation above. Ledio wants both Ramses (~71k Late
+Egyptian rows) and St Andrews (~14k Middle Egyptian); together they exceed Streamlit
+Cloud's 1 GB and HF Docker Spaces now cost PRO. A small always-on PC at home behind a
+Cloudflare Tunnel replaces both: no sleep, RAM is whatever the PC has, private data files
+sit in a folder on the machine, Neon stays the database.
+
+**Ramses needs no permission email.** The Ramses Transliteration Corpus v2019-09-01
+(Zenodo 10.5281/zenodo.4954597) is released CC BY-NC-SA 4.0 (the README in the zip
+governs; the Zenodo field saying CC BY 4.0 is wrong). Non-commercial use with attribution
+is granted by the licence itself. What it forbids is entering the public CC BY-SA CSV or
+repo, so it goes to the same private, non-redistributed path as St Andrews with its own
+credit line. A short courtesy mail to Rosmorduc / Liège asking for a CC BY-SA grant is
+worth sending (Email 4 in `docs/permission-requests.md`) but blocks nothing.
+Ramses is word-aligned (Gardiner codes with `_` word separators + transliteration), uses
+`j` for the yod, and its transliteration is *normalised to the expected grammatical form*,
+not the actual spelling — record that in `grammar_notes` and DATA-LICENSE.
+
+| Day | Work | Gate |
+|---|---|---|
+| Wed 09-02 | Send Nederhof Email 3. `.PL`/`.w` fold (`(?:\.w)?\.pl` → `.w` in `normalize_transliteration` + `strict_reading_key`, tests). Neon: rotate password, set `DATABASE_URL`, reboot (user). Download Ramses zip and St Andrews raw files into gitignored `data/raw/`. | suite green, v4 re-run recorded, `check_database.py` → DURABLE |
+| Thu 09-03 | Loader: text-only state (`alignment_report`, `sentences_skipped` split, Sign-readings caption). Sparse CSR index replacing per-row Counters; no per-query `df.copy()`; drop dead columns with `example_payload` made tolerant. Measure RSS at 31k and on the 78k dry-run frame. | 78k frame < 900 MB in a plain process; query < 0.4 s |
+| Fri 09-04 | Import BBAW text-only (46,888) and Demotic (importer: `--script-type Demotic`, Roman Period range, `--limit`, append/dedup, credit). Re-run v4, segmentation eval, `verify_release.py`. Push; Streamlit Cloud still hosts this size. | v4 ≥ 0.95 top-3 useful, gates 8/8 |
+| Sat 09-05 | **Server.** PC: Ubuntu Server, Docker, `cloudflared` tunnel to a domain (or Tailscale Funnel). Repo: `Dockerfile`, `compose.yaml` (restart: unless-stopped, `DATABASE_URL`, `REVIEWER_KEY`, `PRIVATE_DATA_DIR` env), `.dockerignore`, a `deploy.sh` that pulls and rebuilds. Deploy the Friday corpus. Streamlit Cloud gets a "moved to …" banner via a secret; Sophie's link keeps working. | app answers on the new URL over HTTPS; annotations persist across a container restart |
+| Sun 09-06 | **Private data path.** `data/private/` gitignored + `git ls-files` test; loader reads any CSVs there and concatenates *after* `ensure_corpus_ready`/`attach_db_ids` (never into the DB/exports); per-source credit lines replacing the global CC BY-SA sentence; DATA-LICENSE section. **Ramses importer** → `data/private/ramses.csv` (Gardiner→Unicode via the BBAW mapper, `_` = word boundary, `j`→`ꞽ`, `source=Ramses`). Load on the server, measure RSS, re-run evals on Late Egyptian queries. | Ramses rows searchable with the NC label; public CSV unchanged; suite green with the private folder empty |
+| Mon–Wed 09-07..09 | **St Andrews importer** (~13 h): corpus walk, RES sign-sequence tokenizer, lite Tr.txt parser, Hannig→TLA table checked on 𓀀 𓂋 𓇋, phrase rows + line rows, Stauder §7.2 as `period_source`. Then screenshot the attribution to Nederhof. | Camilla's Urk. IV 1 line retrieves top-1 from the St Andrews line rows |
+| after | Format-control hints, measured first as the BBAW upper bound, then on St Andrews RES. Ramses-based Late Egyptian evaluation set. z→s in `search_fold` as its own measured step. | |
+
+### After the server: the four answers to Nederhof, in order of effort
+
+Once hosting is no longer the constraint, the remaining work is the model, not the data.
+Each item ends in a number that can be sent to him.
+
+- **A. Language-stage aware evidence (Ledio's idea, 2026-09-02; cheap, ~1 day).** Late
+  Egyptian, Middle Egyptian and Demotic spell differently; the segmenter's group counts
+  and the suggestion ranking currently pool all stages. Every row already carries
+  `language_stage`, so: (i) show the stage of each piece of evidence in the result card;
+  (ii) let the user restrict the workspace search to a stage (as a **score mask**, not a
+  filtered frame — filtering rebuilds all vectors per query); (iii)try per-stage group
+  counts in the segmenter for pastes where the user has declared a stage. Measure on the
+  v4 benchmark split by stage, and on the Ramses-derived Late Egyptian set. Nobody asked
+  for this; it addresses the same root cause as his proper-noun and segmentation points.
+- **B. Format controls as weak segmenter hints (~½ day + measurement).** Keep U+13430–1345F,
+  pass quadrat boundaries as a soft penalty on cuts inside a quadrat. Measure the BBAW
+  upper bound first (its MdC `:`/`*` operators are 22.5% of within-word adjacencies), then
+  on St Andrews RES once imported. Report the number to him either way; a null result is
+  a real answer to the open question he posed.
+- **C. Sign-function segmentation (~1 week, the actual criticism).** Replace the bare
+  unigram over attested groups with a lattice that knows sign *class*: determinatives
+  close a word, phonetic complements attach to the preceding sign, logograms stand alone.
+  Inputs available without new permissions: Gardiner class from the sign code (already
+  parsed in `build_gardiner_table`), the Helsinki spelling lexicon, and the corpus's own
+  group statistics. Thot Sign List would be ideal (sign → attested functions) but its
+  licence is unstated — one email if this becomes the bottleneck. Gate: Camilla's line
+  from all four spacings, expert paste 8/8, unspaced F1 above 0.931.
+- **D. Proper nouns / lemma identifiers (~2–3 days).** His second criticism. Variant-marker
+  normalisation is partial; TLA lemma IDs are the real fix and are present in the source
+  exports. Group name variants under one lemma in the suggestion list.
+
+Then, and this matters more than any of the four: **put it back in front of the experts.**
+Camilla offered to retest on a text we have not seen; Sophie's link now works; Nederhof
+asked to see the attribution. Annotation persistence (Neon, Wednesday) has to be real
+before any of them records a correction.
+
+**Before Saturday (user side):** confirm the PC has ≥ 8 GB RAM and can stay on; install
+Ubuntu Server if it is not Linux yet; a domain (≈ €10/yr) plus a free Cloudflare account,
+or a Tailscale account; the Neon password rotated so the new server gets a clean URL.
+
+**Emails.** Needed for data: none beyond Nederhof's reply (his files are already
+fetchable; his permission is given). Optional: Rosmorduc / Liège (Email 4, courtesy + BY-SA
+ask); a follow-up to Werning at BBAW only if no reply by mid-September (not needed for data,
+the text-only rows come from the open export). Later leads, not now: Thot Sign List
+(licence unknown; would serve the sign-function model Nederhof described), MORTEXVAR,
+EgyptianTranslation authors (English).
+
+Superseded by this section: items 6 (HF Spaces) and 8 (email Liège as a precondition)
+of the 2026-09-02 plan.
+
+## Nederhof's third mail, 2026-09-02 — what it settles, what it changes
+
+His reply to Email 3 (same day). Checked against his files and tools before touching the
+plan; the raw Urk. IV 1 files (`urkIV-001.xml`, `urkIV-001Hi.xml`, `urkIV-001Tr.txt`,
+`align/AhmoseSonEbana.xml`) were fetched and read.
+
+**Settled.**
+- Licence: "sounds fine". Citation URL he wants used:
+  `https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/`. Goes into the per-source
+  credit line and DATA-LICENSE alongside his name, CC BY-NC-SA 4.0 and the Sethe/Breasted
+  citation from each text's `<collection>` element.
+- **Word alignment is not in the data — confirmed by him, and by the files.** Alignment
+  is line numbers + `<N>` anchors + the `align/*.xml` precedence files (Urk. IV 1's is
+  353 bytes: ten `<prec1/prec2 id1 id2>` segment pairs, nothing finer) + a run-time
+  automatic aligner whose output PhilologEg discards. So the two-shape import (phrase
+  rows: translit + English; line rows: glyphs + the translit between anchors, flagged
+  line-level) is the correct design, not a fallback. Urk. IV 1: 67 RES segments, 160
+  phrases. The per-word alignment stays a research item; his 2008b paper and W15-4810
+  are the method if it is ever attempted, and he is putting students on exactly that.
+- **He calls the corpus RES, not MdC.** The roadmap already said so (item 2 above).
+
+**Changed.**
+1. **The RES tokenizer is deleted from the St Andrews importer.** `hieropy` 0.1.9
+   (PyPI, 2026-08-28, his own package, GPL-3.0) converts RES to Unicode: tested on all 67
+   Urk. IV 1 segments, 67/67 converted, output uses U+13430 (vertical joiner), 13431
+   (horizontal), 13433 (insert), 13434, 13437/13438 (begin/end segment). Camilla's line
+   comes out as `𓆓𓐳𓂧𓆑𓆓𓐳𓂧𓀀𓈖𓏏𓐰𓈖𓐰𓏤𓐱𓏤𓐱𓏤…` — the insertion in `insert[s](I10,D46)`
+   is preserved as U+13433. Estimate for item 2 drops from ~13 h to ~8 h (the lite
+   `Tr.txt` parser, the anchor logic and the Hannig→TLA table remain).
+   Constraints: (a) **GPL-3.0** — hieropy runs only in the offline import script that
+   writes `data/private/standrews.csv`; it never enters `requirements.txt` or the app
+   process, so the MIT app and the CC BY-SA data are untouched (converted glyph strings
+   are data, not a derivative of the converter). Keep the script under `scripts/private/`
+   or outside the repo, and say in its header that it needs `pip install hieropy`.
+   (b) `import hieropy` pulls in `tkinter` for its editor; the Homebrew Python 3.12 has no
+   Tk. Either `brew install python-tk@3.12` or stub `tkinter`, `tkinterweb`, `tkhtmlview`
+   in `sys.modules` before the import (the stub was enough for the 67-segment test).
+   (c) Dependencies are heavy (scipy, shapely, pypdfium2, reportlab, fonttools, Pillow):
+   one more reason it stays out of the deployed image.
+2. **Format-control hints (item B) get real input immediately, not "only after St
+   Andrews".** Every St Andrews line row will carry the controls hieropy emits, so the
+   measurement runs on his corpus first and the BBAW upper bound becomes the second
+   number, not the first. hieropy's `MdcUniConverter` can also turn the BBAW MdC
+   `:`/`*` into controls, replacing the hand-written emitter planned for the upper bound.
+   Both measurements go in the report to him he asked for.
+3. **Sign-function segmentation (item C) has a published model to build on, not to
+   invent.** W15-4810 (Nederhof & Rahman, FSMNLP 2015) is exactly item C: sign
+   *functions* (phonogram, logogram, determinative, phonetic determinative,
+   typographical) as the intermediate layer between signs and letters; N-gram over
+   functions interpolated 9:1 with an HMM over function classes; trained on Westcar
+   (2,669 words), tested on Shipwrecked Sailor (1,004 words); F1 86.0 baseline → **95.0**.
+   Its a-priori knowledge is his annotated sign list (functions of the 1,071 Unicode
+   signs, XML at `egyptian/unicode/`), which is the role the roadmap assigned to the
+   Thot Sign List. Two consequences: ask him for the sign list's licence (Email 5), and
+   design C as "his function lattice fed by our 31k-row group statistics and the
+   Helsinki lexicon", which is also the collaboration he offers. His stated weak spot,
+   honorific transposition, is where the corpus rows help.
+4. **His question — aligned data for segmentation/transliteration — is answerable from
+   the survey already done** (memory `open-data-sources-surveyed`). Email 5 lists: TLA
+   HF exports, AES, `phiwi/bbaw_egyptian`, AED-TEI, Ramses, Helsinki lexicons, with
+   sizes, licences and the one caveat that matters to him: all are word-level by
+   whitespace, none is sign-function annotated, and the whitespace alignment is exactly
+   where this tool's own errors come from (Camilla's trial). Offer the v4 benchmark and
+   expert-paste set as test material.
+5. **His idea — "find similar phrases", by edit distance over transcription,
+   transliteration or translation — is a new item E, and it is mostly already built.**
+   The workspace retrieval *is* phrase similarity over transliteration (char 2–4-gram
+   cosine, becoming a sparse CSR index on Thursday). What is missing: the same index over
+   the **hieroglyph sequence** (sign n-grams, the corpus has glyphs) and over the
+   **translation**, an edit-distance re-rank of the top-k, a result view that shows the
+   matched parallel with its source instead of a reading suggestion, and — the part he
+   actually wants — **a user's own texts** as an additional private corpus (upload a
+   Tr.txt-style file, indexed in session or under the reviewer key, never persisted
+   publicly). Cost after the CSR index lands: ~1–2 days. It is the first feature an
+   expert has asked for unprompted, and it needs no new data or permission.
+   **Thursday's CSR index must be built field-generic** (one function: column → matrix)
+   so E is a second call, not a rewrite. E is scheduled after the server, before C.
+
+**Plan deltas (table "Final plan, week of 2026-09-02").**
+- Wed 09-02: **not done yet** — the `.PL`→`.w` fold is absent from `normalizer.py`,
+  no Ramses/St Andrews raw files are in `data/raw/`. Add: send Email 5 (below).
+- Thu 09-03: CSR index takes a column name; measure on `transliteration` first.
+- Mon–Wed 09-07..09: St Andrews importer ~8 h with hieropy (private script), then run the
+  format-control measurement on the line rows the same week.
+- After the server: **E (phrase finder, 1–2 days) → A (stage-aware evidence) → B (format
+  controls, St Andrews first) → C (sign-function lattice on his model) → D (lemma IDs).**
+
+**Diagnosis of the repository, 2026-09-02 (before any of today's work).**
+- `pytest`: 261 passed in 69 s; tree clean after the run (the benchmark-dirtying fix holds).
+- `check_database.py` locally: SQLite, reachable, **26,196 examples vs 31,565 in the CSV**.
+  The 5,369 BBAW rows added 2026-09-01 are not in the DB, so in the app they get no `id`
+  and the annotation form says "not linked to the project database". Cause: boot calls
+  only `ensure_corpus_ready` (empty-table guard, seeds once); `sync_new_examples` exists
+  and is cheap (one four-column key SELECT + bulk insert) but is only reached through
+  `scripts/import_examples.py`. **Neon has the same gap unless that script was run
+  against it.** Fix: run `scripts/import_examples.py` against Neon right after the
+  password rotation today, and make `deploy.sh` (Saturday) run it on every deploy; do
+  not add it to boot — it would double the key download that caused the egress outage.
+- Five stale agent worktrees under `.claude/worktrees/` (~275 MB), branches
+  `feat/bbaw-import`, `feat/ui-fixes`, `fix/fold-yod`, `fix/persistence`,
+  `worktree-agent-*`: all merged into `main`, zero uncommitted changes. Safe to remove
+  with `git worktree remove <path>` and `git branch -d <name>`.
+- Last night's roadmap and Email 3/4 edits are still uncommitted.
+- `DEPLOYMENT.md` 128–171 still describes HF Spaces as free (known, unchanged).
+
+## Time budget, 2026-09-02 — the whole plan in working days
+
+Effort is focused working days. Two calendar readings: the plan's own pace (one slot per
+day) and a spare-time pace (two or three sessions a week), which is the honest one.
+
+**Week 1 — data and hosting (6 days).**
+
+| Slot | Work | Effort |
+|---|---|---|
+| Wed 09-02 | `.PL`→`.w` fold; Neon rotation + `scripts/import_examples.py` sync; raw downloads (Ramses, St Andrews); send Email 5 | ½ day |
+| Thu 09-03 | Loader text-only state; sparse CSR index, **field-generic** (column → matrix) | 1 day |
+| Fri 09-04 | BBAW text-only + Demotic imports; v4, segmentation eval, `verify_release.py` | 1 day |
+| Sat 09-05 | Home server: Docker, tunnel, `deploy.sh` (runs the DB sync every deploy) | 1 day |
+| Sun 09-06 | Private data path, per-source credits, Ramses importer | 1 day |
+| Mon–Tue 09-07/08 | St Andrews importer with hieropy (~8 h), then the format-control measurement on his line rows | 1½ days |
+
+**Week 2 onward — the model, in the new order (10–12 days).**
+
+| Item | Work | Effort |
+|---|---|---|
+| E | Phrase finder: glyph + translation index on the CSR machinery, edit-distance re-rank, parallel-view result card, user's own texts as a private in-session corpus | 1–2 days |
+| **Expert round** | Put E and the persisted annotations in front of Camilla (unseen text), Sophie, Nederhof (attribution screenshot + phrase finder). Waiting time, not effort; runs in parallel with C | 0 |
+| A | Stage-aware evidence, stage score mask, per-stage group counts; measure v4 by stage | 1 day |
+| B | Format controls as soft quadrat hints; St Andrews number first, BBAW upper bound second; send both to Nederhof | 1 day |
+| C | Sign-function lattice on Nederhof & Rahman 2015: his function classes, our group statistics, Helsinki lexicon. Gates unchanged (Camilla's line from all four spacings, expert paste 8/8, unspaced F1 > 0.931) | 5 days, research; +2–3 if his sign list is not reusable and a Gardiner-class substitute must be built |
+| D | Proper nouns via TLA lemma IDs | 2–3 days |
+
+**Totals.** 16–18 working days. At the plan's pace: data week done 2026-09-08, model items
+done around **2026-09-25**. At spare-time pace: data week ends mid-September, model items
+run to **late October**. The expert round is scheduled directly after E so their answers
+arrive while C is still being built, not after D.
+
+**What moves the date.** (1) C is the only research item; the estimate assumes his sign
+list is available — the licence question is in Email 5. (2) The server day depends on the
+PC, domain and Neon rotation being ready beforehand (user-side list above). (3) Every
+import re-runs v4 (~1 min at 78k) and `verify_release.py` (~5–6 min); budgeted, not a risk.
+
+## Database decision, 2026-09-02 — PostgreSQL on the home server, Neon retired
+
+Ledio's point, once the server exists: run PostgreSQL there instead of Neon. The code is
+ready for it — `DATABASE_URL` is normalised to `postgresql+psycopg://` in `db.py` and the
+driver is pinned in `requirements.txt` — so this is a `compose.yaml` service and an env
+var, not code. The server is also meant to host other projects, which shapes the layout.
+
+**What it removes.**
+- The Neon egress quota and the outage class it caused; the "download every boot" worry
+  behind `attach_db_ids` becomes a local socket read.
+- **Wednesday's Neon rotation is dropped.** Neon only needs to survive until Saturday's
+  migration; whatever annotations it holds are exported then. If it is over quota on
+  Saturday, `reviewed_annotations_export.csv` plus the local SQLite are the fallback.
+- The `EPHEMERAL` state for the deployed app: annotations live in a Docker volume.
+
+**What it adds (Saturday, ~½ day on top of the server slot).**
+- `compose.yaml`: `postgres:16` service with a named volume, `POSTGRES_DB=egyptology`, the
+  app's `DATABASE_URL=postgresql://…@postgres:5432/egyptology`; `deploy.sh` runs
+  `scripts/import_examples.py` (sync) after each pull.
+- Migration: `ensure_corpus_ready` seeds the empty table from the CSV on first boot;
+  annotations come across via `export_reviewed.py` from Neon → the existing seed path, or
+  `pg_dump -t annotations` if Neon is reachable.
+- **Backups become ours.** The corpus is regenerable from the CSV; the annotations are
+  the only irreplaceable table. Nightly `pg_dump` of the database to a folder that is
+  synced off the machine (any cloud drive, or `rclone` to object storage), 30-day retention,
+  and one restore test before the expert round. Without this the home server is *less*
+  durable than Neon, not more.
+- Neon stays only as the Streamlit Cloud database until the "moved to …" banner goes up,
+  then the account is closed.
+
+**Hosting other projects on the same PC.** One `cloudflared` tunnel with one ingress rule
+per hostname (`egypt.<domain>`, `<other>.<domain>`), each pointing at its own container
+port — no reverse proxy needed for the tunnel case; if Tailscale Funnel is chosen
+instead, Caddy in front does the same. One shared PostgreSQL container, one database and
+one role per project, so a runaway query in another project cannot lock this one's
+tables. One compose stack per project in its own folder, each with its own `deploy.sh`;
+a shared `backups/` job dumps every database. RAM budget: this app ~1 GB at 78k rows,
+Postgres ~200 MB, the rest is the other projects' — the "≥ 8 GB" prerequisite stands.
+
+**Plan deltas.** Wed 09-02 loses the Neon rotation (−¼ day). Sat 09-05 gains Postgres,
+migration and the backup job (+½ day). Time budget unchanged in total: still 16–18 days.
+DEPLOYMENT.md sections "Making annotations survive" and "What went wrong with Neon" become
+history once the server runs; rewrite them Saturday evening, not before.
+
+## Plan re-checked 2026-09-04 — content stands, calendar slides two days
+
+Checked against the repository on Friday 2026-09-04: no commit since 2026-09-01; the
+`.PL`→`.w` fold is not in `normalizer.py`; no CSR index, no `text_only_rows`, no
+`data/private/`, no Dockerfile; Ramses and St Andrews raw files are not in `data/raw/`;
+Email 5 is still marked DRAFT; the five merged worktrees are still there. Corpus 31,565
+rows (TLA 16,373 · AES 9,823 · BBAW 5,369); `pytest` 261 passed in 65 s; `hieropy` is in
+the local venv only, not in `requirements.txt` (as required). Nothing in the evaluation,
+the Nederhof deltas or the database decision is contradicted by the code. What changes is
+the dates, and one ordering rule.
+
+**Ordering rule.** The imports (78k rows) must not be pushed to Streamlit Cloud before the
+CSR index exists: per-row Counters are 584 MB at 78k and the app would exceed 1 GB. So
+`fold → CSR + loader → imports` is a dependency, not a preference. The server is
+independent of all three and can take whichever day the PC, domain and Cloudflare account
+are ready.
+
+**Re-dated table (same slots, same gates, effort unchanged at 16–18 days).**
+
+| Slot | Work | Gate |
+|---|---|---|
+| Fri 09-04 | `.PL`→`.w` fold + tests, v4 re-run recorded; send Email 5; download Ramses zip and St Andrews raw files into `data/raw/`; remove the five merged worktrees | suite green, v4 number written down |
+| Sat 09-05 | **Server, if the PC is ready** (Docker, `postgres:16` in `compose.yaml`, tunnel, `deploy.sh` running `scripts/import_examples.py` each deploy, nightly `pg_dump`). If not ready: do the Sun/Mon slot instead and the server takes the next free day | app on HTTPS; annotation survives a container restart |
+| Sun 09-06 | Loader text-only state; **field-generic** sparse CSR index (column → matrix); drop dead columns with `example_payload` tolerant; measure RSS at 31k and 78k | 78k frame < 900 MB; query < 0.4 s |
+| Mon 09-07 | BBAW text-only (46,888) + Demotic imports; v4, segmentation eval, `verify_release.py`; push | v4 ≥ 0.95 top-3 useful, gates 8/8 |
+| Tue 09-08 | Private data path + per-source credits + DATA-LICENSE; Ramses importer to `data/private/ramses.csv` | NC rows searchable with label; public CSV unchanged |
+| Wed–Thu 09-09/10 | St Andrews importer with hieropy (~8 h, private script), then the format-control measurement on his line rows | Camilla's Urk. IV 1 line top-1 from the line rows |
+| after | E → A → B → C → D as in the third-mail section; expert round straight after E | |
+
+At one slot per day the data week now ends 2026-09-10 and the model items around
+2026-09-27; at spare-time pace, late October, as before. The Wed 09-02 row of the earlier
+table (Neon rotation) and the "Neon stays the database" sentence are superseded by the
+database decision above; this table is the current one.
+
+**Still unchanged and still true.** Neon is left alone until migration day (export
+`reviewed_annotations_export.csv` first; if Neon is over quota, that file plus the local
+SQLite are the fallback). The 5,369 BBAW rows stay unlinked in the deployed app until the
+server's first `deploy.sh` runs the sync. `DEPLOYMENT.md` 128–171 (HF Spaces as free) is
+rewritten on server day, not before. The 09-02 roadmap and Email 3–5 edits are uncommitted.
