@@ -156,7 +156,11 @@ def test_private_rows_are_appended_after_attach_db_ids_with_no_id(private_app):
     # ...and every other row is exactly what attach_db_ids produced.
     assert len(combined) == len(with_ids) + 3
     non_private = combined[combined["source"] != "TestPrivate"]
-    assert list(non_private["id"]) == list(with_ids["id"])
+    # Series.equals treats missing == missing; a plain list comparison does not,
+    # and rows the local database has no key for legitimately carry a missing id.
+    assert non_private["id"].reset_index(drop=True).equals(
+        with_ids["id"].reset_index(drop=True)
+    )
 
 
 def test_private_data_dir_env_var_default(monkeypatch):
