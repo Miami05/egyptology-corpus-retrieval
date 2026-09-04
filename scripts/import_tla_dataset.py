@@ -14,13 +14,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.data.normalizer import normalize_mdc, normalize_transliteration
+from app.data.loader import REQUIRED_COLUMNS
+from app.data.normalizer import (
+    normalize_hieroglyphs,
+    normalize_mdc,
+    normalize_transliteration,
+    search_fold,
+)
 
 DEFAULT_DATASET_PATH = (
     "thesaurus-linguae-aegyptiae/tla-Earlier_Egyptian_original-v18-premium"
 )
 DEFAULT_OUTPUT_PATH = "data/raw/real_examples_worklist.csv"
 FALLBACK_WORKLIST_PATH = "data/raw/real_examples_worklist.csv"
+DEFAULT_SCRIPT_TYPE = "hieroglyphic/hieratic"
+DEFAULT_EXISTING_PATH = "data/processed/examples.csv"
 
 FINAL_COLUMNS = [
     "source",
@@ -129,6 +137,10 @@ PERIOD_RANGES = [
     ("Third Intermediate Period", -1069, -664),
     ("Late Period", -664, -332),
     ("Ptolemaic Period", -332, -30),
+    # 30 BCE (Roman annexation of Egypt) to 395 CE (division of the Roman Empire),
+    # the conventional bounds. Needed once the Demotic corpus is imported: those
+    # rows are dated up to +475, well past the Ptolemaic cutoff above.
+    ("Roman Period", -30, 395),
 ]
 
 
@@ -390,6 +402,7 @@ def _row_from_parquet(
     stable_ids: bool = False,
     language_stage: str = "Earlier Egyptian",
     id_prefix: str = "TLA_EARLIER",
+    script_type: str = DEFAULT_SCRIPT_TYPE,
 ) -> tuple[dict[str, str], bool, bool] | None:
     """One corpus row from one parquet row.
 
@@ -397,6 +410,8 @@ def _row_from_parquet(
     several TLA corpora (Earlier Egyptian, Late Egyptian). Stamping every import with
     "Earlier Egyptian" would mislabel the language stage, and reusing one id prefix
     across corpora risks two different sentences claiming the same identifier.
+    `script_type` is likewise a parameter: the Demotic corpus is a different script,
+    not hieroglyphic/hieratic, and its rows carry no hieroglyphs column at all.
     """
     transliteration = unify_suffix_marker(
         _row_value(row, PARQUET_ALIASES["transliteration_gold"])
@@ -444,7 +459,7 @@ def _row_from_parquet(
             "source_text_id": source_text_id,
             "source_sentence_id": source_sentence_id,
             "language_stage": language_stage,
-            "script_type": "hieroglyphic/hieratic",
+            "script_type": script_type,
             "genre": _row_value(row, PARQUET_ALIASES["genre"]) or "unknown",
             "period": period,
             "hieroglyphs": hieroglyphs,
@@ -476,6 +491,7 @@ def _load_parquet_input(
     stable_ids: bool = False,
     language_stage: str = "Earlier Egyptian",
     id_prefix: str = "TLA_EARLIER",
+    script_type: str = DEFAULT_SCRIPT_TYPE,
 ) -> tuple[pd.DataFrame, int, int]:
     df = pd.read_parquet(input_path)
     rows: list[dict[str, str]] = []
@@ -485,7 +501,13 @@ def _load_parquet_input(
 
     for _, row in df.iterrows():
         mapped = _row_from_parquet(
-            row, len(rows) + 1, input_path, stable_ids, language_stage, id_prefix
+            row,
+            len(rows) + 1,
+            input_path,
+            stable_ids,
+            language_stage,
+            id_prefix,
+            script_type,
         )
         if mapped is None:
             continue
@@ -505,6 +527,47 @@ def _load_parquet_input(
             break
 
     return pd.DataFrame(rows, columns=FINAL_COLUMNS), generated_text_ids, generated_sentence_ids
+
+
+def dedup_key(transliteration: str) -> str:
+    """A yod-insensitive search-fold key, so `jwi̯` and `ꞽwi̯` count as one sentence.
+
+    Mirrors `dedup_key` in scripts/import_bbaw_egyptian.py: lower-case first so a
+    capitalised name's `J`/`Ꞽ` reaches the fold as the same letter as `j`/`ꞽ`, then
+    fold both yod spellings to `i` before running `search_fold`, so the key does not
+    depend on which corpus's yod convention a sentence happens to use.
+    """
+    text = str(transliteration).lower().replace("ꞽ", "i").replace("j", "i")
+    return search_fold(text)
+
+
+def deduplicate(
+    frame: pd.DataFrame, existing: pd.DataFrame | None
+) -> tuple[pd.DataFrame, int, int]:
+    """Drop rows already present — by yod-insensitive reading or by identical signs.
+
+    Same two-pass shape as scripts/import_bbaw_egyptian.py's `deduplicate`: first
+    drop duplicates introduced within this import itself, then drop rows whose
+    reading (or, when present, hieroglyphs) already exists in `--existing`.
+    """
+    keys = frame["transliteration_gold"].map(dedup_key)
+    glyphs = frame["hieroglyphs"].map(lambda v: normalize_hieroglyphs(v) if v else "")
+    before = len(frame)
+    internal = ~(keys.duplicated() | (glyphs.ne("") & glyphs.duplicated()))
+    frame, keys, glyphs = frame[internal], keys[internal], glyphs[internal]
+    internal_dropped = before - len(frame)
+    if existing is None or existing.empty:
+        return frame, internal_dropped, 0
+    seen_keys = set(existing["transliteration_gold"].map(dedup_key))
+    seen_glyphs = {
+        g
+        for g in existing["hieroglyphs"].map(
+            lambda v: normalize_hieroglyphs(v) if v else ""
+        )
+        if g
+    }
+    keep = ~(keys.isin(seen_keys) | (glyphs.ne("") & glyphs.isin(seen_glyphs)))
+    return frame[keep], internal_dropped, int((~keep).sum())
 
 
 def main() -> None:
@@ -540,6 +603,26 @@ def main() -> None:
             "database that already holds annotations before importing."
         ),
     )
+    parser.add_argument(
+        "--script-type",
+        default=DEFAULT_SCRIPT_TYPE,
+        help=(
+            "script_type stamped on every imported row (parquet input only). "
+            "Defaults to 'hieroglyphic/hieratic', the Earlier/Late Egyptian value; "
+            "pass e.g. 'Demotic' for the Demotic corpus, which uses a different "
+            "script and carries no hieroglyphs column at all."
+        ),
+    )
+    parser.add_argument(
+        "--existing",
+        default=DEFAULT_EXISTING_PATH,
+        help="Corpus to deduplicate against when --append is set; '' to skip dedup.",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append the net-new (deduplicated) rows to --existing.",
+    )
     args = parser.parse_args()
 
     generated_text_ids = 0
@@ -556,6 +639,7 @@ def main() -> None:
             stable_ids=args.stable_ids,
             language_stage=args.language_stage,
             id_prefix=args.id_prefix,
+            script_type=args.script_type,
         )
     else:
         dataset_path = Path(args.dataset_path)
@@ -594,6 +678,39 @@ def main() -> None:
         print(
             "Generated IDs are stable local IDs such as TLA_EARLIER_001 "
             "or TLA_AUTO_001 and S001."
+        )
+
+    existing: pd.DataFrame | None = None
+    if args.existing:
+        existing_path = Path(args.existing)
+        if existing_path.exists():
+            existing = pd.read_csv(existing_path, dtype=str).fillna("")
+
+    deduped, internal_dupes, existing_dupes = deduplicate(out, existing)
+    print(f"\nduplicates within this import      {internal_dupes:>8,}")
+    print(
+        f"already in {Path(args.existing).name if args.existing else '-':<19} "
+        f"{existing_dupes:>8,}"
+    )
+    print(f"NET NEW                            {len(deduped):>8,}")
+
+    if args.append:
+        if existing is None:
+            print(
+                f"--append set but --existing ({args.existing}) does not exist; "
+                "writing net-new rows as a fresh corpus."
+            )
+            existing = pd.DataFrame(columns=REQUIRED_COLUMNS)
+        for column in REQUIRED_COLUMNS:
+            if column not in deduped.columns:
+                deduped[column] = ""
+        combined = pd.concat(
+            [existing, deduped.astype(str)], ignore_index=True
+        )[REQUIRED_COLUMNS]
+        combined.to_csv(args.existing, index=False)
+        print(
+            f"appended to {args.existing}: "
+            f"{len(existing):,} -> {len(combined):,} rows"
         )
 
 
