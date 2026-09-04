@@ -1473,3 +1473,44 @@ steps: `loginctl enable-linger ledio` and re-pointed Serve `/` → 127.0.0.1:850
 --https=443 http://127.0.0.1:8502` restores public access. The friend's 8501 copy is left
 running; stopping it is his call. Streamlit Cloud still hosts the public corpus until the
 "moved" banner goes up; the server is where Ramses/Demotic will go live after item A.
+
+## Item A follow-up landed 2026-09-04 night (dda12fc) — the expert gate clears in declared mode
+
+Three principled changes, no constant chosen against a benchmark: (1) the segmenter's
+effective lexicon weight is `0.2 × subset mass / pooled mass` (factor exactly 1.0 at
+target=None; Earlier Egyptian on P+R gets 0.0905); (2) the v4 CSV carries a
+`language_stage` column filled by a documented rule (TLA prefix, else the target's `period`
+when every keyword agrees; 15 of 20 rows resolved, 5 blank); (3) `infer_stage` requires
+lift ≥ 1.5 over the stage's base rate among labelled rows, which removes Ramses' bulk bias.
+UI (2ffd7a2): stage selectbox (Auto default), `?stage=` deep links, "Stage inferred: …"
+captions, stage label on every evidence row, pooled resources reused for "All", per-stage
+resources built lazily. Deployment knobs (18b02da): `ANNOTATIONS_DURABLE`, `DEFAULT_STAGE`,
+`MOVED_TO_URL`. Suite 404.
+
+| corpus | paste none / auto / declared | v4 top-3 none / auto / declared | v4 top-1 declared | MRR declared |
+|---|---|---|---|---|
+| P 78k | 8/8 / 8/8 / 7/8 | 0.95 / 0.95 / 0.90 | 0.85 (from 0.75) | 0.875 |
+| P+Ramses 118k | 3/8 / 3/8 / **8/8** | 0.90 / 0.90 / 0.90 | 0.85 | 0.875 |
+| P+Ramses+Demotic 131k | 3/8 / 3/8 / **8/8** | 0.90 / 0.90 / 0.90 | 0.85 | 0.875 |
+
+**What clears:** with all corpora loaded and the stage declared, Camilla's line reads
+correctly in all variants — the gate item A existed for. **What does not, and why:**
+(i) v4 declared 0.90 = COMP_007 (pre-existing, stage-independent) + COMP_014, whose two
+useful-family parallels are Late Egyptian formula rows (`TLA_LATE_783`, `_1324`) that a
+*correct* Earlier Egyptian declaration excludes — formulae cross stages, so retrieval
+should treat stage as a preference, not a filter (the reading model is right to filter);
+reaching 0.95 there would need a penalty constant picked against the benchmark, which is
+refused — report both numbers instead. (ii) P declared 7/8: PASTE_003's subset factor
+(0.886) does not shrink enough to flip the cut (−14.61 vs −14.28 nats). (iii) **Auto with
+Ramses loaded is 3/8**: inference reads labels off the pooled top-10, and 52,248 of the
+62,039 unspecified rows have `period = unknown`, so nothing clears and it falls back to
+pooled. Auto is the server's default, so **Ramses and Demotic stay withheld** until Auto
+holds 8/8.
+
+**Part 3 (running):** for hieroglyph pastes, choose the stage by model likelihood — read the
+paste under each stage's resources and take the stage under which the sign sequence is most
+probable per sign (argmax, no threshold; Demotic excluded as it has no aligned rows; ties →
+pooled). Label-based inference stays for text queries. Plus the period rule applied at load
+so the ~10k datable unspecified rows gain a derived stage. Gate: P+R(+D) × auto paste 8/8.
+Server: our deployment runs dda12fc; Funnel restored by Ledio; Cloud to receive
+`default_stage="all"` and `moved_to_url`.
