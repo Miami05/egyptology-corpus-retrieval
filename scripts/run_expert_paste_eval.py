@@ -200,7 +200,7 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         choices=["none", "auto", "declared"],
-        default="none",
+        default="auto",
         help=(
             "Language-stage handling (item A). 'none' (default) reproduces today's "
             "pooled reading/segmentation/retrieval exactly. 'declared' reads each "

@@ -1514,3 +1514,51 @@ pooled). Label-based inference stays for text queries. Plus the period rule appl
 so the ~10k datable unspecified rows gain a derived stage. Gate: P+R(+D) × auto paste 8/8.
 Server: our deployment runs dda12fc; Funnel restored by Ledio; Cloud to receive
 `default_stage="all"` and `moved_to_url`.
+
+## Item A closed 2026-09-04 night (0ae0f95 + this commit) — 130,472 rows live
+
+**Part 3 result.** Segment pooled, read by stage: `groups_ok` was true in all 72 cells, so
+the segmenter is built from the whole corpus (lexicon factor back to 1.0, the mass-scaling
+code deleted) and only the reading model, index and frame are stage-restricted. Auto scores
+a hieroglyph paste under each stage's reading model alone — normalised conditional
+probabilities, lexicon off, per sign — and takes the argmax; the raw-count segmentation
+term that favoured the bigger corpus is out of the comparison. Per-paste likelihoods on
+P+R: Earlier −3.233 / Late −3.347 / Demotic −3.685 for every Urk. IV variant → Earlier
+Egyptian, correct. Gates: P × none byte-identical; **P × auto 8/8, P+R × auto 8/8,
+P+R+D × auto 8/8; declared 8/8 everywhere** (including the former P × declared miss, fixed
+for free by the pooled segmenter). The period-derived stage was removed: the earlier
+attribution of a v4 drop to it was a misdiagnosis — the drop comes from the v4 CSV's own
+stage column once any declared-mode filter applies.
+
+**Loaded.** Ramses appended to `examples.csv` under the CC BY-SA grant (78,412 → 118,476,
+40,064 net-new, 921 already present), then Demotic (→ 130,472, 11,996 net-new, 49 already
+present). `data/private/ramses.csv` deleted so rows are not loaded twice; the private path
+now serves St Andrews only. Sources: BBAW 52,216 · Ramses 40,064 · TLA 28,369 (16,373 +
+11,996 Demotic) · AES 9,823. Stages: Unspecified 62,039 · Late Egyptian 43,665 · Earlier
+Egyptian 12,772 · Demotic 11,996. Alignment: misaligned 0, text-only 70,968, usable 59,504.
+
+**Numbers on the final corpus** (evals now default to `--stage auto`, the app's default):
+
+| mode | paste | v4 top-3 | top-1 | MRR | failures |
+|---|---|---|---|---|---|
+| auto | **8/8** | 0.90 | 0.70 | 0.80 | COMP_007, COMP_014 |
+| declared | 8/8 | 0.90 | 0.85 | 0.875 | COMP_007, COMP_014 |
+| none (pooled, "All" in the UI) | 3/8 | 0.90 | 0.70 | 0.79 | COMP_007, COMP_014 |
+
+Segmentation eval: unspaced F1 0.923 (was 0.920), exact 0.539, trained on 53,553 rows.
+v4's citable 0.95 belongs to the 78k corpus; on 130k it is 0.90 in every mode, for the two
+reasons recorded above — traded for +52k rows and stage awareness, not tuned. Suite 424 →
+tests updated for the design: the trial-sentence tests read with the Earlier Egyptian model
+over the pooled segmenter; the Horus-and-Seth notation tests accept Ramses' edition of the
+same sentence (Seth `stḫ`, and `ꜥḥꜥ.n ꜣs.t (ḥr) qnd …`) as parallels. New deployment knob
+`corpus_sources_exclude` / `CORPUS_SOURCES_EXCLUDE`: Streamlit Cloud must set
+`"Ramses,Demotic"` (131k no longer fits 1 GB) plus `default_stage="all"` and
+`moved_to_url`; the server loads everything.
+
+**Open after A.** "All" mode now reads Middle Egyptian pastes wrong when the whole corpus
+votes — it is honest to keep it, and the caption says what it does, but the default is
+Auto for a reason. Stage-as-preference in retrieval (recovers COMP_014 without tuning).
+Auto for *text* queries still uses label inference (base-rate lift), which works less well
+than the likelihood chooser; a text analogue (score the transliteration under per-stage
+token models) is the natural next step. Cold build of three stage sets on a 131k corpus
+≈ 21 s and ~1.9 GB if all cached — lazy on the server, excluded on Cloud.

@@ -194,7 +194,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stage",
         choices=["none", "auto", "declared"],
-        default="none",
+        default="auto",
         help=(
             "Language-stage handling (item A). 'none' (default) reproduces today's "
             "pooled retrieval exactly. 'declared' restricts the candidate pool to "

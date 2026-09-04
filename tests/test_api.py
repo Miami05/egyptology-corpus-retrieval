@@ -32,15 +32,17 @@ def test_search_returns_ranked_corpus_results() -> None:
 @pytest.mark.parametrize(
     ("query", "expected_prefix"),
     [
-        # Manuel de Codage, as a phone user typed it: X is ẖ, D is ḏ.
-        ("aHa.n stX qnd r Dw", "ꜥḥꜥ.n stẖ"),
+        # Manuel de Codage, as a phone user typed it: X is ẖ, D is ḏ. Since Ramses
+        # joined (2026-09-04) the best parallel is its edition of the same Horus-and-
+        # Seth sentence, which spells Seth stḫ where the TLA writes stẖ.
+        ("aHa.n stX qnd r Dw", ("ꜥḥꜥ.n stẖ", "ꜥḥꜥ.n stḫ")),
         # Unicode, TLA conventions — the notation that used to be deleted outright.
-        ("ꜥḥꜥ.n stẖ qnd", "ꜥḥꜥ.n stẖ"),
+        ("ꜥḥꜥ.n stẖ qnd", ("ꜥḥꜥ.n stẖ", "ꜥḥꜥ.n stḫ")),
         # Plain ASCII, no special keys.
-        ("htp di nsw", "ḥtp"),
+        ("htp di nsw", ("ḥtp",)),
     ],
 )
-def test_every_notation_reaches_the_same_parallels(query: str, expected_prefix: str) -> None:
+def test_every_notation_reaches_the_same_parallels(query: str, expected_prefix: tuple[str, ...]) -> None:
     """The API has no corpus vocabulary to hand `parse_query`, so MdC detection falls
     back to the capital-letter heuristic there; it must still land on the reading."""
     payload = search_examples(query_mdc=query, k=2)

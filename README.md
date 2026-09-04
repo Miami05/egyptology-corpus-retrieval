@@ -2,8 +2,8 @@
 
 A corpus-based reading-suggestion tool for Ancient Egyptian. Given a transliteration
 (Unicode, Manuel de Codage or plain ASCII) or a sign sequence, it finds real parallels
-in a 31,565-sentence corpus (TLA Earlier and Late Egyptian, the AES corpus and the BBAW 2018 corpus;
-Predynastic to Roman), ranks the readings those parallels attest, shows the evidence
+in a 130,472-sentence corpus (TLA Earlier Egyptian, Late Egyptian and Demotic, the AES corpus,
+the BBAW 2018 corpus and the Ramses Transliteration Corpus; Predynastic to Roman), ranks the readings those parallels attest, shows the evidence
 behind each one, and records expert corrections.
 
 **It is not OCR and it is not machine translation.** Every suggestion is grouped from
@@ -140,8 +140,14 @@ The competitive benchmark is the reportable one: its rows are guaranteed to have
 near-identical twin anywhere in the corpus, so excluding the target does not hand the
 answer back. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
 folds to `i`) and the searchable corpus changed twice the same day — so their numbers
-no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 is
-cut on the final corpus. Every evaluation writes to a temporary path when run through
+no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 was
+cut on the 78,412-row corpus, where it scores 0.95 top-3 useful. Since Ramses and Demotic
+joined (2026-09-04, 130,472 rows) the evaluations run in the app's default *Auto* language-
+stage mode (`--stage auto`; `none` and `declared` are also available): expert paste 8/8, v4
+0.90 top-3 useful / MRR 0.80 (declared: MRR 0.875). The two v4 misses are one pre-existing
+(COMP_007) and one whose useful parallels are Late Egyptian formula rows that a stage
+restriction sets aside (COMP_014); neither number was tuned. Every evaluation writes to a
+temporary path when run through
 `verify_release.py` or the test suite, so a release check never dirties `data/benchmarks`.
 
 Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit

@@ -133,10 +133,16 @@ def test_the_reported_query_returns_its_parallels(corpus, index, query: str) -> 
     Before the fix both notations returned rows sharing nothing with the query."""
     top = retrieve_top_k(corpus, query_mdc=query, k=3, index=index)
     assert not top.empty
-    assert all(
-        str(row["transliteration_gold"]).startswith("ꜥḥꜥ.n stẖ")
-        for _, row in top.iterrows()
-    )
+    # What a parallel search owes her is rows that share the sentence's own words,
+    # not rows sharing nothing (the original bug). Since Ramses joined (2026-09-04)
+    # the top three are its editions of the Horus-and-Seth passage — Seth spelled stḫ
+    # where the TLA writes stẖ, and "ꜥḥꜥ.n ꜣs.t (ḥr) qnd r tꜣ psḏ.t", the same
+    # construction with Isis as subject — so the check is the shared narrative frame
+    # and the rare verb, not one edition's spelling of one name.
+    for _, row in top.iterrows():
+        reading = str(row["transliteration_gold"])
+        assert reading.startswith("ꜥḥꜥ.n"), reading
+        assert "qnd" in reading, reading
 
 
 def test_a_mixed_paste_still_reads_its_mdc_letters(index) -> None:

@@ -209,9 +209,18 @@ def test_order_weight_zero_recovers_plain_set_jaccard():
 def real_corpus_model():
     from app.data.loader import load_examples_csv
 
+    from app.services.stage import compatible_frame
+
     df = load_examples_csv("data/processed/examples.csv")
-    model = train_reading_model(df)
-    return model, Segmenter(model)
+    # Item A (2026-09-04): segment pooled, read by stage. Word boundaries are stable
+    # across language stages, so the segmenter is built from the whole corpus; the
+    # reading model is stage-restricted, because since Ramses joined, pooled readings
+    # for a Middle Egyptian paste are outvoted by 40k normalised Late Egyptian rows
+    # (rmṯ nb instead of r(m)ṯ(.t) nb.t). Auto mode resolves Urk. IV 1 to Earlier
+    # Egyptian by reading-model likelihood; this fixture uses that stage directly.
+    pooled = train_reading_model(df)
+    model = train_reading_model(compatible_frame(df, "Earlier Egyptian"))
+    return model, Segmenter(pooled)
 
 
 @pytest.mark.parametrize(

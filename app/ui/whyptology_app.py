@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import logging
 import os
 import secrets
 from html import escape
@@ -414,7 +415,34 @@ def load_corpus_csv() -> pd.DataFrame:
     this frame in place — every stage does its own `.copy()` — so one shared
     instance is safe. Anything added here must keep that true.
     """
-    return load_examples_csv(str(DATA_PATH))
+    return exclude_corpus_sources(load_examples_csv(str(DATA_PATH)))
+
+
+def excluded_corpus_sources() -> frozenset[str]:
+    """Sources a deployment chooses not to load, from `corpus_sources_exclude` /
+    `CORPUS_SOURCES_EXCLUDE` (comma-separated `source` values).
+
+    The committed corpus holds every CC BY-SA row we have — 131k after Ramses and
+    Demotic joined on 2026-09-04 — which no longer fits Streamlit Community Cloud's
+    1 GB. That deployment stays alive for the links people already have by loading
+    a subset (`"Ramses,Demotic"`); the server loads everything. A statement about
+    the host, so it is set per deployment, never in code.
+    """
+    raw = configured_setting("corpus_sources_exclude", "CORPUS_SOURCES_EXCLUDE")
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+def exclude_corpus_sources(df: pd.DataFrame) -> pd.DataFrame:
+    excluded = excluded_corpus_sources()
+    if not excluded or "source" not in df.columns:
+        return df
+    keep = ~df["source"].astype(str).isin(excluded)
+    out = df.loc[keep].reset_index(drop=True)
+    out.attrs = dict(df.attrs)
+    logging.getLogger(__name__).info(
+        "corpus: excluded sources %s (%d rows dropped)", sorted(excluded), int((~keep).sum())
+    )
+    return out
 
 
 @st.cache_resource(show_spinner=False)
