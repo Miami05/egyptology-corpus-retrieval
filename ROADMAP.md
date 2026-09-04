@@ -1417,3 +1417,59 @@ item A (paste gate 3/8 with them loaded) — when A passes they go into `example
 directly, no private file needed. Test note: the private-corpus id test now compares
 values with `check_dtype=False`, because a fresh local DB yields int64 ids and a stale one
 float64 with gaps; both are legitimate.
+
+## Item A core landed 2026-09-04 (13af7b3) — first honest numbers, two principled follow-ups
+
+`app/services/stage.py` (`normalize_stage`, `stage_compatible`, `compatible_frame`,
+`infer_stage`, `StageResources`, `build_stage_resources`), `retrieve_with_stage` (declared /
+None / two-pass auto), `--stage none|auto|declared` on both eval scripts, `language_stage`
+column on the paste queries. Design: unspecified rows (AES, BBAW — 62k) are compatible with
+every stage; per-stage resources are the pooled constructors run on the compatible subset.
+**Gate (a) exact:** P × none reproduces v4 0.95 / MRR 0.8417 / 1 failure and paste 8/8
+byte-for-byte (the one v4 failure is COMP_007; earlier prose said COMP_008 — a typo, the
+unmodified script fails COMP_007 too). Suite 353.
+
+| corpus | mode | v4 top-3 | MRR | paste |
+|---|---|---|---|---|
+| P 78k | none / auto / declared | 0.95 / 0.95 / 0.95 | 0.842 / 0.875 / 0.90 | 8/8 / 8/8 / **7/8** |
+| P+Ramses 118k | none / auto / declared | 0.90 / 0.90 / 0.90 | 0.80 / 0.80 / 0.875 | 3/8 / 3/8 / **7/8** |
+| P+Ramses+Demotic 131k | none / auto / declared | 0.90 / 0.90 / 0.90 | 0.79 / 0.80 / 0.875 | 3/8 / 3/8 / **7/8** |
+
+Declared stage rescues four of the five Urk. IV pastes Ramses breaks, and MRR rises. Two
+measured shortfalls, neither tuned around: (1) **PASTE_003 (unspaced) fails in declared mode
+even on P alone** — restricting to Earlier Egyptian shrinks the segmenter's group counts by
+14–32% while `lexicon_weight=0.2` stays calibrated to the pooled corpus, so the lexicon's
+merged group beats the correct three-way split (log-prob −14.16 vs −14.61; the docstring's
+own failure mode for 0.39, reproduced at 0.2 under subsetting). Fix: scale the effective
+lexicon weight by subset mass / pooled mass (factor 1.0 at target=None, so pooled behaviour
+is unchanged by construction). (2) **COMP_014's target is an AES row with no stage**, so
+`declared` degenerates to pooled and Ramses pollution persists; and **auto is size-biased**
+(Ramses makes Late Egyptian 3× more frequent among labelled rows). Fix: a `language_stage`
+column on the v4 CSV filled by a documented rule (TLA prefix, else the target's `period`),
+and a lift-over-base-rate requirement (≥ 1.5) in `infer_stage`. Segmentation eval: P 0.920,
+P+R 0.923 unspaced F1 (no stage flag there). Memory: all four stage sets cached at once at
+131k ≈ 1.9 GB — the UI must build stage resources lazily. Latency unchanged (~1.1 s/query at
+131k; rapidfuzz cdist still pending).
+
+## Server, 2026-09-04 — our deployment lives on the friend's OptiPlex
+
+Read-only Opus diagnosis first (report kept in the scratchpad, not the repo: it describes
+someone else's machine). Box: Ubuntu 24.04 x86_64, 23 GB RAM, 4 cores, 114 GB disk 72% full,
+27 days uptime, desktop that does not sleep. The friend runs Home Assistant, Vaultwarden,
+Nextcloud, Pi-hole, Caddy and more in 13 Docker containers; `ledio` has no sudo and is not
+in the docker group (root-equivalent on that box, so not asked for). His own hand-started
+copy of the app ran under his user on 0.0.0.0:8501 with no service unit, exposed via
+Tailscale Serve + Funnel (public). Decision (Ledio, "ledio folder only, change nothing
+else"): **no Docker, no Postgres** — a clone at `/home/ledio/egyptology`, venv
+`/home/ledio/venvs/egyptology` (python3.12, 756 MB), private NC data in
+`/home/ledio/egyptology-private` (outside the clone), a `systemctl --user` unit
+`egyptology.service` on **127.0.0.1:8502** (headless, Restart=on-failure, enabled,
+secrets via `EnvironmentFile=/home/ledio/egyptology.env`, SQLite by default), and
+`/home/ledio/egyptology-deploy.sh` (git pull --ff-only, pip, restart, health wait).
+Verified on the box: 78,412 rows load in 6.8 s, SQLite bootstraps (66 MB), index in 4 s,
+Horus-and-Seth query returns the same parallels, peak RSS 690 MB. Ledio ran the two sudo
+steps: `loginctl enable-linger ledio` and re-pointed Serve `/` → 127.0.0.1:8502. The
+`serve` command dropped Funnel (URL became tailnet-only); `tailscale funnel --bg
+--https=443 http://127.0.0.1:8502` restores public access. The friend's 8501 copy is left
+running; stopping it is his call. Streamlit Cloud still hosts the public corpus until the
+"moved" banner goes up; the server is where Ramses/Demotic will go live after item A.
