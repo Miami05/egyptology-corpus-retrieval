@@ -179,6 +179,10 @@ class ReadingModel:
     # Rows skipped because sign groups and readings did not align. Reported, not
     # hidden: on a clean load this must be 0 (see app.data.loader.alignment_report).
     sentences_skipped: int = 0
+    # Rows skipped because they have no hieroglyphs at all (BBAW text-only rows,
+    # Demotic). This is an expected state, not a defect, so it is counted apart
+    # from `sentences_skipped` (see app.data.loader.AlignmentReport.text_only_rows).
+    sentences_text_only: int = 0
 
     # ---------- training ----------
 
@@ -186,7 +190,11 @@ class ReadingModel:
         for _, row in df.iterrows():
             signs = str(row.get("hieroglyphs_norm") or "").split()
             readings = str(row.get("transliteration_gold") or "").split()
-            if not signs or len(signs) != len(readings):
+            if not signs:
+                # No hieroglyphs to fit on — a text-only row, not a misalignment.
+                self.sentences_text_only += 1
+                continue
+            if len(signs) != len(readings):
                 # Without one-to-one alignment a sign cannot be paired with a
                 # reading; skipping keeps the counts honest.
                 self.sentences_skipped += 1

@@ -192,6 +192,39 @@ def test_alignment_report_counts_and_lists_bad_rows():
     assert report.usable_rows == 1
 
 
+def test_alignment_report_separates_text_only_rows_from_misaligned():
+    """A row with no hieroglyphs (BBAW text-only, Demotic) is not a defect: it is
+    counted in `text_only_rows`, kept out of `misaligned_rows`, and `usable_rows`
+    excludes both."""
+    df = frame(
+        [
+            ("𓊵𓏙 𓇓𓏏", "ḥtp nswt"),  # aligned: 2 signs, 2 readings
+            ("𓊵𓏙 𓇓𓏏", "ḥtp nswt sḏm"),  # misaligned: 2 signs, 3 readings
+            ("", "ḥtp"),  # text-only: no signs, but a transliteration
+        ]
+    )
+    report = alignment_report(df)
+    assert report.total_rows == 3
+    assert report.misaligned_rows == 1
+    assert report.misaligned_indices == [1]
+    assert report.text_only_rows == 1
+    assert report.usable_rows == 1
+
+
+def test_reading_model_separates_text_only_rows_from_misaligned():
+    df = frame(
+        [
+            ("𓊵𓏙 𓇓𓏏", "ḥtp nswt"),
+            ("𓊵𓏙 𓇓𓏏", "ḥtp nswt sḏm"),
+            ("", "ḥtp"),
+        ]
+    )
+    model = train_reading_model(df)
+    assert model.sentences_seen == 1
+    assert model.sentences_skipped == 1
+    assert model.sentences_text_only == 1
+
+
 def test_markup_rows_are_now_aligned_and_trained_on():
     df = frame([("𓅓<g>D77</g> 𓀀 <g>M12B</g>", "m =ꞽ mꜣꜥ")])
     assert alignment_report(df).misaligned_rows == 0
@@ -254,6 +287,7 @@ def test_shipped_corpus_is_fully_aligned():
     df = load_examples_csv("data/processed/examples.csv")
     report = df.attrs["alignment"]
     assert report.misaligned_rows == 0, report.misaligned_indices[:5]
+    assert report.text_only_rows == 0
     assert report.total_rows > 16_000
 
 
