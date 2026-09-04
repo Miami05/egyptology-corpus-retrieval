@@ -1609,3 +1609,24 @@ pool); every mode now costs the same, and the rapidfuzz batch call is the remedy
 app's default mode; v4 0.95 (78k) → 0.90 (130k), two misses, both diagnosed, nothing tuned.
 If 20/20 is wanted the legitimate routes are diagnosing COMP_007 and deciding *before* looking
 at results whether a v5 benchmark with a different overlap rule is justified, reporting both.
+
+## Nederhof's fourth mail (reply to Email 5), 2026-09-04 — C unblocked, E rescoped
+
+Archived in `docs/permission-requests.md`; Email 6 drafted there.
+- **Item C: his sign-function XML may be used "under whatever license you prefer."** We take
+  it as CC BY 4.0 with attribution (compatible with the CC BY-SA corpus). The +2–3-day
+  contingency on C is dropped; C is 5 days. Scope note: the file covers the Unicode 5.2
+  sign set; UniKemet lists functions with newer terminology ("classifiers") but drawn from
+  single attested tokens, so it is a cross-check, as is the Thot Sign List; our own 59k
+  aligned rows supply the frequency side.
+- **Item E rescoped.** He did *not* ask for user-uploaded texts. E becomes: similar-text
+  search across annotation tiers — sign sequence (glyph n-grams on the CSR machinery),
+  transliteration (today's index), translation, and lemma ids once D lands — with his
+  research question, "can one improve on edit distance?", answered by measurement:
+  edit-distance re-rank vs n-gram cosine vs tier-combined scores on parallel pairs we can
+  construct from the corpus (same sentence in two editions — Ramses/TLA Horus-and-Seth
+  rows are a ready-made test set). Effort stays 1–2 days; the upload feature is gone.
+- He will retest once new functionality is added; he declines real user queries as test
+  material (classic partition instead); students' projects run to ~April 2027, so the
+  segmentation harness is a slow-burn offer, not a deliverable.
+- Ledio's side: send Email 6 (draft ready); nothing else is asked of him.

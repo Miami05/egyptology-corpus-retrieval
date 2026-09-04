@@ -368,3 +368,89 @@ covered by the same grant; no email to Helsinki is needed on that point.
 **What it does not change.** Ramses rows stay out of the live app until item A: with them
 loaded, the expert paste gate falls 8/8 → 3/8 and v4 0.95 → 0.90 (roadmap, 2026-09-04).
 That is a modelling constraint, not a licence one.
+
+
+## Reply from Dr Nederhof to Email 5 — received 2026-09-04 (his fourth mail)
+
+Archived verbatim; this is the basis for using his sign-function XML file.
+
+> Dear Ledio,
+>
+> Apologies for delays. The semester is about to start.
+>
+> Many thanks for the detailed listing of corpora that pair hieroglyphs with
+> transliterations. I will pass this on to my students, with the suggestion that they
+> start with AED-TEI, which sounds like the "easiest" to work with assuming the standard
+> readings of signs.
+>
+> Also thanks for the offer of real user queries, but I would start with partition of the
+> corpora into training and testing sets and do evaluation the traditional way.
+>
+> I'm looking forward to testing your website again once new functionality has been added.
+>
+> To be clear, I was not proposing that your website should allow users to add their own
+> transliterated texts. But I am intrigued by the problem of finding similar (Egyptian)
+> text in a corpus, especially if one has several tiers of annotation. Traditional edit
+> distance may be effective to some extent, but could one improve upon that?
+>
+> You can use the XML file with functions under whatever license you prefer. I would be
+> glad if they can be of help.
+>
+> The UniKemet database of Unicode also lists functions, with newer terminology (e.g.
+> "determinatives" they now call "classifiers"). But it should be taken with a grain of
+> salt. The listed functions often belong to the _single_ token they identified in order
+> to confirm existence of a sign, omitting many other functions that that same sign can
+> have.
+>
+> My XML file only includes Unicode 5.2. My intention is to extend it to include the
+> extended set from Unicode 16. But this may require reinterpreting manually the limited
+> sign functions currently in UniKemet, and this would not be trivial. I would then
+> probably also consult the Thot Sign List ( https://thotsignlist.org/ ) for comparison.
+>
+> Thanks also for the offer to provide a test harness for segmentation. I should point out
+> that these are all-year projects, running until about April 2027, so it might take my
+> students a while to produce their first prototype.
+>
+> Best regards,
+>   Mark-Jan
+
+**What this settles.** (1) His sign-function XML (`egyptian/unicode/` on his site, Unicode
+5.2 sign set) may be used under any licence we choose → we will publish our copy as
+**CC BY 4.0, attributed to Mark-Jan Nederhof**, alongside the CC BY-SA corpus (BY is
+compatible). Item C's licence risk is gone. (2) Item E is rescoped: no user-uploaded texts;
+"similar text across several tiers of annotation", and the research question "can one
+improve on edit distance?". (3) He will retest once new functionality is up. (4) He
+declines real user queries as test material; classic train/test partition instead.
+(5) Second opinions for sign functions: UniKemet (newer terms — "classifiers" for
+determinatives; functions drawn from single attested tokens, so incomplete) and the Thot
+Sign List for comparison. Students' projects run to ~April 2027.
+
+## Email 6 — Reply to Dr Nederhof's fourth message — DRAFT
+
+**Subject:** Re: Permission to include St Andrews Corpus texts in an open Egyptology tool
+
+Dear Mark-Jan,
+
+Thank you — and no apology needed; I know what the start of a semester looks like.
+
+The sign-function file is exactly what the segmentation work was waiting for. I will
+include it under CC BY 4.0, credited to you by name with a link to your Unicode page,
+next to the CC BY-SA corpus; if you would prefer different wording or a different licence,
+one line from you is enough and I will change it. Thank you also for the warning about
+UniKemet's functions coming from single attested tokens — I will treat it and the Thot
+Sign List as cross-checks, not as sources of truth, and stay with the Unicode 5.2 set your
+file covers.
+
+Understood on the similar-text question: no user uploads, and the interesting problem is
+similarity across tiers — sign sequence, transliteration, translation and, once lemma
+identifiers are wired in, lemmas — and whether something beats plain edit distance. That is
+what I will build next, and I will report what the numbers say either way.
+
+Understood too that your students will evaluate on a corpus partition rather than on user
+queries; the offer stands if it is ever useful, and AED-TEI is a good place for them to
+start.
+
+I will write when the new functionality is up so you can test again.
+
+With best regards,
+Ledio Durmishaj
