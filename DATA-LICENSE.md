@@ -249,10 +249,12 @@ carries and how often. The underlying corpora, which must be credited with them:
   (BBAW, CC BY-SA 4.0).
 - **Ramses Transliteration Corpus v. 2019-09-01** — Rosmorduc, S. / Université de Liège,
   Projet Ramsès, <https://doi.org/10.5281/zenodo.4954597>. Its own README licenses the
-  corpus CC BY-NC-SA 4.0; the University of Helsinki released these derived word
-  statistics as CC BY 4.0, and this project relies on that release in good faith. If
-  Liège objects, the Ramses-derived rows (`source` = `Ramses`) can be dropped by
-  re-running the import with the AES file only.
+  corpus CC BY-NC-SA 4.0 and the University of Helsinki released these derived word
+  statistics as CC BY 4.0; on 2026-09-04 Projet Ramses granted this project the corpus
+  under **CC BY-SA 4.0** by email ("Yes, no problem for us!", archived in
+  `docs/permission-requests.md`), which covers the Ramses-derived rows here
+  (`source` = `Ramses`, 50,647 rows, plus 4,402 `AES+Ramses`). The lexicon file therefore
+  stays public in full.
 
 The app uses the lexicon only for sign groups this corpus does not attest, labels every
 such reading as "lexicon N× — no sentence in this corpus", and never counts it as an

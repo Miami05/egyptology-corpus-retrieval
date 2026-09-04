@@ -1401,3 +1401,19 @@ rights), so BY-SA on it is correct; the CC 4.0 legal code has no "collection" co
 all — that lives only in the FAQ. Serving NC rows beside BY-SA rows from separate files is
 a permitted non-commercial use provided the union is never shared as one database; seven
 safe-side rules are in the report.
+
+**Fri 09-04, late afternoon — licence work closed out.** Projet Ramses / Liège replied to
+Email 4: the private NC arrangement is approved *and* the corpus is granted **CC BY-SA 4.0
+for this project** ("Yes, no problem for us!"; archived in `docs/permission-requests.md`).
+Consequences, all merged (88bdc17): Ramses moves into the public CC BY-SA credit sentence
+with the README's attribution string; St Andrews is the only NC source left; the Helsinki
+lexicon's Ramses-derived rows are covered by the grant, so the planned public/private
+lexicon split was cancelled before it changed anything. The audit's wording corrections
+are applied: TLA credit links the licensed dataset publications, not the website; warranty
+disclaimer and licence-text links; indication of changes on every credit; Late Egyptian
+citation corrected; DATA-LICENSE gains a Ramses section, database-rights (§4) and
+cure/irrevocability (§6) notes. Still true: Ramses rows stay out of the live app until
+item A (paste gate 3/8 with them loaded) — when A passes they go into `examples.csv`
+directly, no private file needed. Test note: the private-corpus id test now compares
+values with `check_dtype=False`, because a fresh local DB yields int64 ids and a stale one
+float64 with gaps; both are legitimate.
