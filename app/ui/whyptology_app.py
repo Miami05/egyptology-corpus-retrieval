@@ -2002,8 +2002,14 @@ def render_signs(df: pd.DataFrame) -> None:
             )
         else:
             st.caption(
-                f"All {alignment.total_rows:,} corpus rows are sign/reading aligned and "
-                "counted here."
+                f"All {alignment.usable_rows:,} of {alignment.total_rows:,} corpus rows "
+                "with sign evidence are sign/reading aligned and counted here."
+            )
+        if alignment.text_only_rows:
+            st.caption(
+                f"{alignment.text_only_rows:,} of {alignment.total_rows:,} corpus rows "
+                "have a transliteration but no hieroglyphs; they take part in the "
+                "transliteration search but contribute no sign evidence."
             )
     if not index:
         st.info(

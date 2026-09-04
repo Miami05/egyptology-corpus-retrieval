@@ -63,29 +63,39 @@ class AlignmentReport:
     the sign index, so the count must be visible rather than a silent `continue`.
     The raw CSV is 100% aligned; every misalignment is introduced by normalisation,
     which makes this number a regression check on the normaliser itself.
+
+    Rows with no hieroglyphs at all (BBAW text-only rows, Demotic) are a separate,
+    expected state, not a defect: they legitimately carry no sign evidence but still
+    have a transliteration and take part in transliteration search. They are counted
+    in `text_only_rows`, not in `misaligned_rows`. `usable_rows` = rows with usable
+    sign alignment = `total_rows` − `misaligned_rows` − `text_only_rows`.
     """
 
     total_rows: int
     misaligned_rows: int
+    text_only_rows: int = 0
     misaligned_indices: list[int] = field(default_factory=list)
     placeholder_collisions: int = 0
 
     @property
     def usable_rows(self) -> int:
-        return self.total_rows - self.misaligned_rows
+        return self.total_rows - self.misaligned_rows - self.text_only_rows
 
 
 def alignment_report(df: pd.DataFrame, max_listed: int = 50) -> AlignmentReport:
     signs = df["hieroglyphs_norm"].astype(str).str.split()
     readings = df["transliteration_gold"].astype(str).str.split()
-    bad = [
-        int(index)
-        for index, (s, r) in enumerate(zip(signs, readings))
-        if not s or len(s) != len(r)
-    ]
+    text_only = 0
+    bad: list[int] = []
+    for index, (s, r) in enumerate(zip(signs, readings)):
+        if not s:
+            text_only += 1
+        elif len(s) != len(r):
+            bad.append(int(index))
     return AlignmentReport(
         total_rows=len(df),
         misaligned_rows=len(bad),
+        text_only_rows=text_only,
         misaligned_indices=bad[:max_listed],
         placeholder_collisions=len(PLACEHOLDER_COLLISIONS),
     )
@@ -150,4 +160,12 @@ def load_examples_csv(path: str) -> pd.DataFrame:
         )
     else:
         logger.info("corpus alignment: %d/%d rows usable", report.usable_rows, report.total_rows)
+    if report.text_only_rows:
+        logger.info(
+            "%d of %d corpus rows have a transliteration but no hieroglyphs "
+            "(text-only rows); they are searchable by transliteration but carry no "
+            "sign evidence",
+            report.text_only_rows,
+            report.total_rows,
+        )
     return df
