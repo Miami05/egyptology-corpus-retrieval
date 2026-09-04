@@ -175,16 +175,23 @@ def inject_theme() -> None:
 # named — not just the one the project started with. `test_every_corpus_source_is_credited`
 # fails if a new source is imported without adding its citation here.
 CORPUS_CREDITS: dict[str, str] = {
+    # Linked to the two licensed dataset publications (§3(a)(1)(A)(v) asks for a URI
+    # to the *licensed material*), not to the TLA website — the website itself carries
+    # no CC licence for its data, see DATA-LICENSE.md.
     "TLA": (
-        '<a href="https://thesaurus-linguae-aegyptiae.de" target="_blank" '
-        'rel="noopener">Thesaurus Linguae Aegyptiae</a>, Earlier Egyptian corpus v18 '
-        "and Late Egyptian corpus v19, ed. Richter &amp; Werning (BBAW) and "
-        "Fischer-Elfert &amp; Dils (SAW Leipzig)"
+        'the <a href="https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/'
+        'tla-Earlier_Egyptian_original-v18-premium" target="_blank" rel="noopener">'
+        "Earlier Egyptian corpus v18</a> and "
+        '<a href="https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/'
+        'tla-late_egyptian-v19-premium" target="_blank" rel="noopener">'
+        "Late Egyptian corpus v19</a> of the Thesaurus Linguae Aegyptiae (TLA), "
+        "ed. Richter &amp; Werning (BBAW) and Fischer-Elfert &amp; Dils (SAW Leipzig)"
     ),
     "AES": (
+        '<a href="https://github.com/simondschweitzer/aes" target="_blank" '
+        'rel="noopener">AES — Ancient Egyptian Sentences</a>, derived from '
         '<a href="https://github.com/simondschweitzer/aed-tei" target="_blank" '
-        "rel=\"noopener\">AES — Ancient Egyptian Sentences</a>, derived from AED-TEI "
-        "(S. Schweitzer and contributors, BBAW/SAW)"
+        'rel="noopener">AED-TEI</a> (S. Schweitzer and contributors, BBAW/SAW)'
     ),
     "BBAW": (
         '<a href="https://huggingface.co/datasets/phiwi/bbaw_egyptian" target="_blank" '
@@ -193,6 +200,18 @@ CORPUS_CREDITS: dict[str, str] = {
         "ägyptischen Sprache” (Berlin-Brandenburgische Akademie der Wissenschaften), "
         "January 2018 snapshot"
     ),
+    # Not NC here: the rights holders (Projet Ramses / Université de Liège) granted
+    # CC BY-SA 4.0 for this project's use by email 2026-09-04 — see
+    # docs/permission-requests.md ("Reply from Projet Ramses, 2026-09-04") and
+    # DATA-LICENSE.md. The Ramses README's own CC BY-NC-SA 4.0 terms still govern
+    # everyone else. Rows are not in examples.csv yet (withheld for an unrelated
+    # modelling reason), so this entry is dormant — see corpus_credit_html: a public
+    # entry only renders when that source is actually present in the frame.
+    "Ramses": (
+        '<a href="https://doi.org/10.5281/zenodo.4954597" target="_blank" '
+        'rel="noopener">the Ramses transliteration corpus V. 2019-09-01, '
+        "University of Liège/Projet Ramses</a>"
+    ),
 }
 
 LICENCE_LINK = (
@@ -200,28 +219,39 @@ LICENCE_LINK = (
     'rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>'
 )
 
+# CC BY-SA 4.0 §3(a)(1)(A)(iv) requires a notice referring to the disclaimer of
+# warranties; §5 is that disclaimer. Linked to the legal code, not the deed, because
+# the deed is a summary and does not itself carry the §5 text.
+WARRANTY_LINK = (
+    '<a href="https://creativecommons.org/licenses/by-sa/4.0/legalcode" '
+    'target="_blank" rel="noopener">CC&nbsp;BY-SA&nbsp;4.0&nbsp;§5</a>'
+)
+
 # The NC-licensed corpora (never in examples.csv — see PRIVATE_DATA_DIR above). Each
 # gets its own credit line rather than being folded into the CC BY-SA sentence above,
 # because that sentence is a licence claim and these rows are under a different
 # licence entirely. `name` is the exact attribution string each source's licence (or,
-# for St Andrews, Nederhof's permission mail) requires.
+# for St Andrews, Nederhof's permission mail) requires. `licence_url` points at the
+# licence text itself (§3(a)(1)(C)); `source_url` is kept separate so the DOI / texts
+# page a reader would actually want to open is not lost.
+#
+# Ramses used to be here too, but the rights holders (Projet Ramses / Université de
+# Liège) granted CC BY-SA 4.0 for this project's use by email 2026-09-04, so it moved
+# to the public CORPUS_CREDITS group above — see DATA-LICENSE.md. St Andrews has no
+# such grant; it stays NC on Nederhof's permission mail alone.
 PRIVATE_CORPUS_CREDITS: dict[str, dict[str, str]] = {
-    "Ramses": {
-        "name": (
-            "the Ramses transliteration corpus V. 2019-09-01, University of "
-            "Liège/Projet Ramses"
-        ),
-        "licence_label": "CC&nbsp;BY-NC-SA&nbsp;4.0",
-        "licence_url": "https://doi.org/10.5281/zenodo.4954597",
-        "note": "used non-commercially; not redistributed with this app",
-    },
     "StAndrews": {
         "name": "St Andrews Corpus of Ancient Egyptian texts, Mark-Jan Nederhof",
+        "source_url": "https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/",
         "licence_label": "CC&nbsp;BY-NC-SA&nbsp;4.0",
-        "licence_url": "https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/",
+        "licence_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+        "changes": (
+            "Hannig transliteration conventions preserved as written; provenance "
+            "recorded in grammar_notes; normalised columns added"
+        ),
         "note": (
-            "used with his permission for non-commercial purposes; not "
-            "redistributed with this app"
+            "Displayed here under its own licence for non-commercial use; the "
+            "underlying files are not redistributed"
         ),
     },
 }
@@ -244,7 +274,13 @@ def _private_source_credit_html(source: str) -> str:
         f'<a href="{info["licence_url"]}" target="_blank" rel="noopener">'
         f'{info["licence_label"]}</a>'
     )
-    return f'{info["name"]} — licensed {licence}; {info["note"]}.'
+    source_link = (
+        f'<a href="{info["source_url"]}" target="_blank" rel="noopener">source</a>'
+    )
+    return (
+        f'{info["name"]} — licensed {licence} ({source_link}). Adapted: '
+        f'{info["changes"]}. {info["note"]}.'
+    )
 
 
 def corpus_credit_html(df: pd.DataFrame) -> str:
@@ -269,9 +305,11 @@ def corpus_credit_html(df: pd.DataFrame) -> str:
         credit = (
             "Corpus data: "
             + "; ".join(cited)
-            + f". Licensed {LICENCE_LINK}. Adapted: normalised, re-segmented, "
-            "transliteration conventions unified, and extended with derived fields — "
-            "see DATA-LICENSE.md."
+            + f". Licensed {LICENCE_LINK}. Adapted: Gardiner sign codes mapped to "
+            "Unicode, transliteration conventions unified across sources, sign "
+            "groups re-aligned to transliteration tokens, sentences deduplicated "
+            "across corpora, and rows extended with derived fields — see "
+            f"DATA-LICENSE.md. Provided as-is, without warranties ({WARRANTY_LINK})."
         )
         # CC BY 4.0 makes attribution a condition, and the lexicon is only in play
         # when its file shipped with this deployment.

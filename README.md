@@ -176,14 +176,24 @@ This repository is **not** under a single licence.
 | What | Licence |
 |---|---|
 | Source code | MIT — [LICENSE](LICENSE) |
-| Corpus data under `data/` | **CC BY-SA 4.0** — [DATA-LICENSE.md](DATA-LICENSE.md) |
+| Corpus data under `data/` | **CC BY-SA 4.0**, with one exception — see below and [DATA-LICENSE.md](DATA-LICENSE.md) |
 | `app/ui/static/GentiumPlus-Translit.woff2` | SIL OFL 1.1 — `app/ui/static/GentiumPlus-OFL.txt` |
 
-The corpus is derived from the [Thesaurus Linguae
-Aegyptiae](https://thesaurus-linguae-aegyptiae.de) (CC BY-SA 4.0). Share-alike means the
-derived data cannot be relicensed as MIT, attribution is required, and the changes made
-to it must be stated — all of which is recorded in
+The corpus is derived from raw-data publications of the [Thesaurus Linguae
+Aegyptiae](https://aaew.bbaw.de/daten-veroeffentlichungen) (TLA) project, each released
+under CC BY-SA 4.0. **The TLA *website* itself is not under a CC licence** — it permits
+only copying individual data sets "for academic research purposes, but not entire
+sub-corpora or larger sets" (see
+[its licences page](https://thesaurus-linguae-aegyptiae.de/info/licenses)); CC BY-SA 4.0
+attaches to the separately published datasets this project actually uses, not to the
+web app. Share-alike means the derived data cannot be relicensed as MIT, attribution is
+required, and the changes made to it must be stated — all of which is recorded in
 [DATA-LICENSE.md](DATA-LICENSE.md). The attribution shown in the app sidebar **and in
 the footer of every page** is a licence condition, not decoration, and every CSV the
 app or `scripts/export_reviewed.py` writes carries a `licence` column so the notice
 travels with the data.
+
+`data/` is **not uniformly** CC BY-SA 4.0: `data/processed/helsinki_lexicon.csv` is
+built from CC BY 4.0 material and is wrapped in CC BY-SA 4.0 here (which CC BY 4.0
+permits), but its own upstream attribution and licence link still travel with it — see
+DATA-LICENSE.md for the exact terms.
