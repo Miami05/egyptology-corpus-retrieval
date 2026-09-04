@@ -1562,3 +1562,28 @@ Auto for *text* queries still uses label inference (base-rate lift), which works
 than the likelihood chooser; a text analogue (score the transliteration under per-stage
 token models) is the natural next step. Cold build of three stage sets on a 131k corpus
 ≈ 21 s and ~1.9 GB if all cached — lazy on the server, excluded on Cloud.
+
+## Hosting decision closed 2026-09-04 — Streamlit Cloud retired, server is the host
+
+Ledio's call after item A: the corpus (130,472 rows) no longer fits Cloud's 1 GB and the
+server works, so Cloud is retired rather than kept alive on a subset. DEPLOYMENT.md is now
+the server runbook (layout under `/home/ledio`, service, deploy script, settings table,
+what needs sudo, history of Cloud/Neon/HF). README points at the new URL. The
+`corpus_sources_exclude` / `default_stage` / `moved_to_url` knobs stay in the code — they
+cost nothing and describe any future small host — but no Cloud secrets are needed.
+
+**Still to be done, in order** (no runs tonight):
+1. Warm the per-stage resource sets at service start (first Auto paste is ~60 s cold).
+2. Nightly `egyptology.db` copy to `egyptology-backups/` and off the machine; one restore
+   test before the expert round. Have `deploy.sh` run `scripts/import_examples.py` so new
+   corpus rows get ids on the existing database.
+3. Git LFS for `data/processed/examples.csv` (65 MB; GitHub warns above 50 MB).
+4. Stage as a *preference* in retrieval (recovers COMP_014 without tuning).
+5. St Andrews importer (hieropy, private script) → `/home/ledio/egyptology-private/`;
+   gate: Camilla's line top-1 from his line rows; attribution screenshot to Nederhof.
+6. E, phrase finder, with the rapidfuzz batch call. Then the expert round.
+7. Late Egyptian evaluation set from Ramses. B, C, D as planned.
+8. Neon: export any remaining annotations with `scripts/export_reviewed.py`, rotate/delete
+   the role, close the project. Delete or leave the Cloud app (unmaintained either way).
+Ledio's side: Email 5 to Nederhof (sign-list licence → C); set `REVIEWER_KEY` in
+`/home/ledio/egyptology.env` before experts annotate; pick an off-machine backup target.

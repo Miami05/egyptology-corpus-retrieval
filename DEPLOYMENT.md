@@ -1,174 +1,114 @@
 # Deployment
 
-Live app: <https://egyptology-corpus-retrieval.streamlit.app>
-Host: Streamlit Community Cloud, from `main` of `Miami05/egyptology-corpus-retrieval`.
+Live app: <https://vela-optiplex-3070.taile0409f.ts.net/>
+Host: a Dell OptiPlex 3070 (Ubuntu 24.04, 4 cores, 23 GB RAM) owned by a friend, reached
+over Tailscale; our copy runs under the Linux user `ledio` and nothing outside
+`/home/ledio` is ours to touch. **Streamlit Community Cloud was retired on 2026-09-04**:
+the corpus grew to 130,472 rows that day and no longer fits its 1 GB. Whatever still
+answers at the old `streamlit.app` address is unmaintained.
 
-## Settings that matter
+## Layout on the server
 
-| Setting | Value | Why |
-|---|---|---|
-| Main file path | `app/ui/whyptology_app.py` | Not `app/api/main.py` — that is the FastAPI service and is **not** deployed. |
-| Python version | **3.12** | `numpy==2.3.2` and `pyarrow==21.0.0` have no wheels for 3.14. Set under *Advanced settings*. |
-| Secrets | TOML, see below | Streamlit also exports top-level secrets as environment variables, which is why `os.getenv` in `app/core/config.py` works unchanged. |
+| Path | What |
+|---|---|
+| `/home/ledio/egyptology` | clone of `main`; the app runs from here |
+| `/home/ledio/venvs/egyptology` | Python 3.12 virtualenv (≈ 760 MB) |
+| `/home/ledio/egyptology-private` | `PRIVATE_DATA_DIR`: non-redistributed CC BY-NC-SA rows (St Andrews). Outside the clone so `git pull` never touches it. Copy files in with `scp`. |
+| `/home/ledio/egyptology-backups` | destination for database dumps (job still to be written, see below) |
+| `/home/ledio/egyptology.env` | secrets and per-host settings, `chmod 600`, read by the service |
+| `/home/ledio/egyptology-deploy.sh` | the one-command update |
+| `~/.config/systemd/user/egyptology.service` | the service: Streamlit on `127.0.0.1:8502`, headless, `Restart=on-failure`, enabled; `loginctl enable-linger ledio` keeps it running with nobody logged in |
+| `/home/ledio/egyptology/egyptology.db` | the SQLite database: corpus ids and **all annotations**. The only irreplaceable file. |
 
-```toml
-APP_NAME = "Whyptology"
-TOP_K = 3
-```
+Public access: `tailscaled` terminates TLS and proxies `/` to `127.0.0.1:8502`
+(`tailscale serve`), and Funnel publishes it to the internet. Both were set by the machine
+owner or by Ledio with sudo; `ledio` has no sudo.
 
-**A push does not reliably reload imported modules.** Observed 2026-07-30: after
-pushing a commit that changed both `whyptology_app.py` and `app/retrieval/scorer.py`,
-the live app showed the new sidebar labels but ranked with the old scorer — the main
-script is re-executed per rerun, while `app/` modules stay cached in the running
-process from `sys.modules`. It looks exactly like "my fix didn't work". After any
-push that touches code under `app/`, hit *Manage app → Reboot* and then verify the
-changed behaviour on the live app, not just that the deploy "went through".
-
-## Making annotations survive (required for real review work)
-
-**Status on 2026-09-01: the live app does NOT keep annotations.** Its `DATABASE_URL`
-secret points at `sqlite:///egyptology.db`, a file inside the Streamlit Cloud container.
-That container is recreated on every reboot and every redeploy (one happened today), so
-an expert's correction is accepted, shown as saved, and gone at the next restart. The
-app now says so in a banner and disables saving while this is true; the banner goes away
-the moment the steps below are done. Check at any time with:
+## Deploying a change
 
 ```bash
-~/venvs/egyptology/bin/python scripts/check_database.py   # exit 0 durable, 1 ephemeral, 2 unreachable
+git push origin main
+ssh ledio@vela-optiplex-3070 ./egyptology-deploy.sh
 ```
 
-### What went wrong with Neon, so it does not happen again
+The script does `git pull --ff-only`, `pip install -r requirements.txt`, restarts the
+service and waits for `/_stcore/health`; it prints the commit it is serving. If it prints
+the last 30 log lines instead, the app did not come up — read them. Useful afterwards:
 
-The intended store is a Neon free-tier Postgres (US East). It exceeded its **monthly
-data-transfer (egress) quota** on 2026-08-20 and again on 2026-08-30, after which Neon
-refuses every connection with `You have exceeded the data transfer quota`. The cause was
-one query: `attach_db_ids` used to download *every column of every corpus row* on each
-boot just to build a three-column → id map. That is fixed — `ExampleRepo.list_example_keys`
-selects four columns and a regression test (`tests/test_storage_seeding.py`) fails if a
-boot-time path ever pulls full rows again. The one remaining full-table read is in
-`scripts/migrate_example_ids.py`, a hand-run maintenance script, not the app.
+```bash
+ssh ledio@vela-optiplex-3070 'systemctl --user status egyptology.service; journalctl --user -u egyptology.service -n 50 --no-pager'
+```
 
-The quota resets with Neon's monthly billing cycle. With the fix in place, normal use is
-tiny: a boot reads ~55k × 4 short columns (a few MB), and every other query is per row.
+Verify behaviour on the live URL after any push that touches `app/`; a healthy port proves
+only that Streamlit answers.
 
-**The `neondb_owner` password was pasted into a chat transcript on 2026-08-30. Rotate it
-before reusing the project** — step 1 below.
+## Settings (`/home/ledio/egyptology.env`, or Streamlit secrets on any other host)
 
-### Steps — only the account owner can do these
+Every knob is read by `configured_setting()` in `whyptology_app.py`: Streamlit secrets
+first, then the environment. Set per host, never in code.
 
-1. **Rotate the password.** Neon console → project → *Roles* → `neondb_owner` → *Reset
-   password*. Copy the new connection string it shows. Nothing in the repo needs to
-   change; the secret lives only in Streamlit.
-2. **Confirm the quota has reset.** Neon console → *Usage* → data transfer. If it is
-   still over, wait for the cycle date or use an alternative (below). From a laptop:
-   `DATABASE_URL="postgres://…" ~/venvs/egyptology/bin/python scripts/check_database.py`
-   must print `reachable: yes`.
-3. **Set the secret.** Streamlit Cloud → *Manage app* → *Settings* → *Secrets*:
-
-   ```toml
-   DATABASE_URL = "postgres://neondb_owner:NEW_PASSWORD@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require"
-   ```
-
-   Prefer the **direct** endpoint over `-pooler` (the app keeps its own small pool;
-   `db.py` disables prepared statements so either works). Paste `postgres://` as given —
-   it is rewritten to the SQLAlchemy dialect on load.
-4. **Reboot** (*Manage app* → ⋮ → *Reboot app*). Wait the ~1 minute Streamlit needs for
-   a secret to propagate *before* testing — an annotation saved too early lands in the
-   still-running SQLite container and vanishes on reboot, which looks exactly like a
-   broken Postgres setup when nothing is wrong.
-5. **First boot seeds the corpus.** `ensure_corpus_ready` finds an empty `examples`
-   table and bulk-inserts every row in one transaction, 2,000 rows per statement. On
-   local SQLite the 26,196-row corpus seeds in **1.7 s**; the ~55k-row corpus after the
-   BBAW import is a few seconds. Against Neon expect **tens of seconds, under a minute**
-   — roughly 28 statements plus one commit, dominated by the transatlantic round trips.
-   The first page load will spin for that long, once. The seed is atomic on purpose: a
-   half-seeded table would satisfy the empty-table guard forever and silently leave rows
-   missing.
-6. **Verify.** Save an annotation in the workspace, *Reboot*, and check it is still
-   listed under **Reviews**. Or run `scripts/check_database.py` with the production URL
-   from a laptop: `verdict : DURABLE` and a non-zero `annotations` count.
-
-A quick way to tell which engine served a saved annotation: the review-card timestamp.
-Postgres `timestamptz` renders with an offset (`20:10:11.598071+00:00`); SQLite has none.
-
-### If Neon stays over quota
-
-Any hosted Postgres works — the code only needs a URL. The thing to check on a free tier
-is the **egress** allowance, because that, not storage, is what this app consumed:
-
-- **Supabase** (free): 500 MB storage, ~5 GB egress/month, US East available. Use the
-  *Session* pooler URL or the direct one; `db.py` handles both. The `postgres://` string
-  pastes straight in.
-- **Neon paid Launch tier**: removes the egress cap; the cheapest fix if you want to keep
-  the existing project and its region.
-- **Turso / libSQL**: a hosted SQLite; would need the `sqlalchemy-libsql` dialect and has
-  not been tried here — listed only so it is not re-researched from scratch.
-
-Whatever the provider: it must be **US East**, because the app runs on Streamlit Cloud in
-the US and every query is app→database. Picking Europe because you are in Europe adds a
-transatlantic hop to each of them.
-
-### How the code handles it
-
-- `app/storage/db.py` rewrites `postgres://` to `postgresql+psycopg://` (SQLAlchemy
-  rejects the bare `postgres` dialect name — the single most common cause of a baffling
-  first-deploy crash), enables `pool_pre_ping` because hosted Postgres suspends idle
-  connections, and sets a 10 s connect timeout so a dead endpoint degrades to read-only
-  instead of freezing the app.
-- `app/storage/bootstrap.py` seeds in bulk when, and only when, the corpus table is
-  empty. The empty-table guard stops a redeploy from re-importing over live annotations
-  — do not remove it. `sync_new_examples` adds rows a grown corpus is missing without
-  touching existing ids.
-- `app/ui/review_common.attach_db_ids` builds the id map from the four-column select.
-- Nothing changes for local development: with no `DATABASE_URL`, it stays on SQLite.
-
-Keep `DATABASE_URL` out of the repo. `.env` is gitignored; production reads it from the
-Secrets box only.
-
-## Option: Hugging Face Spaces (when the corpus outgrows 1 GB)
-
-Measured 2026-09-01 in a fresh process holding everything the app holds (corpus, search
-index, reading model, segmenter, lexicon):
-
-| corpus rows | peak RSS | one query |
+| Variable | Server value | Meaning |
 |---|---|---|
-| 31,565 (live) | 622 MB | 0.32 s |
-| 78,453 (with the text-only BBAW rows) | **1,110 MB** | 1.01 s |
+| `ANNOTATIONS_DURABLE` | `1` (in the unit) | SQLite on a real disk persists; turns off the "not stored durably" warning and the read-only gating |
+| `PRIVATE_DATA_DIR` | `/home/ledio/egyptology-private` (in the unit) | where NC rows are read from; empty dir = none |
+| `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving; unset = anyone may save |
+| `DATABASE_URL` | unset | unset = SQLite next to the code; a `postgres://` URL switches engines with no code change |
+| `DEFAULT_STAGE` | unset (= `auto`) | `auto` / `all` / a stage name; Auto builds one extra resource set per stage it uses |
+| `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated `source` values to drop at load — how a 1 GB host would stay on the 78k subset |
+| `MOVED_TO_URL` | unset | renders the "this app has moved" banner on a superseded deployment |
 
-Streamlit Community Cloud gives the app **1 GB**, so the larger corpus would be killed on
-boot; St Andrews (+~14k) and Ramses (+71k) would never fit. Hugging Face Spaces' free
-"CPU basic" tier gives **2 vCPU and 16 GB**, supports Streamlit natively (`sdk: streamlit`
-in the Space README's front matter), and is where the corpora already live.
+## What the service needs, measured 2026-09-04
 
-What changes and what does not:
+130,472 rows load in 9 s; pooled resources build in ~30 s on this CPU; the first
+hieroglyph paste in Auto mode builds the three stage resource sets (~60 s cold) and then
+everything is cached; peak RSS with all sets ≈ 1.9 GB. A transliteration query is ~1 s on
+this corpus (the fuzzy loop; rapidfuzz batch call pending). Follow-up: warm the stage sets
+at startup so the first visitor does not wait.
 
-- **Not**: the code. The same `app/ui/whyptology_app.py` runs; `requirements.txt` is read
-  as is. Secrets are set in the Space's settings, same names.
-- **Not**: the annotation problem. Free Spaces have no persistent disk either; SQLite is
-  wiped on restart. A remote database (Neon or equivalent) is needed on either host.
-- **Changes**: the URL (`huggingface.co/spaces/<user>/<space>`); keep the Streamlit app
-  alive for a while showing a one-line redirect, because the people you have written to
-  hold the old link.
-- **Cost to know about**: free Spaces **sleep after ~48 hours without a visitor** and
-  cold-start in one to two minutes. For an expert who opens your link days later that is
-  the first thing they see. Options: accept it, a keep-alive ping, or the cheapest paid
-  tier, which also removes the sleep.
+## Annotations and backups
 
-Steps, when the decision is made:
+Annotations live in `egyptology.db`. The corpus table is regenerable from the CSV
+(`ensure_corpus_ready` seeds an empty table on first boot and never re-imports over live
+annotations — do not remove that guard); the annotations table is not. **Still to do:** a
+nightly copy of `egyptology.db` into `egyptology-backups/` and from there off the machine,
+30-day retention, and one restore test before any expert records corrections. Until then
+the database is as safe as one disk. `scripts/export_reviewed.py` writes the reviewed
+annotations to CSV and is the manual fallback.
 
-1. *(account owner)* Create the Space (Streamlit SDK, CPU basic) and a write token.
-2. *(repo)* Add the Space front matter to a `README.md` at the Space root — or a
-   `space/README.md` copied by the sync — with `sdk: streamlit`, `app_file:
-   app/ui/whyptology_app.py`, `python_version: 3.12`.
-3. *(repo)* A GitHub Action on push to `main` that pushes the tree to the Space repo
-   (the token as a GitHub secret). One repository stays the source of truth.
-4. *(account owner)* Set `DATABASE_URL` and the reviewer passphrase in the Space's secrets.
-5. Verify exactly as for Streamlit Cloud: load the app, run a Unicode and an MdC query,
-   `scripts/check_database.py` against the production URL.
+New corpus rows get ids at boot via the empty-table guard only on a fresh database; on an
+existing one run `scripts/import_examples.py` after a corpus change so the new rows are
+linked (the deploy script does not do this yet).
 
-Regardless of host, do the cheap memory work first (drop the nine empty columns at load,
-sparse document vectors, no per-query frame copy): at 78k rows a query is 1 s because of
-how the index is held, not because of the row count, and that is true on a 16 GB box too.
+## What needs sudo (the owner, or Ledio with the password)
+
+Anything outside `/home/ledio`: `tailscale serve` / `funnel` changes, new ports, system
+packages, adding `ledio` to `docker` (not asked for — root-equivalent on a box that runs
+Vaultwarden and Nextcloud). Everything else is `ledio`'s.
+
+## How the code handles databases
+
+- `app/storage/db.py` rewrites `postgres://` to `postgresql+psycopg://`, enables
+  `pool_pre_ping`, and sets a 10 s connect timeout so a dead endpoint degrades to
+  read-only instead of freezing the app.
+- `app/storage/bootstrap.py` seeds in bulk only when the corpus table is empty;
+  `sync_new_examples` adds rows a grown corpus is missing without touching existing ids.
+- `app/ui/review_common.attach_db_ids` builds the id map from a four-column select — the
+  full-row download it replaced is what exhausted the Neon free tier's transfer quota in
+  August 2026 (`tests/test_storage_seeding.py` guards against it coming back).
+- Private rows are concatenated only after the database step and never get an id.
+
+## History
+
+- **Streamlit Community Cloud** (2026-07-28 → 2026-09-04) served `main` from GitHub with
+  the Neon Postgres below; a push re-executed the main script but not `app/` modules, so
+  every code change needed *Manage app → Reboot*. Retired when the corpus outgrew 1 GB.
+- **Neon** (free tier, US East) held the annotations for the Cloud deployment. Its monthly
+  egress quota was exhausted twice in August by the boot-time full-row download, and the
+  `neondb_owner` password was pasted into a chat on 2026-08-30. The server does not use
+  Neon; export anything still there with `scripts/export_reviewed.py` before closing the
+  project, and rotate or delete the role.
+- **Hugging Face Spaces** was evaluated (2026-09-01/02) and dropped: Docker Spaces require
+  a PRO account since July 2026, and the server made the question moot.
 
 ## Local development
 
