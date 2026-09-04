@@ -207,14 +207,18 @@ def retrieve_with_stage(
     `StageResources` — normally a small cache keyed by stage, so the same resources
     are not rebuilt per query. `df_all` is accepted for interface symmetry with
     `retrieve_top_k`/the caller's own frame handling but retrieval itself always runs
-    against the frame inside the resolved `StageResources`, which is already the
-    correct stage-compatible subset (or the full frame, at `target=None`) — see
-    `app.services.stage.compatible_frame`.
+    against the frame inside the resolved `StageResources`, which is always the
+    pooled corpus regardless of `stage` (stage is a preference, not a filter, for
+    retrieval — see `app.services.stage`'s module docstring and `StageResources`);
+    only the resolved resources' `index.stats` (the IDF document-frequency counts)
+    differ by stage, weighting the same pooled candidates rather than excluding any
+    of them.
 
-    - `stage` a concrete stage name: retrieve on that stage's resources only.
+    - `stage` a concrete stage name: retrieve on that stage's resources — the
+      pooled candidate pool, weighted by that stage's own token statistics.
     - `stage is None`: retrieve on the pooled resources — today's behaviour exactly,
       since `resources_by_stage(None)` must build on `compatible_frame(df, None)`,
-      which is the full frame.
+      which is the full frame (so pooled stats too, identically).
     - `stage == "auto"`: `resolve_auto_stage(query_mdc, resources_by_stage)` decides
       the stage — likelihood-based for a hieroglyph paste, label-based
       (`app.services.stage.infer_stage`) for a text query, see that function. When a
