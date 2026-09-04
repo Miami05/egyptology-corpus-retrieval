@@ -1263,3 +1263,17 @@ the v4 cut (they listed five failures); they now reflect the current code. `sear
 inherits the fold, so `dedup_key` in the BBAW importer now treats `.PL`/`.pl`/`.w.PL`
 variants as one row — which is what the Monday import needs. Nine merged branches and the
 five worktrees removed; only `main` remains.
+
+**Fri 09-04, raw data landed (gitignored).** Ramses: Zenodo 4954597 →
+`data/raw/ramses/ramses-trl/` (VERSION `2019-09-01`; the zip is named 2021-05-29, same
+data). README: "released using the CC-BY-NC-SA Creative Common License… acknowledge as
+'the Ramses transliteration corpus V. 2019-09-01, University of Liege/Projet Ramses'".
+`data/src-*.txt` = Gardiner codes per line, with Ramses-only codes (`Ff1`, `Ff100`,
+`SHADED2`, `LACUNA`); `data/tgt-*.txt` = **MdC ASCII transliteration, one character per
+token, `_` as word boundary, yod as `i` not `j`** (correction to the plan above: `A a i
+H x X S T D` → `ꜣ ꜥ ꞽ ḥ ḫ ẖ š ṯ ḏ`, the same table as St Andrews minus the `j`). Splits:
+train 66,693 · val 1,841 · test 2,729 · ctest 2,428 · htest 301 = 74k lines. The 106 MB
+`network.h5` was not downloaded. St Andrews: `data/raw/standrews/corpus/` mirrors his
+layout — `corpus.xml`, `texts/<Name>.xml` (94), `resources/<Name>Hi.xml` (53 texts with
+glyphs, 41 without), `resources/<Name>Tr*.txt` (101), `align/*.xml` (18); 3.3 MB, zero
+404s. Still open for today: send Email 5 (user-side).
