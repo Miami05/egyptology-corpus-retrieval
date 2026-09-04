@@ -194,23 +194,56 @@ def test_credit_html_has_a_non_cc_by_sa_line_for_a_private_source(private_app):
     # The public sentence is still there, and still says CC BY-SA, for the public
     # sources actually present.
     assert "BY-SA" in rendered
-    assert "thesaurus-linguae-aegyptiae.de" in rendered
+    # The TLA hyperlink points at the licensed dataset publications, not the
+    # TLA website (which carries no CC licence for its data — see the audit).
+    assert "huggingface.co/datasets/thesaurus-linguae-aegyptiae" in rendered
 
 
-def test_credit_html_gives_ramses_and_st_andrews_their_required_wording():
+def test_credit_html_gives_ramses_its_required_wording_in_the_public_sentence():
+    """Ramses moved from the NC private group to the public CC BY-SA group on
+    2026-09-04: the rights holders (Projet Ramses / Université de Liège) granted
+    CC BY-SA 4.0 for this project's use by email — see docs/permission-requests.md
+    ("Reply from Projet Ramses, 2026-09-04") and DATA-LICENSE.md. The required
+    attribution string is unchanged from when it was the NC entry."""
     from app.ui.whyptology_app import corpus_credit_html
 
-    rendered = corpus_credit_html(pd.DataFrame({"source": ["Ramses", "StAndrews"]}))
+    rendered = corpus_credit_html(pd.DataFrame({"source": ["Ramses"]}))
     assert "Ramses transliteration corpus V. 2019-09-01" in rendered
     assert "University of Liège" in rendered or "Liège" in rendered
     assert "zenodo.4954597" in rendered
-    assert "not redistributed with this app" in rendered
+    # It is folded into the CC BY-SA sentence now, not a separate NC one.
+    assert "BY-SA" in rendered
+    assert "BY-NC-SA" not in rendered
 
+
+def test_credit_html_gives_st_andrews_its_required_nc_wording():
+    from app.ui.whyptology_app import corpus_credit_html
+
+    rendered = corpus_credit_html(pd.DataFrame({"source": ["StAndrews"]}))
     assert "St Andrews Corpus of Ancient Egyptian texts" in rendered
     assert "Mark-Jan Nederhof" in rendered
     assert "mjn.host.cs.st-andrews.ac.uk/egyptian/texts" in rendered
+    # Reworded per the licence audit: the app does "Share" the rows (CC §1), so
+    # "not redistributed with this app" (true only of the files) became this.
+    assert "underlying files are not redistributed" in rendered
+    # The licence label itself hyperlinks to the licence text, not the source.
+    assert "creativecommons.org/licenses/by-nc-sa/4.0" in rendered
     assert "BY-SA" not in rendered
     assert "BY-NC-SA" in rendered
+
+
+def test_credit_html_only_shows_the_nc_licence_link_when_st_andrews_is_present():
+    """A frame carrying only Ramses rows must read as plain CC BY-SA — the
+    by-nc-sa link is St Andrews' alone now that Ramses has its own BY-SA grant."""
+    from app.ui.whyptology_app import corpus_credit_html
+
+    ramses_only = corpus_credit_html(pd.DataFrame({"source": ["Ramses"]}))
+    assert "by-nc-sa" not in ramses_only
+
+    both = corpus_credit_html(pd.DataFrame({"source": ["Ramses", "StAndrews"]}))
+    assert "creativecommons.org/licenses/by-nc-sa/4.0" in both
+    # Ramses still appears, inside the public sentence, not the NC one.
+    assert "Ramses transliteration corpus V. 2019-09-01" in both
 
 
 def test_pure_public_corpus_credit_still_reads_as_cc_by_sa_for_all_rows():
@@ -222,6 +255,32 @@ def test_pure_public_corpus_credit_still_reads_as_cc_by_sa_for_all_rows():
     rendered = corpus_credit_html(corpus)
     assert "CC" in rendered and "BY-SA" in rendered
     assert "BY-NC-SA" not in rendered
+
+
+def test_credit_html_attribution_gaps_from_the_licence_audit_are_closed():
+    """2026-09-04 licence audit (docs/licence-audit-2026-09-04.md), Q6: the TLA link
+    pointed at the (non-CC-licensed) website instead of the licensed datasets, no
+    warranty-disclaimer notice reached the viewer, and the NC licence label linked
+    the source instead of the licence text. All three are attribution conditions
+    (§3(a)(1)(A)(iv)/(v), §3(a)(1)(C)) that must hold wherever the credit is shown.
+
+    (Ramses is used for the TLA/warranty checks only incidentally; it moved to the
+    public CC BY-SA group on 2026-09-04 after a rights-holder grant, so the NC-link
+    check below uses St Andrews, the source that is still NC.)"""
+    from app.ui.whyptology_app import corpus_credit_html
+
+    public_rendered = corpus_credit_html(pd.DataFrame({"source": ["TLA"]}))
+    # (v): a URI to the licensed material — the Hugging Face dataset publication,
+    # not the TLA website, which the audit found carries no CC licence.
+    assert "huggingface.co/datasets/thesaurus-linguae-aegyptiae" in public_rendered
+    # (iv): a notice referring to the disclaimer of warranties, linked to the legal
+    # code (the deed alone does not carry the §5 text).
+    assert "creativecommons.org/licenses/by-sa/4.0/legalcode" in public_rendered
+    assert "warrant" in public_rendered.lower()
+
+    st_andrews_rendered = corpus_credit_html(pd.DataFrame({"source": ["StAndrews"]}))
+    # (C): the NC rows' licence label must link the licence text itself.
+    assert "creativecommons.org/licenses/by-nc-sa/4.0" in st_andrews_rendered
 
 
 # ---------- exports and the API cannot see private rows ----------

@@ -125,7 +125,10 @@ def test_sidebar_attribution_is_still_present():
     rendered = corpus_credit_html(
         pd.DataFrame({"source": ["TLA", "AES"]})
     )
-    assert "thesaurus-linguae-aegyptiae.de" in rendered
+    # The TLA hyperlink points at the licensed dataset publications, not the TLA
+    # website (2026-09-04 licence audit: the website itself carries no CC licence
+    # for its data).
+    assert "huggingface.co/datasets/thesaurus-linguae-aegyptiae" in rendered
     assert "AED-TEI" in rendered
 
 
