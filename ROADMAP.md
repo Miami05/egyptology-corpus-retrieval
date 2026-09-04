@@ -1252,3 +1252,14 @@ database decision above; this table is the current one.
 SQLite are the fallback). The 5,369 BBAW rows stay unlinked in the deployed app until the
 server's first `deploy.sh` runs the sync. `DEPLOYMENT.md` 128–171 (HF Spaces as free) is
 rewritten on server day, not before. The 09-02 roadmap and Email 3–5 edits are uncommitted.
+
+**Fri 09-04, done.** `.PL`→`.w` fold shipped: `fold_plural_marker` in `normalizer.py`,
+called in `normalize_transliteration` (after lowercasing, before the yod rule) and in
+`strict_reading_key` (before the dots are dropped); 6 new tests, suite 267 green. v4
+measured on the pre-fold and post-fold code the same hour: top-3 useful 0.95 → 0.95,
+MRR 0.800 → 0.808, the one failure (COMP_008) is the same both times; expert paste 8/8
+both times. The three eval result CSVs in `data/benchmarks/` had been stale since before
+the v4 cut (they listed five failures); they now reflect the current code. `search_fold`
+inherits the fold, so `dedup_key` in the BBAW importer now treats `.PL`/`.pl`/`.w.PL`
+variants as one row — which is what the Monday import needs. Nine merged branches and the
+five worktrees removed; only `main` remains.

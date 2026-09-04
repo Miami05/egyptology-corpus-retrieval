@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.data.normalizer import (
     contains_hieroglyphs,
+    fold_plural_marker,
     normalize_hieroglyphs,
     normalize_mdc,
     normalize_transliteration,
@@ -53,3 +54,31 @@ def test_contains_hieroglyphs_detects_mixed_input():
 def test_transliteration_normalisation_folds_egyptological_characters():
     assert normalize_transliteration("ḥtp-ḏi̯ nswt") == "htp-dji̯ nswt"
     assert normalize_transliteration("ḫnt.ꞽ") == "khnt.i"  # the yod is kept as i
+
+
+def test_plural_marker_folds_pl_to_w():
+    # TLA writes `.PL`, AES/BBAW write `.pl`; both fold to the phonemic `.w`.
+    assert fold_plural_marker("nṯr.pl") == "nṯr.w"
+    assert fold_plural_marker("nṯr.PL".lower()) == "nṯr.w"
+
+
+def test_plural_marker_collapses_w_pl_instead_of_doubling_w():
+    # 1,127 tokens are written `.w.PL`/`.w.pl` (e.g. `sr.w.PL`). A naive `.pl` -> `.w`
+    # replace would produce `sr.w.w` (read as `srww`); the fold must collapse the
+    # whole `.w.pl` to a single `.w`.
+    assert fold_plural_marker("sr.w.pl") == "sr.w"
+    assert fold_plural_marker("sr.w.PL".lower()) == "sr.w"
+
+
+def test_plural_marker_leaves_existing_w_ending_unchanged():
+    assert fold_plural_marker("sr.w") == "sr.w"
+
+
+def test_plural_marker_not_folded_when_followed_by_a_letter():
+    # `.pl` inside a longer letter sequence must not be treated as the marker.
+    assert fold_plural_marker("nṯr.plt") == "nṯr.plt"
+
+
+def test_normalize_transliteration_folds_plural_marker():
+    assert normalize_transliteration("nṯr.PL") == "ntjr.w"
+    assert normalize_transliteration("sr.w.PL") == "sr.w"

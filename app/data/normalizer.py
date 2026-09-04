@@ -11,6 +11,20 @@ SUFFIX_MARKER_RE = re.compile(r"[=\u2e17]")
 PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjı]\)")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
+# The plural marker: TLA rows write `.PL` (2,842 tokens), AES/BBAW rows write `.pl`
+# (4,873), 277 stems attested both ways. Fold both to `.w`, the phonemic plural
+# ending, so the two spellings match. 1,127 tokens are written `.w.PL`/`.w.pl`
+# (`sr.w.PL`) — the optional `(?:\.w)?` prefix collapses that to `.w`, not `.w.w`
+# (a naive `.pl` → `.w` replace would make `srww`). The negative lookahead
+# `(?![^\W\d_])` (no following letter) stops the fold firing inside a longer
+# sequence. Case-insensitive so `.PL` matches directly (callers may run this before
+# lowercasing); `.PL.t` never occurs in the corpus, so no interaction to handle.
+PLURAL_MARKER_RE = re.compile(r"(?:\.w)?\.pl(?![^\W\d_])", re.IGNORECASE)
+
+
+def fold_plural_marker(value: str) -> str:
+    """Fold the `.PL`/`.pl` plural marker to `.w`, the phonemic plural ending."""
+    return PLURAL_MARKER_RE.sub(".w", value)
 
 # ---------------------------------------------------------------------------
 # Hieroglyph character classes
@@ -229,8 +243,12 @@ def normalize_transliteration(value: str) -> str:
     `j`, and the bbaw_egyptian and Ramses datasets write `j` — none of them could
     match. `ꞽ`, `j`, dotless `ı` (+ its combining half ring U+0357) all become `i`;
     `ṱ` becomes `t` and `ḳ` becomes `q` for the same reason.
+
+    The `.PL`/`.pl` plural marker is folded to `.w` (see `fold_plural_marker`) right
+    after lowercasing, before the yod rule below.
     """
     value = normalize_text(value)
+    value = fold_plural_marker(value)
     # `n(.ꞽ).t`, `(ꞽ)r(.ꞽ)-pꜥ.t`: a yod in round brackets is one the editor supplied,
     # not one written on the wall. It is dropped so `n.t` and `n(.ꞽ).t` stay one
     # search key — which they always were, because the old fold deleted every yod;

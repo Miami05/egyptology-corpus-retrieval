@@ -149,6 +149,14 @@ def test_canonical_reading_is_the_strict_key():
     assert canonical_reading("Ḥtp-ḏi̯ nswt") == strict_reading_key("ḥtp-ḏi̯ nswt")
 
 
+def test_strict_key_folds_plural_marker_before_dropping_dots():
+    # TLA writes `.PL`, AES/BBAW write `.pl` — both must key the same as `.w`.
+    assert strict_reading_key("nṯr.PL") == strict_reading_key("nṯr.w")
+    assert strict_reading_key("nṯr.pl") == strict_reading_key("nṯr.w")
+    # `sr.w.PL` must collapse to `sr.w`, not double up to `sr.w.w`.
+    assert strict_reading_key("sr.w.PL") == strict_reading_key("sr.w")
+
+
 def test_loose_form_still_bridges_ascii_and_editorial_variants():
     assert loose_reading_form("htp") == loose_reading_form("ḥtp")
     assert loose_reading_form("n.t") == loose_reading_form("n(.ꞽ).t")

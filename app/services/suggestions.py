@@ -10,6 +10,7 @@ import pandas as pd
 
 from app.data.query import parse_query
 from app.data.normalizer import (
+    fold_plural_marker,
     nfc,
     normalize_mdc,
     normalize_sign_sequence,
@@ -135,8 +136,12 @@ def strict_reading_key(value: object) -> str:
     merged 256 sentence-level readings that differ in a consonant (ꜣ/ꜥ 85 pairs, ḥ/h
     986 tokens) — corrupting suggestion grouping and support counts. The ASCII fold
     still exists for *search*; it is simply not an identity.
+
+    The `.PL`/`.pl` plural marker is folded to `.w` before the dots are dropped
+    below — once the dots are gone the marker is unrecognisable.
     """
     text = nfc(_safe_str(value)).lower().replace("⸗", "=")
+    text = fold_plural_marker(text)
     text = STRICT_DROP_RE.sub("", text)
     return normalize_whitespace(text)
 
