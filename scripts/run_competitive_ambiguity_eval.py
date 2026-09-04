@@ -38,7 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
 from app.services.stage import (
-    compatible_frame,
+    build_stage_resources,
     derive_stage_from_period,
     infer_stage,
     normalize_stage,
@@ -197,12 +197,15 @@ def _parse_args() -> argparse.Namespace:
         default="auto",
         help=(
             "Language-stage handling (item A). 'none' (default) reproduces today's "
-            "pooled retrieval exactly. 'declared' restricts the candidate pool to "
-            "rows compatible with the benchmark's own `language_stage` column (see "
+            "pooled retrieval exactly -- no StageResources is ever built. 'declared' "
+            "reads the benchmark's own `language_stage` column (see "
             "derive_v4_declared_stage for how that column was populated; a "
-            "benchmark file with no such column declares no stage for any row). "
-            "'auto' infers the stage per query from a first retrieval pass over the "
-            "pooled pool."
+            "benchmark file with no such column declares no stage for any row) and "
+            "retrieves through app.services.stage.build_stage_resources, exactly as "
+            "the app does: the candidate pool stays pooled, only the token "
+            "weighting is stage-restricted (stage is a preference, not a filter, "
+            "for retrieval). 'auto' infers the stage per query from a first "
+            "retrieval pass over the pooled pool, then retrieves the same way."
         ),
     )
     return parser.parse_args()
@@ -237,7 +240,8 @@ def main() -> None:
         )
 
         # Item A: which rows may stand as evidence for this query. 'none' leaves
-        # candidate_pool untouched, so that mode reproduces today's numbers exactly.
+        # candidate_pool untouched and never builds a StageResources, so that mode
+        # reproduces today's numbers exactly (unchanged by the fix below).
         stage: str | None = None
         if args.stage == "declared":
             # Read the benchmark's own precomputed column (see
@@ -254,14 +258,35 @@ def main() -> None:
             )
             stage = infer_stage(first_pass, base_rates=pooled_base_rates)
         stages_used.append(stage or "")
-        if stage is not None:
-            candidate_pool = compatible_frame(candidate_pool, stage)
+
+        # Retrieve through the same StageResources the app builds, not a bespoke
+        # compatible_frame filter: a formulaic parallel in a different (known)
+        # stage must stay a reachable candidate (stage is a preference for
+        # retrieval, not a filter — app/services/stage.py). `candidate_pool` above
+        # already excludes this row's own target sentence, so "pooled" here means
+        # "every other row", exactly as intended; `candidate_pool` itself is never
+        # narrowed any further. 'none' and an unresolved stage both retrieve on
+        # `candidate_pool` directly with no cached index, unchanged from before.
+        if stage is None:
+            retrieval_frame = candidate_pool
+            retrieval_index = None
+        else:
+            pooled_resources = build_stage_resources(candidate_pool, None)
+            stage_resources = build_stage_resources(
+                candidate_pool,
+                stage,
+                pooled_reading_model=pooled_resources.reading_model,
+                pooled_index=pooled_resources.index,
+            )
+            retrieval_frame = stage_resources.frame
+            retrieval_index = stage_resources.index
 
         retrieval_results = retrieve_top_k(
-            candidate_pool,
+            retrieval_frame,
             query_mdc=query_input,
             query_reading_order=query_reading_order,
-            k=min(50, len(candidate_pool)),
+            k=min(50, len(retrieval_frame)),
+            index=retrieval_index,
         )
         suggestions = suggest_top_readings(
             retrieval_results,

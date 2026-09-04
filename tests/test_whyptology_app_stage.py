@@ -14,8 +14,9 @@ What is covered:
   (`app/services/stage.py`'s `build_stage_resources(df, None, ...)` would
   reproduce the pooled *behaviour* exactly but as new objects — this is the guard
   that the UI's own wrapper does not do that)
-- `load_stage_resources(<a declared stage>, ...)` really does subset the corpus,
-  by calling into `app.services.stage.build_stage_resources`
+- `load_stage_resources(<a declared stage>, ...)` really does call into
+  `app.services.stage.build_stage_resources`, which restricts the *reading* model
+  to the stage but keeps retrieval's candidate pool pooled (stage as a preference)
 - the four caption strings `stage_caption` can produce
 - `evidence_stage_label`'s normalisation, including the "stage not recorded"
   fallback for every unspecified shape the corpus uses
@@ -217,9 +218,14 @@ def test_load_stage_resources_declared_stage_subsets_the_corpus(clear_stage_cach
     resources = w.load_stage_resources("Earlier Egyptian", signature, df)
 
     assert resources.stage == "Earlier Egyptian"
-    # Only the Earlier Egyptian row (the Late Egyptian row is a *known* different
-    # stage, so it is excluded — unlike an unspecified row, which would stay).
-    assert len(resources.frame) == 1
+    # Retrieval's candidate pool is always the pooled frame -- stage is a
+    # preference, not a filter, for retrieval (ROADMAP.md, "Item A closed" ->
+    # "Still to be done", step 4) -- so both rows are present, not just the
+    # Earlier Egyptian one.
+    assert len(resources.frame) == 2
+    assert resources.frame is df
+    # The reading model, unlike retrieval, IS stage-restricted: the Late Egyptian
+    # row is a *known* different stage, so its reading is excluded.
     assert "A" in resources.reading_model.sign_reading
     assert "B" not in resources.reading_model.sign_reading
     # The segmenter, unlike the reading model, is always built from the POOLED

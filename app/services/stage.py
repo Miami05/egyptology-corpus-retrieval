@@ -25,6 +25,25 @@ Two-thirds of the corpus carries no stage at all (`Unspecified (AES)`,
 target stage: excluding them would starve every stage of the bulk of the corpus for
 no reason, since an unlabelled row was never the thing that outvoted the evidence —
 a large *labelled* population of a different stage was.
+
+Stage as a *preference*, not a filter (ROADMAP.md, "Item A closed" -> "Open after
+A" -> "Still to be done", step 4). Measured problem: on the 130k corpus, COMP_014's
+target is a Middle Kingdom (Earlier Egyptian) row whose two useful-family parallels
+are Late Egyptian formula rows (`TLA_LATE_783`, `TLA_LATE_1324`) -- formulaic
+phrases cross language stages, so a *correct* Earlier Egyptian declaration was
+excluding real evidence from `compatible_frame`'s candidate pool. Retrieval must not
+do that; reading must (that is what made the paste gate pass, and it is unaffected
+here). So `StageResources.frame`/`.index.text_index` (the candidate pool and its
+n-gram index) are now always the *pooled* frame/index, for every stage including a
+concrete one -- `compatible_frame` itself is unchanged and is still what a stage's
+`reading_model` (and the segmenter's shared pooled build) are computed from. Only
+`index.stats` (the per-token document-frequency counts `combine_scores` uses for
+the IDF-overlap signal) stays stage-restricted, built from `compatible_frame(df,
+target)` -- a query is still weighted by its own stage's vocabulary (rare in that
+stage's rows counts as rare), it just is no longer prevented from matching a
+cross-stage row that carries the shared evidence. `target=None` is unaffected by
+any of this: `compatible_frame(df, None)` is `df`, so the "restricted" stats and the
+pooled stats are the same computation on the same rows either way.
 """
 
 from __future__ import annotations
@@ -235,17 +254,31 @@ def infer_stage(
 
 @dataclass(frozen=True)
 class StageResources:
-    """Everything built from a stage-compatible subset of the corpus.
+    """A stage's resources: stage-restricted reading, pooled retrieval (preference,
+    not filter — see the module docstring's "Stage as a preference" section).
 
-    Mirrors exactly what `app/ui/whyptology_app.py` builds per corpus today
-    (`load_search_index`, `load_reading_model`, `load_segmenter`/`resegment_query`,
-    `load_sign_index`) — this is the same four/five constructors, run once on
-    `compatible_frame(df, stage)` instead of on the full frame. `stage=None` yields
-    resources byte-identical in behaviour to today's pooled build, because
-    `compatible_frame(df, None)` is `df` itself.
+    `frame` is always the *pooled* corpus (`compatible_frame(df, None)`, i.e. `df`
+    itself), for every `stage` including a concrete one — retrieval's candidate
+    pool never shrinks, so a formulaic parallel from a different stage stays
+    reachable. `index` (a `SearchIndex`) mirrors that split: `index.text_index`
+    (the n-gram index the cosine/tfidf signal reads) is the pooled one too, but
+    `index.stats` (the per-token document frequencies `combine_scores` uses for the
+    IDF-overlap signal) is built from `compatible_frame(df, stage)` — a query is
+    still weighted by its own stage's vocabulary, only the candidate pool it can
+    match against is unrestricted. `reading_model` stays exactly as before: trained
+    on `compatible_frame(df, stage)`, because reading (unlike retrieval) is right
+    to filter — a cross-stage spelling must not be offered as this stage's reading.
+    `sign_index` is also built from the pooled frame: nothing in retrieval or
+    reading reads `StageResources.sign_index` today (the one page that shows sign
+    multivalence, `app/ui/whyptology_app.py`'s "Sign readings & multivalence" view,
+    calls `load_sign_index` on the corpus directly rather than through a stage's
+    resources), so there is no reading behaviour to preserve by restricting it, and
+    building it from the same already-pooled frame avoids a second, wasted subset
+    pass. `stage=None` reproduces today's pooled build exactly at every field,
+    because `compatible_frame(df, None)` is `df` for both the frame and the stats.
 
-    `segmenter` is the one exception to "built from the subset": it is always
-    built from the *pooled* frame, regardless of `stage` — see `build_stage_resources`.
+    `segmenter` is unaffected by any of the above: it is always built from the
+    *pooled* frame, regardless of `stage` — see `build_stage_resources`.
     """
 
     stage: str | None
@@ -270,52 +303,74 @@ def build_stage_resources(
     segmentation_weights: "SegmentationWeights | None" = None,
     use_lexicon: bool = True,
     pooled_reading_model: "ReadingModel | None" = None,
+    pooled_index: "SearchIndex | None" = None,
 ) -> StageResources:
-    """Build `StageResources` for `target` from `df`, subsetting first.
+    """Build `StageResources` for `target` from `df`. Read by stage, retrieved pooled.
 
     `lexicon` is accepted rather than loaded here (as `train_reading_model` and the
     UI's own `load_reading_model` already do) so that a caller passing the same
     lexicon it always passed gets exactly today's pooled behaviour at `target=None`.
 
-    Segment pooled, read by stage. `frame` (and so `index`, `sign_index`, and the
-    `reading_model` used for actual reading) is `compatible_frame(df, target)`, the
-    stage-restricted subset, exactly as before. `segmenter`, however, is always
-    built from the *pooled* corpus's group counts, never the subset's — measured
-    reason: word/sign-group boundaries are far more stable across language stages
-    than spellings and readings are (segmentation came out byte-identical across
-    all three stages on every one of the eight expert Urk. IV pastes tried), while
-    restricting the segmenter's own group counts to one stage's subset is what
-    caused the one segmentation-driven miss item A core measured (`declared` mode's
-    PASTE_003 on the Earlier-Egyptian-only subset: fewer attested three-way splits
-    survive the cut, so the lattice merges groups a full-corpus segmenter would
-    keep apart). Building the segmenter from the pooled frame also means
-    `SegmentationWeights.lexicon_weight` (calibrated against the *pooled* corpus's
-    group-count mass, see `app/services/segmentation.py`) is competing against
-    that same pooled mass regardless of `target` — the mass never shrinks, so no
-    lexicon-weight scaling is needed any more (`lexicon_weight_factor` is always
-    1.0; a shrinking-mass rescale was this module's own prior fix for a problem
-    that segmenting pooled now removes at the source).
+    Stage as a preference, not a filter (see the module docstring). `reading_model`
+    is trained on `compatible_frame(df, target)`, the stage-restricted subset,
+    exactly as before — reading is right to filter. Retrieval is not: `frame` is
+    always `df` (the pooled corpus, at every `target`), and `index.text_index` (the
+    n-gram index) is built from `df` too; only `index.stats` — the document
+    frequencies `combine_scores` reads for the IDF-overlap signal — is built from
+    the stage-restricted subset, so a query is still weighted by its own stage's
+    vocabulary without losing a cross-stage row as a candidate. At `target=None`
+    the subset IS `df`, so every field here is unchanged from today's pooled build.
+
+    `segmenter`, like before, is always built from the *pooled* corpus's group
+    counts, never the subset's — measured reason: word/sign-group boundaries are
+    far more stable across language stages than spellings and readings are
+    (segmentation came out byte-identical across all three stages on every one of
+    the eight expert Urk. IV pastes tried), while restricting the segmenter's own
+    group counts to one stage's subset is what caused the one segmentation-driven
+    miss item A core measured (`declared` mode's PASTE_003 on the Earlier-Egyptian-
+    only subset: fewer attested three-way splits survive the cut, so the lattice
+    merges groups a full-corpus segmenter would keep apart). Building the segmenter
+    from the pooled frame also means `SegmentationWeights.lexicon_weight`
+    (calibrated against the *pooled* corpus's group-count mass, see
+    `app/services/segmentation.py`) is competing against that same pooled mass
+    regardless of `target` — the mass never shrinks, so no lexicon-weight scaling
+    is needed any more (`lexicon_weight_factor` is always 1.0; a shrinking-mass
+    rescale was this module's own prior fix for a problem that segmenting pooled
+    now removes at the source).
+
+    `sign_index` is built from the pooled frame too (see `StageResources`'s own
+    docstring for why: nothing reads a stage's `sign_index` today).
 
     `pooled_reading_model`, if given, is used to build the pooled segmenter
     directly instead of re-fitting one from `df` — a caller that already built
     (and cached) the `target=None` `StageResources` should pass its
     `reading_model` here so three per-stage builds do not each re-fit the whole
-    corpus just to build a segmenter. Ignored when `target is None`: `frame` IS
+    corpus just to build a segmenter. Ignored when `target is None`: the subset IS
     `df` there, so the just-fitted `reading_model` already *is* the pooled one.
+
+    `pooled_index`, if given, is used for its `.text_index` instead of rebuilding
+    the n-gram index from `df` — the same shortcut as `pooled_reading_model`, for
+    the same reason: `index.text_index` no longer depends on `target` (it is
+    always the pooled n-gram index), so a caller holding the `target=None`
+    `StageResources` already has it built and should pass `.index` in rather than
+    have every concrete stage rebuild an identical index from scratch. Ignored
+    when `target is None`, for the same reason as `pooled_reading_model`.
     """
     # Imported here, not at module scope: app.services.retrieval imports this module
     # (for build_stage_resources' own use in retrieve_with_stage), so a top-level
     # import back into retrieval.py would be circular.
+    from app.retrieval.scorer import build_corpus_stats
+    from app.retrieval.tfidf import NgramIndex
     from app.services.reading_model import train_reading_model
-    from app.services.retrieval import build_search_index
+    from app.services.retrieval import SearchIndex
     from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS, Segmenter
     from app.services.signs import build_sign_index
 
     weights = (
         segmentation_weights if segmentation_weights is not None else DEFAULT_SEGMENTATION_WEIGHTS
     )
-    frame = compatible_frame(df, target)
-    reading_model = train_reading_model(frame, lexicon)
+    stage_subset = compatible_frame(df, target)
+    reading_model = train_reading_model(stage_subset, lexicon)
 
     if target is None:
         pooled_model = reading_model
@@ -325,13 +380,19 @@ def build_stage_resources(
         pooled_model = train_reading_model(df, lexicon)
     segmenter = Segmenter(pooled_model, weights, use_lexicon=use_lexicon)
 
+    if target is not None and pooled_index is not None:
+        text_index = pooled_index.text_index
+    else:
+        text_index = NgramIndex.build(df["mdc_norm"])
+    index = SearchIndex(stats=build_corpus_stats(stage_subset), text_index=text_index)
+
     return StageResources(
         stage=target,
-        frame=frame,
-        index=build_search_index(frame),
+        frame=df,
+        index=index,
         reading_model=reading_model,
         segmenter=segmenter,
-        sign_index=build_sign_index(frame),
+        sign_index=build_sign_index(df),
         lexicon_weight_factor=1.0,
     )
 

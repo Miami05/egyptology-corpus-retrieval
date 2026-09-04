@@ -21,6 +21,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from app.retrieval.scorer import build_corpus_stats
+from app.retrieval.tfidf import NgramIndex
+from app.services.retrieval import SearchIndex, retrieve_top_k
 from app.services.stage import (
     STAGES,
     build_stage_resources,
@@ -294,12 +297,30 @@ def test_build_stage_resources_target_none_is_pooled():
     assert resources.segmenter.is_known("B")
 
 
-def test_build_stage_resources_declared_stage_excludes_other_known_stages():
+def test_build_stage_resources_none_matches_manual_pooled_build():
+    """Gate (a): `--stage none` must not move. Regression guard that the new
+    stage-as-preference code path, at `target=None`, produces resources identical
+    (field for field) to directly building the pooled stats/n-gram index the old
+    code path used -- not just similar, the exact same values."""
+    df = _stage_corpus()
+    resources = build_stage_resources(df, None)
+    assert resources.frame is df
+    assert resources.index.stats == build_corpus_stats(df)
+    assert len(resources.index.text_index) == len(df)
+
+
+def test_build_stage_resources_declared_stage_reads_restricted_but_retrieves_pooled():
+    # Stage as a preference, not a filter (ROADMAP.md, "Item A closed" -> "Still to
+    # be done", step 4): a declared stage must not shrink the candidate pool, only
+    # the token weighting used to rank it.
     df = _stage_corpus()
     resources = build_stage_resources(df, "Earlier Egyptian")
-    assert len(resources.frame) == 1
-    # The reading model is stage-restricted: the Late-Egyptian-only group is not
-    # a candidate reading here at all.
+    # Retrieval's candidate pool is the pooled frame -- both rows, not just the
+    # Earlier Egyptian one.
+    assert len(resources.frame) == 2
+    assert resources.frame is df
+    # The reading model is still stage-restricted: the Late-Egyptian-only group is
+    # not a candidate reading here at all.
     assert "A" in resources.reading_model.sign_reading
     assert "B" not in resources.reading_model.sign_reading
     assert resources.reading_model.candidates_for("B") == []
@@ -308,6 +329,93 @@ def test_build_stage_resources_declared_stage_excludes_other_known_stages():
     # even though this stage would never offer a reading for it.
     assert resources.segmenter.is_known("A")
     assert resources.segmenter.is_known("B")
+
+
+def test_build_stage_resources_stats_are_stage_restricted_not_pooled():
+    # index.stats (the IDF document-frequency counts) is the one thing that stays
+    # stage-restricted for retrieval: built from compatible_frame(df, target), not
+    # from the pooled frame, so a query is weighted by its own stage's vocabulary.
+    df = _stage_corpus()
+    pooled = build_stage_resources(df, None)
+    declared = build_stage_resources(df, "Earlier Egyptian")
+    assert declared.index.stats != pooled.index.stats
+    # "y" (row B's mdc_norm) is a real corpus token in the pooled stats...
+    assert pooled.index.stats.mdc_frequencies.get("y", 0) == 1
+    # ...but absent from the Earlier-Egyptian-restricted stats, since row B (Late
+    # Egyptian, a known different stage) is excluded from that subset.
+    assert declared.index.stats.mdc_frequencies.get("y", 0) == 0
+    # index.text_index (the n-gram index the candidates are matched with), by
+    # contrast, is built from the pooled frame at every stage.
+    assert len(declared.index.text_index) == len(pooled.index.text_index) == 2
+
+
+def test_build_stage_resources_pooled_index_reused_when_given():
+    # Mirrors test_build_stage_resources_pooled_reading_model_reused_when_given:
+    # index.text_index no longer depends on target, so a caller holding the
+    # target=None resources should pass its .index in rather than have a
+    # concrete-stage build rebuild an identical n-gram index from scratch.
+    df = _stage_corpus()
+    pooled = build_stage_resources(df, None)
+    resources = build_stage_resources(
+        df, "Earlier Egyptian", pooled_index=pooled.index
+    )
+    assert resources.index.text_index is pooled.index.text_index
+    # And it does not change behaviour: without it, an independently-built n-gram
+    # index over the same (pooled) frame scores identically.
+    without = build_stage_resources(df, "Earlier Egyptian")
+    assert without.index.text_index is not pooled.index.text_index
+    assert without.index.stats == resources.index.stats
+
+
+def test_declared_stage_retrieval_can_surface_a_cross_stage_row():
+    """Stage as a preference, not a filter -- the shape COMP_014 measures on the
+    real corpus: its two useful-family parallels are Late Egyptian formula rows
+    that a *correct* Earlier Egyptian declaration used to exclude entirely
+    (ROADMAP.md, "Item A closed" -> "Still to be done", step 4). Here, on a
+    synthetic frame, a Late Egyptian row is the query's only real match; an
+    Earlier Egyptian row shares nothing with it and exists only so the "Earlier
+    Egyptian" subset used for reading/stats is non-empty."""
+    df = pd.DataFrame(
+        [
+            {
+                "hieroglyphs_norm": "",
+                "transliteration_gold": "",
+                "language_stage": "Earlier Egyptian",
+                "source_text_id": "EE0",
+                "source_sentence_id": "S0",
+                "mdc_norm": "zzz yyy",
+                "normalized_reading_order_norm": "",
+            },
+            {
+                "hieroglyphs_norm": "",
+                "transliteration_gold": "",
+                "language_stage": "Late Egyptian",
+                "source_text_id": "LE0",
+                "source_sentence_id": "S0",
+                "mdc_norm": "htp di nsw wsjr nb ddw",
+                "normalized_reading_order_norm": "",
+            },
+        ]
+    )
+    query = "htp di nsw wsjr nb ddw"
+
+    # Old (pre-"stage as a preference") behaviour: retrieval ran directly on
+    # compatible_frame's subset, so the cross-stage row was never a candidate.
+    old_subset = compatible_frame(df, "Earlier Egyptian")
+    old_index = SearchIndex(
+        stats=build_corpus_stats(old_subset),
+        text_index=NgramIndex.build(old_subset["mdc_norm"]),
+    )
+    old_results = retrieve_top_k(old_subset, query_mdc=query, index=old_index)
+    assert "LE0" not in set(old_results.get("source_text_id", []))
+
+    # New behaviour: build_stage_resources' declared resources retrieve on the
+    # pooled frame (weighted by the Earlier Egyptian subset's own stats), so the
+    # Late Egyptian row is reachable -- and here it is the best (only real) match.
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    results = retrieve_top_k(resources.frame, query_mdc=query, index=resources.index)
+    assert not results.empty
+    assert results.iloc[0]["source_text_id"] == "LE0"
 
 
 def test_build_stage_resources_stage_recorded_on_the_result():
