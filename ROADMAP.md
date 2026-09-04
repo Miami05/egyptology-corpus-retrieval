@@ -1277,3 +1277,29 @@ train 66,693 · val 1,841 · test 2,729 · ctest 2,428 · htest 301 = 74k lines.
 layout — `corpus.xml`, `texts/<Name>.xml` (94), `resources/<Name>Hi.xml` (53 texts with
 glyphs, 41 without), `resources/<Name>Tr*.txt` (101), `align/*.xml` (18); 3.3 MB, zero
 404s. Still open for today: send Email 5 (user-side).
+
+**Follow-up (found 2026-09-04 while measuring the CSR index): vectorise the fuzzy signal.**
+With the cosine step at ~10 ms, the per-query cost of `retrieve_top_k` at 78k is
+dominated by the remaining Python loops: `fuzz.ratio(query, value)` over every row in
+`app/services/retrieval.py` and the per-row work in `combine_scores`. rapidfuzz already
+ships a batch call, `rapidfuzz.process.cdist([query], candidates, scorer=fuzz.ratio,
+workers=-1)`, which runs the whole column in C++ and returns one array — same scores,
+one call, no new dependency. Gate: `fuzzy_score` identical for every row (assert equality
+on the full corpus for a handful of queries, like the CSR equivalence test), v4 and paste
+gate unchanged. ~½ h; do it with the phrase finder (item E), whose glyph and translation
+indexes make the same per-query loop three times as expensive otherwise.
+
+**Fri 09-04, evening — the Sunday slot done two days early.** Two Sonnet workers in
+isolated worktrees, reviewed and merged (8155ab7, d5d2e39). (1) Text-only row state:
+`AlignmentReport.text_only_rows`, `ReadingModel.sentences_text_only`, neutral caption on
+the Sign readings page; the current corpus reports 0 / 0. (2) Sparse CSR n-gram index:
+`NgramIndex` in `app/retrieval/tfidf.py`, field-generic (`build(series)`, `scores(text)`),
+scores equal to the old cosine to 1e-9 on the whole corpus. Measured, plain process, after
+20 queries: 31k 473 → 389 MB; 78k dry run 811 → 562 MB (index object 453 → 67 MB; the
+predicted −520 MB was a deep-memory overestimate, the ~75 MB residue is allocator arena
+retention from the Python analyzer). Scoring step 178 → 10 ms at 78k; whole
+`retrieve_top_k` ~170 ms at 31k, now dominated by the fuzzy loop (follow-up above). Gates
+on the merged tree: 275 tests, v4 0.95 / MRR 0.8083 / 1 failure, paste 8/8, eval CSVs
+byte-identical. Smoke test through the app's own load-and-search path: `nṯr.PL` and
+`nṯr.w` return the same three parallels; a synthetic glyph-less row is found by a
+transliteration query and never by a glyph query. Monday's import is unblocked.
