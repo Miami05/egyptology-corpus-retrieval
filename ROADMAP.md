@@ -1630,3 +1630,29 @@ Archived in `docs/permission-requests.md`; Email 6 drafted there.
   material (classic partition instead); students' projects run to ~April 2027, so the
   segmentation harness is a slow-burn offer, not a deliverable.
 - Ledio's side: send Email 6 (draft ready); nothing else is asked of him.
+
+## Plan for 2026-09-05 — start here
+
+State at close of 2026-09-04: corpus 130,472 rows live on the server (0a25254); item A and
+stage-as-preference merged; expert paste 8/8 in the app's default mode; v4 0.90 / MRR 0.79
+in every mode (COMP_007, COMP_014); suite 429; Nederhof's sign-function XML usable; Email 6
+drafted. Nothing is running.
+
+| # | Work | Gate / output | Effort |
+|---|---|---|---|
+| 0 | **Ledio:** send Email 6; set `REVIEWER_KEY` in `/home/ledio/egyptology.env`; name a backup destination | — | 15 min |
+| 1 | **The two v4 misses, the honest way.** Rule stated *before* running: for every v4 query compute the best achievable useful-family overlap in the corpus with the target excluded; a query with no row ≥ 0.26 is *unanswerable by construction* and is flagged, not scored against us. Then: COMP_007 (`sẖꜣk =ꞽ ẖ.t =ꞽ ḥr n.tt …`, best found 0.15–0.24, lemma overlap 0) — answerable or not? If answerable, diagnose the ranking (simplified-notation fold of the query is the first suspect: `skhak i kh i tt im fkh djd` has lost `n.` and `=`). COMP_014 — parallels found at 0.19–0.22; decide, on principle and before looking at any result, whether "useful" should be defined by lemma overlap where lemma ids exist (→ a pre-registered **v5** rule); report v4 and v5 side by side, never replace v4. | a written reason per miss; v4 over answerable queries; v5 if pre-registered | ½ day |
+| 2 | **Server hardening.** Warm the three stage resource sets at service start (`ExecStartPost` or a warm-up call); nightly copy of `egyptology.db` to `egyptology-backups/` and off the machine (target from Ledio), 30-day retention, one restore test; `deploy.sh` runs `scripts/import_examples.py` after a corpus change; Git LFS for `examples.csv` (65 MB) | first paste after restart < 5 s; a restored copy opens; LFS pull works on the box | ½ day |
+| 3 | **rapidfuzz batch call** (`process.cdist` in `retrieve_top_k`) — every mode now scores the pooled corpus, ~1.3 s/query | `fuzzy_score` identical on the whole corpus for 5 queries; v4/paste unchanged; query < 0.5 s | ½ h |
+| 4 | **St Andrews importer** (hieropy, private script, → `/home/ledio/egyptology-private/standrews.csv`); also fetch Nederhof's sign-function XML into `data/raw/standrews/unicode/` and commit a converted table under CC BY 4.0 credited to him (DATA-LICENSE line) — prep for C | Camilla's Urk. IV 1 line top-1 from his line rows; attribution screenshot to him | 1 day |
+| 5 | **E, rescoped:** similar text across tiers — glyph n-grams, transliteration, translation, lemma ids when D lands — on the CSR machinery; edit-distance re-rank vs n-gram cosine vs tier-combined, measured on same-sentence pairs across editions (Ramses/TLA Horus-and-Seth rows are a ready test set); result card shows the matched parallel per tier. No upload feature. Then tell Nederhof → **expert round** (Camilla on an unseen text, Sophie, Nederhof) | a number per method on the cross-edition pairs; Email 7 | 1–2 days |
+| 6 | Late Egyptian evaluation set from Ramses (measures the new stages) | frozen set + first numbers | ½ day |
+| 7 | B — format controls as soft segmenter hints, St Andrews first, BBAW upper bound second | two numbers to Nederhof, null result allowed | 1 day |
+| 8 | C — sign-function lattice on Nederhof & Rahman 2015 with his XML + our group statistics + Helsinki lexicon; UniKemet/Thot as cross-checks only | Camilla's line from all spacings; paste 8/8; unspaced F1 > 0.923 | 5 days |
+| 9 | D — proper nouns via TLA lemma ids | variant names grouped under one lemma | 2–3 days |
+| 10 | Housekeeping: Neon export/rotate/close; delete or ignore the Cloud app; DEPLOYMENT.md follow-ups | — | ½ day |
+
+About 13 working days after tomorrow's item 1. Standing rules: no constant is chosen by
+looking at a benchmark result; every benchmark change is a pre-registered rule reported next
+to the old number; the paste gate must stay 8/8 in Auto on every merge; the server is
+updated with `./egyptology-deploy.sh` after every push, and the live URL is checked.
