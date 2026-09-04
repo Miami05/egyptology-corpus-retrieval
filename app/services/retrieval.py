@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable, Literal
+
 import pandas as pd
 
 from app.data.normalizer import normalize_sign_sequence
@@ -17,6 +19,7 @@ from app.retrieval.scorer import (
     combine_scores,
 )
 from app.retrieval.tfidf import NgramIndex
+from app.services.stage import StageResources, infer_stage
 
 
 @dataclass(frozen=True)
@@ -130,4 +133,86 @@ def retrieve_top_k(
         return top
     top["evidence"] = top.apply(build_evidence, axis=1)
     return top
+
+
+@dataclass(frozen=True)
+class StageRetrievalResult:
+    """The retrieved rows plus how the stage was decided, for the UI to report."""
+
+    results: pd.DataFrame
+    stage_used: str | None
+    inferred: bool
+
+
+def retrieve_with_stage(
+    df_all: pd.DataFrame,
+    resources_by_stage: Callable[[str | None], StageResources],
+    query_mdc: str,
+    query_reading_order: str = "",
+    stage: str | None | Literal["auto"] = None,
+    k: int = 3,
+    weights: ScoreWeights = DEFAULT_WEIGHTS,
+    query_hieroglyphs_norm: str | None = None,
+) -> StageRetrievalResult:
+    """Retrieve with a declared, absent, or automatically inferred stage.
+
+    `resources_by_stage` resolves a stage (or None, for the pooled corpus) to its
+    `StageResources` — normally a small cache keyed by stage, so the same resources
+    are not rebuilt per query. `df_all` is accepted for interface symmetry with
+    `retrieve_top_k`/the caller's own frame handling but retrieval itself always runs
+    against the frame inside the resolved `StageResources`, which is already the
+    correct stage-compatible subset (or the full frame, at `target=None`) — see
+    `app.services.stage.compatible_frame`.
+
+    - `stage` a concrete stage name: retrieve on that stage's resources only.
+    - `stage is None`: retrieve on the pooled resources — today's behaviour exactly,
+      since `resources_by_stage(None)` must build on `compatible_frame(df, None)`,
+      which is the full frame.
+    - `stage == "auto"`: a first pass on the pooled resources at `k=10` decides the
+      stage (`app.services.stage.infer_stage`); a second pass then runs on that
+      stage's resources at the caller's `k`. When nothing can be inferred, the first
+      pass's own results are returned, trimmed to `k` — never a wasted third call.
+    """
+    del df_all  # see docstring: retrieval runs on the resolved StageResources' frame
+    if stage == "auto":
+        pooled = resources_by_stage(None)
+        first_pass = retrieve_top_k(
+            pooled.frame,
+            query_mdc,
+            query_reading_order=query_reading_order,
+            k=10,
+            weights=weights,
+            query_hieroglyphs_norm=query_hieroglyphs_norm,
+            index=pooled.index,
+        )
+        inferred_stage = infer_stage(first_pass)
+        if inferred_stage is None:
+            return StageRetrievalResult(
+                results=first_pass.head(k), stage_used=None, inferred=False
+            )
+        resources = resources_by_stage(inferred_stage)
+        second_pass = retrieve_top_k(
+            resources.frame,
+            query_mdc,
+            query_reading_order=query_reading_order,
+            k=k,
+            weights=weights,
+            query_hieroglyphs_norm=query_hieroglyphs_norm,
+            index=resources.index,
+        )
+        return StageRetrievalResult(
+            results=second_pass, stage_used=inferred_stage, inferred=True
+        )
+
+    resources = resources_by_stage(stage)
+    results = retrieve_top_k(
+        resources.frame,
+        query_mdc,
+        query_reading_order=query_reading_order,
+        k=k,
+        weights=weights,
+        query_hieroglyphs_norm=query_hieroglyphs_norm,
+        index=resources.index,
+    )
+    return StageRetrievalResult(results=results, stage_used=stage, inferred=False)
 
