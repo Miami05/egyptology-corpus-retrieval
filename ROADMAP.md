@@ -1587,3 +1587,25 @@ cost nothing and describe any future small host — but no Cloud secrets are nee
    the role, close the project. Delete or leave the Cloud app (unmaintained either way).
 Ledio's side: Email 5 to Nederhof (sign-list licence → C); set `REVIEWER_KEY` in
 `/home/ledio/egyptology.env` before experts annotate; pick an off-machine backup target.
+
+## Stage as a preference in retrieval — landed 2026-09-04 night
+
+Candidates and the n-gram index are always the pooled corpus; only `CorpusStats` (IDF) and
+the reading model are stage-restricted; segmenter pooled; sign index pooled (nothing read
+the stage one). No constant added. `run_competitive_ambiguity_eval.py` now retrieves through
+`build_stage_resources`/`retrieve_with_stage` like the app instead of filtering its own
+candidate pool — the previous declared/auto figures (top-1 0.85, MRR 0.875) were artifacts
+of that filter and are withdrawn. **On the 130k corpus v4 is 0.90 top-3 / 0.70 top-1 /
+MRR 0.7917 in none, auto and declared alike**; paste stays 8/8 in auto and declared. COMP_014
+in declared mode now returns its Late Egyptian formula parallels (Ramses `ḥw tꜣ nb` 0.200,
+`TLA_LATE_1324` 0.222, Ramses `ḥw ꜥšꜣ rmṯ.w` 0.188 token overlap) instead of four unrelated
+AES rows — a real retrieval improvement that does not clear the benchmark's frozen 0.26 bar,
+which we do not move. Effect of un-filtering: 4 of the 10 Earlier-Egyptian-declared queries
+now show Late Egyptian/Demotic rows in their top 3 (10 of 30 slots), all stage-labelled in
+the UI. The stage-restricted IDF has no measurable effect on v4; a stronger preference would
+need a constant and is not built. Cost: a declared query ~0.5 s → ~1.35 s (pooled candidate
+pool); every mode now costs the same, and the rapidfuzz batch call is the remedy. Suite 429.
+**Honest closing numbers for 2026-09-04:** corpus 31,565 → 130,472; expert paste 8/8 in the
+app's default mode; v4 0.95 (78k) → 0.90 (130k), two misses, both diagnosed, nothing tuned.
+If 20/20 is wanted the legitimate routes are diagnosing COMP_007 and deciding *before* looking
+at results whether a v5 benchmark with a different overlap rule is justified, reporting both.
