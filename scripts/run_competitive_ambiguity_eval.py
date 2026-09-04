@@ -2,8 +2,8 @@
 
 `data/benchmarks/competitive_ambiguity_eval_queries_v4.csv` carries a `language_stage`
 column, one stage per row, derived by `derive_v4_declared_stage` (see its docstring
-and `PERIOD_STAGE_KEYWORDS` for the exact rule) and computed once, not at eval time.
-To regenerate it after the benchmark or the corpus changes:
+and `app.services.stage.derive_stage_from_period` for the exact rule) and computed
+once, not at eval time. To regenerate it after the benchmark or the corpus changes:
 
     python -c "
     import pandas as pd
@@ -39,6 +39,7 @@ from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
 from app.services.stage import (
     compatible_frame,
+    derive_stage_from_period,
     infer_stage,
     normalize_stage,
     stage_base_rates,
@@ -50,64 +51,19 @@ BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
 RESULTS_PATH = "data/benchmarks/competitive_ambiguity_eval_results.csv"
 FAILURES_PATH = "data/benchmarks/competitive_ambiguity_eval_failures.csv"
 
-# expected_source_text_id prefix -> declared language_stage. Takes priority over the
-# period-keyword rule below: a TLA row already carries its stage in its own id.
-DECLARED_STAGE_PREFIXES: list[tuple[str, str]] = [
-    ("TLA_EARLIER_", "Earlier Egyptian"),
-    ("TLA_LATE_", "Late Egyptian"),
-    ("TLA_DEMOTIC_", "Demotic"),
-]
-
-# `period` keyword -> stage, for a target row with no TLA prefix (AES, BBAW). A
-# period string is mapped to a stage only when every keyword it contains maps to the
-# *same* stage — e.g. "Middle Kingdom / Second Intermediate Period" matches two
-# keywords that both mean Earlier Egyptian, so it resolves; "Third Intermediate
-# Period to Roman" matches one Late Egyptian keyword and one Demotic keyword, so it
-# does not (that row's real period is a range spanning two stages, and guessing
-# which one the row actually is would not be a documented rule, it would be a
-# guess). Zero keyword matches (e.g. "unknown") also does not resolve. Either way
-# the column is left blank, exactly as "anything else or missing" requires.
-PERIOD_STAGE_KEYWORDS: list[tuple[str, str]] = [
-    ("Old Kingdom", "Earlier Egyptian"),
-    ("First Intermediate", "Earlier Egyptian"),
-    ("Middle Kingdom", "Earlier Egyptian"),
-    ("Second Intermediate", "Earlier Egyptian"),
-    ("New Kingdom", "Late Egyptian"),
-    ("Third Intermediate", "Late Egyptian"),
-    ("Late Period", "Late Egyptian"),
-    ("Ptolemaic", "Demotic"),
-    ("Roman", "Demotic"),
-]
-
-
-def _stage_from_period(period: object) -> str | None:
-    text = str(period)
-    stages = {stage for keyword, stage in PERIOD_STAGE_KEYWORDS if keyword in text}
-    if len(stages) == 1:
-        return stages.pop()
-    return None
-
-
-def _declared_stage(expected_source_text_id: object) -> str | None:
-    """TLA-prefix-only stage, used only when a `period` value is not available."""
-    text = str(expected_source_text_id)
-    for prefix, stage in DECLARED_STAGE_PREFIXES:
-        if text.startswith(prefix):
-            return stage
-    return None
-
 
 def derive_v4_declared_stage(expected_source_text_id: object, period: object) -> str | None:
     """The documented rule behind the v4 benchmark's `language_stage` column.
 
-    TLA prefix first (it already names its own stage); otherwise the target row's
-    `period` column via `_stage_from_period`. Used both to populate the column (see
-    the module docstring for the regeneration command) and to audit any single row.
+    A thin, benchmark-specific name for `app.services.stage.derive_stage_from_period`
+    — the exact same rule (TLA source-id prefix, else `period` keywords, ambiguous
+    or absent -> None), applied here to a benchmark row's *expected target* columns
+    rather than a corpus row's own. Kept as a separate name because the
+    regeneration command in this module's docstring calls it explicitly; the rule
+    itself now lives in one place (`app/services/stage.py`) so this CSV-generation
+    path and `compatible_frame`'s load-time derivation can never drift apart.
     """
-    prefix_stage = _declared_stage(expected_source_text_id)
-    if prefix_stage is not None:
-        return prefix_stage
-    return _stage_from_period(period)
+    return derive_stage_from_period(expected_source_text_id, period)
 
 
 REQUIRED_COLUMNS = [

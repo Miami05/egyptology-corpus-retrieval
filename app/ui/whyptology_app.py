@@ -27,7 +27,11 @@ from app.data.normalizer import (
     normalize_mdc,
 )
 from app.services.annotations import save_annotation
-from app.services.retrieval import build_search_index, retrieve_top_k, retrieve_with_stage
+from app.services.retrieval import (
+    build_search_index,
+    resolve_auto_stage,
+    retrieve_with_stage,
+)
 from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
 from app.services.reading_model import train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream
@@ -40,7 +44,6 @@ from app.services.stage import (
     STAGES,
     StageResources,
     build_stage_resources,
-    infer_stage,
     normalize_stage,
 )
 from app.services.suggestions import suggest_top_readings
@@ -1299,33 +1302,25 @@ def resolve_ui_stage(
     """Which stage to search and read the query with, and whether it was inferred.
 
     Declared ("Earlier Egyptian" etc.) and "All" (None) need no first pass: the
-    caller already knows which resources to use. "auto" runs a first retrieval pass
-    on the pooled resources — a glyph query is segmented with the pooled segmenter
-    first, since inference needs *some* grouping to search on — and infers the
-    stage with `app.services.stage.infer_stage`, exactly the function
-    `retrieve_with_stage`'s own "auto" branch uses. This mirrors `resolve_stage` in
-    scripts/run_expert_paste_eval.py rather than delegating to
-    `retrieve_with_stage(stage="auto", ...)` directly, because the final search
-    below must resegment a hieroglyph paste with the *resolved* stage's own
-    segmenter (see `resegment_query`), and `retrieve_with_stage` has no hook to
-    redo that resegmentation between its own first and second pass.
+    caller already knows which resources to use. "auto" delegates to
+    `app.services.retrieval.resolve_auto_stage` — the one shared implementation
+    `scripts/run_expert_paste_eval.py`'s `resolve_stage` also calls (previously
+    each duplicated this). That function resolves a hieroglyph paste by per-stage
+    *reading* likelihood (`app.services.stage.choose_stage_by_likelihood`: one
+    pooled segmentation, then each stage's own reading model scores it — no
+    first retrieval pass needed, since a paste has no reading of its own to
+    match rows against) and a text query by the original label-based first pass
+    + `infer_stage` rule, exactly what `retrieve_with_stage`'s own "auto" branch
+    now also uses. This is called directly here rather than via
+    `retrieve_with_stage(stage="auto", ...)` because this function's caller still
+    needs the resolved stage on its own, to read/resegment the query with that
+    stage's resources afterwards (see `resegment_query`) before the actual
+    search runs.
     """
     if selected != "auto":
         return selected, False
-    pooled = get_resources(None)
-    regrouped = ""
-    if contains_hieroglyphs(query):
-        as_pasted = normalize_hieroglyphs(query).split()
-        regrouped = " ".join(pooled.segmenter.segment(as_pasted).groups)
-    first_pass = retrieve_top_k(
-        pooled.frame,
-        query_mdc=query,
-        k=10,
-        query_hieroglyphs_norm=regrouped or None,
-        index=pooled.index,
-    )
-    stage = infer_stage(first_pass)
-    return stage, stage is not None
+    stage, inferred, _likelihood_scores = resolve_auto_stage(query, get_resources)
+    return stage, inferred
 
 
 def stage_caption(requested: str | None, stage_used: str | None, inferred: bool) -> str | None:

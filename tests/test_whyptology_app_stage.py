@@ -222,8 +222,12 @@ def test_load_stage_resources_declared_stage_subsets_the_corpus(clear_stage_cach
     assert len(resources.frame) == 1
     assert "A" in resources.reading_model.sign_reading
     assert "B" not in resources.reading_model.sign_reading
+    # The segmenter, unlike the reading model, is always built from the POOLED
+    # frame (app.services.stage.build_stage_resources) — segment pooled, read by
+    # stage — so it knows "B" too even though this stage would never offer it as
+    # a reading.
     assert resources.segmenter.is_known("A")
-    assert not resources.segmenter.is_known("B")
+    assert resources.segmenter.is_known("B")
 
     # A declared stage is never routed through the pooled loaders.
     pooled = w.load_stage_resources(None, signature, df)

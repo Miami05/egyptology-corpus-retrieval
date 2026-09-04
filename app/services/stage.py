@@ -9,9 +9,16 @@ actually needs (ROADMAP.md, "Item 4 landed 2026-09-04" and "Fri 09-04, night").
 
 The fix here is not a nested per-stage counter inside each statistic. It is simpler:
 subset the corpus frame to the rows compatible with a target stage, and build the
-*existing* statistics (`SearchIndex`, `ReadingModel`, `Segmenter`, the sign index) on
-that subset, exactly as they are built on the full frame today. `target=None` must
-subset to nothing — the full frame — so the pooled behaviour is reproduced exactly.
+*existing* statistics (`SearchIndex`, `ReadingModel`, the sign index) on that subset,
+exactly as they are built on the full frame today. `target=None` must subset to
+nothing — the full frame — so the pooled behaviour is reproduced exactly.
+
+One statistic is the deliberate exception: the `Segmenter` is always built from the
+*pooled* frame regardless of `target` (see `build_stage_resources`) — sign-group
+boundaries measured far more stable across stages than spellings/readings do, and
+restricting them to a subset was the direct cause of a segmentation-driven miss
+(fewer attested groups survive a subset, so a lattice merges spans a full-corpus
+segmenter keeps apart). "Segment pooled, read by stage."
 
 Two-thirds of the corpus carries no stage at all (`Unspecified (AES)`,
 `Unspecified (BBAW)`, or a blank column). Those rows are compatible with every
@@ -24,7 +31,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import pandas as pd
 
@@ -54,6 +61,78 @@ def normalize_stage(value: object) -> str | None:
         return None
     if text in _STAGE_SET:
         return text
+    return None
+
+
+# TLA source-id prefix -> stage. A TLA row names its own stage in its id, so this
+# takes priority over the period-keyword table below. Moved here (from
+# scripts/run_competitive_ambiguity_eval.py, which originated it for the v4
+# benchmark's `language_stage` column) so `derive_v4_declared_stage` there and
+# `derive_stage_from_period` here share one table rather than two that could
+# quietly drift apart.
+_TLA_PREFIX_STAGE: list[tuple[str, str]] = [
+    ("TLA_EARLIER_", "Earlier Egyptian"),
+    ("TLA_LATE_", "Late Egyptian"),
+    ("TLA_DEMOTIC_", "Demotic"),
+]
+
+# `period` keyword -> stage, consulted only when the TLA prefix rule above did not
+# resolve (AES, BBAW rows have no TLA-style id). A period string resolves only when
+# every keyword it contains maps to the *same* stage: "Middle Kingdom / Second
+# Intermediate Period" matches two keywords that both mean Earlier Egyptian, so it
+# resolves; "Third Intermediate Period to Roman" matches one Late Egyptian keyword
+# and one Demotic keyword, so it does not — that row's real period spans two
+# stages, and guessing which one it actually is would not be a documented rule, it
+# would be a guess. Zero keyword matches (e.g. "unknown") also does not resolve.
+_PERIOD_STAGE_KEYWORDS: list[tuple[str, str]] = [
+    ("Old Kingdom", "Earlier Egyptian"),
+    ("First Intermediate", "Earlier Egyptian"),
+    ("Middle Kingdom", "Earlier Egyptian"),
+    ("Second Intermediate", "Earlier Egyptian"),
+    ("New Kingdom", "Late Egyptian"),
+    ("Third Intermediate", "Late Egyptian"),
+    ("Late Period", "Late Egyptian"),
+    ("Ptolemaic", "Demotic"),
+    ("Roman", "Demotic"),
+]
+
+
+def derive_stage_from_period(source_text_id: object, period: object) -> str | None:
+    """A stage derived from a row's own id/period, when its `language_stage`
+    column does not name one.
+
+    The documented rule the v4 benchmark's `language_stage` column was built with
+    (`scripts/run_competitive_ambiguity_eval.py`'s `derive_v4_declared_stage`,
+    which now simply calls this): a TLA source-id prefix first (`_TLA_PREFIX_STAGE`
+    — it already names its own stage); otherwise the `period` text via
+    `_PERIOD_STAGE_KEYWORDS`, resolved only when every keyword it contains agrees
+    on one stage. `None` (leave unresolved) for anything else — a missing period,
+    an unrecognised one, or one whose keywords disagree.
+
+    Used only to populate that one precomputed benchmark column, not at load time.
+    An item A part 3 iteration tried also using it inside `compatible_frame`/
+    `infer_stage`/`stage_base_rates` (a derived row would gain a stage for both
+    filtering and inference) and reverted it, on the reasoning that turning a
+    previously-"compatible with everything" unspecified row into an excluded one
+    changes retrieval evidence and should be a considered, separate design step —
+    stage as a *preference*, not a filter — rather than a side effect of a
+    load-time convenience. (P's own `declared` v4 accuracy was re-measured after
+    the revert and did NOT recover to a higher number: it stayed at the same
+    0.90/COMP_007+COMP_014 both before and after this function was wired into
+    those three functions and unwired again — that shortfall predates this
+    function entirely, from the v4 CSV's own precomputed `language_stage` column
+    already declaring a stage for COMP_014's target once `compatible_frame`
+    restricts evidence to it, on the unmodified `dda12fc` code. An earlier report
+    misattributed that shortfall to this function; it does not cause it.)
+    """
+    text = "" if source_text_id is None else str(source_text_id)
+    for prefix, stage in _TLA_PREFIX_STAGE:
+        if text.startswith(prefix):
+            return stage
+    period_text = "" if period is None else str(period)
+    stages = {stage for keyword, stage in _PERIOD_STAGE_KEYWORDS if keyword in period_text}
+    if len(stages) == 1:
+        return stages.pop()
     return None
 
 
@@ -164,6 +243,9 @@ class StageResources:
     `compatible_frame(df, stage)` instead of on the full frame. `stage=None` yields
     resources byte-identical in behaviour to today's pooled build, because
     `compatible_frame(df, None)` is `df` itself.
+
+    `segmenter` is the one exception to "built from the subset": it is always
+    built from the *pooled* frame, regardless of `stage` — see `build_stage_resources`.
     """
 
     stage: str | None
@@ -172,32 +254,13 @@ class StageResources:
     reading_model: "ReadingModel"
     segmenter: "Segmenter"
     sign_index: dict[str, "SignReadings"]
-    # subset aligned-sign-token mass / pooled aligned-sign-token mass — see
-    # `_aligned_sign_group_mass` and `build_stage_resources`. Exactly 1.0 at
-    # stage=None (the subset IS the pooled frame there), reported so a caller can
-    # audit what the lexicon weight was actually scaled to for this stage.
+    # Always 1.0. Kept (rather than removed) for interface stability: it used to
+    # scale SegmentationWeights.lexicon_weight down for a stage subset, back when
+    # the segmenter's own group counts were stage-restricted too and so competed
+    # against a shrunken mass. Now that the segmenter is always built from the
+    # pooled frame (see build_stage_resources), the mass it competes against
+    # never shrinks, so there is nothing left to scale.
     lexicon_weight_factor: float = 1.0
-
-
-def _aligned_sign_group_mass(frame: pd.DataFrame) -> int:
-    """Total aligned sign-group tokens in `frame`.
-
-    Exactly what `Segmenter.total` (the denominator of the discounted unigram model)
-    would sum to for a `ReadingModel` fitted on `frame` — every position of every
-    row whose hieroglyph and transliteration token counts match contributes one to
-    `ReadingModel.fit`'s `sign_reading` counts, so this is that same total without
-    the cost of actually fitting a model. Used only to scale `lexicon_weight` (see
-    `build_stage_resources`); it deliberately mirrors `ReadingModel.fit`'s own
-    alignment rule (`len(signs) == len(readings)`, `signs` non-empty) rather than
-    re-deriving it, so the two can never quietly drift apart.
-    """
-    if "hieroglyphs_norm" not in frame.columns or "transliteration_gold" not in frame.columns:
-        return 0
-    signs = frame["hieroglyphs_norm"].astype(str).str.split()
-    readings = frame["transliteration_gold"].astype(str).str.split()
-    sign_counts = signs.map(len)
-    aligned = (sign_counts > 0) & (sign_counts == readings.map(len))
-    return int(sign_counts[aligned].sum())
 
 
 def build_stage_resources(
@@ -206,6 +269,7 @@ def build_stage_resources(
     lexicon: "Lexicon | None" = None,
     segmentation_weights: "SegmentationWeights | None" = None,
     use_lexicon: bool = True,
+    pooled_reading_model: "ReadingModel | None" = None,
 ) -> StageResources:
     """Build `StageResources` for `target` from `df`, subsetting first.
 
@@ -213,18 +277,31 @@ def build_stage_resources(
     UI's own `load_reading_model` already do) so that a caller passing the same
     lexicon it always passed gets exactly today's pooled behaviour at `target=None`.
 
-    Lexicon-weight scaling. `SegmentationWeights.lexicon_weight` was calibrated
-    (see `app/services/segmentation.py`'s module docstring) against the *pooled*
-    corpus's group-count mass. Subsetting to a stage shrinks that mass — a declared
-    stage excludes a whole other labelled population — while the lexicon's own
-    counts do not shrink with it, which is exactly the failure mode the segmentation
-    module documents for `lexicon_weight=0.39` at full corpus size: the lexicon's
-    fixed weight can outbid a real, well-attested corpus split once the corpus mass
-    it is being compared against gets smaller. The fix is not a new constant: scale
-    `lexicon_weight` by this subset's aligned-sign-token mass relative to the pooled
-    frame's, so the lexicon's *effective* weight shrinks in step with the corpus
-    mass it competes against. At `target=None` the subset IS the pooled frame, so
-    the factor is exactly 1.0 and pooled behaviour is unchanged by construction.
+    Segment pooled, read by stage. `frame` (and so `index`, `sign_index`, and the
+    `reading_model` used for actual reading) is `compatible_frame(df, target)`, the
+    stage-restricted subset, exactly as before. `segmenter`, however, is always
+    built from the *pooled* corpus's group counts, never the subset's — measured
+    reason: word/sign-group boundaries are far more stable across language stages
+    than spellings and readings are (segmentation came out byte-identical across
+    all three stages on every one of the eight expert Urk. IV pastes tried), while
+    restricting the segmenter's own group counts to one stage's subset is what
+    caused the one segmentation-driven miss item A core measured (`declared` mode's
+    PASTE_003 on the Earlier-Egyptian-only subset: fewer attested three-way splits
+    survive the cut, so the lattice merges groups a full-corpus segmenter would
+    keep apart). Building the segmenter from the pooled frame also means
+    `SegmentationWeights.lexicon_weight` (calibrated against the *pooled* corpus's
+    group-count mass, see `app/services/segmentation.py`) is competing against
+    that same pooled mass regardless of `target` — the mass never shrinks, so no
+    lexicon-weight scaling is needed any more (`lexicon_weight_factor` is always
+    1.0; a shrinking-mass rescale was this module's own prior fix for a problem
+    that segmenting pooled now removes at the source).
+
+    `pooled_reading_model`, if given, is used to build the pooled segmenter
+    directly instead of re-fitting one from `df` — a caller that already built
+    (and cached) the `target=None` `StageResources` should pass its
+    `reading_model` here so three per-stage builds do not each re-fit the whole
+    corpus just to build a segmenter. Ignored when `target is None`: `frame` IS
+    `df` there, so the just-fitted `reading_model` already *is* the pooled one.
     """
     # Imported here, not at module scope: app.services.retrieval imports this module
     # (for build_stage_resources' own use in retrieve_with_stage), so a top-level
@@ -238,18 +315,16 @@ def build_stage_resources(
         segmentation_weights if segmentation_weights is not None else DEFAULT_SEGMENTATION_WEIGHTS
     )
     frame = compatible_frame(df, target)
-
-    lexicon_weight_factor = 1.0
-    if use_lexicon and target is not None:
-        pooled_mass = _aligned_sign_group_mass(df)
-        subset_mass = _aligned_sign_group_mass(frame)
-        if pooled_mass > 0:
-            lexicon_weight_factor = subset_mass / pooled_mass
-    if lexicon_weight_factor != 1.0:
-        weights = weights.replace(lexicon_weight=weights.lexicon_weight * lexicon_weight_factor)
-
     reading_model = train_reading_model(frame, lexicon)
-    segmenter = Segmenter(reading_model, weights, use_lexicon=use_lexicon)
+
+    if target is None:
+        pooled_model = reading_model
+    elif pooled_reading_model is not None:
+        pooled_model = pooled_reading_model
+    else:
+        pooled_model = train_reading_model(df, lexicon)
+    segmenter = Segmenter(pooled_model, weights, use_lexicon=use_lexicon)
+
     return StageResources(
         stage=target,
         frame=frame,
@@ -257,5 +332,90 @@ def build_stage_resources(
         reading_model=reading_model,
         segmenter=segmenter,
         sign_index=build_sign_index(frame),
-        lexicon_weight_factor=lexicon_weight_factor,
+        lexicon_weight_factor=1.0,
     )
+
+
+def choose_stage_by_likelihood(
+    paste_hieroglyphs_norm: str,
+    resources_by_stage: Callable[[str | None], StageResources],
+) -> tuple[str | None, dict[str, float]]:
+    """Language identification for a hieroglyph paste, by per-sign log-likelihood.
+
+    Why this exists (item A part 3). `infer_stage` reads stage labels off the
+    pooled top-k hits, which fails a paste like Camilla's Urk. IV line once a
+    large labelled population of a different stage (Ramses' Late Egyptian) is in
+    the corpus: too few labelled hits clear it, or the wrong stage does. A
+    hieroglyph paste is not text — it has no reading of its own to match against
+    a stage's rows — but the reading model already computes how likely a stage's
+    own statistics find a candidate reading of it, and that generalises language
+    identification directly, without inventing a new score or a new threshold.
+
+    Segmentation is not part of the comparison. `build_stage_resources` now
+    builds the segmenter from the *pooled* frame for every stage (measured
+    reason on that function), so `resources_by_stage(candidate).segmenter` is
+    the same segmenter regardless of `candidate` — segmenting is done exactly
+    once here, via the pooled resources, rather than once per candidate stage.
+    An earlier version of this function included each stage's own
+    `Segmentation.score` in the comparison; it was dropped because that score is
+    a raw, corpus-size-dependent count (a bigger corpus reports bigger counts for
+    the same common sign group regardless of dialect fit — Late Egyptian's
+    corpus, being far larger, was winning on that alone even where its own
+    *reading* was worse), which the reading model's terms below are not: every
+    `ReadingModel` emission/transition/context term is a conditional probability
+    normalised by its own local count (`_emission`'s denominator is that one
+    sign group's own total, not the corpus's), so it does not grow with corpus
+    size.
+
+    For each concrete stage in `STAGES`: read the (pooled, shared) segmentation
+    with that stage's own reading model — `ReadingModel.predict_sequence_scored`,
+    `use_lexicon=False` (the external Helsinki lexicon is stage-agnostic, so
+    letting a lexicon-only group decide the *stage* would be evidence from the
+    wrong place; reading happens afterwards, once a stage is chosen, on that
+    stage's full resources including the lexicon, exactly as every other item A
+    path already does) — and take its Viterbi path log-probability, normalised
+    by the number of sign groups in that (shared) segmentation. The winner is a
+    plain argmax over these per-sign likelihoods: no tunable threshold.
+
+    Two guards: (1) a stage whose reading model was fitted on zero aligned rows
+    (`reading_model.sentences_seen == 0` — e.g. Demotic, which this corpus holds
+    as text-only rows with no hieroglyphs to align) has nothing to score with and
+    is skipped rather than scored as if it had an opinion. (2) a near-tie between
+    the top two candidates (within 1e-9) is not trusted to decide a language —
+    ties fall back to `None`, so the caller uses the pooled/label-based path
+    instead of a coin flip.
+
+    Returns `(winning stage or None, {stage: per-sign log-likelihood})` — the
+    dict covers every *scored* (non-degenerate) stage, in `STAGES` order, so a
+    caller can print/audit the comparison that decided (or declined to decide)
+    the choice.
+    """
+    groups_as_pasted = paste_hieroglyphs_norm.split()
+    if not groups_as_pasted:
+        return None, {}
+
+    pooled = resources_by_stage(None)
+    groups = pooled.segmenter.segment(groups_as_pasted).groups
+    n_groups = len(groups)
+    if n_groups == 0:
+        return None, {}
+
+    scores: dict[str, float] = {}
+    for candidate in STAGES:
+        resources = resources_by_stage(candidate)
+        if resources.reading_model.sentences_seen == 0:
+            # Degenerate: no aligned rows to fit a reading model on (this corpus
+            # holds Demotic as text-only), so this stage has no likelihood to
+            # offer and must not be scored as though it did.
+            continue
+        _predictions, reading_score = resources.reading_model.predict_sequence_scored(
+            groups, use_lexicon=False
+        )
+        scores[candidate] = reading_score / n_groups
+
+    if not scores:
+        return None, scores
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    if len(ranked) > 1 and abs(ranked[0][1] - ranked[1][1]) <= 1e-9:
+        return None, scores
+    return ranked[0][0], scores
