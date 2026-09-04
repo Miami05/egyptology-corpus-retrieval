@@ -4,7 +4,7 @@ from typing import Callable, Literal
 
 import pandas as pd
 
-from app.data.normalizer import normalize_sign_sequence
+from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs, normalize_sign_sequence
 from app.data.query import QueryParse, parse_query
 from dataclasses import dataclass
 
@@ -19,7 +19,12 @@ from app.retrieval.scorer import (
     combine_scores,
 )
 from app.retrieval.tfidf import NgramIndex
-from app.services.stage import StageResources, infer_stage, stage_base_rates
+from app.services.stage import (
+    StageResources,
+    choose_stage_by_likelihood,
+    infer_stage,
+    stage_base_rates,
+)
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,48 @@ def retrieve_top_k(
     return top
 
 
+def resolve_auto_stage(
+    query: str,
+    resources_by_stage: Callable[[str | None], StageResources],
+) -> tuple[str | None, bool, dict[str, float]]:
+    """Resolve "auto" to a concrete stage (or `None`, pooled) for one query.
+
+    The one shared implementation of item A's "auto" rule — `scripts/
+    run_expert_paste_eval.py`'s `resolve_stage` and `app/ui/whyptology_app.py`'s
+    `resolve_ui_stage` both call this for their `stage_mode == "auto"` /
+    `selected == "auto"` case (previously each duplicated the logic below), and
+    `retrieve_with_stage`'s own `"auto"` branch below uses it too.
+
+    A hieroglyph paste has no reading of its own to match a stage's rows against,
+    so it is resolved by language-identification likelihood instead
+    (`app.services.stage.choose_stage_by_likelihood`: segment once with the
+    pooled segmenter, then take the stage whose own reading model finds that
+    segmentation most likely, per sign — see that function for why segmentation
+    is pooled and reading is not). A text (transliteration) query keeps item A
+    core's original rule: a first retrieval pass over the pooled resources, then
+    `infer_stage` given the pooled frame's own stage base rates (the
+    lift-over-base-rate guard documented on `infer_stage`).
+
+    Returns `(stage, inferred, likelihood_scores)`. `likelihood_scores` is
+    `choose_stage_by_likelihood`'s per-stage per-sign audit dict for a hieroglyph
+    paste, and empty for a text query (no per-stage likelihoods computed there).
+    """
+    if contains_hieroglyphs(query):
+        paste_norm = normalize_hieroglyphs(query)
+        stage, scores = choose_stage_by_likelihood(paste_norm, resources_by_stage)
+        return stage, stage is not None, scores
+
+    pooled = resources_by_stage(None)
+    first_pass = retrieve_top_k(
+        pooled.frame,
+        query_mdc=query,
+        k=10,
+        index=pooled.index,
+    )
+    stage = infer_stage(first_pass, base_rates=stage_base_rates(pooled.frame))
+    return stage, stage is not None, {}
+
+
 @dataclass(frozen=True)
 class StageRetrievalResult:
     """The retrieved rows plus how the stage was decided, for the UI to report."""
@@ -168,41 +215,47 @@ def retrieve_with_stage(
     - `stage is None`: retrieve on the pooled resources — today's behaviour exactly,
       since `resources_by_stage(None)` must build on `compatible_frame(df, None)`,
       which is the full frame.
-    - `stage == "auto"`: a first pass on the pooled resources at `k=10` decides the
-      stage (`app.services.stage.infer_stage`, given that stage's base rate among
-      the pooled frame's labelled rows so a merely-more-common stage cannot win on
-      prior weight alone — see `infer_stage`'s `min_lift`); a second pass then runs
-      on that stage's resources at the caller's `k`. When nothing can be inferred,
-      the first pass's own results are returned, trimmed to `k` — never a wasted
-      third call.
+    - `stage == "auto"`: `resolve_auto_stage(query_mdc, resources_by_stage)` decides
+      the stage — likelihood-based for a hieroglyph paste, label-based
+      (`app.services.stage.infer_stage`) for a text query, see that function. When a
+      stage is inferred and `query_mdc` is a hieroglyph paste, it is re-segmented
+      with the *inferred* stage's own segmenter before the second retrieval pass
+      (restricting to one stage's group counts changes which grouping wins — see
+      `app.services.segmentation`), even if the caller's own `query_hieroglyphs_norm`
+      was computed against the pooled segmenter. When nothing can be inferred, a
+      pooled pass at the caller's `k` is returned instead.
     """
     del df_all  # see docstring: retrieval runs on the resolved StageResources' frame
     if stage == "auto":
-        pooled = resources_by_stage(None)
-        first_pass = retrieve_top_k(
-            pooled.frame,
-            query_mdc,
-            query_reading_order=query_reading_order,
-            k=10,
-            weights=weights,
-            query_hieroglyphs_norm=query_hieroglyphs_norm,
-            index=pooled.index,
+        inferred_stage, inferred, _likelihood_scores = resolve_auto_stage(
+            query_mdc, resources_by_stage
         )
-        inferred_stage = infer_stage(
-            first_pass, base_rates=stage_base_rates(pooled.frame)
-        )
-        if inferred_stage is None:
+        if not inferred:
+            pooled = resources_by_stage(None)
+            first_pass = retrieve_top_k(
+                pooled.frame,
+                query_mdc,
+                query_reading_order=query_reading_order,
+                k=k,
+                weights=weights,
+                query_hieroglyphs_norm=query_hieroglyphs_norm,
+                index=pooled.index,
+            )
             return StageRetrievalResult(
-                results=first_pass.head(k), stage_used=None, inferred=False
+                results=first_pass, stage_used=None, inferred=False
             )
         resources = resources_by_stage(inferred_stage)
+        regrouped = query_hieroglyphs_norm
+        if contains_hieroglyphs(query_mdc):
+            as_pasted = normalize_hieroglyphs(query_mdc).split()
+            regrouped = " ".join(resources.segmenter.segment(as_pasted).groups)
         second_pass = retrieve_top_k(
             resources.frame,
             query_mdc,
             query_reading_order=query_reading_order,
             k=k,
             weights=weights,
-            query_hieroglyphs_norm=query_hieroglyphs_norm,
+            query_hieroglyphs_norm=regrouped,
             index=resources.index,
         )
         return StageRetrievalResult(

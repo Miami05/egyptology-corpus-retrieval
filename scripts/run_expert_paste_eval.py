@@ -42,14 +42,12 @@ from app.data.normalizer import (  # noqa: E402
     normalize_hieroglyphs,
 )
 from app.services.lexicon import load_lexicon  # noqa: E402
-from app.services.retrieval import retrieve_top_k  # noqa: E402
+from app.services.retrieval import resolve_auto_stage, retrieve_top_k  # noqa: E402
 from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS  # noqa: E402
 from app.services.stage import (  # noqa: E402
     StageResources,
     build_stage_resources,
-    infer_stage,
     normalize_stage,
-    stage_base_rates,
 )
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 
@@ -67,40 +65,37 @@ def resolve_stage(
     stage_mode: str,
     row: pd.Series,
     get_resources,
-) -> tuple[str | None, bool]:
+) -> tuple[str | None, bool, dict[str, float] | None]:
     """Which stage's resources this row should be read/segmented/retrieved with.
 
-    Returns (stage, inferred). 'none' always returns (None, False) — today's pooled
-    behaviour, unchanged. 'declared' reads the row's own `language_stage` column.
-    'auto' runs a first retrieval pass on the pooled resources (glyph queries are
-    segmented with the pooled model first, since the reading/glyph signal needs
-    *some* segmentation to search on) and infers the stage from that pass's results,
-    exactly as `retrieve_with_stage` does for a plain retrieval query.
+    Returns (stage, inferred, likelihood_scores). 'none' always returns
+    (None, False, None) — today's pooled behaviour, unchanged. 'declared' reads
+    the row's own `language_stage` column. 'auto' delegates to
+    `app.services.retrieval.resolve_auto_stage` — the one shared implementation
+    `app/ui/whyptology_app.py`'s `resolve_ui_stage` also calls — which resolves a
+    hieroglyph paste by per-stage reading likelihood
+    (`app.services.stage.choose_stage_by_likelihood`) and a text query by the
+    original label-based first-pass + `infer_stage` rule. `likelihood_scores` is
+    that function's per-stage per-sign audit dict for a glyph query (for the
+    per-paste table `main` prints below), `None` for 'none'/'declared' and empty
+    for a text query in 'auto' mode (no likelihoods computed there).
     """
     if stage_mode == "none":
-        return None, False
+        return None, False, None
     if stage_mode == "declared":
-        return normalize_stage(row.get("language_stage", "")), False
+        return normalize_stage(row.get("language_stage", "")), False, None
 
-    # auto
-    pooled = get_resources(None)
-    query = str(row["query_input"])
-    regrouped = ""
-    if contains_hieroglyphs(query):
-        as_pasted = normalize_hieroglyphs(query).split()
-        regrouped = " ".join(pooled.segmenter.segment(as_pasted).groups)
-    first_pass = retrieve_top_k(
-        pooled.frame,
-        query_mdc=query,
-        k=10,
-        query_hieroglyphs_norm=regrouped or None,
-        index=pooled.index,
-    )
-    stage = infer_stage(first_pass, base_rates=stage_base_rates(pooled.frame))
-    return stage, stage is not None
+    stage, inferred, scores = resolve_auto_stage(str(row["query_input"]), get_resources)
+    return stage, inferred, scores
 
 
-def evaluate_row(row: pd.Series, resources: StageResources, stage_mode: str, inferred: bool) -> dict:
+def evaluate_row(
+    row: pd.Series,
+    resources: StageResources,
+    stage_mode: str,
+    inferred: bool,
+    stage_scores: dict[str, float] | None = None,
+) -> dict:
     query = str(row["query_input"])
     expected_reading = _text(row.get("expected_reading"))
     expected_groups = _text(row.get("expected_groups"))
@@ -162,6 +157,11 @@ def evaluate_row(row: pd.Series, resources: StageResources, stage_mode: str, inf
         "stage_mode": stage_mode,
         "stage_used": resources.stage or "",
         "stage_inferred": inferred,
+        "stage_likelihoods": (
+            "; ".join(f"{stage}={value:.3f}" for stage, value in stage_scores.items())
+            if stage_scores
+            else ""
+        ),
         "expected_groups": expected_groups,
         "actual_groups": regrouped,
         "groups_ok": groups_ok,
@@ -204,8 +204,9 @@ def main() -> None:
         help=(
             "Language-stage handling (item A). 'none' (default) reproduces today's "
             "pooled reading/segmentation/retrieval exactly. 'declared' reads each "
-            "row's own language_stage column. 'auto' infers the stage per row from "
-            "a first retrieval pass over the pooled resources."
+            "row's own language_stage column. 'auto' resolves a hieroglyph paste by "
+            "per-stage reading likelihood and a text query by a first retrieval pass "
+            "over the pooled resources (app.services.retrieval.resolve_auto_stage)."
         ),
     )
     args = parser.parse_args()
@@ -224,12 +225,20 @@ def main() -> None:
 
     def get_resources(target: str | None) -> StageResources:
         if target not in resources_cache:
+            # Every stage's segmenter is built from the pooled frame (see
+            # build_stage_resources), so a concrete-stage build always needs the
+            # pooled reading model too; build/cache target=None first (recursion
+            # bottoms out there) so it is fit once, not once per stage.
+            pooled_reading_model = (
+                get_resources(None).reading_model if target is not None else None
+            )
             resources_cache[target] = build_stage_resources(
                 df,
                 target,
                 lexicon=lexicon,
                 segmentation_weights=weights,
                 use_lexicon=not args.no_lexicon,
+                pooled_reading_model=pooled_reading_model,
             )
         return resources_cache[target]
 
@@ -237,9 +246,9 @@ def main() -> None:
 
     rows = []
     for _, row in queries.iterrows():
-        stage, inferred = resolve_stage(args.stage, row, get_resources)
+        stage, inferred, scores = resolve_stage(args.stage, row, get_resources)
         resources = get_resources(stage)
-        rows.append(evaluate_row(row, resources, args.stage, inferred))
+        rows.append(evaluate_row(row, resources, args.stage, inferred, stage_scores=scores))
     results = pd.DataFrame(rows)
 
     pooled = get_resources(None)
@@ -264,6 +273,8 @@ def main() -> None:
                 f"        {row['fallback_groups']} borrowed, "
                 f"{row['unreadable_groups']} unreadable"
             )
+        if row["stage_likelihoods"]:
+            print(f"        per-sign log-likelihood: {row['stage_likelihoods']}")
 
     passed = sum(1 for row in rows if row["passed"])
     print(f"\npassed {passed}/{len(rows)}")

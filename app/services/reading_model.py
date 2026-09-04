@@ -354,6 +354,7 @@ class ReadingModel:
         next_sign_weight: float = 0.8,
         use_fallback: bool = True,
         fallback_threshold: float | None = None,
+        use_lexicon: bool = True,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -365,9 +366,52 @@ class ReadingModel:
         `use_fallback` lets an unattested sign group borrow the readings of the closest
         attested group. Those predictions are marked so they are never mistaken for
         attested ones; with it off, an unknown group stays unknown.
+
+        `use_lexicon=False` ignores `self.lexicon` entirely, as if none had been
+        attached — every position falls straight through to fallback/none instead.
+        For item A part 3's language identification (`app.services.stage.
+        choose_stage_by_likelihood`): the external lexicon is stage-agnostic, but
+        `build_stage_resources` scales its *effective* weight per stage, so a
+        lexicon-only group would score differently across stages for a reason that
+        has nothing to do with which stage is the right one. Default `True` keeps
+        every other caller's behaviour unchanged.
+        """
+        predictions, _path_score = self.predict_sequence_scored(
+            signs,
+            emission_weight=emission_weight,
+            transition_weight=transition_weight,
+            sign_context_weight=sign_context_weight,
+            next_sign_weight=next_sign_weight,
+            use_fallback=use_fallback,
+            fallback_threshold=fallback_threshold,
+            use_lexicon=use_lexicon,
+        )
+        return predictions
+
+    def predict_sequence_scored(
+        self,
+        signs: list[str],
+        emission_weight: float = 1.0,
+        transition_weight: float = 0.6,
+        sign_context_weight: float = 0.8,
+        next_sign_weight: float = 0.8,
+        use_fallback: bool = True,
+        fallback_threshold: float | None = None,
+        use_lexicon: bool = True,
+    ) -> tuple[list[ReadingPrediction], float]:
+        """`predict_sequence`, plus the chosen path's total Viterbi log-probability.
+
+        Same decode, same predictions — this only additionally returns the score
+        `predict_sequence` already computes internally and used to discard
+        (`lattice[-1][best_final][0]` below). Added for item A part 3: language
+        identification by likelihood needs this total (summed emission +
+        transition + context terms over the whole sequence) to compare a paste's
+        best reading across stages; `predict_sequence` itself is unchanged so
+        every existing caller keeps its exact behaviour. See `predict_sequence`
+        for `use_lexicon`.
         """
         if not signs:
-            return []
+            return [], 0.0
         if fallback_threshold is None:
             fallback_threshold = FALLBACK_THRESHOLD
 
@@ -379,7 +423,7 @@ class ReadingModel:
         for sign in signs:
             if sign in self.sign_reading:
                 sources.append((sign, "", 1.0, "corpus"))
-            elif sign in self.lexicon:
+            elif use_lexicon and sign in self.lexicon:
                 sources.append((sign, "", 1.0, "lexicon"))
             elif use_fallback:
                 group, score = self.nearest_known_group(sign)
@@ -486,7 +530,7 @@ class ReadingModel:
                     lexicon_source=self.lexicon_sources.get(sign, "") if kind == "lexicon" else "",
                 )
             )
-        return predictions
+        return predictions, lattice[-1][best_final][0]
 
     def predict_most_frequent(self, signs: list[str]) -> list[str]:
         """Context-free baseline: always the commonest reading of each sign."""
