@@ -17,7 +17,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.retrieval.scorer import build_corpus_stats, document_frequencies, tokenize_query
-from app.retrieval.tfidf import build_document_vectors, char_ngram_vector, cosine_score
+from app.retrieval.tfidf import NgramIndex, build_document_vectors, char_ngram_vector, cosine_score
 from app.services.retrieval import build_search_index, retrieve_top_k
 from app.storage.db import Base, DatabaseUnavailable
 from app.storage.models import Annotation, Example
@@ -272,6 +272,49 @@ def test_document_vectors_match_direct_cosine():
         assert cosine_score(query_vector, query_norm, vector, norm) == pytest.approx(
             cosine_score(query_vector, query_norm, *direct)
         )
+
+
+@pytest.fixture(scope="module")
+def full_corpus():
+    from pathlib import Path
+
+    from app.data.loader import load_examples_csv
+
+    project_root = Path(__file__).resolve().parents[1]
+    return load_examples_csv(str(project_root / "data" / "processed" / "examples.csv"))
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "htp dji nswt",
+        "nfr",
+        "wsir",
+        "s",
+        "khat tti nkhnw pw",
+        # ḥ, ḏ, ṯ never appear in mdc_norm (see test_document_vectors_match_direct_cosine's
+        # sibling above): these n-grams are unseen anywhere in the corpus, which is exactly
+        # the case that would inflate scores if the query norm were taken from the
+        # vectorizer's (vocabulary-restricted) transform instead of the full Counter.
+        "ḥr ḏd ṯn unseen",
+    ],
+)
+def test_ngram_index_matches_direct_cosine_on_full_corpus(full_corpus, query):
+    """The sparse CSR index (`NgramIndex`) must reproduce the old per-row Counter
+    cosine (`cosine_score` / `char_ngram_vector`) to within 1e-9, over the whole
+    31,565-row corpus, including a query with n-grams unseen anywhere in it."""
+    df = full_corpus
+    index = NgramIndex.build(df["mdc_norm"])
+    scores = index.scores(query)
+    assert len(scores) == len(df)
+
+    query_vector, query_norm = char_ngram_vector(query)
+    expected = [
+        cosine_score(query_vector, query_norm, *char_ngram_vector(value))
+        for value in df["mdc_norm"]
+    ]
+    for got, want in zip(scores.tolist(), expected):
+        assert got == pytest.approx(want, abs=1e-9)
 
 
 def test_tokenizer_cache_returns_equal_but_independent_lists():

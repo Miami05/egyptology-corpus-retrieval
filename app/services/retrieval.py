@@ -16,7 +16,7 @@ from app.retrieval.scorer import (
     build_corpus_stats,
     combine_scores,
 )
-from app.retrieval.tfidf import char_ngram_vector, build_document_vectors, cosine_score
+from app.retrieval.tfidf import NgramIndex
 
 
 @dataclass(frozen=True)
@@ -24,12 +24,12 @@ class SearchIndex:
     """Everything about the corpus that does not depend on the query.
 
     Built once and reused: document frequencies for the IDF signals and the
-    character n-gram vectors for the cosine signal. Rebuilding these per search was
+    sparse n-gram index for the cosine signal. Rebuilding these per search was
     roughly half the cost of a query.
     """
 
     stats: CorpusStats
-    document_vectors: list
+    text_index: NgramIndex
 
     @property
     def vocabulary(self) -> set[str]:
@@ -41,7 +41,7 @@ class SearchIndex:
 def build_search_index(df: pd.DataFrame) -> SearchIndex:
     return SearchIndex(
         stats=build_corpus_stats(df),
-        document_vectors=build_document_vectors(df["mdc_norm"]),
+        text_index=NgramIndex.build(df["mdc_norm"]),
     )
 
 
@@ -82,16 +82,12 @@ def retrieve_top_k(
         merged["fuzzy_score"] = [
             fuzz.ratio(query_mdc_norm, value) / 100.0 for value in candidates
         ]
-        document_vectors = (
-            index.document_vectors
-            if index is not None and len(index.document_vectors) == len(merged)
-            else build_document_vectors(candidates)
+        text_index = (
+            index.text_index
+            if index is not None and len(index.text_index) == len(merged)
+            else NgramIndex.build(candidates)
         )
-        query_vector, query_norm = char_ngram_vector(query_mdc_norm)
-        merged["tfidf_score"] = [
-            cosine_score(query_vector, query_norm, vector, norm)
-            for vector, norm in document_vectors
-        ]
+        merged["tfidf_score"] = text_index.scores(query_mdc_norm)
         merged["exact_bonus"] = (candidates == query_mdc_norm).astype(float)
     else:
         # No usable text query. Without this guard an empty string is a perfect
