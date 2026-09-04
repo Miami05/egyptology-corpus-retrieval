@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
 
@@ -101,8 +102,14 @@ def alignment_report(df: pd.DataFrame, max_listed: int = 50) -> AlignmentReport:
     )
 
 
-def load_examples_csv(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Shared normalisation for any frame with the `examples.csv` schema.
+
+    Used by both `load_examples_csv` (the public, redistributed corpus) and
+    `load_private_examples` (gitignored, non-commercial corpora) so the two never
+    drift apart: a private row must be searchable and readable exactly like a
+    public one, just kept out of the database, exports and API.
+    """
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
             df[col] = ""
@@ -169,3 +176,63 @@ def load_examples_csv(path: str) -> pd.DataFrame:
             report.total_rows,
         )
     return df
+
+
+def load_examples_csv(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    return _normalize_corpus_frame(df)
+
+
+def load_private_examples(directory: str | Path) -> pd.DataFrame:
+    """Load every `*.csv` under `directory` as private, non-redistributed corpus rows.
+
+    These are the NC-licensed corpora (Ramses, the St Andrews texts) that can never
+    enter `data/processed/examples.csv` — CC BY-SA is share-alike and cannot carry
+    NC material. `directory` is expected to be gitignored (see `.gitignore` and
+    `test_private_data_dir_is_gitignored`); nothing here writes to it or reads
+    anywhere else, and the caller is responsible for keeping the result away from
+    the database, exports and the API — see `app/ui/whyptology_app.py` for where the
+    public corpus is loaded and the private rows appended only afterwards.
+
+    Returns a frame with the same columns `load_examples_csv` produces (empty, but
+    correctly shaped, if the directory is missing or has no CSVs) so it can be
+    concatenated directly onto the public corpus.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        logger.info(
+            "private data directory %s does not exist; no private rows loaded",
+            directory,
+        )
+        return _normalize_corpus_frame(pd.DataFrame(columns=REQUIRED_COLUMNS))
+
+    csv_paths = sorted(directory.glob("*.csv"))
+    if not csv_paths:
+        logger.info(
+            "private data directory %s has no CSV files; no private rows loaded",
+            directory,
+        )
+        return _normalize_corpus_frame(pd.DataFrame(columns=REQUIRED_COLUMNS))
+
+    frames: list[pd.DataFrame] = []
+    for path in csv_paths:
+        frame = pd.read_csv(path)
+        sources = frame["source"] if "source" in frame.columns else pd.Series(dtype=object)
+        blank = sources.isna() | (sources.astype(str).str.strip() == "")
+        if "source" not in frame.columns or blank.any():
+            raise ValueError(
+                f"{path} has one or more rows with an empty 'source' column; every "
+                "private row must be attributed to a named corpus (e.g. 'Ramses', "
+                "'StAndrews')"
+            )
+        logger.info("loaded %d private rows from %s", len(frame), path.name)
+        frames.append(frame)
+
+    combined = pd.concat(frames, ignore_index=True)
+    logger.info(
+        "loaded %d private rows in total from %d file(s) in %s",
+        len(combined),
+        len(csv_paths),
+        directory,
+    )
+    return _normalize_corpus_frame(combined)
