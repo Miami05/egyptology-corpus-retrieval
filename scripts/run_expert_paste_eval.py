@@ -42,9 +42,14 @@ from app.data.normalizer import (  # noqa: E402
     normalize_hieroglyphs,
 )
 from app.services.lexicon import load_lexicon  # noqa: E402
-from app.services.reading_model import train_reading_model  # noqa: E402
-from app.services.retrieval import build_search_index, retrieve_top_k  # noqa: E402
-from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS, Segmenter  # noqa: E402
+from app.services.retrieval import retrieve_top_k  # noqa: E402
+from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS  # noqa: E402
+from app.services.stage import (  # noqa: E402
+    StageResources,
+    build_stage_resources,
+    infer_stage,
+    normalize_stage,
+)
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 
 EXAMPLES_PATH = "data/processed/examples.csv"
@@ -57,11 +62,55 @@ def _text(value: object) -> str:
     return "" if text.strip().lower() in {"", "nan"} else text.strip()
 
 
-def evaluate_row(row: pd.Series, df: pd.DataFrame, model, segmenter, index) -> dict:
+def resolve_stage(
+    stage_mode: str,
+    row: pd.Series,
+    get_resources,
+) -> tuple[str | None, bool]:
+    """Which stage's resources this row should be read/segmented/retrieved with.
+
+    Returns (stage, inferred). 'none' always returns (None, False) — today's pooled
+    behaviour, unchanged. 'declared' reads the row's own `language_stage` column.
+    'auto' runs a first retrieval pass on the pooled resources (glyph queries are
+    segmented with the pooled model first, since the reading/glyph signal needs
+    *some* segmentation to search on) and infers the stage from that pass's results,
+    exactly as `retrieve_with_stage` does for a plain retrieval query.
+    """
+    if stage_mode == "none":
+        return None, False
+    if stage_mode == "declared":
+        return normalize_stage(row.get("language_stage", "")), False
+
+    # auto
+    pooled = get_resources(None)
+    query = str(row["query_input"])
+    regrouped = ""
+    if contains_hieroglyphs(query):
+        as_pasted = normalize_hieroglyphs(query).split()
+        regrouped = " ".join(pooled.segmenter.segment(as_pasted).groups)
+    first_pass = retrieve_top_k(
+        pooled.frame,
+        query_mdc=query,
+        k=10,
+        query_hieroglyphs_norm=regrouped or None,
+        index=pooled.index,
+    )
+    stage = infer_stage(first_pass)
+    return stage, stage is not None
+
+
+def evaluate_row(row: pd.Series, resources: StageResources, stage_mode: str, inferred: bool) -> dict:
     query = str(row["query_input"])
     expected_reading = _text(row.get("expected_reading"))
     expected_groups = _text(row.get("expected_groups"))
     must_be_attested = _text(row.get("must_be_attested")).lower() == "yes"
+
+    model, segmenter, index, df = (
+        resources.reading_model,
+        resources.segmenter,
+        resources.index,
+        resources.frame,
+    )
 
     is_glyph_query = contains_hieroglyphs(query)
     groups: list[str] = []
@@ -109,6 +158,9 @@ def evaluate_row(row: pd.Series, df: pd.DataFrame, model, segmenter, index) -> d
         "benchmark_id": row["benchmark_id"],
         "source": row.get("source", ""),
         "query_input": query,
+        "stage_mode": stage_mode,
+        "stage_used": resources.stage or "",
+        "stage_inferred": inferred,
         "expected_groups": expected_groups,
         "actual_groups": regrouped,
         "groups_ok": groups_ok,
@@ -144,28 +196,61 @@ def main() -> None:
         default=None,
         help="Override SegmentationWeights.lexicon_weight (for sweeps).",
     )
+    parser.add_argument(
+        "--stage",
+        choices=["none", "auto", "declared"],
+        default="none",
+        help=(
+            "Language-stage handling (item A). 'none' (default) reproduces today's "
+            "pooled reading/segmentation/retrieval exactly. 'declared' reads each "
+            "row's own language_stage column. 'auto' infers the stage per row from "
+            "a first retrieval pass over the pooled resources."
+        ),
+    )
     args = parser.parse_args()
 
     df = load_examples_csv(args.examples)
     lexicon = None if args.no_lexicon else load_lexicon()
-    model = train_reading_model(df, lexicon)
     weights = DEFAULT_SEGMENTATION_WEIGHTS
     if args.lexicon_weight is not None:
         weights = weights.replace(lexicon_weight=args.lexicon_weight)
-    segmenter = Segmenter(model, weights, use_lexicon=not args.no_lexicon)
-    index = build_search_index(df)
-    queries = pd.read_csv(args.queries)
 
-    rows = [
-        evaluate_row(row, df, model, segmenter, index)
-        for _, row in queries.iterrows()
-    ]
+    # One StageResources per stage actually needed, built lazily and reused across
+    # rows — training the reading model and building the search index are the
+    # expensive steps, and at most 4 distinct stages (None + STAGES) are ever asked
+    # for regardless of how many benchmark rows there are.
+    resources_cache: dict[str | None, StageResources] = {}
+
+    def get_resources(target: str | None) -> StageResources:
+        if target not in resources_cache:
+            resources_cache[target] = build_stage_resources(
+                df,
+                target,
+                lexicon=lexicon,
+                segmentation_weights=weights,
+                use_lexicon=not args.no_lexicon,
+            )
+        return resources_cache[target]
+
+    queries = pd.read_csv(args.queries, keep_default_na=False)
+
+    rows = []
+    for _, row in queries.iterrows():
+        stage, inferred = resolve_stage(args.stage, row, get_resources)
+        resources = get_resources(stage)
+        rows.append(evaluate_row(row, resources, args.stage, inferred))
     results = pd.DataFrame(rows)
 
-    print(f"corpus {len(df)} rows; {len(results)} expert pastes\n")
+    pooled = get_resources(None)
+    print(f"corpus {len(pooled.frame)} rows; {len(results)} expert pastes; stage={args.stage}\n")
     for row in rows:
         mark = "PASS" if row["passed"] else "FAIL"
-        print(f"[{mark}] {row['benchmark_id']}  {row['source']}")
+        stage_note = ""
+        if args.stage != "none":
+            stage_label = row["stage_used"] or "(none)"
+            inferred_note = " inferred" if row["stage_inferred"] else ""
+            stage_note = f"  [stage={stage_label}{inferred_note}]"
+        print(f"[{mark}] {row['benchmark_id']}  {row['source']}{stage_note}")
         if row["expected_reading"]:
             print(f"        reading : {row['actual_reading']}")
             if not row["reading_ok"]:

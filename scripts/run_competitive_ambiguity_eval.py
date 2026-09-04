@@ -12,12 +12,30 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
+from app.services.stage import compatible_frame, infer_stage
 from app.services.suggestions import canonical_reading, loose_reading_form, suggest_top_readings
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
 RESULTS_PATH = "data/benchmarks/competitive_ambiguity_eval_results.csv"
 FAILURES_PATH = "data/benchmarks/competitive_ambiguity_eval_failures.csv"
+
+# expected_source_text_id prefix -> declared language_stage (item A, --stage declared).
+# Anything else (an id with no recognised prefix, or blank) declares no stage.
+DECLARED_STAGE_PREFIXES: list[tuple[str, str]] = [
+    ("TLA_EARLIER_", "Earlier Egyptian"),
+    ("TLA_LATE_", "Late Egyptian"),
+    ("TLA_DEMOTIC_", "Demotic"),
+]
+
+
+def _declared_stage(expected_source_text_id: object) -> str | None:
+    text = str(expected_source_text_id)
+    for prefix, stage in DECLARED_STAGE_PREFIXES:
+        if text.startswith(prefix):
+            return stage
+    return None
+
 
 REQUIRED_COLUMNS = [
     "benchmark_id",
@@ -144,6 +162,18 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="Optional run label printed with the summary (e.g. 'corpus=300').",
     )
+    parser.add_argument(
+        "--stage",
+        choices=["none", "auto", "declared"],
+        default="none",
+        help=(
+            "Language-stage handling (item A). 'none' (default) reproduces today's "
+            "pooled retrieval exactly. 'declared' restricts the candidate pool to "
+            "rows compatible with the stage implied by expected_source_text_id's "
+            "prefix (TLA_EARLIER_/TLA_LATE_/TLA_DEMOTIC_). 'auto' infers the stage "
+            "per query from a first retrieval pass over the pooled pool."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -159,6 +189,7 @@ def main() -> None:
     top3_useful_hits = 0
     reciprocal_rank_sum = 0.0
 
+    stages_used: list[str] = []
     for _, bench_row in benchmark_df.iterrows():
         candidate_pool = _exclude_expected(examples_df, bench_row)
         query_input = str(bench_row["query_input"])
@@ -167,6 +198,24 @@ def main() -> None:
             if bench_row["query_type"] == "normalized_reading_order"
             else ""
         )
+
+        # Item A: which rows may stand as evidence for this query. 'none' leaves
+        # candidate_pool untouched, so that mode reproduces today's numbers exactly.
+        stage: str | None = None
+        if args.stage == "declared":
+            stage = _declared_stage(bench_row["expected_source_text_id"])
+        elif args.stage == "auto":
+            first_pass = retrieve_top_k(
+                candidate_pool,
+                query_mdc=query_input,
+                query_reading_order=query_reading_order,
+                k=10,
+            )
+            stage = infer_stage(first_pass)
+        stages_used.append(stage or "")
+        if stage is not None:
+            candidate_pool = compatible_frame(candidate_pool, stage)
+
         retrieval_results = retrieve_top_k(
             candidate_pool,
             query_mdc=query_input,
@@ -229,6 +278,8 @@ def main() -> None:
                 "expected_key_tokens": bench_row["expected_key_tokens"],
                 "expected_lemma_ids": bench_row["expected_lemma_ids"],
                 "acceptable_token_overlap_threshold": token_threshold,
+                "stage_mode": args.stage,
+                "stage_used": stage or "",
                 "exact_rank": exact_rank if exact_rank is not None else "",
                 "useful_family_rank": useful_rank if useful_rank is not None else "",
                 "top1_exact_hit": exact_rank == 1,
@@ -263,6 +314,7 @@ def main() -> None:
     summary = {
         "corpus_rows": len(examples_df),
         "total_queries": total,
+        "stage_mode": args.stage,
         "top1_exact_accuracy": round(top1_exact_hits / total, 4) if total else 0.0,
         "top3_exact_accuracy": round(top3_exact_hits / total, 4) if total else 0.0,
         "top1_useful_family_accuracy": round(top1_useful_hits / total, 4) if total else 0.0,
@@ -270,6 +322,8 @@ def main() -> None:
         "mrr": round(reciprocal_rank_sum / total, 4) if total else 0.0,
         "failures": failures,
     }
+    if args.stage != "none":
+        summary["stages_used"] = dict(pd.Series(stages_used).value_counts())
 
     heading = "Competitive ambiguity evaluation summary"
     if args.label:
