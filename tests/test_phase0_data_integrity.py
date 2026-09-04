@@ -287,8 +287,15 @@ def test_shipped_corpus_is_fully_aligned():
     df = load_examples_csv("data/processed/examples.csv")
     report = df.attrs["alignment"]
     assert report.misaligned_rows == 0, report.misaligned_indices[:5]
-    assert report.text_only_rows == 0
-    assert report.total_rows > 16_000
+    # Text-only rows (transliteration + translation, no hieroglyphs) are a legitimate
+    # state since the BBAW text-only import of 2026-09-04, not a normalisation loss.
+    # Every row with signs must still align; the text-only count is checked against
+    # the source column so a silent glyph-stripping bug would show up here.
+    text_only_by_source = (df["hieroglyphs_norm"].astype(str).str.strip() == "").sum()
+    assert report.text_only_rows == text_only_by_source
+    assert report.text_only_rows > 40_000
+    assert report.usable_rows > 31_000
+    assert report.total_rows > 78_000
 
 
 def test_both_language_stages_are_present_and_labelled():
