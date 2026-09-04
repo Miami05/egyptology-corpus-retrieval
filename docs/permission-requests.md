@@ -340,3 +340,31 @@ With thanks and best wishes,
 
 Ledio Durmishaj
 l.durmishaj@apelos.de
+
+## Reply from Projet Ramses / Université de Liège — received 2026-09-04
+
+Answer to Email 4 (courtesy note + CC BY-SA request). Quoted verbatim, personal greeting
+omitted; this is the archived basis for the Ramses licence statement in DATA-LICENSE.md.
+
+> Many thanks for your message!
+>
+> [on loading the Ramses sentences as a separately labelled, non-redistributed dataset
+> under the README's CC BY-NC-SA 4.0 terms, credited to the Ramses Project, licence shown,
+> file kept out of the public repository, normalisation caveat stated in the interface:]
+> Perfect. Green light from our side.
+>
+> [on the Zenodo record saying CC BY 4.0 while the README says CC BY-NC-SA 4.0, and the
+> question whether the project would grant the corpus, or the parts of it we choose, under
+> CC BY-SA 4.0 for this use, so the rows can join the public dataset with attribution:]
+> Yes, no problem for us! Thanks for clarifying the question in advance with us.
+> All the best with your project!
+
+**What this settles.** (1) The private NC arrangement is explicitly approved. (2) For this
+project, the Ramses Transliteration Corpus (v2019-09-01, Zenodo 10.5281/zenodo.4954597) is
+granted under **CC BY-SA 4.0**, so Ramses rows may enter `data/processed/examples.csv` and
+be redistributed with the attribution "the Ramses transliteration corpus V. 2019-09-01,
+University of Liege/Projet Ramses". (3) The Helsinki lexicon's Ramses-derived rows are
+covered by the same grant; no email to Helsinki is needed on that point.
+**What it does not change.** Ramses rows stay out of the live app until item A: with them
+loaded, the expert paste gate falls 8/8 → 3/8 and v4 0.95 → 0.90 (roadmap, 2026-09-04).
+That is a modelling constraint, not a licence one.
