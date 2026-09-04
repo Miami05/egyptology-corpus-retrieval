@@ -18,6 +18,7 @@ from app.services.stage import (
     compatible_frame,
     infer_stage,
     normalize_stage,
+    stage_base_rates,
     stage_compatible,
 )
 
@@ -171,6 +172,74 @@ def test_infer_stage_custom_thresholds():
     assert infer_stage(result, min_labelled=4, min_share=0.6) is None
 
 
+# ---------- stage_base_rates ----------
+
+
+def test_stage_base_rates_shares_of_labelled_rows():
+    df = _synthetic_frame()  # 2 Earlier, 1 Late, 1 Demotic, 3 unspecified/blank
+    rates = stage_base_rates(df)
+    assert rates == pytest.approx(
+        {"Earlier Egyptian": 0.5, "Late Egyptian": 0.25, "Demotic": 0.25}
+    )
+
+
+def test_stage_base_rates_empty_when_no_stage_column_or_no_labelled_rows():
+    assert stage_base_rates(pd.DataFrame({"row_id": [0, 1]})) == {}
+    assert stage_base_rates(_result_frame(["Unspecified (AES)"] * 3)) == {}
+
+
+# ---------- infer_stage: the lift check (a stage's retrieved share vs. its base rate) ----------
+
+
+def test_infer_stage_lift_check_off_by_default():
+    # share-only behaviour is unchanged when base_rates is omitted (the default).
+    result = _result_frame(
+        ["Late Egyptian", "Late Egyptian", "Late Egyptian", "Earlier Egyptian"]
+    )
+    assert infer_stage(result) == "Late Egyptian"
+
+
+def test_infer_stage_lift_check_blocks_a_merely_more_common_stage():
+    # Late Egyptian clears min_labelled (4) and min_share (0.75 >= 0.7), but its
+    # base rate (0.6, e.g. Ramses makes it far more common among labelled rows)
+    # means the retrieved share is barely above the prior: lift = 0.75/0.6 = 1.25,
+    # below the default min_lift=1.5, so the stage is not inferred.
+    result = _result_frame(
+        ["Late Egyptian", "Late Egyptian", "Late Egyptian", "Earlier Egyptian"]
+    )
+    base_rates = {"Late Egyptian": 0.6, "Earlier Egyptian": 0.4}
+    assert infer_stage(result, base_rates=base_rates) is None
+
+
+def test_infer_stage_lift_check_passes_a_genuinely_decisive_stage():
+    # Same retrieved share (0.75) but a low base rate (0.2): lift = 0.75/0.2 = 3.75,
+    # comfortably above min_lift, so the stage is inferred.
+    result = _result_frame(
+        ["Late Egyptian", "Late Egyptian", "Late Egyptian", "Earlier Egyptian"]
+    )
+    base_rates = {"Late Egyptian": 0.2, "Earlier Egyptian": 0.8}
+    assert infer_stage(result, base_rates=base_rates) == "Late Egyptian"
+
+
+def test_infer_stage_lift_check_custom_min_lift():
+    result = _result_frame(
+        ["Late Egyptian", "Late Egyptian", "Late Egyptian", "Earlier Egyptian"]
+    )
+    base_rates = {"Late Egyptian": 0.6, "Earlier Egyptian": 0.4}
+    # lift is exactly 1.25 here; a caller asking for less than that clears it.
+    assert infer_stage(result, base_rates=base_rates, min_lift=1.2) == "Late Egyptian"
+    assert infer_stage(result, base_rates=base_rates, min_lift=1.3) is None
+
+
+def test_infer_stage_lift_check_fails_closed_on_an_unknown_base_rate():
+    # The winning stage has no entry in base_rates at all (e.g. it never appears
+    # among the pooled frame's labelled rows) -- cannot compute a lift, so decline.
+    result = _result_frame(
+        ["Demotic", "Demotic", "Demotic", "Earlier Egyptian"]
+    )
+    assert infer_stage(result, base_rates={"Earlier Egyptian": 0.5}) is None
+
+
 # ---------- build_stage_resources: end to end ----------
 
 
@@ -234,3 +303,33 @@ def test_build_stage_resources_stage_recorded_on_the_result():
     # an empty corpus subset is a real corpus impossibility (every stage has
     # unspecified rows too) and is out of scope for this fixture.
     assert build_stage_resources(df, "Late Egyptian").stage == "Late Egyptian"
+
+
+# ---------- build_stage_resources: lexicon_weight scaling ----------
+
+
+def test_build_stage_resources_lexicon_weight_factor_is_exactly_one_at_target_none():
+    # The subset IS the pooled frame at target=None, so this must be exact (not
+    # merely close): no mass computation even runs for it.
+    df = _stage_corpus()
+    resources = build_stage_resources(df, None)
+    assert resources.lexicon_weight_factor == 1.0
+    assert resources.segmenter.weights.lexicon_weight == pytest.approx(0.2)
+
+
+def test_build_stage_resources_lexicon_weight_factor_scales_down_for_a_subset():
+    # Pooled aligned-sign mass is 2 (one token per row, two rows); the "Earlier
+    # Egyptian" subset keeps only row 0, mass 1 -> factor 0.5 exactly.
+    df = _stage_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    assert resources.lexicon_weight_factor == pytest.approx(0.5)
+    assert resources.segmenter.weights.lexicon_weight == pytest.approx(0.1)
+
+
+def test_build_stage_resources_lexicon_weight_factor_skipped_without_lexicon():
+    # use_lexicon=False: no lexicon groups are consulted, so scaling the weight
+    # would have no effect anyway; the factor stays the reported default (1.0)
+    # rather than doing the (unused) mass computation.
+    df = _stage_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian", use_lexicon=False)
+    assert resources.lexicon_weight_factor == 1.0

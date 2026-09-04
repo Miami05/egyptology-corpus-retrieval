@@ -19,7 +19,7 @@ from app.retrieval.scorer import (
     combine_scores,
 )
 from app.retrieval.tfidf import NgramIndex
-from app.services.stage import StageResources, infer_stage
+from app.services.stage import StageResources, infer_stage, stage_base_rates
 
 
 @dataclass(frozen=True)
@@ -169,9 +169,12 @@ def retrieve_with_stage(
       since `resources_by_stage(None)` must build on `compatible_frame(df, None)`,
       which is the full frame.
     - `stage == "auto"`: a first pass on the pooled resources at `k=10` decides the
-      stage (`app.services.stage.infer_stage`); a second pass then runs on that
-      stage's resources at the caller's `k`. When nothing can be inferred, the first
-      pass's own results are returned, trimmed to `k` — never a wasted third call.
+      stage (`app.services.stage.infer_stage`, given that stage's base rate among
+      the pooled frame's labelled rows so a merely-more-common stage cannot win on
+      prior weight alone — see `infer_stage`'s `min_lift`); a second pass then runs
+      on that stage's resources at the caller's `k`. When nothing can be inferred,
+      the first pass's own results are returned, trimmed to `k` — never a wasted
+      third call.
     """
     del df_all  # see docstring: retrieval runs on the resolved StageResources' frame
     if stage == "auto":
@@ -185,7 +188,9 @@ def retrieve_with_stage(
             query_hieroglyphs_norm=query_hieroglyphs_norm,
             index=pooled.index,
         )
-        inferred_stage = infer_stage(first_pass)
+        inferred_stage = infer_stage(
+            first_pass, base_rates=stage_base_rates(pooled.frame)
+        )
         if inferred_stage is None:
             return StageRetrievalResult(
                 results=first_pass.head(k), stage_used=None, inferred=False
