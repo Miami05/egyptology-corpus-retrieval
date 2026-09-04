@@ -1335,3 +1335,69 @@ TLA_DEMOTIC --script-type Demotic --stable-ids --existing data/processed/example
 **Deployment note.** Streamlit Cloud gets the 78k corpus on this push (~780 MB with
 Streamlit). The 46,847 new rows have no DB id there until `scripts/import_examples.py`
 runs against Neon, which is deliberately not done at boot; the annotation form says so.
+
+## Item 4 landed 2026-09-04 — and the gates said no to Ramses going live
+
+**Merged.** Private data path (9711d9d, test fix 320f50d): `PRIVATE_DATA_DIR` (default
+`data/private/`, gitignored) rows are concatenated only after `attach_db_ids`, so they
+never get an id or reach the database, exports or API; `corpus_credit_html` is per-source
+with a non-BY-SA line for Ramses and St Andrews; DATA-LICENSE has the NC section; a
+`git ls-files`/`check-ignore` test guards the promise. Ramses importer (709b5f0):
+per-row alignment gating on `src-sep` group count = word count → 36,476 aligned rows,
+14,665 text-only (glyphs dropped, no display), 22,357 dropped for lacunae in the
+transliteration; MdC ASCII → TLA convention, `+` markup stripped, `l` kept for foreign
+names; 40,064 net-new after dedup (1.8% overlap with the public corpus). Written to
+`data/private/ramses.csv` locally (21 MB, never committed). Suite: **312 tests**.
+`tests/conftest.py` now pins `PRIVATE_DATA_DIR` to an empty directory for the whole
+suite — without that, a lexicon test passed on a laptop without Ramses and failed on one
+with it. Tests that want private rows use the `private_app` fixture.
+
+**Measured with Ramses concatenated (118,476 rows), via `--examples` on the eval scripts:**
+
+| Gate | public 78k | public + Ramses |
+|---|---|---|
+| v4 top-3 useful | 0.95 | **0.90** (COMP_007, COMP_014 fail) |
+| v4 MRR | 0.8417 | 0.80 |
+| expert paste | 8/8 | **3/8 — PASTE_001–005, every Urk. IV 1 variant, fail** |
+| RSS after index, bare process | 574 MB | 872 MB (peak 1.38 GB in the smoke script) |
+| `retrieve_top_k`, one query | ~170 ms | ~1,100 ms |
+
+Camilla's line stops reading correctly because Ramses contributes 36k *aligned* rows of
+Late Egyptian with **normalised** transliteration, more than the public corpus's 31.5k
+aligned rows, and they take over the sign→reading and group statistics. Retrieval
+itself looks reasonable (the Horus-and-Seth query returns Ramses rows of the same story;
+`nṯr.w` gains `nb nṯr.w`), but a Late Egyptian row now enters Camilla's top 3.
+
+**Decision.** Ramses rows are **withheld**, exactly like Demotic: the importer and the
+private path ship, the CSV sits on disk, nothing loads it in production until item A.
+This changes item A's scope: stage awareness must cover (i) IDF / `build_corpus_stats`,
+(ii) the **ReadingModel and segmenter group counts** — private or other-stage rows must
+not train sign readings for a Middle Egyptian paste, and Ramses' normalised
+transliteration may belong in retrieval only, never in the reading model — and (iii) the
+result-card stage label and score mask. The Ramses and Demotic re-runs are A's
+before/after numbers. Also now a prerequisite for any 100k+ corpus: the rapidfuzz batch
+call (1.1 s per query is not shippable). A cheap interim worth measuring first in A:
+load private rows into the *retrieval* frame only, excluded from `build_corpus_stats`,
+the ReadingModel and the sign index.
+
+**Licence audit** (`docs/licence-audit-2026-09-04.md`, Opus agent, official pages only).
+Two flags that need decisions, not code: (1) **`data/processed/helsinki_lexicon.csv`
+(committed, declared CC BY-SA) has 50,647 of 97,340 rows with `source = Ramses`** (+4,402
+`AES+Ramses`); Helsinki states CC BY 4.0, but CC BY-NC-SA §3(b)(1) allows only BY-NC-SA
+for adaptations of NC material, so Helsinki's CC BY claim on those rows is doubtful and
+our redistribution of them rests on it. Options: email Helsinki (Jauhiainen) and Liège
+(Rosmorduc) for clarification; meanwhile split the lexicon — non-Ramses rows stay public,
+Ramses-derived rows move to `data/private/` — after measuring the paste gate at lexicon
+weight 0.2 with the split. (2) Zenodo's field for record 4954597 says CC BY 4.0, the
+README says CC BY-NC-SA; treating it as NC is the safe reading and stays, labelled as our
+conservative choice. Confirmed clean: TLA raw data v18, AES, AED-TEI,
+`phiwi/bbaw_egyptian`, the BBAW 2018 edoc publication. Corrections proposed, not applied:
+the TLA *website* is not CC BY-SA — only the raw-data publications are — so credits must
+link the dataset publications, not the homepage; the Late Egyptian citation has the wrong
+title and a stale URL; in-app credits lack the warranty disclaimer, licence-text links and
+indication of changes (§3(a)); St Andrews' page states no licence, so the CC BY-NC-SA label
+rests on his email — archive it. `examples.csv` is Adapted Material (§4(b) database
+rights), so BY-SA on it is correct; the CC 4.0 legal code has no "collection" concept at
+all — that lives only in the FAQ. Serving NC rows beside BY-SA rows from separate files is
+a permitted non-commercial use provided the union is never shared as one database; seven
+safe-side rules are in the report.
