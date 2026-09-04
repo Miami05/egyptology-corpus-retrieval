@@ -1303,3 +1303,35 @@ on the merged tree: 275 tests, v4 0.95 / MRR 0.8083 / 1 failure, paste 8/8, eval
 byte-identical. Smoke test through the app's own load-and-search path: `nṯr.PL` and
 `nṯr.w` return the same three parallels; a synthetic glyph-less row is found by a
 transliteration query and never by a glyph query. Monday's import is unblocked.
+
+**Fri 09-04, night — item 3 half-shipped, and the benchmark caught something.**
+BBAW text-only import merged (1e20634): 46,847 net-new (predicted 46,888; the 41-row
+gap is the plural fold catching more near-twins in `dedup_key`). Corpus **78,412 rows**
+(TLA 16,373 · AES 9,823 · BBAW 52,216, of which 46,845 text-only). Gates on the real 78k
+corpus: 275 tests, v4 0.95 top-3 useful / **MRR 0.8083 → 0.8417** / 1 failure, paste 8/8,
+segmentation eval unchanged (unspaced F1 0.920, as text-only rows never reach the
+segmenter), RSS 574 MB with the index built. `test_shipped_corpus_is_fully_aligned` now
+checks text-only rows against the empty-glyph count instead of asserting zero;
+`data/processed/bbaw_rows.csv` gitignored.
+
+**Demotic: importer merged, rows withheld.** `import_tla_dataset.py` gained
+`--script-type`, a Roman Period range (−30..395; the parquet's dates actually run to
++475, so later rows fall to "Undated range"), and `--existing/--append` dedup mirroring
+the BBAW importer, with 4 new period tests (33cd6cd). The source has 13,383 rows, no
+hieroglyphs column, 12,026 net-new against 31,565. **Appending them dropped v4 from 0.95
+to 0.90 top-3 useful (MRR 0.7917, failures 1 → 2):** on COMP_004 (`sr rn hw`) a Demotic
+row (`TLA_DEMOTIC_A8089BC19E9B`) reaches rank 3 and pushes the Middle Egyptian target
+out. Cause as predicted: Demotic transliteration tokens enter `mdc_frequencies` and shift
+the IDF for every query, and nothing tells the ranker that a Demotic row is a poor
+parallel for a Middle Egyptian paste. This is item A's problem, so the rows go live
+*with* item A — per-stage IDF (or excluding other stages from `build_corpus_stats` for a
+declared stage) plus the stage mask — and the v4 re-run with Demotic in becomes A's own
+before/after number. Reproduce the import against the 78k corpus with:
+`import_tla_dataset.py --input data/raw/tla_demotic/tla_demotic.parquet --output
+data/raw/tla_demotic_worklist.csv --limit 20000 --language-stage Demotic --id-prefix
+TLA_DEMOTIC --script-type Demotic --stable-ids --existing data/processed/examples.csv
+--append`. Nothing was tuned to recover the number.
+
+**Deployment note.** Streamlit Cloud gets the 78k corpus on this push (~780 MB with
+Streamlit). The 46,847 new rows have no DB id there until `scripts/import_examples.py`
+runs against Neon, which is deliberately not done at boot; the annotation form says so.
