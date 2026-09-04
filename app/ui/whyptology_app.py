@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import os
 import secrets
 from html import escape
@@ -531,13 +532,24 @@ def load_stage_resources(stage: str | None, signature: str, _df: pd.DataFrame) -
 MAX_ANNOTATION_FIELD = 2000
 
 
-def configured_reviewer_key() -> str:
-    """Shared reviewer passphrase, from Streamlit secrets or the environment."""
+def configured_setting(secret_name: str, env_name: str, default: str = "") -> str:
+    """One deployment setting, from Streamlit secrets first, then the environment.
+
+    Streamlit Cloud carries settings in `st.secrets`; the systemd service on the
+    server carries them in an EnvironmentFile. Reading both here keeps every
+    deployment knob (reviewer key, durable-storage flag, default stage, moved-to
+    banner) on one code path.
+    """
     try:
-        value = st.secrets.get("reviewer_key", "")
+        value = st.secrets.get(secret_name, "")
     except Exception:
         value = ""
-    return str(value or os.getenv("REVIEWER_KEY", ""))
+    return str(value or os.getenv(env_name, "") or default)
+
+
+def configured_reviewer_key() -> str:
+    """Shared reviewer passphrase, from Streamlit secrets or the environment."""
+    return configured_setting("reviewer_key", "REVIEWER_KEY")
 
 
 def clip(text: object) -> str:
@@ -825,7 +837,15 @@ def storage_is_ephemeral() -> bool:
     and redeploy — so an expert's correction is accepted, shown as saved, and then
     silently lost. Nothing in the UI said so; a reviewer had no way to know their work
     was not being kept.
+
+    On a machine with a real disk (the home/friend server runs the app from a
+    checkout under systemd), the SQLite file persists across restarts, so the
+    deployment declares that with `annotations_durable = "1"` / `ANNOTATIONS_DURABLE=1`
+    and the warning and the read-only gating switch off. The flag is a statement
+    about the host, so it is set per deployment, never in code.
     """
+    if configured_setting("annotations_durable", "ANNOTATIONS_DURABLE").strip().lower() in {"1", "true", "yes"}:
+        return False
     return IS_SQLITE
 
 
@@ -1237,6 +1257,23 @@ def stage_param_to_internal(param: str | None) -> str | None:
         return None
     if param in STAGES:
         return param
+    return configured_default_stage()
+
+
+def configured_default_stage() -> str | None:
+    """The stage a fresh session starts in: "auto" unless the deployment says
+    otherwise (`default_stage` secret / `DEFAULT_STAGE` env: "auto", "all" or a
+    stage name).
+
+    Auto builds a second set of resources for the inferred stage, ~400 MB at 78k
+    rows — fine on the server, but over the limit on Streamlit Community Cloud's
+    1 GB, so that deployment is set to "all" until it is retired.
+    """
+    value = configured_setting("default_stage", "DEFAULT_STAGE", "auto").strip()
+    if value == "all":
+        return None
+    if value in STAGES:
+        return value
     return "auto"
 
 
@@ -2736,6 +2773,25 @@ if (
     st.session_state["page"] = "Workspace"
 
 page = sidebar(corpus)
+def moved_to_banner_html(url: str) -> str:
+    """The notice shown on a deployment that has been superseded by another URL.
+
+    Streamlit Community Cloud keeps serving the link Sophie and others already
+    have; this points them at the server, where the full corpus and durable
+    annotations live. Rendered only when `moved_to_url` / `MOVED_TO_URL` is set.
+    """
+    safe = html.escape(url, quote=True)
+    return (
+        '<div class="moved-banner">This app has moved to '
+        f'<a href="{safe}">{safe}</a>. This copy stays online but carries the '
+        "smaller corpus and does not keep annotations.</div>"
+    )
+
+
+_moved_to = configured_setting("moved_to_url", "MOVED_TO_URL").strip()
+if _moved_to:
+    st.markdown(moved_to_banner_html(_moved_to), unsafe_allow_html=True)
+
 if page == "Home":
     render_home(corpus)
 elif page == "Workspace":
