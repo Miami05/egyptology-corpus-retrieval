@@ -17,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.config import settings
-from app.data.loader import load_examples_csv
+from app.data.loader import load_examples_csv, load_private_examples
 from app.data.query import parse_query
 from app.data.normalizer import (
     contains_hieroglyphs,
@@ -57,6 +57,15 @@ from app.ui.review_common import (
 )
 
 DATA_PATH = PROJECT_ROOT / "data/processed/examples.csv"
+# Non-commercial corpora (Ramses, the St Andrews texts) never enter examples.csv —
+# CC BY-SA is share-alike and cannot carry NC material — so they live here instead:
+# a gitignored directory (see .gitignore and test_private_data_dir_is_gitignored),
+# loaded at runtime and concatenated onto the public corpus only after it has been
+# through the database step (see load_corpus below), so they never get a database
+# id, never enter the database itself, and are invisible to the exports and the API.
+PRIVATE_DATA_DIR = Path(
+    os.environ.get("PRIVATE_DATA_DIR") or str(PROJECT_ROOT / "data" / "private")
+)
 THEME_PATH = Path(__file__).with_name("whyptology_theme.css")
 # Gentium Plus (SIL OFL), subset to the characters the corpus transliterations use.
 # Rebuild with pyftsubset if the corpus gains new characters — see DEPLOYMENT.md.
@@ -191,25 +200,86 @@ LICENCE_LINK = (
     'rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>'
 )
 
+# The NC-licensed corpora (never in examples.csv — see PRIVATE_DATA_DIR above). Each
+# gets its own credit line rather than being folded into the CC BY-SA sentence above,
+# because that sentence is a licence claim and these rows are under a different
+# licence entirely. `name` is the exact attribution string each source's licence (or,
+# for St Andrews, Nederhof's permission mail) requires.
+PRIVATE_CORPUS_CREDITS: dict[str, dict[str, str]] = {
+    "Ramses": {
+        "name": (
+            "the Ramses transliteration corpus V. 2019-09-01, University of "
+            "Liège/Projet Ramses"
+        ),
+        "licence_label": "CC&nbsp;BY-NC-SA&nbsp;4.0",
+        "licence_url": "https://doi.org/10.5281/zenodo.4954597",
+        "note": "used non-commercially; not redistributed with this app",
+    },
+    "StAndrews": {
+        "name": "St Andrews Corpus of Ancient Egyptian texts, Mark-Jan Nederhof",
+        "licence_label": "CC&nbsp;BY-NC-SA&nbsp;4.0",
+        "licence_url": "https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/",
+        "note": (
+            "used with his permission for non-commercial purposes; not "
+            "redistributed with this app"
+        ),
+    },
+}
+
+
+def _private_source_credit_html(source: str) -> str:
+    """One credit line for a private (non-commercial, non-redistributed) source.
+
+    Falls back to a generic, still-non-CC-BY-SA line for a private source that has
+    not been given a specific entry above yet, so a new NC corpus never silently
+    inherits the public licence wording.
+    """
+    info = PRIVATE_CORPUS_CREDITS.get(source)
+    if info is None:
+        return (
+            f"{escape(source)}: private, non-commercial corpus data — used "
+            "locally under its own licence and not redistributed with this app."
+        )
+    licence = (
+        f'<a href="{info["licence_url"]}" target="_blank" rel="noopener">'
+        f'{info["licence_label"]}</a>'
+    )
+    return f'{info["name"]} — licensed {licence}; {info["note"]}.'
+
 
 def corpus_credit_html(df: pd.DataFrame) -> str:
-    """Citations for exactly the corpora present, in a stable order."""
+    """Citations for exactly the corpora present, in a stable order.
+
+    Public (CC BY-SA) sources are still folded into one sentence naming the shared
+    licence. Private (NC) sources each get their own sentence, in their own licence
+    — the CC BY-SA sentence must never read as if it covers them too.
+    """
     sources = sorted({str(s).strip() for s in df.get("source", []) if str(s).strip()})
-    cited = [CORPUS_CREDITS[s] for s in sources if s in CORPUS_CREDITS]
-    if not cited:
+    public_sources = [s for s in sources if s in CORPUS_CREDITS]
+    private_sources = [s for s in sources if s not in CORPUS_CREDITS]
+
+    cited = [CORPUS_CREDITS[s] for s in public_sources]
+    if not cited and not sources:
+        # No frame loaded yet (e.g. an empty default): fall back to every public
+        # corpus rather than showing no attribution at all.
         cited = list(CORPUS_CREDITS.values())
-    credit = (
-        "Corpus data: "
-        + "; ".join(cited)
-        + f". Licensed {LICENCE_LINK}. Adapted: normalised, re-segmented, "
-        "transliteration conventions unified, and extended with derived fields — "
-        "see DATA-LICENSE.md."
-    )
-    # CC BY 4.0 makes attribution a condition, and the lexicon is only in play when
-    # its file shipped with this deployment.
-    if len(load_sign_lexicon()):
-        credit += " " + LEXICON_CREDIT
-    return credit
+
+    parts = []
+    if cited:
+        credit = (
+            "Corpus data: "
+            + "; ".join(cited)
+            + f". Licensed {LICENCE_LINK}. Adapted: normalised, re-segmented, "
+            "transliteration conventions unified, and extended with derived fields — "
+            "see DATA-LICENSE.md."
+        )
+        # CC BY 4.0 makes attribution a condition, and the lexicon is only in play
+        # when its file shipped with this deployment.
+        if len(load_sign_lexicon()):
+            credit += " " + LEXICON_CREDIT
+        parts.append(credit)
+    parts.extend(_private_source_credit_html(source) for source in private_sources)
+    return " ".join(parts)
 
 
 def render_attribution_footer(df: pd.DataFrame | None = None) -> None:
@@ -305,15 +375,47 @@ def load_corpus_with_ids(_df: pd.DataFrame, signature: str) -> pd.DataFrame:
     return attach_db_ids(_df)
 
 
+@st.cache_resource(show_spinner=False)
+def load_private_corpus() -> pd.DataFrame:
+    """The private, non-redistributed corpus (Ramses, St Andrews…), if present.
+
+    Reads only `PRIVATE_DATA_DIR`; never touches `examples.csv`, the database, the
+    exports or the API. Cached like the public corpus so the CSVs are parsed once
+    per process rather than on every rerun.
+    """
+    return load_private_examples(PRIVATE_DATA_DIR)
+
+
+def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Append the private corpus to `df`, an *already database-processed* frame.
+
+    This must only ever be called after `ensure_corpus_ready`/`attach_db_ids` (or
+    after the attempt, if the database was unreachable) has run on the public
+    frame alone: `ensure_corpus_ready` is what seeds the database, so a private row
+    that has not reached this function yet cannot have been written there. Private
+    rows are given an explicit missing `id` — they are never linked to the
+    database — which is the same state the UI already handles for any CSV row the
+    database has no matching key for (see `attach_db_ids` / the "not linked to the
+    project database" message in the annotation form).
+    """
+    private_df = load_private_corpus()
+    if private_df.empty:
+        return df
+    private_df = private_df.copy()
+    private_df["id"] = None
+    return pd.concat([df, private_df], ignore_index=True, sort=False)
+
+
 def load_corpus() -> tuple[pd.DataFrame, str]:
     """(corpus frame, database status). Status is "ok" or a failure message."""
     df = load_corpus_csv()
     try:
-        return load_corpus_with_ids(df, corpus_signature(df)), "ok"
+        with_ids = load_corpus_with_ids(df, corpus_signature(df))
+        return _append_private_rows(with_ids), "ok"
     except DatabaseUnavailable as exc:
-        return df, str(exc)
+        return _append_private_rows(df), str(exc)
     except Exception as exc:  # bootstrap/driver failures land here too
-        return df, str(exc)
+        return _append_private_rows(df), str(exc)
 
 
 @st.cache_resource(show_spinner=False)

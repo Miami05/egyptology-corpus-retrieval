@@ -75,3 +75,9 @@ data/raw/standrews/
 
 # Importer side outputs; the corpus itself is examples.csv
 data/processed/bbaw_rows.csv
+
+# Non-commercial corpora (Ramses, the St Andrews texts): CC BY-SA is share-alike
+# and cannot carry NC material, so these never enter examples.csv or the public
+# repository. Loaded at runtime from PRIVATE_DATA_DIR (default data/private/); see
+# app/data/loader.py:load_private_examples and DATA-LICENSE.md.
+data/private/

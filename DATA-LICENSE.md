@@ -204,6 +204,54 @@ attestation of this corpus.
 - Counts for the same (group, reading) summed across the two files, with the
   contributing source(s) recorded per row.
 
+## Non-commercial corpora kept out of this repository
+
+Two further corpora are in use but are **never** part of `data/processed/examples.csv`
+and are **never committed**: they are released, or permitted, for non-commercial use
+only, and CC BY-SA 4.0 is a share-alike licence that cannot carry NC-licensed material
+without becoming NC itself for the whole file. Keeping them in the public, CC BY-SA
+corpus would misstate its licence. Instead they are read at runtime from a private,
+gitignored directory (`PRIVATE_DATA_DIR`, default `data/private/` — see
+`app/data/loader.py:load_private_examples` and `app/ui/whyptology_app.py`) and are
+concatenated onto the public corpus only *after* it has been synced to the database, so
+they are never inserted into the database, never appear in `scripts/export_reviewed.py`
+or the reviewed-annotations export, and are never served by `app/api/main.py` (which
+loads `examples.csv` directly and has no knowledge of this directory). The app credits
+each one with its own licence line in `corpus_credit_html` — never folded into the
+CC BY-SA sentence above — so a viewer never mistakes an NC row for share-alike data.
+
+### Ramses Transliteration Corpus (`source = Ramses`)
+
+> the Ramses transliteration corpus V. 2019-09-01, University of Liège/Projet Ramses
+
+Rosmorduc, S. / Université de Liège, Projet Ramsès.
+<https://doi.org/10.5281/zenodo.4954597>. Licensed **CC BY-NC-SA 4.0** by the corpus's
+own README (the Zenodo record's "CC BY 4.0" field is wrong and is not what governs).
+Non-commercial use with attribution is granted by the licence itself; no permission
+email is needed, but the NC term is exactly why it cannot enter the CC BY-SA public CSV.
+Used non-commercially and not redistributed with this app.
+
+**Convention caveat:** the Ramses transliteration is *normalised to the expected
+grammatical form*, not the attested spelling on the object — record that on import in
+`grammar_notes` and do not treat it as a diplomatic transcription.
+
+### St Andrews Corpus of Ancient Egyptian texts (`source = StAndrews`)
+
+> St Andrews Corpus of Ancient Egyptian texts, Mark-Jan Nederhof
+
+<https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/> (the citation URL he asked for).
+Licensed **CC BY-NC-SA 4.0**, confirmed by Mark-Jan Nederhof by email 2026-09-02 after
+he first gave informal permission "to use the St Andrews corpus for non-commercial
+purposes" (see `docs/permission-requests.md`, Email 3). Used with his permission for
+non-commercial purposes and not redistributed with this app.
+
+**Convention caveat:** the St Andrews corpus follows **Hannig's transliteration
+conventions**: no `z`/`s` distinction and no dot before the feminine `.t`. These are
+left exactly as written on import rather than guessed at — a wrong dot or a silently
+merged `z`/`s` in a gold column would be worse than a known absence (see the plan notes
+on the `z`→`s` fold, which stays a `search_fold`-only measure and never touches the
+strict reading key).
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
