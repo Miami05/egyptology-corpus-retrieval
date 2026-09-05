@@ -1999,3 +1999,30 @@ present (one bit, misconfigured state only).
 
 **Next: Ledio's email round** (Emails 6/7 + "E is live, here is the measured answer" + the
 key), then B, C, D.
+
+### Close of 2026-09-05 (written 2026-09-06 00:30) — everything live, gate confirmed end to end
+
+Box at **00c78b7**: the gate plus two sidebar CSS fixes found by Ledio on the live page (the
+expander header and the key field were light-on-light inside the dark sidebar). Ledio set
+`REVIEWER_KEY`, copied `standrews.csv` to the box and restarted; the public view was verified
+from outside at **130,472** records / four sources / CC BY-SA only, and his keyed session shows
+**138,131** with St Andrews and the NC credit. He chose to keep a short passphrase for now, told
+of the guessability risk; rotation is one line and a restart. DEPLOYMENT.md's gate instructions
+corrected (user unit, no sudo; fill the existing line, don't append a second). Tailscale on the
+Mac had stopped at midnight and cost one deploy attempt; the public URL (Funnel) was unaffected.
+
+**Done today, all merged, verified by a fresh agent, and deployed:** items 1–6 and E of the
+plan table, Experiment 1 (trade, not a fix), Experiment 2 (null at the pre-check, 0/7; the
+per-term breakdown it exposed is in its doc), the twin-guard float bug, the expert-round ask
+with Email 7, the follow-up batch of six, and the reviewer-key gate. Suite **582 passed**;
+v4 0.90 / 0.7917, held-out 1 0.75 / 0.6667, LE-v1 0.8667 / 0.8167 — none moved.
+
+**Plan for 2026-09-06 (final).** (0) Ledio: send Email 6 (Nederhof, with the ask folded in) and
+Email 7 (Camilla, Sophie) with `expert_round_2.html` + `expert-round-2-ask.md` attached, plus the
+key by separate message to whoever should unlock; `passwd` on the box. (1) B — format controls
+as soft segmenter hints, St Andrews first, BBAW upper bound (1 day, null allowed). (2) C — the
+sign-function lattice on Nederhof's table (5 days; gate: Camilla's line from any spacing, paste
+8/8, unspaced F1 > 0.923). (3) D — proper nouns via TLA lemma ids (2–3 days). (4) Housekeeping
+(Neon close, Cloud app, DEPLOYMENT.md follow-ups). Expert answers to the five cases decide the
+CFG-C question when they arrive; held-out 2/3 are built only if a ranking experiment is planned.
+Standing rules unchanged.

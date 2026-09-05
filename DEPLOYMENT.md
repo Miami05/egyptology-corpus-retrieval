@@ -120,22 +120,34 @@ attribution appears exactly in the sessions that hold NC rows.
 **Order matters — set the key BEFORE the CSV arrives.** On the server:
 
 ```bash
-# 1. On the server: add the key to the env file (chmod 600) and restart.
+# 1. On the server: fill the existing REVIEWER_KEY= line in the env file (chmod 600)
+#    — no space after the "=", no quotes, one line, not a second one — and restart.
+#    The unit is a *user* service: no sudo.
 ssh ledio@vela-optiplex-3070
-echo 'REVIEWER_KEY=<the passphrase>' >> /home/ledio/egyptology.env   # needs sudo for the restart
-sudo systemctl restart egyptology
+nano ~/egyptology.env                      # REVIEWER_KEY=<the passphrase>
+systemctl --user restart egyptology.service   # returns after the ~150 s warm-up
+exit
 # Confirm the app is up and the sidebar shows the "Reviewer access" expander.
 
-# 2. Only then, from the laptop, copy the rows in:
+# 2. Only then, from the laptop, copy the rows in and restart once more:
 scp data/private/standrews.csv ledio@vela-optiplex-3070:egyptology-private/
+ssh ledio@vela-optiplex-3070 'systemctl --user restart egyptology.service'
 ```
+
+**Status 2026-09-06 00:25 — done and confirmed.** `standrews.csv` (4.7 MB, 7,659 rows) is
+in `/home/ledio/egyptology-private/`, `REVIEWER_KEY` is set, and both views were checked on
+the live URL: a public session shows **130,472** records, sources AES / BBAW / Ramses / TLA,
+CC BY-SA credit only; Ledio's keyed session shows **138,131** records with St Andrews in the
+Source list and the NC credit line. systemd strips leading/trailing whitespace from values in
+the env file, so a stray space after `=` does not break the comparison, but a passphrase
+should still be a long phrase — it is what stands between the public URL and the NC rows.
 
 Copying the CSV first would put 7,659 NC rows on a host whose gate is not yet armed.
 The gate would still hold — no key configured means no private rows for anyone — but
 there is no reason to run the window.
 
 **Rotation.** Edit the `REVIEWER_KEY=` line in `/home/ledio/egyptology.env`,
-`sudo systemctl restart egyptology`, and send the new passphrase to the reviewers. Open
+`systemctl --user restart egyptology.service`, and send the new passphrase to the reviewers. Open
 sessions are lost on restart, which is what rotation is for. Nothing else changes; the
 CSV stays where it is.
 
