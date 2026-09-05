@@ -237,3 +237,95 @@ def test_junk_query_returns_no_parallel_on_the_real_corpus(corpus_df):
     # One unattested five-glyph blob shares no *group* with anything.
     assert result.empty
     assert suggest_top_readings(result, query_mdc="", query_hieroglyphs="𓀀𓀁𓀂𓀃𓀄") == []
+
+
+# ---------- Experiment 1 (2026-09-05): the pre-registered re-rank presets ----------
+#
+# The switch exists so a configuration can be *measured* without becoming the app's
+# behaviour. These tests pin the property the whole experiment rests on: with the
+# environment variable unset, nothing changed.
+
+
+def test_default_suggestion_weights_are_unchanged_by_the_experiment_switch():
+    """The shipped default is the frozen 2026-09-04 weight set, carry-forward off."""
+    from app.services.suggestions import (
+        DEFAULT_SUGGESTION_WEIGHTS,
+        SUGGESTION_PRESETS,
+        SuggestionWeights,
+        resolve_suggestion_preset,
+    )
+
+    assert DEFAULT_SUGGESTION_WEIGHTS == SuggestionWeights()
+    assert DEFAULT_SUGGESTION_WEIGHTS.carry_forward_idf is False
+    assert (
+        DEFAULT_SUGGESTION_WEIGHTS.relative_score,
+        DEFAULT_SUGGESTION_WEIGHTS.mean_score,
+        DEFAULT_SUGGESTION_WEIGHTS.translit_overlap,
+        DEFAULT_SUGGESTION_WEIGHTS.char_similarity,
+        DEFAULT_SUGGESTION_WEIGHTS.exact_or_near,
+        DEFAULT_SUGGESTION_WEIGHTS.reading_similarity,
+        DEFAULT_SUGGESTION_WEIGHTS.support,
+        DEFAULT_SUGGESTION_WEIGHTS.lemma_density,
+        DEFAULT_SUGGESTION_WEIGHTS.surplus_penalty,
+    ) == (0.24, 0.12, 0.20, 0.16, 0.12, 0.08, 0.05, 0.03, 0.3)
+    assert resolve_suggestion_preset(None) == SuggestionWeights()
+    assert resolve_suggestion_preset("") == SuggestionWeights()
+    assert SUGGESTION_PRESETS["default"] == SuggestionWeights()
+    # CFG-B introduces no new number: 0.40 is the two existing weights summed.
+    assert SUGGESTION_PRESETS["cfg_b"].relative_score == pytest.approx(
+        SuggestionWeights().relative_score + SuggestionWeights().char_similarity
+    )
+    assert SUGGESTION_PRESETS["cfg_b"].char_similarity == 0.0
+    assert SUGGESTION_PRESETS["cfg_a"].carry_forward_idf is True
+    assert SUGGESTION_PRESETS["cfg_c"].carry_forward_idf is True
+
+
+def test_unknown_suggestion_preset_raises_rather_than_silently_defaulting():
+    from app.services.suggestions import resolve_suggestion_preset
+
+    with pytest.raises(ValueError):
+        resolve_suggestion_preset("cfg_z")
+
+
+def test_carry_forward_reads_the_retrieval_column_and_default_does_not():
+    """CFG-A must use retrieval's idf_overlap_score, and only when asked to."""
+    from app.services.suggestions import SUGGESTION_PRESETS, suggest_top_readings
+
+    df = frame(
+        [
+            {"mdc_norm": "htp di nswt", "transliteration_gold": "ḥtp dꞽ nswt"},
+            {"mdc_norm": "htp di rdi", "transliteration_gold": "ḥtp dꞽ rdꞽ"},
+        ]
+    )
+    retrieved = retrieve_top_k(df, query_mdc="htp di nswt", k=2)
+    assert "idf_overlap_score" in retrieved.columns
+
+    baseline = suggest_top_readings(retrieved, query_mdc="htp di nswt")
+    # Forcing the carried-forward column to zero must move the confidences only
+    # under the carry-forward preset; the default recomputes and ignores it.
+    zeroed = retrieved.copy()
+    zeroed["idf_overlap_score"] = 0.0
+    unchanged = suggest_top_readings(zeroed, query_mdc="htp di nswt")
+    assert [s.confidence_score for s in unchanged] == [
+        s.confidence_score for s in baseline
+    ]
+    carried = suggest_top_readings(
+        zeroed, query_mdc="htp di nswt", weights=SUGGESTION_PRESETS["cfg_a"]
+    )
+    assert [s.confidence_score for s in carried] != [
+        s.confidence_score for s in baseline
+    ]
+
+
+def test_carry_forward_falls_back_when_the_column_is_absent():
+    """A hand-built frame with no idf_overlap_score must still produce suggestions."""
+    from app.services.suggestions import SUGGESTION_PRESETS, suggest_top_readings
+
+    df = frame([{"mdc_norm": "htp di nswt", "transliteration_gold": "ḥtp dꞽ nswt"}])
+    scored = combine_scores(df, query_mdc_norm="htp di nswt").drop(
+        columns=["idf_overlap_score"]
+    )
+    suggestions = suggest_top_readings(
+        scored, query_mdc="htp di nswt", weights=SUGGESTION_PRESETS["cfg_a"]
+    )
+    assert suggestions and suggestions[0].candidate_transliteration == "ḥtp dꞽ nswt"

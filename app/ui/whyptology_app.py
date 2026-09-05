@@ -10,6 +10,7 @@ from html import escape
 from pathlib import Path
 import sys
 from textwrap import dedent
+import time
 
 import pandas as pd
 import streamlit as st
@@ -544,6 +545,14 @@ def load_stage_resources(stage: str | None, signature: str, _df: pd.DataFrame) -
     segmentation weights — which are exactly `load_segmenter`'s defaults too
     (`DEFAULT_SEGMENTATION_WEIGHTS`, `use_lexicon=True`), so a stage's resources
     differ from the pooled ones only in which rows they were built from.
+
+    The pooled `SearchIndex` is handed to that build (`pooled_index`) because two
+    of its three parts do not depend on the stage at all: the n-gram index and the
+    per-row token tables are functions of the pooled frame alone (see
+    `build_stage_resources` and `app.retrieval.tokens`), and only the
+    document-frequency statistics derived from them are stage-specific. Without
+    this each of the three stages built its own byte-for-byte identical copy of
+    both — ~30 s and ~60 MB apiece for nothing.
     """
     if stage is None:
         reading_model = load_reading_model(signature, _df)
@@ -555,7 +564,50 @@ def load_stage_resources(stage: str | None, signature: str, _df: pd.DataFrame) -
             segmenter=load_segmenter(signature, reading_model),
             sign_index=load_sign_index(_df, signature),
         )
-    return build_stage_resources(_df, stage, lexicon=load_sign_lexicon())
+    return build_stage_resources(
+        _df,
+        stage,
+        lexicon=load_sign_lexicon(),
+        pooled_index=load_search_index(_df, signature),
+    )
+
+
+def warm_stage_resources(df: pd.DataFrame) -> None:
+    """Build every stage's resources now, if this deployment asked for it.
+
+    Off by default (`warm_stage_resources` secret / `WARM_STAGE_RESOURCES` env,
+    set to `1`). What it costs is what `load_stage_resources`'s docstring warns
+    about — all of `STAGES` resident at once, ~1.9 GB at 131k rows — so only a
+    host with the memory to spare should turn it on. The server has 23 GB; a
+    1 GB container must leave this unset.
+
+    What it buys: an Auto-mode paste infers the stage by scoring the query
+    against all three stages (`resolve_auto_stage`), so the *first* one after a
+    restart used to build all three sets while the visitor waited — ~60 s
+    measured 2026-09-04. Doing it here moves that cost to a script run nobody
+    is watching, which `scripts/warm_streamlit.py` triggers from the service's
+    `ExecStartPost`.
+
+    This has to run *inside* a Streamlit script run to be worth anything: the
+    cache it fills is `st.cache_resource`, which lives in this process. A helper
+    process that imported the same builders would fill its own cache and exit.
+
+    Cheap on every run after the first — the loop becomes four cache lookups —
+    so it can sit at module scope. Failures are logged and swallowed: a warm-up
+    is an optimisation, and must never be the reason the app does not come up.
+    """
+    if configured_setting("warm_stage_resources", "WARM_STAGE_RESOURCES").strip() != "1":
+        return
+    log = logging.getLogger(__name__)
+    signature = corpus_signature(df)
+    for stage in (None, *STAGES):
+        label = stage or "pooled"
+        try:
+            started = time.perf_counter()
+            load_stage_resources(stage, signature, df)
+            log.info("warm-up: %s resources ready in %.1fs", label, time.perf_counter() - started)
+        except Exception:
+            log.exception("warm-up: %s resources failed; the app carries on", label)
 
 
 # Longest accepted annotation field. Every note column is unbounded TEXT, so a
@@ -2770,6 +2822,9 @@ inject_theme()
 # One notice per page per run, not one per annotation form.
 st.session_state["_storage_warning_shown"] = set()
 corpus, database_status = load_corpus()
+# Only when the deployment sets WARM_STAGE_RESOURCES=1, and free after the first
+# run of the process. See warm_stage_resources for why it lives in the script.
+warm_stage_resources(corpus)
 if database_status != "ok":
     st.warning(
         "**Read-only mode.** The project database is not reachable, so annotations "

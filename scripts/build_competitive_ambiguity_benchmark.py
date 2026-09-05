@@ -56,6 +56,36 @@ def _parse_args() -> argparse.Namespace:
         help="Exclude rows whose closest rival meets this token overlap.",
     )
     parser.add_argument(
+        "--exclude-benchmark",
+        default="",
+        help=(
+            "Path to an existing benchmark CSV whose expected rows must not appear "
+            "in this one. Those rows, and every corpus row within --max-twin-overlap "
+            "of one of them (the same duplicate test used below), are removed from "
+            "the *candidate* set. Twin detection still runs against the full corpus. "
+            "This is how a held-out validation set disjoint from a frozen benchmark "
+            "is built: the selection itself is deterministic — the builder ranks by "
+            "number of genuine rivals and has no random seed — so disjointness comes "
+            "from the exclusion, not from reseeding."
+        ),
+    )
+    parser.add_argument(
+        "--exhaustive-twins",
+        action="store_true",
+        help=(
+            "Use exhaustive_best_twin_overlap for the near-identical-twin guard "
+            "instead of relying on rivals_for, whose 4,000-entry postings cap can "
+            "miss a twin made entirely of frequent tokens (two v4 rows have one). "
+            "Required for a held-out validation set; off by default so the frozen "
+            "benchmarks stay reproducible."
+        ),
+    )
+    parser.add_argument(
+        "--id-prefix",
+        default="COMP",
+        help="Prefix for generated benchmark_id values (default COMP).",
+    )
+    parser.add_argument(
         "--pool-size",
         type=int,
         default=0,
@@ -115,6 +145,54 @@ def rivals_for(
             if score > best:
                 best = score
     return rivals, best
+
+
+def exhaustive_best_twin_overlap(
+    row_index: int,
+    token_sets: list[set[str]],
+    token_index: dict[str, list[int]],
+    threshold: float,
+) -> tuple[float, int | None]:
+    """Highest Jaccard >= `threshold` against the whole corpus, with no postings cap.
+
+    `rivals_for` skips any token whose postings list is longer than 4,000, which is
+    right for *counting rivals* at overlap 0.16 (a row sharing nothing but `n` can
+    never reach it) but wrong for *twin detection*: two editions of the same sentence
+    built entirely from frequent tokens share every one of them, and every one of
+    those postings lists is skipped, so the twin is never seen. Two v4 rows
+    (COMP_004, COMP_017) have exactly such a twin.
+
+    Exhaustive without scanning the corpus, by prefix filtering. If
+    |A∩B| / |A∪B| >= t then |A∩B| >= t·|A|, so B may miss at most
+    floor((1-t)·|A|) of A's tokens; by the pigeonhole principle B must therefore
+    contain at least one of A's floor((1-t)·|A|) + 1 *rarest* tokens. Scanning only
+    those postings lists is guaranteed to find every twin, and they are the shortest
+    lists there are.
+
+    Returns (best overlap at or above `threshold`, that row's index) or (0.0, None).
+    """
+    target = token_sets[row_index]
+    if not target:
+        return 0.0, None
+    by_rarity = sorted(target, key=lambda token: len(token_index.get(token, ())))
+    may_miss = int((1.0 - threshold) * len(target))
+    probes = by_rarity[: may_miss + 1]
+    candidates: set[int] = set()
+    for token in probes:
+        candidates.update(token_index.get(token, ()))
+    candidates.discard(row_index)
+    best = 0.0
+    best_index: int | None = None
+    for other in candidates:
+        other_tokens = token_sets[other]
+        shared = len(target & other_tokens)
+        if not shared:
+            continue
+        score = shared / len(target | other_tokens)
+        if score >= threshold and score > best:
+            best = score
+            best_index = other
+    return best, best_index
 
 
 def _tokens(value: object) -> list[str]:
@@ -227,12 +305,60 @@ def main() -> None:
         print(f"Considering the first {args.pool_size} rows as benchmark candidates.")
         candidate_positions = range(args.pool_size)
 
+    # Rows an existing benchmark already spends, plus anything close enough to one of
+    # them to be the same sentence (the builder's own duplicate test, same
+    # threshold). Removing both is what makes a held-out set genuinely held out: a
+    # near-twin of a v4 target would let the new set be answered by v4 evidence.
+    excluded_positions: set[int] = set()
+    if args.exclude_benchmark:
+        previous = pd.read_csv(args.exclude_benchmark).fillna("")
+        keys = {
+            (str(row["expected_source_text_id"]), str(row["expected_source_sentence_id"]))
+            for _, row in previous.iterrows()
+        }
+        row_keys = [
+            (str(text_id), str(sentence_id))
+            for text_id, sentence_id in zip(
+                prepared["source_text_id"], prepared["source_sentence_id"]
+            )
+        ]
+        seed_positions = [
+            position for position, key in enumerate(row_keys) if key in keys
+        ]
+        excluded_positions.update(seed_positions)
+        for position in seed_positions:
+            target = corpus_token_sets[position]
+            if not target:
+                continue
+            # Exhaustive by construction (prefix filtering, no postings cap), so an
+            # excluded row's edition twin cannot survive into the held-out set.
+            by_rarity = sorted(target, key=lambda token: len(token_index.get(token, ())))
+            may_miss = int((1.0 - args.max_twin_overlap) * len(target))
+            neighbours: set[int] = set()
+            for token in by_rarity[: may_miss + 1]:
+                neighbours.update(token_index.get(token, ()))
+            for other in neighbours:
+                shared = len(target & corpus_token_sets[other])
+                if not shared:
+                    continue
+                if shared / len(target | corpus_token_sets[other]) >= args.max_twin_overlap:
+                    excluded_positions.add(other)
+        print(
+            f"Excluding {len(seed_positions)} rows named by {args.exclude_benchmark} "
+            f"and {len(excluded_positions) - len(seed_positions)} near-twins of them "
+            f"(overlap >= {args.max_twin_overlap})."
+        )
+
     positional_index = list(prepared.index)
     candidates: list[tuple[int, float, int]] = []
+    skipped_excluded = 0
     skipped_near_duplicate = 0
     skipped_no_distractor = 0
     skipped_too_short = 0
     for position in candidate_positions:
+        if position in excluded_positions:
+            skipped_excluded += 1
+            continue
         index = positional_index[position]
         target_tokens = corpus_token_sets[position]
         if len(target_tokens) < 2:
@@ -244,6 +370,13 @@ def main() -> None:
         if distractors == 0:
             skipped_no_distractor += 1
             continue
+        if args.exhaustive_twins:
+            # rivals_for's postings cap can hide a twin built from frequent tokens
+            # (see exhaustive_best_twin_overlap). Take the larger of the two.
+            exhaustive_overlap, _ = exhaustive_best_twin_overlap(
+                position, corpus_token_sets, token_index, args.max_twin_overlap
+            )
+            best_overlap = max(best_overlap, exhaustive_overlap)
         # A row that has a near-identical twin elsewhere in the corpus is not an
         # ambiguity case: excluding the target still leaves its duplicate in the
         # pool, so retrieval returns the expected reading for free. Such rows
@@ -272,7 +405,8 @@ def main() -> None:
 
     print(
         f"Candidates considered: {len(list(candidate_positions))} rows -> "
-        f"{len(candidates)} eligible (skipped {skipped_too_short} too short, "
+        f"{len(candidates)} eligible (skipped {skipped_excluded} excluded by "
+        f"--exclude-benchmark, {skipped_too_short} too short, "
         f"{skipped_no_distractor} without distractors, {skipped_near_duplicate} "
         f"with a near-identical twin anywhere in the corpus at overlap >= "
         f"{args.max_twin_overlap})"
@@ -298,7 +432,7 @@ def main() -> None:
         threshold = 0.34 if len(key_tokens) <= 4 else 0.26
         rows.append(
             {
-                "benchmark_id": f"COMP_{row_num:03d}",
+                "benchmark_id": f"{args.id_prefix}_{row_num:03d}",
                 "query_input": query_input,
                 "query_type": query_type,
                 "expected_transliteration": row["transliteration_gold"],

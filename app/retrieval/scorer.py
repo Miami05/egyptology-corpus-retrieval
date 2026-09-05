@@ -1,14 +1,25 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
-from functools import lru_cache
 from math import log
 
+import numpy as np
 import pandas as pd
+from rapidfuzz import process
 from rapidfuzz.distance import LCSseq
 
-TOKEN_SPLIT_RE = re.compile(r"[\s:\-]+")
+# The tokenizer and the precomputed per-row token structures live in
+# app.retrieval.tokens (see that module's docstring for why). Re-exported here
+# because `tokenize_query` has always been part of this module's surface —
+# app.services.suggestions and the tests import it from here.
+from app.retrieval.tokens import (  # noqa: F401
+    TOKEN_SPLIT_RE,
+    ScoringTables,
+    TokenTable,
+    TokenWeights,
+    encode_groups,
+    tokenize_query,
+)
 
 
 @dataclass(frozen=True)
@@ -95,21 +106,6 @@ DEFAULT_WEIGHTS = ScoreWeights()
 # them buggy. Git history has the implementation if metadata columns are ever
 # populated; reintroduce them only together with data and a benchmark that can see
 # them.
-
-
-@lru_cache(maxsize=100_000)
-def _tokenize_cached(raw: str) -> tuple[str, ...]:
-    return tuple(tok for tok in TOKEN_SPLIT_RE.split(raw) if tok)
-
-
-def tokenize_query(text: str) -> list[str]:
-    """Split a query or candidate into content tokens.
-
-    Cached: one search used to call this ~64,000 times — roughly five times per
-    corpus row, because the overlap, IDF-overlap and document-frequency passes each
-    re-split the same strings.
-    """
-    return list(_tokenize_cached(str(text).strip().lower()))
 
 
 def effective_surplus_penalty(query: str, penalty: float) -> float:
@@ -231,99 +227,161 @@ def combine_scores(
     weights: ScoreWeights = DEFAULT_WEIGHTS,
     query_hieroglyphs_norm: str = "",
     corpus_stats: "CorpusStats | None" = None,
+    tables: "ScoringTables | None" = None,
+    signals: dict[str, object] | None = None,
 ) -> pd.DataFrame:
     """Score every candidate row against the query.
 
     `corpus_stats` carries the query-independent half of the work (document
     frequencies per column). Recomputing it per query re-tokenised the whole corpus
     two or three times for every search; it only changes when the corpus does.
+
+    `tables` carries the rest of it: the corpus's token *sets* and IDF weights,
+    precomputed once per resource set (`app.retrieval.tokens.ScoringTables`). With
+    it, the four set-based signals below become sparse mat-vecs instead of a Python
+    loop over every corpus row — the difference between ~5 s and ~0.1 s of this
+    function on the 130k-row corpus. It is used only if it was built from this exact
+    frame (`ScoringTables.matches`, checked on the row labels); otherwise, and when
+    it is absent, the scalar reference path below runs unchanged. The two agree
+    exactly on the overlap signals and to ~1e-16 on the IDF ones (a different
+    summation order for the same weights) — see `tests/test_scoring_equivalence.py`.
+
+    `signals` are the per-row columns the caller has already computed (the fuzzy,
+    cosine and exact signals, which `retrieve_top_k` derives from the query's own
+    parse). They are assigned onto this function's own copy of the frame, so the
+    caller does not have to make a second one just to carry them here.
     """
     out = df.copy()
+    for column, values in (signals or {}).items():
+        out[column] = values
+    fast = tables if tables is not None and tables.matches(out) else None
     if "fuzzy_score" not in out.columns:
         out["fuzzy_score"] = 0.0
     if "tfidf_score" not in out.columns:
         out["tfidf_score"] = 0.0
     if "exact_bonus" not in out.columns:
         out["exact_bonus"] = 0.0
-    out["overlap_score"] = out["mdc_norm"].map(
-        lambda value: token_overlap_score(query_mdc_norm, value)
-    )
-    frequencies = (
-        corpus_stats.mdc_frequencies
-        if corpus_stats is not None
-        else document_frequencies(out["mdc_norm"])
-    )
     corpus_size = len(out)
     text_penalty = effective_surplus_penalty(
         query_mdc_norm, weights.idf_surplus_penalty
     )
-    out["idf_overlap_score"] = out["mdc_norm"].map(
-        lambda value: idf_overlap_score(
-            query_mdc_norm,
-            value,
-            frequencies,
-            corpus_size,
-            candidate_surplus_penalty=text_penalty,
+    if fast is not None:
+        query_tokens = set(tokenize_query(query_mdc_norm))
+        out["overlap_score"] = fast.text.overlap_scores(query_tokens)
+        out["idf_overlap_score"] = fast.text_weights.idf_overlap_scores(
+            fast.text, query_tokens, candidate_surplus_penalty=text_penalty
         )
-    )
+    else:
+        out["overlap_score"] = out["mdc_norm"].map(
+            lambda value: token_overlap_score(query_mdc_norm, value)
+        )
+        frequencies = (
+            corpus_stats.mdc_frequencies
+            if corpus_stats is not None
+            else document_frequencies(out["mdc_norm"])
+        )
+        out["idf_overlap_score"] = out["mdc_norm"].map(
+            lambda value: idf_overlap_score(
+                query_mdc_norm,
+                value,
+                frequencies,
+                corpus_size,
+                candidate_surplus_penalty=text_penalty,
+            )
+        )
 
     # Sign-sequence matching, used when the query is written in hieroglyphs.
     if query_hieroglyphs_norm and "hieroglyphs_norm" in out.columns:
-        glyph_frequencies = (
-            corpus_stats.glyph_frequencies
-            if corpus_stats is not None
-            else document_frequencies(out["hieroglyphs_norm"])
-        )
-        out["glyph_overlap_score"] = out["hieroglyphs_norm"].map(
-            lambda value: token_overlap_score(query_hieroglyphs_norm, value)
-        )
         glyph_penalty = effective_surplus_penalty(
             query_hieroglyphs_norm, weights.idf_surplus_penalty
         )
-        out["glyph_idf_overlap_score"] = out["hieroglyphs_norm"].map(
-            lambda value: idf_overlap_score(
-                query_hieroglyphs_norm,
-                value,
-                glyph_frequencies,
-                corpus_size,
-                candidate_surplus_penalty=glyph_penalty,
+        glyph_fast = fast.glyph if fast is not None else None
+        # The order-aware signal needs the corpus's sign-group encoding; without a
+        # usable one (see `encode_groups`) the whole glyph block falls back.
+        query_encoded = (
+            encode_groups(glyph_fast, query_hieroglyphs_norm)
+            if glyph_fast is not None
+            else None
+        )
+        if glyph_fast is not None and query_encoded is not None:
+            glyph_tokens = set(tokenize_query(query_hieroglyphs_norm))
+            out["glyph_overlap_score"] = glyph_fast.overlap_scores(glyph_tokens)
+            out["glyph_idf_overlap_score"] = fast.glyph_weights.idf_overlap_scores(
+                glyph_fast, glyph_tokens, candidate_surplus_penalty=glyph_penalty
             )
-        )
-        out["glyph_exact_bonus"] = out["hieroglyphs_norm"].map(
-            lambda value: 1.0 if str(value).strip() == query_hieroglyphs_norm else 0.0
-        )
-        # Order-aware signal: LCS over sign-group sequences, normalised by the
-        # query's group count. Groups are mapped to single characters so rapidfuzz
-        # can run the sequence match at C speed across all rows.
-        encoding: dict[str, str] = {}
+            out["glyph_exact_bonus"] = glyph_fast.exact_matches(
+                query_hieroglyphs_norm, strip=True
+            )
+            query_groups = len(query_encoded)
+            if query_groups and corpus_size:
+                similarity = process.cdist(
+                    [query_encoded],
+                    glyph_fast.encoded,
+                    scorer=LCSseq.similarity,
+                    workers=1,
+                )[0]
+                out["glyph_order_score"] = (
+                    similarity.astype(np.float64) / query_groups
+                )
+            else:
+                out["glyph_order_score"] = 0.0
+        else:
+            glyph_frequencies = (
+                corpus_stats.glyph_frequencies
+                if corpus_stats is not None
+                else document_frequencies(out["hieroglyphs_norm"])
+            )
+            out["glyph_overlap_score"] = out["hieroglyphs_norm"].map(
+                lambda value: token_overlap_score(query_hieroglyphs_norm, value)
+            )
+            out["glyph_idf_overlap_score"] = out["hieroglyphs_norm"].map(
+                lambda value: idf_overlap_score(
+                    query_hieroglyphs_norm,
+                    value,
+                    glyph_frequencies,
+                    corpus_size,
+                    candidate_surplus_penalty=glyph_penalty,
+                )
+            )
+            out["glyph_exact_bonus"] = out["hieroglyphs_norm"].map(
+                lambda value: (
+                    1.0 if str(value).strip() == query_hieroglyphs_norm else 0.0
+                )
+            )
+            # Order-aware signal: LCS over sign-group sequences, normalised by the
+            # query's group count. Groups are mapped to single characters so
+            # rapidfuzz can run the sequence match at C speed across all rows.
+            encoding: dict[str, str] = {}
 
-        def encode(text: str) -> str:
-            return "".join(
-                encoding.setdefault(group, chr(0x20000 + len(encoding)))
-                for group in str(text).split()
-            )
+            def encode(text: str) -> str:
+                return "".join(
+                    encoding.setdefault(group, chr(0x20000 + len(encoding)))
+                    for group in str(text).split()
+                )
 
-        query_encoded = encode(query_hieroglyphs_norm)
-        query_groups = len(query_encoded)
-        out["glyph_order_score"] = out["hieroglyphs_norm"].map(
-            lambda value: (
-                LCSseq.similarity(query_encoded, encode(value)) / query_groups
-                if query_groups
-                else 0.0
+            scalar_encoded = encode(query_hieroglyphs_norm)
+            query_groups = len(scalar_encoded)
+            out["glyph_order_score"] = out["hieroglyphs_norm"].map(
+                lambda value: (
+                    LCSseq.similarity(scalar_encoded, encode(value)) / query_groups
+                    if query_groups
+                    else 0.0
+                )
             )
-        )
     else:
         out["glyph_overlap_score"] = 0.0
         out["glyph_idf_overlap_score"] = 0.0
         out["glyph_order_score"] = 0.0
         out["glyph_exact_bonus"] = 0.0
-    out["reading_order_overlap"] = out["normalized_reading_order_norm"].map(
-        lambda value: (
-            token_overlap_score(query_reading_order_norm, value)
-            if query_reading_order_norm
-            else 0.0
+    if query_reading_order_norm:
+        out["reading_order_overlap"] = out["normalized_reading_order_norm"].map(
+            lambda value: token_overlap_score(query_reading_order_norm, value)
         )
-    )
+    else:
+        # The map below returned a constant 0.0 for every row when there is no
+        # reading-order query — which is the usual case, and cost a full Python
+        # pass over the corpus to produce a column of zeros.
+        out["reading_order_overlap"] = 0.0
     # Renormalise over the signals that actually discriminate for this query. A
     # signal that is zero for every candidate — an empty metadata column, or the
     # reading-order overlap when the user supplied no reading order — tells us

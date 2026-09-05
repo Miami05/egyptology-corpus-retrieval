@@ -8,13 +8,15 @@ from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs, nor
 from app.data.query import QueryParse, parse_query
 from dataclasses import dataclass
 
-from rapidfuzz import fuzz
+import numpy as np
+from rapidfuzz import fuzz, process
 
 from app.retrieval.evidence import build_evidence
 from app.retrieval.scorer import (
     DEFAULT_WEIGHTS,
     CorpusStats,
     ScoreWeights,
+    ScoringTables,
     build_corpus_stats,
     combine_scores,
 )
@@ -31,13 +33,21 @@ from app.services.stage import (
 class SearchIndex:
     """Everything about the corpus that does not depend on the query.
 
-    Built once and reused: document frequencies for the IDF signals and the
-    sparse n-gram index for the cosine signal. Rebuilding these per search was
-    roughly half the cost of a query.
+    Built once and reused: document frequencies for the IDF signals, the sparse
+    n-gram index for the cosine signal, and (`tables`) the corpus's per-row token
+    sets and IDF weights for the four set-based signals. Rebuilding these per
+    search was roughly half the cost of a query; re-tokenising the candidates per
+    search was most of the rest, which is what `tables` removes — see
+    `app.retrieval.tokens`.
+
+    `tables` is optional so that a caller constructing a `SearchIndex` by hand
+    (the tests do) still gets correct scores: `combine_scores` and
+    `retrieve_top_k` fall back to their scalar paths without it.
     """
 
     stats: CorpusStats
     text_index: NgramIndex
+    tables: ScoringTables | None = None
 
     @property
     def vocabulary(self) -> set[str]:
@@ -47,9 +57,11 @@ class SearchIndex:
 
 
 def build_search_index(df: pd.DataFrame) -> SearchIndex:
+    stats = build_corpus_stats(df)
     return SearchIndex(
-        stats=build_corpus_stats(df),
+        stats=stats,
         text_index=NgramIndex.build(df["mdc_norm"]),
+        tables=ScoringTables.build(df, stats.mdc_frequencies, stats.glyph_frequencies),
     )
 
 
@@ -83,35 +95,63 @@ def retrieve_top_k(
     query_reading_order_norm = normalize_sign_sequence(query_reading_order)
     # One copy of the frame, not five. The old path built a separate sorted copy per
     # signal and merged them back on three key columns, discarding each sort; the
-    # signals are per-row and can simply be assigned as columns.
-    merged = df.copy()
+    # signals are per-row and are simply handed to `combine_scores` as columns —
+    # which makes its own copy, so this function does not make a second one. (Two
+    # full copies of a 130k-row, 25-column frame per pass is ~60 ms a query, and
+    # the corpus frame's `attrs` get deep-copied along with it.)
+    signals: dict[str, object] = {}
+    tables = index.tables if index is not None else None
+    fast = tables if tables is not None and tables.matches(df) else None
     if query_mdc_norm:
-        candidates = merged["mdc_norm"].astype(str)
-        merged["fuzzy_score"] = [
-            fuzz.ratio(query_mdc_norm, value) / 100.0 for value in candidates
-        ]
+        # The candidate strings: precomputed with the rest of the corpus-side work
+        # when the frame is the one `tables` was built from (`str(value)` per row,
+        # which the fuzzy and exact signals both used to redo per query).
+        candidates = (
+            fast.text.texts if fast is not None else df["mdc_norm"].astype(str)
+        )
+        # One batched rapidfuzz call over the whole corpus instead of a Python
+        # loop of scalar `fuzz.ratio` calls. float64 and a single worker: the
+        # default dtype for a normalised scorer is float32, which would round the
+        # scores, and more than one worker is not needed at this size. Verified
+        # array-identical to the loop on full-corpus queries (ROADMAP item 3).
+        signals["fuzzy_score"] = (
+            process.cdist(
+                [query_mdc_norm],
+                candidates,
+                scorer=fuzz.ratio,
+                dtype=np.float64,
+                workers=1,
+            )[0]
+            / 100.0
+        )
         text_index = (
             index.text_index
-            if index is not None and len(index.text_index) == len(merged)
-            else NgramIndex.build(candidates)
+            if index is not None and len(index.text_index) == len(df)
+            else NgramIndex.build(pd.Series(candidates))
         )
-        merged["tfidf_score"] = text_index.scores(query_mdc_norm)
-        merged["exact_bonus"] = (candidates == query_mdc_norm).astype(float)
+        signals["tfidf_score"] = text_index.scores(query_mdc_norm)
+        signals["exact_bonus"] = (
+            fast.text.exact_matches(query_mdc_norm, strip=False)
+            if fast is not None
+            else (candidates == query_mdc_norm).astype(float)
+        )
     else:
         # No usable text query. Without this guard an empty string is a perfect
         # match for an empty candidate: fuzz.ratio("", "") is 100 and the cosine of
         # two empty n-gram vectors is 1.0, so the first corpus row ever imported
         # without a transliteration would top every hieroglyph query.
-        merged["fuzzy_score"] = 0.0
-        merged["tfidf_score"] = 0.0
-        merged["exact_bonus"] = 0.0
+        signals["fuzzy_score"] = 0.0
+        signals["tfidf_score"] = 0.0
+        signals["exact_bonus"] = 0.0
     scored = combine_scores(
-        merged,
+        df,
+        signals=signals,
         query_mdc_norm=query_mdc_norm,
         query_reading_order_norm=query_reading_order_norm,
         weights=weights,
         query_hieroglyphs_norm=query_hieroglyphs_norm,
         corpus_stats=index.stats if index is not None else None,
+        tables=fast,
     )
     # Honest empty state: a row with no shared evidence at all must not be shown as
     # a "parallel" just because k rows were requested. The floor is on raw evidence

@@ -325,3 +325,22 @@ def test_corpus_ids_are_unique_and_prefixed_per_source():
     assert not keys.duplicated().any()
     prefixes = {str(v).rsplit("_", 1)[0] for v in df["source_text_id"]}
     assert {"TLA_EARLIER", "TLA_LATE"} <= prefixes
+
+
+def test_corpus_csv_loads_without_mixed_type_warning():
+    """The six sparse text columns (mdc, lemma_sequence, upos, glossing, grammar_notes,
+    normalized_reading_order) are empty for most rows, so pandas used to infer float for
+    some chunks and str for others — a DtypeWarning at every boot and a per-cell type that
+    depended on chunk boundaries. `load_examples_csv` pins them to str; present values are
+    unchanged and missing cells stay NaN."""
+    import warnings
+
+    from app.data.loader import SPARSE_TEXT_COLUMNS, load_examples_csv
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.DtypeWarning)
+        df = load_examples_csv("data/processed/examples.csv")
+    for column in SPARSE_TEXT_COLUMNS:
+        assert column in df.columns
+        present = df[column].dropna()
+        assert present.map(lambda value: isinstance(value, str)).all(), column

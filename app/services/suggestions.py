@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -56,12 +57,61 @@ class SuggestionWeights:
     # full sentence that contains the whole query — see idf_overlap_score, whose
     # docstring also records how 0.3 was chosen and what the holdout showed.
     surplus_penalty: float = 0.3
+    # Not a weight either (Experiment 1, 2026-09-05 — see
+    # docs/v4-answerability-and-v5-rule.md). A structural switch, off by default:
+    # when True the `translit_overlap` signal is not recomputed here at all, it is
+    # read from the `idf_overlap_score` column retrieval already produced for the
+    # candidate's rows (the group maximum, as `reading_similarity` does). The
+    # weights are untouched; only what the translit_overlap slot *carries* changes.
+    # Frames without that column (hand-built test frames) fall back to the
+    # recomputed value, so the switch can never turn a suggestion into an error.
+    carry_forward_idf: bool = False
 
-    def replace(self, **changes: float) -> SuggestionWeights:
+    def replace(self, **changes: float | bool) -> SuggestionWeights:
         return dataclasses_replace(self, **changes)
 
 
-DEFAULT_SUGGESTION_WEIGHTS = SuggestionWeights()
+# The three pre-registered Experiment 1 configurations. Named presets rather than a
+# swept grid: each is a structural choice, and CFG-B introduces no new number (0.40
+# is 0.24 + 0.16, the two existing weights summed). Selection is on the held-out set
+# only; see the doc.
+SUGGESTION_PRESETS: dict[str, SuggestionWeights] = {
+    "default": SuggestionWeights(),
+    # CFG-A — carry forward: translit_overlap becomes retrieval's IDF-weighted
+    # overlap instead of a freshly recomputed plain overlap. Weights unchanged.
+    "cfg_a": SuggestionWeights(carry_forward_idf=True),
+    # CFG-B — redistribute: relative_score absorbs char_similarity's mass.
+    "cfg_b": SuggestionWeights(relative_score=0.40, char_similarity=0.0),
+    # CFG-C — both.
+    "cfg_c": SuggestionWeights(
+        relative_score=0.40, char_similarity=0.0, carry_forward_idf=True
+    ),
+}
+
+SUGGESTION_PRESET_ENV = "WHYPTOLOGY_SUGGESTION_PRESET"
+
+
+def resolve_suggestion_preset(name: str | None) -> SuggestionWeights:
+    """The `SuggestionWeights` for a preset name; empty/None → today's default.
+
+    Unknown names raise rather than falling back silently: an evaluation run that
+    misspells its configuration must fail, not quietly report the baseline again.
+    """
+    key = (name or "").strip().lower()
+    if not key:
+        return SUGGESTION_PRESETS["default"]
+    if key not in SUGGESTION_PRESETS:
+        raise ValueError(
+            f"Unknown {SUGGESTION_PRESET_ENV}={name!r}; "
+            f"known presets: {', '.join(sorted(SUGGESTION_PRESETS))}"
+        )
+    return SUGGESTION_PRESETS[key]
+
+
+# Read once, at import. With the environment variable unset this is
+# `SuggestionWeights()` — byte-identical to the behaviour that produced every
+# published number — so the switch is invisible unless a run asks for it.
+DEFAULT_SUGGESTION_WEIGHTS = resolve_suggestion_preset(os.environ.get(SUGGESTION_PRESET_ENV))
 
 
 @dataclass(frozen=True)
@@ -393,6 +443,12 @@ def suggest_top_readings(
                 token_overlap_score(query_key, candidate_key, surplus_penalty),
                 token_overlap_score(query_loose, candidate_loose, surplus_penalty),
             )
+            if weights.carry_forward_idf and "idf_overlap_score" in group.columns:
+                # Read, never recompute: this is the number retrieval already
+                # scored this candidate's rows with (retrieval is not touched).
+                translit_overlap = float(
+                    group["idf_overlap_score"].fillna(0.0).astype(float).max()
+                )
             char_similarity = char_ngram_similarity(query_key, candidate_key)
             exact_or_near_bonus = 1.0 if candidate_key == query_key else 0.0
             if exact_or_near_bonus == 0.0 and query_loose == candidate_loose:

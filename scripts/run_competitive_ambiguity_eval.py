@@ -26,6 +26,7 @@ Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such colum
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -36,6 +37,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv
+from app.data.query import parse_query
 from app.services.retrieval import retrieve_top_k
 from app.services.stage import (
     build_stage_resources,
@@ -44,7 +46,14 @@ from app.services.stage import (
     normalize_stage,
     stage_base_rates,
 )
-from app.services.suggestions import canonical_reading, loose_reading_form, suggest_top_readings
+from app.services.suggestions import (
+    DEFAULT_SUGGESTION_WEIGHTS,
+    SUGGESTION_PRESET_ENV,
+    SuggestionWeights,
+    canonical_reading,
+    loose_reading_form,
+    suggest_top_readings,
+)
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
@@ -126,26 +135,50 @@ def _candidate_lemmas(
     return ids
 
 
-def _useful_reason(
-    candidate: str,
-    candidate_pool: pd.DataFrame,
-    expected: str,
+USEFUL_RULES = ("v4", "v5")
+
+
+def useful_decision(
+    is_exact: bool,
+    candidate_tokens: set[str],
+    candidate_lemmas: set[str],
     expected_key_tokens: set[str],
     expected_lemma_ids: set[str],
     token_threshold: float,
+    rule: str = "v4",
 ) -> tuple[bool, str, float, float]:
-    if canonical_reading(candidate) == canonical_reading(expected):
+    """The useful-family test, given already-computed candidate evidence.
+
+    Split out of `_useful_reason` so `scripts/compute_v4_answerability.py` can apply
+    exactly this decision to all 130k corpus rows with the token sets and lemma sets
+    precomputed once (the naive path re-scans the corpus per candidate). The `v4`
+    branch is the original code, unchanged and in the original order.
+
+    `rule="v5"` is the pre-registered lemma-first rule of 2026-09-05 (see
+    docs/v4-answerability-and-v5-rule.md): when both sides carry lemma ids, only the
+    lemma branches may declare a candidate useful — the token branch is not applied.
+    When either side lacks lemma ids, v5 falls back to the v4 test verbatim. No new
+    constant is introduced; the thresholds are v4's own.
+    """
+    if is_exact:
         return True, "exact expected transliteration", 1.0, 1.0
 
-    candidate_tokens = _tokens(loose_reading_form(candidate))
     token_score = _overlap(expected_key_tokens, candidate_tokens)
-    candidate_lemmas = _candidate_lemmas(candidate_pool, candidate)
     lemma_intersection = expected_lemma_ids & candidate_lemmas
     lemma_score = (
         len(lemma_intersection) / min(len(expected_lemma_ids), len(candidate_lemmas))
         if expected_lemma_ids and candidate_lemmas
         else 0.0
     )
+
+    if rule == "v5" and expected_lemma_ids and candidate_lemmas:
+        if len(lemma_intersection) >= 2 and lemma_score >= 0.4:
+            shared = ", ".join(sorted(lemma_intersection)[:8])
+            return True, f"useful lemma-family match: {shared}", token_score, lemma_score
+        if len(expected_lemma_ids) <= 2 and len(lemma_intersection) >= 1:
+            shared = ", ".join(sorted(lemma_intersection)[:8])
+            return True, f"useful short lemma-family match: {shared}", token_score, lemma_score
+        return False, "no useful-family match (v5 lemma-first)", token_score, lemma_score
 
     if token_score >= token_threshold:
         shared = ", ".join(sorted(expected_key_tokens & candidate_tokens)[:8])
@@ -160,6 +193,32 @@ def _useful_reason(
         return True, f"useful short lemma-family match: {shared}", token_score, lemma_score
 
     return False, "no useful-family match", token_score, lemma_score
+
+
+def _useful_reason(
+    candidate: str,
+    candidate_pool: pd.DataFrame,
+    expected: str,
+    expected_key_tokens: set[str],
+    expected_lemma_ids: set[str],
+    token_threshold: float,
+    rule: str = "v4",
+) -> tuple[bool, str, float, float]:
+    is_exact = canonical_reading(candidate) == canonical_reading(expected)
+    if is_exact:
+        return True, "exact expected transliteration", 1.0, 1.0
+
+    candidate_tokens = _tokens(loose_reading_form(candidate))
+    candidate_lemmas = _candidate_lemmas(candidate_pool, candidate)
+    return useful_decision(
+        is_exact=False,
+        candidate_tokens=candidate_tokens,
+        candidate_lemmas=candidate_lemmas,
+        expected_key_tokens=expected_key_tokens,
+        expected_lemma_ids=expected_lemma_ids,
+        token_threshold=token_threshold,
+        rule=rule,
+    )
 
 
 def _load_benchmark(benchmark_path: str = BENCHMARK_PATH) -> pd.DataFrame:
@@ -190,6 +249,34 @@ def _parse_args() -> argparse.Namespace:
         "--label",
         default="",
         help="Optional run label printed with the summary (e.g. 'corpus=300').",
+    )
+    parser.add_argument(
+        "--query-path",
+        choices=["app", "legacy"],
+        default="app",
+        help=(
+            "How the query reaches retrieval and the suggestion layer. 'app' (default) "
+            "mirrors app/ui/whyptology_app.py: retrieval always gets a SearchIndex, so "
+            "parse_query can use the corpus vocabulary to choose a notation, and "
+            "suggest_top_readings is handed the *interpreted reading* "
+            "(`searched.reading or query`) rather than the raw string. 'legacy' is what "
+            "this harness did before 2026-09-05 — index=None whenever no stage "
+            "resolves, and the raw query string into the suggestion layer — and is kept "
+            "so the published v4 numbers (0.90 / MRR 0.79) can be reproduced exactly."
+        ),
+    )
+    parser.add_argument(
+        "--useful-rule",
+        choices=list(USEFUL_RULES),
+        default="v4",
+        help=(
+            "Which useful-family definition to score with. 'v4' (default) is the "
+            "frozen v4 rule and is byte-identical to every earlier run. 'v5' is the "
+            "pre-registered lemma-first rule of 2026-09-05 (see "
+            "docs/v4-answerability-and-v5-rule.md): where both the expected row and "
+            "the candidate carry lemma ids, only the lemma branches can declare a "
+            "match useful. v5 never replaces a v4 number; both are reported."
+        ),
     )
     parser.add_argument(
         "--stage",
@@ -242,6 +329,16 @@ def main() -> None:
         # Item A: which rows may stand as evidence for this query. 'none' leaves
         # candidate_pool untouched and never builds a StageResources, so that mode
         # reproduces today's numbers exactly (unchanged by the fix below).
+        # Built at most once per query, and only when something actually needs it:
+        # the stage build below, or --query-path 'app' (the app never retrieves
+        # without a SearchIndex, so parse_query always has the corpus vocabulary).
+        pooled_cache: list[object] = []
+
+        def pooled() -> object:
+            if not pooled_cache:
+                pooled_cache.append(build_stage_resources(candidate_pool, None))
+            return pooled_cache[0]
+
         stage: str | None = None
         if args.stage == "declared":
             # Read the benchmark's own precomputed column (see
@@ -255,6 +352,9 @@ def main() -> None:
                 query_mdc=query_input,
                 query_reading_order=query_reading_order,
                 k=10,
+                # 'app' resolves the stage from a retrieval that already has the
+                # index, exactly as resolve_ui_stage does in whyptology_app.py.
+                index=pooled().index if args.query_path == "app" else None,
             )
             stage = infer_stage(first_pass, base_rates=pooled_base_rates)
         stages_used.append(stage or "")
@@ -267,11 +367,18 @@ def main() -> None:
         # "every other row", exactly as intended; `candidate_pool` itself is never
         # narrowed any further. 'none' and an unresolved stage both retrieve on
         # `candidate_pool` directly with no cached index, unchanged from before.
-        if stage is None:
+        #
+        # --query-path 'app' departs from that last sentence on purpose: the app has
+        # no such branch, it always retrieves through resources that carry an index,
+        # so an unresolved stage there still means "pooled resources", not "no index".
+        if stage is None and args.query_path == "legacy":
             retrieval_frame = candidate_pool
             retrieval_index = None
+        elif stage is None:
+            retrieval_frame = pooled().frame
+            retrieval_index = pooled().index
         else:
-            pooled_resources = build_stage_resources(candidate_pool, None)
+            pooled_resources = pooled()
             stage_resources = build_stage_resources(
                 candidate_pool,
                 stage,
@@ -288,9 +395,20 @@ def main() -> None:
             k=min(50, len(retrieval_frame)),
             index=retrieval_index,
         )
+        # The suggestion layer compares *readings* as strings of sounds, so the app
+        # hands it the transliteration the query was understood as, not the raw MdC
+        # or plain-ASCII text (whyptology_app.py: `query_mdc=searched.reading or
+        # query`). 'legacy' passes the raw string, as this harness always did.
+        suggestion_query = query_input
+        if args.query_path == "app":
+            searched = parse_query(
+                query_input,
+                vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
+            )
+            suggestion_query = searched.reading or query_input
         suggestions = suggest_top_readings(
             retrieval_results,
-            query_mdc=query_input,
+            query_mdc=suggestion_query,
             query_reading_order=query_reading_order,
             top_n=3,
         )
@@ -315,6 +433,7 @@ def main() -> None:
                 expected_key_tokens=expected_key_tokens,
                 expected_lemma_ids=expected_lemma_ids,
                 token_threshold=token_threshold,
+                rule=args.useful_rule,
             )
             useful_reasons.append(reason)
             token_scores.append(f"{token_score:.3f}")
@@ -390,6 +509,20 @@ def main() -> None:
     }
     if args.stage != "none":
         summary["stages_used"] = dict(pd.Series(stages_used).value_counts())
+    # Printed only for a non-default rule, so a `--useful-rule v4` run (the default)
+    # emits exactly the CSV columns it always did. The summary itself gained one
+    # line on 2026-09-05 -- `query_path` is always printed, because since then the
+    # default path is the app's and a reader must be able to tell which one a
+    # quoted number came from.
+    if args.useful_rule != "v4":
+        summary["useful_rule"] = args.useful_rule
+    summary["query_path"] = args.query_path
+    # Experiment 1 (2026-09-05): which re-rank configuration this run used, printed
+    # only when it is not the shipped default, so a default run's summary is
+    # unchanged. The preset is chosen with the WHYPTOLOGY_SUGGESTION_PRESET
+    # environment variable and read once at import of app.services.suggestions.
+    if DEFAULT_SUGGESTION_WEIGHTS != SuggestionWeights():
+        summary["suggestion_preset"] = os.environ.get(SUGGESTION_PRESET_ENV, "")
 
     heading = "Competitive ambiguity evaluation summary"
     if args.label:

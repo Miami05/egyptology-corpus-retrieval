@@ -1641,7 +1641,7 @@ drafted. Nothing is running.
 | # | Work | Gate / output | Effort |
 |---|---|---|---|
 | 0 | **Ledio:** send Email 6; set `REVIEWER_KEY` in `/home/ledio/egyptology.env`; name a backup destination | — | 15 min |
-| 1 | **The two v4 misses, the honest way.** Rule stated *before* running: for every v4 query compute the best achievable useful-family overlap in the corpus with the target excluded; a query with no row ≥ 0.26 is *unanswerable by construction* and is flagged, not scored against us. Then: COMP_007 (`sẖꜣk =ꞽ ẖ.t =ꞽ ḥr n.tt …`, best found 0.15–0.24, lemma overlap 0) — answerable or not? If answerable, diagnose the ranking (simplified-notation fold of the query is the first suspect: `skhak i kh i tt im fkh djd` has lost `n.` and `=`). COMP_014 — parallels found at 0.19–0.22; decide, on principle and before looking at any result, whether "useful" should be defined by lemma overlap where lemma ids exist (→ a pre-registered **v5** rule); report v4 and v5 side by side, never replace v4. | a written reason per miss; v4 over answerable queries; v5 if pre-registered | ½ day |
+| 1 | **The two v4 misses, the honest way.** Rule stated *before* running: for every v4 query compute the best achievable useful-family overlap in the corpus with the target excluded; a query with no row ≥ 0.26 is *unanswerable by construction* and is flagged, not scored against us. Then: COMP_007 (`sẖꜣk =ꞽ ẖ.t =ꞽ ḥr n.tt …`, best found 0.15–0.24, lemma overlap 0) — answerable or not? If answerable, diagnose the ranking (simplified-notation fold of the query is the first suspect: `skhak i kh i tt im fkh djd` has lost `n.` and `=`). COMP_014 — parallels found at 0.19–0.22; decide, on principle and before looking at any result, whether "useful" should be defined by lemma overlap where lemma ids exist (→ a pre-registered **v5** rule); report v4 and v5 side by side, never replace v4. ✅ | a written reason per miss; v4 over answerable queries; v5 if pre-registered | ½ day |
 | 2 | **Server hardening.** Warm the three stage resource sets at service start (`ExecStartPost` or a warm-up call); nightly copy of `egyptology.db` to `egyptology-backups/` and off the machine (target from Ledio), 30-day retention, one restore test; `deploy.sh` runs `scripts/import_examples.py` after a corpus change; Git LFS for `examples.csv` (65 MB) | first paste after restart < 5 s; a restored copy opens; LFS pull works on the box | ½ day |
 | 3 | **rapidfuzz batch call** (`process.cdist` in `retrieve_top_k`) — every mode now scores the pooled corpus, ~1.3 s/query | `fuzzy_score` identical on the whole corpus for 5 queries; v4/paste unchanged; query < 0.5 s | ½ h |
 | 4 | **St Andrews importer** (hieropy, private script, → `/home/ledio/egyptology-private/standrews.csv`); also fetch Nederhof's sign-function XML into `data/raw/standrews/unicode/` and commit a converted table under CC BY 4.0 credited to him (DATA-LICENSE line) — prep for C | Camilla's Urk. IV 1 line top-1 from his line rows; attribution screenshot to him | 1 day |
@@ -1651,6 +1651,127 @@ drafted. Nothing is running.
 | 8 | C — sign-function lattice on Nederhof & Rahman 2015 with his XML + our group statistics + Helsinki lexicon; UniKemet/Thot as cross-checks only | Camilla's line from all spacings; paste 8/8; unspaced F1 > 0.923 | 5 days |
 | 9 | D — proper nouns via TLA lemma ids | variant names grouped under one lemma | 2–3 days |
 | 10 | Housekeeping: Neon export/rotate/close; delete or ignore the Cloud app; DEPLOYMENT.md follow-ups | — | ½ day |
+
+### Item 1 — done 2026-09-05
+
+Full write-up: **`docs/v4-answerability-and-v5-rule.md`** (pre-registered rules, both
+traces, every table). Headline numbers, all measured today on the 130,472-row corpus at
+`2b13fed` + the uncommitted work described there:
+
+- **v4 is unchanged and reproduces exactly: 0.90 top-3 useful / MRR 0.7917, `--stage auto`.**
+- **Rule A (answerability): all 20 v4 queries are answerable** with the target excluded —
+  the median query has 4,605 useful rows in the corpus. So the answerable-only number
+  equals the all-queries number, and neither miss is a coverage gap.
+- **Both misses are lost at the top-3 boundary, not in retrieval.** COMP_007: the useful
+  row `TLA_EARLIER_6267`/`S6267` is retrieval rank 7 of 29,047 and suggestion rank 6; the
+  first *accepted* suggestion is rank 4 at confidence 0.5250 against 0.5350/0.5330/0.5300
+  — a 0.005 margin. COMP_014: `TLA_LATE_783`/`S783` is retrieval rank 4 of 23,353 and
+  suggestion rank 5; first accepted suggestion rank 4 at 0.4750 against 0.4820 — 0.007.
+  In both, the rank-4 accepted row has the highest token overlap of the top-4 window
+  (S6267 itself, at rank 6, carries 0.318).
+- **Rule B (v5, lemma-first where lemma ids exist): 0.80 / MRR 0.7167**, identical in all
+  three stage modes; costs COMP_010 and COMP_021, rescues none. Pre-registered, reported
+  beside v4, never replacing it. 70.7% of the corpus has no lemma ids (BBAW 0/52,216,
+  Ramses 0/40,064), so v5 only ever re-judges TLA/AES candidates.
+- **Two null results, reported as such:** the drift-corrected benchmark variant
+  (`…_v4_driftcorrected.csv`, 12 of 20 rows carried a phantom `pl` token predating
+  `fold_plural_marker`) scores identically to v4; and `--query-path app`, which mirrors
+  the app's vocabulary-aware parsing and interpreted-reading hand-off, changes no query's
+  top-3 at all. **`app` is the harness default from 2026-09-05 on** — an evaluation
+  should measure the path the app actually takes — and `--query-path legacy` reproduces
+  every historical number exactly; the two agree in all three stage modes.
+- **Disclosure: v4's 0.90 includes two guaranteed hits.** An exhaustive twin scan shows
+  COMP_004 and COMP_017 each have a Jaccard-1.0 BBAW edition twin that the builder's
+  4,000-entry postings cap hid. **v4 over the 18 non-twin rows is 0.8889 / MRR 0.7963**
+  (v5: 0.7778 / 0.7130).
+- **New held-out validation set** for the fix that was *not* made:
+  `competitive_ambiguity_eval_queries_holdout_2026-09-05.csv`, 20 queries, disjoint from
+  v4 and its twins, built with the new `--exhaustive-twins` guard. Baseline today
+  **0.75 / MRR 0.6667**. Nothing has been tuned against it.
+- **No ranking or normalisation fix was applied**, deliberately: a 0.005 margin on a
+  sample of two is not evidence for any particular reweighting, and the standing rules
+  put an unvalidated fix below a proven diagnosis. The candidate change and its
+  acceptance criteria are written down in the doc. The `pl` query-fold fix was rejected
+  as not symmetric — `search_fold` is one shared function and `PLURAL_MARKER_RE` requires
+  the leading dot.
+- **Experiment 1 (pre-registered, run 2026-09-05): no fix validated, and the default is
+  untouched.** Three structural re-rank configurations were written down before running —
+  CFG-A carries retrieval's IDF overlap forward into the re-rank instead of recomputing a
+  plain one, CFG-B gives `char_similarity`'s 0.16 to `relative_score` (0.40, no new
+  number), CFG-C both — selected on the **held-out set only**, paste gate 8/8 required,
+  v4 measured once afterwards for all three. Held-out: CFG-C 0.85/0.6583, CFG-B
+  0.80/0.6667, CFG-A 0.75/0.6167 against baseline 0.75/0.6667; all three hold paste 8/8.
+  CFG-C is the selection, and **fails two of the three acceptance criteria** — held-out
+  MRR 0.6583 < 0.6667, and on v4 it loses COMP_001 and COMP_022 (0.85/0.7750) — so
+  nothing was applied.
+- **What it did establish:** the diagnosis was right about the mechanism — CFG-A/CFG-C
+  move COMP_007's accepted candidate from **rank 4 to rank 1** and rescue HOLD_001 and
+  HOLD_002 — but the change is a **trade, not an improvement**: it buys top-3 coverage by
+  demoting rank-1 hits (MRR falls while top-3 rises). The next step is an evaluation that
+  can tell a rank-1 demotion from a rank-3 rescue, not another reweighting. The three
+  configurations live on as presets behind `WHYPTOLOGY_SUGGESTION_PRESET`, unset
+  everywhere including the app and the server.
+- Gates: `pytest tests -q` **429 passed** at the time of the write-up; Experiment 1 adds
+  four tests that pin the unchanged default (the shared working tree, which by then also
+  carried item 4's importers, ran **465 passed** in 391 s, no failures). Expert paste
+  **8/8** in auto, in every configuration.
+
+### Items 2, 3, 4 — done 2026-09-05; day closed
+
+Every item today was executed by one agent and re-derived by a second, fresh agent before
+being accepted; the verifier reports are summarised in the docs named below.
+
+- **Item 2, server hardening — done (DEPLOYMENT.md).** First hieroglyph paste after a
+  restart **60 s → 5.3 s** (a real paste driven over the Streamlit websocket from
+  `ExecStartPost`; a helper process cannot fill `st.cache_resource`). Nightly
+  `egyptology-backup.timer` 03:33: sqlite3 `.backup`, `integrity_check`, gzip, 30-day
+  retention, restore test that wrote and read back an annotation on the copy; **off-site
+  to Backblaze B2** via rclone since 15:12 (first upload 22 MB). Deploy script re-imports
+  the corpus when the CSV changed. **The live DB was 52,060 rows behind the CSV** — 40 % of
+  the corpus could not be annotated — fixed by one hand-run `import_examples.py`
+  (`Inserted=52060, total=130472`). Peak RSS is **3.0 GB**, not 1.9. Ledio is in `sudo`
+  (password), so `git-lfs` and `sqlite3` are installed on the box. Git LFS: tracked in
+  `.gitattributes`, converts on the next commit.
+- **Item 3, query latency — done, merged from its worktree.** Warm Auto-mode query
+  **2.92 s → 0.42 s CPU** (Mac), paste 1.50 → 0.19 s. Per-row token sets, IDF weights and
+  sign-group encodings built once per resource set (`app/retrieval/tokens.py`), fuzzy
+  score one `process.cdist`, stage sets share the pooled tables (+60 MB, not +3×). Scores
+  bit-identical in 8/10 columns; the two IDF columns differ by ≤ 1 ulp from summation
+  order, which flips only exact ties beyond rank 8,900. The FastAPI path still takes the
+  scalar route. Rapidfuzz alone was worth 27 ms; the roadmap's "½ h, cdist" framing was
+  wrong about where the time went.
+- **Item 4, St Andrews — done, private (DATA-LICENSE.md, docs/standrews-attribution.md).**
+  `data/private/standrews.csv`: **7,659 rows** from 94 texts / 102 witnesses, verbatim
+  Hannig transliteration (yod `j`, one `z`, no `.t`), TLA transcode + `=` split only.
+  **`hieroglyphs` is empty on every row**: RES's top level is the quadrat, not the word;
+  the Ramses-style count gate matched 50/1,710 lines and hand-checks showed those pairings
+  systematically wrong from the first multi-reading quadrat on. The 1,710 line-level
+  renderings are parked in `data/raw/standrews/standrews_lines.csv` — the first test set
+  for item C. Urk. IV 1: his edition splits Camilla's line in two rows and writes `=ṯn`;
+  as text his row is rank 1 among St Andrews rows, rank 2 overall; a glyph paste can never
+  reach a St Andrews row. Paste gate 8/8 with private rows present. **Nederhof's
+  sign-function table** `data/processed/sign_functions.csv`: 1,444 entries covering 780 of
+  the 1,071 Unicode 5.2 signs, CC BY 4.0, deterministic rebuild. **Server trapdoor:** the
+  unit sets `PRIVATE_DATA_DIR`; the directory being empty is the only thing keeping NC rows
+  off the public URL — settle access control before copying the CSV there.
+- **Merged-tree gates, 2026-09-05 15:20:** paste **8/8** auto; v4 **0.90 / 0.7917**,
+  misses COMP_007, COMP_014; held-out **0.75 / 0.6667**; `pytest tests -q` **490 passed**.
+- Also today: corpus loader pins six sparse text columns to `str` (the boot-time
+  `DtypeWarning` was per-chunk type guessing); memory notes and learning journal updated.
+
+**Plan for 2026-09-06.** (0) Ledio: send Email 6; set `REVIEWER_KEY`; `passwd` on the box.
+(1) Commit + push today's tree (one commit; the LFS conversion rides on it), deploy, live
+paste, re-measure first-paste-after-restart (expect < 5 s now). (2) Follow-up batch, one
+agent + one verifier: `verify_release.py` gets an explicit benchmark and an accuracy floor
+from a committed baseline; concrete-stage loader already reuses pooled resources (item 3)
+— re-measure the cold build; `_evidence_summary` wording ("shared lemma ids" is candidate
+metadata, not a query match); deploy distinguishes insert from refresh (`--dry-run`); pin
+`scipy`; FastAPI path gets the `SearchIndex`. (3) Trace the five held-out misses the way
+the v4 misses were traced (answerable? rank at each stage?) — diagnosis only. (4) Expert
+round ask, small and concrete: five queries (COMP_001, COMP_007, COMP_022, HOLD_010,
+HOLD_016) where CFG-C moves a named candidate a named number of ranks, before/after lists
+already computed — the one instrument that separates a rank-1 demotion from a rank-3
+rescue. Then item 6 (Late Egyptian set), E, B, C, D as planned.
 
 About 13 working days after tomorrow's item 1. Standing rules: no constant is chosen by
 looking at a benchmark result; every benchmark change is a pre-registered rule reported next

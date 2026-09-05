@@ -51,6 +51,21 @@ REQUIRED_COLUMNS = [
     "aesthetic_arrangement_flag",
 ]
 
+# Text columns that are empty for most rows (only the TLA/AES rows carry them). pandas
+# infers a dtype per chunk, so a chunk of all-empty cells comes back as float and a chunk
+# with text as str — the "Columns (...) have mixed types" warning, and a column whose
+# per-cell type depends on row order and chunk size. Pinning them to str is identical
+# for every present value and keeps missing cells as NaN, so downstream fillna("") is
+# unchanged.
+SPARSE_TEXT_COLUMNS: dict[str, type] = {
+    "mdc": str,
+    "lemma_sequence": str,
+    "upos": str,
+    "glossing": str,
+    "grammar_notes": str,
+    "normalized_reading_order": str,
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +194,7 @@ def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_examples_csv(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, dtype=SPARSE_TEXT_COLUMNS)
     return _normalize_corpus_frame(df)
 
 

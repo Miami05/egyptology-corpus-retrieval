@@ -6,7 +6,7 @@ licences. Read this before publishing, redistributing or deploying publicly.**
 | What | Licence |
 |---|---|
 | Source code (`app/`, `scripts/`, `tests/`) | MIT — see `LICENSE` |
-| Corpus data (`data/`, incl. `data/processed/examples.csv`) | **CC BY-SA 4.0** — see below.[^lexicon] |
+| Corpus data (`data/`, incl. `data/processed/examples.csv`) | **CC BY-SA 4.0** — see below.[^lexicon] [^signfunctions] |
 | `app/ui/static/GentiumPlus-Translit.woff2` | SIL Open Font License 1.1 — see `app/ui/static/GentiumPlus-OFL.txt` |
 
 [^lexicon]: **Exception:** `data/processed/helsinki_lexicon.csv` is built from CC BY
@@ -17,6 +17,13 @@ superseded by this table. See "Every copy of the data in this repository" below 
 its own row. The Ramses-derived half of the lexicon is covered by the same CC BY-SA
 4.0 grant described under "Fifth corpus: Ramses" below, so the lexicon file stays
 public without qualification on that count.
+
+[^signfunctions]: **Second exception:** `data/processed/sign_functions.csv` is
+**CC BY 4.0, credited to Mark-Jan Nederhof**, and is *not* wrapped in CC BY-SA here.
+He granted the underlying XML under "whatever license you prefer" on 2026-09-04 and we
+chose the more permissive of the two so the table can be reused freely; CC BY 4.0 is
+one-way compatible with the CC BY-SA corpus it sits beside. See "Sign functions of the
+Unicode 5.2 hieroglyphs" below.
 
 ## Why the data is not MIT
 
@@ -310,7 +317,82 @@ conventions**: no `z`/`s` distinction and no dot before the feminine `.t`. These
 left exactly as written on import rather than guessed at — a wrong dot or a silently
 merged `z`/`s` in a gold column would be worse than a known absence (see the plan notes
 on the `z`→`s` fold, which stays a `search_fold`-only measure and never touches the
-strict reading key).
+strict reading key). Measured on import: one `z` in the whole archive, and the yod is
+written `j` (9,432 occurrences against 7 bare `i`) — the opposite of the Ramses
+corpus, which writes it `i`.
+
+**Imported by `scripts/import_standrews.py`, 2026-09-05**, from the archive under
+`data/raw/standrews/corpus/` (gitignored) to `data/private/standrews.csv`
+(gitignored). **7,659 rows** — one per body block of his "lite" transliteration files,
+his own sentence division — drawn from 94 texts and 102 transliteration witnesses,
+55 of which have a hieroglyphic tier. 531 blocks with no reading (translation-only
+headings) and 13 with no searchable reading are dropped.
+
+Changes made to his data, all of them recorded here because CC BY-NC-SA 4.0 §3(a)(1)(B)
+requires it:
+
+- His Manuel de Codage-style ASCII is converted to the corpus's TLA convention
+  (`A a j i H x X S T D` → `ꜣ ꜥ ꞽ ꞽ ḥ ḫ ẖ š ṯ ḏ`). Nothing else is folded: `y`, `z`,
+  and the editorial apparatus `{}` `[]` `()` are kept exactly as he wrote them.
+- Suffix pronouns are tokenised on his own `=` (`Dd=f` → `ḏd =f`), because the corpus
+  writes the suffix pronoun as a token of its own and `search_fold` splits on `=` for
+  that reason. No character is added, removed or altered — only whitespace at a
+  boundary he already marks.
+- The `^` proper-name marker and the `<no>…</no>` ditto marks are markup, not
+  readings, and are dropped; `<note>…</note>` footnotes are moved to
+  `variant_writing_note`; his coordinate labels are recorded in `source_ref`.
+- `language_stage`, `genre` and `period` are **empty**: nothing in the archive
+  declares them, and a guess in one of those columns would be read as his.
+
+**No sign-to-reading alignment is taken from this corpus.** The `hieroglyphs` column
+is empty on every one of the 7,659 rows. The two tiers share only a line anchor, and
+inside a line his RES hieroglyphic encoding is grouped by *quadrat*, not by word, so
+no token-for-token pairing is derivable; on the 1,710 lines that have both tiers the
+group and reading counts agree 50 times, and hand-checking showed the agreement to be
+a coincidence that pairs the wrong signs with the wrong readings. Rows are therefore
+transliteration-only, exactly like the BBAW and Ramses text-only rows. 135 rows whose
+sentence *is* a whole printed line carry that line's Unicode glyphs in the display-only
+`display_sequence` column, and the per-line rendering (via `hieropy` 0.1.9, Nederhof's
+own GPL package) is kept beside the raw archive in
+`data/raw/standrews/standrews_lines.csv`, also gitignored.
+
+## Sign functions of the Unicode 5.2 hieroglyphs (CC BY 4.0)
+
+`data/processed/sign_functions.csv` is built by `scripts/import_sign_functions.py`
+from two XML files published by Mark-Jan Nederhof at
+<https://mjn.host.cs.st-andrews.ac.uk/egyptian/unicode/> (`signuse.xml`, the sign
+functions behind Nederhof & Rahman 2015; `signunicode.xml`, the codepoints). It holds
+**1,444 function entries covering 780 of the 1,071 signs in his Unicode 5.2 list** (the
+other 291 signs carry no function element): logogram, determinative, logogram-or-
+determinative, phonogram, phonetic determinative, phonogram-or-phonetic-determinative
+and typographic, with the transliteration and gloss where the class carries one.
+
+> Sign functions: Mark-Jan Nederhof, sign-function list for the Unicode 5.2
+> hieroglyphs, <https://mjn.host.cs.st-andrews.ac.uk/egyptian/unicode/>. Used with
+> permission; published here under **CC BY 4.0**.
+
+**This is a separate grant from the text corpus above, and a much wider one.** On
+**2026-09-04** Nederhof wrote, of this file: *"You can use the XML file with functions
+under whatever license you prefer. I would be glad if they can be of help."* (archived
+verbatim in `docs/permission-requests.md`). We chose **CC BY 4.0**, which is compatible
+with the CC BY-SA corpus beside it, and told him so in Email 6, offering to change it on
+one line from him. Unlike the text corpus, this table **is** redistributed with the
+repository; the original XML is not (`data/raw/standrews/unicode/` is gitignored).
+
+Changes made to the data: Gardiner sign ids joined to their Unicode codepoint and
+character; the function element name mapped to his own class names from the prose at
+the head of `signuse.xml`; transliterations converted from his ASCII to the corpus
+convention with the same table `import_standrews.py` uses; `period`, `texttype`,
+`plural`, `dual`, `numeral`, `certain` and the consonantal `root` folded into one
+`qualifier` column; his `<example>` attestations (RES quadrats, not functions) not
+carried. Every row repeats the attribution in a `source_note` column.
+
+Scope caveat, summarising his mail: the file covers **Unicode 5.2 only**. He notes that
+UniKemet also lists functions, with newer terminology ("classifiers" for
+determinatives), but that its functions often come from the single token used to
+confirm a sign's existence and so are incomplete; he suggests the Thot Sign List
+(<https://thotsignlist.org/>) for comparison. Both are cross-checks here, never
+sources of truth.
 
 ## Every copy of the data in this repository
 
@@ -323,6 +405,7 @@ CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
 | `data/processed/reviewed_annotations_export.csv` | corpus text plus this project's annotations | CC BY-SA 4.0 |
 | `data/benchmarks/*.csv` | queries and expectations derived from corpus readings | CC BY-SA 4.0 |
 | `data/processed/helsinki_lexicon.csv` | sign-group → reading counts (see "Sign-reading lexicon" above) | CC BY 4.0 upstream, wrapped **CC BY-SA 4.0** here[^lexicon] |
+| `data/processed/sign_functions.csv` | sign → function inventory (see "Sign functions" above) | **CC BY 4.0**, Mark-Jan Nederhof — *not* CC BY-SA[^signfunctions] |
 
 Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence`
 column repeating the attribution, because a file that leaves the repository loses

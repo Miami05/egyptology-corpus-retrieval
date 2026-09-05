@@ -354,13 +354,18 @@ def build_stage_resources(
     always the pooled n-gram index), so a caller holding the `target=None`
     `StageResources` already has it built and should pass `.index` in rather than
     have every concrete stage rebuild an identical index from scratch. Ignored
-    when `target is None`, for the same reason as `pooled_reading_model`.
+    for `.text_index` when `target is None`, for the same reason as
+    `pooled_reading_model`. Its `.tables` (the per-row token sets, see
+    `app.retrieval.tokens`) are reused at any `target` whenever they were built
+    from this same frame, because they do not depend on the stage at all — only
+    the IDF weights derived from them do, and those are rebuilt here per stage.
     """
     # Imported here, not at module scope: app.services.retrieval imports this module
     # (for build_stage_resources' own use in retrieve_with_stage), so a top-level
     # import back into retrieval.py would be circular.
     from app.retrieval.scorer import build_corpus_stats
     from app.retrieval.tfidf import NgramIndex
+    from app.retrieval.tokens import ScoringTables
     from app.services.reading_model import train_reading_model
     from app.services.retrieval import SearchIndex
     from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS, Segmenter
@@ -384,7 +389,18 @@ def build_stage_resources(
         text_index = pooled_index.text_index
     else:
         text_index = NgramIndex.build(df["mdc_norm"])
-    index = SearchIndex(stats=build_corpus_stats(stage_subset), text_index=text_index)
+    stats = build_corpus_stats(stage_subset)
+    # The per-row token sets are a property of the *pooled* frame, which is `df`
+    # for every target, so all four stage resource sets share one set of them and
+    # only their IDF weights differ (`ScoringTables.build`'s `reuse`). Without
+    # that, each stage would tokenise all 130k rows again for no gain.
+    tables = ScoringTables.build(
+        df,
+        stats.mdc_frequencies,
+        stats.glyph_frequencies,
+        reuse=pooled_index.tables if pooled_index is not None else None,
+    )
+    index = SearchIndex(stats=stats, text_index=text_index, tables=tables)
 
     return StageResources(
         stage=target,
