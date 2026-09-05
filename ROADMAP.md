@@ -1900,6 +1900,13 @@ zeroed) rather than at a missing word-order signal. It is an observation read of
 seven misses, so it cannot be tested on them; it is NOT a proposal, and no third reweighting is
 scheduled. The instrument that settles the boundary remains the expert round (Email 7).
 
+**St Andrews access control — decision pending (Ledio).** The private CSV exists only on the
+Mac; the server's `PRIVATE_DATA_DIR` is empty and that emptiness is the only thing keeping NC
+rows off the public URL. Before it is copied there, choose: (i) private rows visible only behind
+the reviewer key on the public instance (~½ day, smaller change), or (ii) a second, private
+instance that loads them and a public one that never does. Schedule before item B, which tests
+format controls on St Andrews first; item C uses the parked `standrews_lines.csv`.
+
 Decisions: (a) held-out 2 and held-out 3 are built **before** any future ranking experiment,
 with the exclusion rules pre-registered above, not before; (b) any such experiment first
 re-reads this breakdown and the expert answers; (c) tomorrow proceeds to item 6, then E, then
