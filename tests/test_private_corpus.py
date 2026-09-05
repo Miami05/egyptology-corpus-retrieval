@@ -347,7 +347,7 @@ GATE_KEY = "gate-test-reviewer-key"
 # inside longer public groups, and the unkeyed pages matched them by substring.
 PRIVATE_READING = "zzqqwx"
 PRIVATE_READING_ALT = "zzqqwy"  # the same sign read differently — see the fixture
-PRIVATE_SIGNS = ("\U00013008", "\U0001302c")
+PRIVATE_SIGNS = ("\U0001302e", "\U00013042")  # absent from examples.csv AND helsinki_lexicon.csv
 PRIVATE_TEXT_ID = "pGateTest"
 PRIVATE_TRANSLATION = "Ein privater Gutachter-Testsatz."
 PRIVATE_ROW_COUNT = 3
@@ -543,6 +543,26 @@ def test_keyed_workspace_search_finds_the_private_row(monkeypatch, gate_private_
     # The row, not the echoed query: its source and its text id.
     assert "StAndrews" in rendered, "a keyed session must actually get the private row"
     assert PRIVATE_TEXT_ID in rendered
+
+
+def test_locking_drops_the_keyed_search_results_from_the_workspace(monkeypatch, gate_private_dir):
+    """Regression (adversarial verifier, 2026-09-05): the workspace paints its last
+    results from session state, so a search made while keyed kept showing the private
+    row after Lock — with the NC credit line gone, because that follows the frame.
+    Locking must drop every result computed on the keyed frame."""
+    with _host(monkeypatch, gate_private_dir, GATE_KEY):
+        app = _run(page="workspace", query=PRIVATE_READING, keyed=True)
+        assert "StAndrews" in _rendered(app), "precondition: the keyed search found the row"
+        assert "whyptology_results" in app.session_state
+        app.button(key="whyptology_reviewer_lock").click().run()
+        assert not app.exception, app.exception
+        assert app.session_state["whyptology_reviewer_ok"] is False
+        assert "whyptology_results" not in app.session_state
+        assert "whyptology_suggestions" not in app.session_state
+        rendered = _rendered(app)
+        assert "StAndrews" not in rendered and PRIVATE_TEXT_ID not in rendered, (
+            "after Lock the workspace must not keep showing rows from the keyed frame"
+        )
 
 
 def test_keyed_corpus_explorer_counts_public_plus_private(monkeypatch, gate_private_dir):

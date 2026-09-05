@@ -588,6 +588,29 @@ def private_rows_unlocked() -> bool:
         return False
 
 
+SESSION_SEARCH_STATE_KEYS = (
+    "whyptology_results",
+    "whyptology_suggestions",
+    "whyptology_last_query",
+    "whyptology_last_parse",
+    "whyptology_segments",
+    "whyptology_resolved_stage",
+    "whyptology_stage_outcome",
+    "whyptology_corpus_page_rows",
+    "whyptology_export_csv",
+)
+
+
+def clear_session_search_state() -> None:
+    """Drop every cached search/browse result of this session.
+
+    Called when a reviewer locks the session: anything computed on the keyed frame
+    could contain private rows and must not outlive the key.
+    """
+    for key in SESSION_SEARCH_STATE_KEYS:
+        st.session_state.pop(key, None)
+
+
 def session_corpus(public: pd.DataFrame) -> pd.DataFrame:
     """The frame this session searches: public, or public + private if it is keyed."""
     if not private_rows_unlocked():
@@ -1150,6 +1173,12 @@ def render_reviewer_gate() -> None:
             if st.button("Lock this session", key="whyptology_reviewer_lock"):
                 st.session_state[REVIEWER_OK_KEY] = False
                 st.session_state.pop("whyptology_reviewer_key_input", None)
+                # Results computed while keyed may hold private rows; the workspace
+                # paints them straight from session state, so locking must drop
+                # them too — otherwise the NC rows would stay on screen while the
+                # NC credit line (which follows the frame) disappears (verifier,
+                # 2026-09-05).
+                clear_session_search_state()
                 st.rerun()
         return
     with st.expander("Reviewer access — unlock annotation saving"):
