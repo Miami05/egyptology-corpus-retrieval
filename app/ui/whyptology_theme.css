@@ -1402,3 +1402,27 @@ section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary,
 section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary * {
   color: rgba(255, 255, 255, .92) !important;
 }
+
+/* Text inputs inside the dark sidebar (the reviewer-key field). The field itself is
+   drawn on a light surface, but the sidebar rule paints all sidebar text light, so
+   the typed dots, the "Press Enter to apply" hint and the eye toggle were almost
+   invisible (Ledio's screenshot, 2026-09-06). Dark ink inside the light field. */
+section[data-testid="stSidebar"] [data-testid="stTextInput"] input,
+section[data-testid="stSidebar"] [data-testid="stTextInput"] input::placeholder,
+section[data-testid="stSidebar"] [data-testid="stTextInput"] [data-testid="InputInstructions"],
+section[data-testid="stSidebar"] [data-testid="stTextInput"] button,
+section[data-testid="stSidebar"] [data-testid="stTextInput"] button svg {
+  color: #14231f !important;
+  -webkit-text-fill-color: #14231f !important;
+  fill: #14231f !important;
+  opacity: 1;
+}
+section[data-testid="stSidebar"] [data-testid="stTextInput"] input::placeholder,
+section[data-testid="stSidebar"] [data-testid="stTextInput"] [data-testid="InputInstructions"] {
+  color: #53605b !important;
+  -webkit-text-fill-color: #53605b !important;
+}
+section[data-testid="stSidebar"] [data-testid="stTextInput"] [data-baseweb="base-input"],
+section[data-testid="stSidebar"] [data-testid="stTextInput"] [data-baseweb="input"] {
+  background: #fbf9f4 !important;
+}
