@@ -140,8 +140,8 @@ def lemma_ids(value: object) -> set[str]:
 
     Cells are whitespace-separated `id|lemma` pairs (TLA) or bare ids (AES). The old
     code ran `_token_set` over the cell, which splits on `|` as well, so the folded
-    lemma strings (`ndj`, `aha`) landed in the "shared lemma IDs" list beside the
-    numbers. Only the part before the bar is an id.
+    lemma strings (`ndj`, `aha`) landed in the evidence line's list of common lemma
+    IDs beside the numbers. Only the part before the bar is an id.
     """
     ids: set[str] = set()
     for part in _safe_str(value).split():
@@ -327,7 +327,7 @@ def _evidence_summary(
     shared_lemmas = set.intersection(*lemma_sets) if lemma_sets else set()
     if shared_lemmas:
         shown = ", ".join(sorted(shared_lemmas)[:8])
-        bits.append(f"shared lemma IDs: {shown}")
+        bits.append(f"lemma IDs common to this reading's rows: {shown}")
 
     formula_bits = []
     for field, label in [

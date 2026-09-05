@@ -39,6 +39,20 @@ The script does `git pull --ff-only`, `pip install -r requirements.txt`, refresh
 `/_stcore/health`; it prints the commit it is serving and one line per step saying what it
 did. If it prints the last 30 log lines instead, the app did not come up — read them.
 
+**The deploy script is version-controlled.** The canonical copy is
+`scripts/egyptology-deploy.sh` in the repo; `/home/ledio/egyptology-deploy.sh` on the box is
+an operational copy of it and must be kept in step by hand (it is not in `/home/ledio/bin`,
+which the script rewrites, precisely because it is the script). Install or update it with:
+
+```bash
+scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh
+```
+
+Since 2026-09-06 the repo copy runs `import_examples.py --dry-run` before the real sync when
+the corpus changed, so the deploy log distinguishes "nothing to insert" from "N inserted"
+(the dry-run reports both what the default sync would insert and what `--refresh-existing`
+would change, and writes nothing). Copy the repo version to the box to pick that up.
+
 **It takes about three minutes**, nearly all of it the restart: the unit's `ExecStartPost`
 warms the stage resource sets before systemd calls the service started, so a deploy that
 returns is serving a warm app. Measured no-op deploy 2026-09-05: 2 m 55 s total, health in
@@ -72,8 +86,11 @@ first, then the environment. Set per host, never in code.
 ## What the service needs, measured 2026-09-04, warm-up added 2026-09-05
 
 130,472 rows load in 9 s; pooled resources build in ~30 s on this CPU; the first
-hieroglyph paste in Auto mode builds the three stage resource sets (~60 s cold) and then
-everything is cached. Peak RSS with all four sets resident: **3.0 GB**, of 23 GB — the
+hieroglyph paste in Auto mode builds the three stage resource sets and then everything is
+cached. **That three-stage cold build is now ~30 s, not ~60 s** — re-measured on the
+developer's Mac 2026-09-05 after item 3 made the stage sets share the pooled per-row token
+tables (see "Warming that cold build" below); the 60 s here was the 2026-09-04 figure,
+before that change. Peak RSS with all four sets resident: **3.0 GB**, of 23 GB — the
 1.9 GB first written here was an estimate and is low.
 
 Query latency, **measured on the developer's Mac, 2026-09-05** (ROADMAP item 3 — the
@@ -88,9 +105,12 @@ instead of 130,472 scalar ones. Build cost for all four stage sets rose 0.6 s in
 (they share the token structures, which are a function of the pooled frame alone) and
 resident memory **+60 MB** across the four sets. Scores are bit-identical in 8 of 10
 signal columns; the two IDF columns differ by at most one double-precision rounding step
-(summation order), which never changes any top-1000 ordering. Note the FastAPI endpoint
-in `app/api/main.py` calls `retrieve_top_k` without a `SearchIndex` and so still takes the
-slow scalar path (~3 s); only the Streamlit path is fast.
+(summation order), which never changes any top-1000 ordering. The FastAPI endpoint in
+`app/api/main.py` now gets the `SearchIndex` too (2026-09-06): it builds the frame and
+index once behind an `lru_cache` (`load_corpus`) and passes `index=` to `retrieve_top_k`,
+so a warm request went from **8.4 s to 0.15 s** on the Mac (it previously reloaded the
+130,472-row CSV on *every* request and took the scalar retrieval path; the CSV reload was
+the bulk of the 8.4 s). Both the Streamlit and API paths are now fast.
 
 ### Warming that cold build
 
@@ -100,7 +120,17 @@ The visitor no longer pays it. Measured on the box 2026-09-05:
 |---|---|---|
 | first hieroglyph paste after a restart | ~60 s (the build) | **5.3 s** |
 | page load, no search | — | 1.9 s |
-| the cold build itself | on the visitor's first paste | 165 s inside `ExecStartPost`, before systemd calls the service started |
+| the cold build itself (server, box) | on the visitor's first paste | 165 s inside `ExecStartPost`, before systemd calls the service started |
+| the three concrete stage sets (Mac, 2026-09-05) | — | **~30 s total** (~9–11 s each: Earlier 9.5–10.0 s, Late 10.4–11.1 s, Demotic 9.2–9.4 s), reusing the pooled index |
+
+The box's 165 s row and the Mac's ~30 s row are **different machines and different scopes**
+and are kept side by side, not merged: the 165 s is the whole `ExecStartPost` warm-up on the
+OptiPlex (CSV load + pooled build + all four sets + a real paste over the websocket), measured
+2026-09-05; the ~30 s is just the three concrete `build_stage_resources` calls on the Mac,
+each reusing the pooled `SearchIndex` exactly as `load_stage_resources` does, re-measured
+2026-09-05 after item 3. **The server number should be re-measured after the next deploy** —
+item 3's pooled-token-table sharing, which halved the Mac figure, had not landed on the box
+when the 165 s was taken.
 
 5.3 s misses the ½-day plan's "< 5 s" gate by 0.3 s. The remainder is not the warm-up:
 a declared-stage query and an "All (no stage)" query cost the same 5.7–6.1 s as Auto, so

@@ -93,6 +93,63 @@ def test_seeding_twice_neither_duplicates_nor_overwrites(isolated_db) -> None:
         session.close()
 
 
+def test_diff_new_examples_counts_without_writing(isolated_db) -> None:
+    """The deploy's `--dry-run` reports the insert count from this, and it must both
+    match a real sync and leave the table exactly as it found it."""
+    import app.storage.bootstrap as bootstrap
+
+    df = _frame(10)
+    # Seed only the first six rows, so four are missing.
+    bootstrap.sync_new_examples(df.iloc[:6])
+    assert bootstrap.example_count() == 6
+
+    diff = bootstrap.diff_new_examples(df)
+    assert diff == {"already_present": 6, "inserted": 4, "total": 10}
+    # Reporting must not write.
+    assert bootstrap.example_count() == 6
+
+    # A real sync inserts exactly what the diff promised.
+    stats = bootstrap.sync_new_examples(df)
+    assert stats["inserted"] == diff["inserted"]
+    assert bootstrap.example_count() == 10
+
+
+def test_upsert_dry_run_reports_field_changes_without_writing(isolated_db) -> None:
+    """`--refresh-existing --dry-run` must count what would change and touch nothing."""
+    import app.storage.bootstrap as bootstrap
+    from app.storage.repo import ExampleRepo
+
+    df = _frame(5)
+    bootstrap.sync_new_examples(df)
+
+    changed = df.copy()
+    changed["translation"] = "NEW TRANSLATION"
+
+    diff = bootstrap.upsert_examples(changed, dry_run=True)
+    assert diff["created"] == 0
+    assert diff["updated"] == 5
+    assert diff["unchanged"] == 0
+    assert diff["field_changes"].get("translation") == 5
+
+    # Nothing was written: the stored translation is still the original.
+    session = isolated_db()
+    try:
+        example = ExampleRepo(session).list_examples()[0]
+        assert example.translation == "x"
+    finally:
+        session.close()
+
+    # And a real refresh then applies exactly those changes.
+    applied = bootstrap.upsert_examples(changed)
+    assert applied["updated"] == 5
+    session = isolated_db()
+    try:
+        example = ExampleRepo(session).list_examples()[0]
+        assert example.translation == "NEW TRANSLATION"
+    finally:
+        session.close()
+
+
 def test_attach_db_ids_never_pulls_full_corpus_rows(isolated_db, monkeypatch) -> None:
     """Regression for the Neon outage: the id map must come from the four-column
     select. Downloading every column of every row on each boot is what exhausted the

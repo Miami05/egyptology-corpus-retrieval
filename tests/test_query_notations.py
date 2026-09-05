@@ -220,7 +220,7 @@ def test_shared_tokens_are_shown_as_the_corpus_unicode_words() -> None:
 
 def test_shared_lemma_ids_contain_only_ids() -> None:
     """`id|lemma` cells were split on the bar too, so folded lemmas (`ndj`) sat in
-    the "shared lemma IDs" list beside the numbers."""
+    the evidence line's list of common lemma IDs beside the numbers."""
     from app.services.suggestions import lemma_ids
 
     assert lemma_ids("90880|nḏ 51510|wdi̯ 91901|r 10090|=s") == {
