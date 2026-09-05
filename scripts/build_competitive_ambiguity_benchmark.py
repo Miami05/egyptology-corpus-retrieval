@@ -11,6 +11,16 @@ rows, so a twin outside the pool was invisible to the guard and present at eval 
 inverted index over rare tokens makes the full-corpus check affordable: instead of
 163 million pairwise comparisons, each row is compared only with rows that share at
 least one of its tokens.
+
+Three flags narrow *candidacy* and nothing else — `--pool-size`, `--exclude-benchmark`
+(repeatable) and `--stage` — and they all share one invariant, because breaking it
+would be the same bug three times over: **twin detection always runs against the whole
+corpus**. The eval loads the whole corpus, so a candidate whose edition twin sits
+outside the narrowed candidate set would still be handed its expected reading for free
+at eval time. `--stage` was added on 2026-09-05 to build LE-v1, the Late Egyptian
+evaluation set (docs/late-egyptian-eval-set-2026-09-05.md); `--exclude-benchmark`
+became repeatable in the same change so LE-v1 could be held out from v4 *and* from
+held-out 1 at once.
 """
 
 from __future__ import annotations
@@ -28,6 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv
+from app.services.stage import normalize_stage
 from app.services.suggestions import canonical_reading, loose_reading_form
 
 EXAMPLES_PATH = "data/processed/examples.csv"
@@ -58,7 +69,9 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--exclude-benchmark",
-        default="",
+        action="append",
+        default=None,
+        metavar="PATH",
         help=(
             "Path to an existing benchmark CSV whose expected rows must not appear "
             "in this one. Those rows, and every corpus row within --max-twin-overlap "
@@ -67,7 +80,12 @@ def _parse_args() -> argparse.Namespace:
             "This is how a held-out validation set disjoint from a frozen benchmark "
             "is built: the selection itself is deterministic — the builder ranks by "
             "number of genuine rivals and has no random seed — so disjointness comes "
-            "from the exclusion, not from reseeding."
+            "from the exclusion, not from reseeding. Repeatable: pass the flag once "
+            "per file to stay disjoint from several existing sets at once (LE-v1 is "
+            "held out from v4 *and* from held-out 1). Repeating it is exactly "
+            "equivalent to concatenating the files' expected rows — the union of the "
+            "seed rows is taken before the near-twin sweep, so a row named by either "
+            "file is excluded and no file's exclusions can mask another's."
         ),
     )
     parser.add_argument(
@@ -85,6 +103,21 @@ def _parse_args() -> argparse.Namespace:
         "--id-prefix",
         default="COMP",
         help="Prefix for generated benchmark_id values (default COMP).",
+    )
+    parser.add_argument(
+        "--stage",
+        default="",
+        help=(
+            "Restrict benchmark *candidates* to corpus rows whose `language_stage` "
+            "cell equals this exact string (e.g. 'Late Egyptian'). Empty (default) "
+            "considers every row, so existing callers are unaffected. Like "
+            "--pool-size and --exclude-benchmark, this narrows candidacy ONLY: twin "
+            "detection still runs against the whole corpus, because the eval loads "
+            "the whole corpus — a Late Egyptian row whose edition twin is a BBAW row "
+            "would otherwise be handed its own answer for free. The corpus column is "
+            "matched verbatim rather than through normalize_stage, so the flag names "
+            "exactly the population it selects."
+        ),
     )
     parser.add_argument(
         "--pool-size",
@@ -328,12 +361,18 @@ def main() -> None:
     # threshold). Removing both is what makes a held-out set genuinely held out: a
     # near-twin of a v4 target would let the new set be answered by v4 evidence.
     excluded_positions: set[int] = set()
-    if args.exclude_benchmark:
-        previous = pd.read_csv(args.exclude_benchmark).fillna("")
-        keys = {
-            (str(row["expected_source_text_id"]), str(row["expected_source_sentence_id"]))
-            for _, row in previous.iterrows()
-        }
+    exclude_paths = list(args.exclude_benchmark or [])
+    if exclude_paths:
+        # The union of every named file's expected rows is taken *before* the
+        # near-twin sweep below, so passing the flag twice is the same as passing
+        # one concatenated file and no file's exclusions can mask another's.
+        keys: set[tuple[str, str]] = set()
+        for exclude_path in exclude_paths:
+            previous = pd.read_csv(exclude_path).fillna("")
+            keys |= {
+                (str(row["expected_source_text_id"]), str(row["expected_source_sentence_id"]))
+                for _, row in previous.iterrows()
+            }
         row_keys = [
             (str(text_id), str(sentence_id))
             for text_id, sentence_id in zip(
@@ -361,20 +400,40 @@ def main() -> None:
                 if shared / len(target | corpus_token_sets[other]) >= args.max_twin_overlap:
                     excluded_positions.add(other)
         print(
-            f"Excluding {len(seed_positions)} rows named by {args.exclude_benchmark} "
-            f"and {len(excluded_positions) - len(seed_positions)} near-twins of them "
+            f"Excluding {len(seed_positions)} rows named by "
+            f"{', '.join(exclude_paths)} and "
+            f"{len(excluded_positions) - len(seed_positions)} near-twins of them "
             f"(overlap >= {args.max_twin_overlap})."
+        )
+
+    # Candidate rows may also be restricted to one language stage (--stage). This is
+    # a candidacy filter, nothing more: `corpus_token_sets` and `token_index` above
+    # were built from the whole corpus and are what every twin test below consults.
+    corpus_stages = (
+        [str(value).strip() for value in prepared["language_stage"]]
+        if "language_stage" in prepared.columns
+        else [""] * len(prepared)
+    )
+    if args.stage:
+        print(
+            f"Restricting candidates to language_stage == {args.stage!r} "
+            f"({sum(1 for value in corpus_stages if value == args.stage)} of "
+            f"{len(corpus_stages)} corpus rows); twin detection stays whole-corpus."
         )
 
     positional_index = list(prepared.index)
     candidates: list[tuple[int, float, int]] = []
     skipped_excluded = 0
+    skipped_wrong_stage = 0
     skipped_near_duplicate = 0
     skipped_no_distractor = 0
     skipped_too_short = 0
     for position in candidate_positions:
         if position in excluded_positions:
             skipped_excluded += 1
+            continue
+        if args.stage and corpus_stages[position] != args.stage:
+            skipped_wrong_stage += 1
             continue
         index = positional_index[position]
         target_tokens = corpus_token_sets[position]
@@ -420,10 +479,15 @@ def main() -> None:
             break
     selected = prepared.loc[selected_indices, :].copy()
 
+    stage_note = (
+        f"{skipped_wrong_stage} outside language_stage {args.stage!r}, "
+        if args.stage
+        else ""
+    )
     print(
         f"Candidates considered: {len(list(candidate_positions))} rows -> "
         f"{len(candidates)} eligible (skipped {skipped_excluded} excluded by "
-        f"--exclude-benchmark, {skipped_too_short} too short, "
+        f"--exclude-benchmark, {stage_note}{skipped_too_short} too short, "
         f"{skipped_no_distractor} without distractors, {skipped_near_duplicate} "
         f"with a near-identical twin anywhere in the corpus at overlap >= "
         f"{args.max_twin_overlap})"
@@ -459,6 +523,14 @@ def main() -> None:
                 "expected_lemma_ids": " ".join(lemma_ids),
                 "acceptable_token_overlap_threshold": f"{threshold:.2f}",
                 "notes": notes,
+                # The declared stage for `run_competitive_ambiguity_eval.py --stage
+                # declared`, taken straight from the selected row's own corpus cell
+                # (normalized_stage's vocabulary: one of STAGES, or blank for the
+                # `Unspecified (...)` rows). v4's column of the same name was derived
+                # post hoc by derive_v4_declared_stage; this one needs no derivation
+                # because the corpus states it. Without the column, a `declared` run
+                # declares nothing and silently degenerates to a pooled run.
+                "language_stage": normalize_stage(row.get("language_stage", "")) or "",
             }
         )
         if len(rows) >= args.limit:

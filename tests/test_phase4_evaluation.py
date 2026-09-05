@@ -9,6 +9,7 @@ make a number quotable.
 
 from __future__ import annotations
 
+import itertools
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+from app.data.loader import REQUIRED_COLUMNS as LOADER_REQUIRED_COLUMNS  # noqa: E402
 from app.services.suggestions import loose_reading_form  # noqa: E402
 from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
     _token_set,
@@ -25,6 +27,9 @@ from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
     exhaustive_best_twin_overlap,
     rivals_for,
     twin_probe_count,
+)
+from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
+    main as build_benchmark_main,
 )
 from scripts.import_tla_dataset import content_id  # noqa: E402
 from scripts.migrate_example_ids import build_mapping  # noqa: E402
@@ -426,3 +431,201 @@ def test_ambiguous_eval_is_labelled_as_a_sanity_check():
     source = (PROJECT_ROOT / "scripts" / "run_ambiguous_suggestion_eval.py").read_text()
     assert "SANITY CHECK" in source
     assert "never be quoted as accuracy" in source
+
+
+# ---------- builder flags added for the Late Egyptian eval set (LE-v1, item 6) ----------
+#
+# Two flags were added on 2026-09-05 so LE-v1 could be built by the *same* builder that
+# produced v4 and held-out 1 rather than by a parallel implementation:
+#
+#   --stage "Late Egyptian"   restricts the *candidates*, nothing else
+#   --exclude-benchmark       became repeatable, so a new set can be held out from
+#                             several existing sets at once
+#
+# The property that matters and is easy to get wrong: narrowing candidacy must NOT
+# narrow twin detection. The eval loads the whole corpus, so a Late Egyptian row whose
+# edition twin is a BBAW or Earlier Egyptian row would still be handed its own answer
+# for free, and must still be thrown out.
+
+
+def _synthetic_corpus_row(**overrides) -> dict:
+    row = {col: "" for col in LOADER_REQUIRED_COLUMNS}
+    row.update(source="Synthetic", review_status="ok")
+    row.update(overrides)
+    # The reading-order query type reads this column; leaving it blank would make
+    # every third generated query empty and drop it on the signal filter.
+    if not row.get("normalized_reading_order"):
+        row["normalized_reading_order"] = row["transliteration_gold"]
+    return row
+
+
+def _stage_corpus() -> list[dict]:
+    """A tiny corpus with a Late Egyptian and an Earlier Egyptian rival cluster.
+
+    Tokens are chosen so the builder's own text handling cannot interfere: none is
+    in STOP_TOKENS, none is longer than four characters (so `_strip_some_endings`
+    never fires), and none ends in t/w/j/y.
+    """
+
+    def row(sentence_id, stage, tokens):
+        return _synthetic_corpus_row(
+            source_text_id="SYN",
+            source_sentence_id=sentence_id,
+            language_stage=stage,
+            transliteration_gold=tokens,
+        )
+
+    return [
+        # A Late Egyptian rival cluster: each has two rivals above overlap 0.16.
+        row("LE1", "Late Egyptian", "alfa brav chrm delp"),
+        row("LE2", "Late Egyptian", "alfa brav chrm echo"),
+        row("LE3", "Late Egyptian", "alfa brav golf hotl"),
+        # A Late Egyptian row with a rival *inside* the stage and an exact twin
+        # *outside* it. Restricting twin detection to the stage would let it through.
+        row("LE_TWIN", "Late Egyptian", "indg juli kilo lima"),
+        row("LE_TWIN_RIVAL", "Late Egyptian", "indg juli mike nvmb"),
+        row("EE_TWIN", "Earlier Egyptian", "indg juli kilo lima"),
+        # An Earlier Egyptian rival cluster that --stage must keep out.
+        row("EE1", "Earlier Egyptian", "oscr papa qube rome"),
+        row("EE2", "Earlier Egyptian", "oscr papa qube sirr"),
+    ]
+
+
+_builder_run_counter = itertools.count()
+
+
+def _run_builder(monkeypatch, tmp_path, rows, *extra_args) -> pd.DataFrame:
+    examples = tmp_path / "examples.csv"
+    pd.DataFrame(rows).to_csv(examples, index=False)
+    output = tmp_path / f"bench_{next(_builder_run_counter)}.csv"
+    argv = [
+        "build_competitive_ambiguity_benchmark.py",
+        "--examples",
+        str(examples),
+        "--output",
+        str(output),
+        "--limit",
+        "10",
+        "--exhaustive-twins",
+        *extra_args,
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    build_benchmark_main()
+    try:
+        return pd.read_csv(output).fillna("")
+    except pd.errors.EmptyDataError:
+        # A build that selected nothing writes an empty frame, which has no header
+        # row at all rather than a header with no rows.
+        return pd.DataFrame()
+
+
+def _selected_ids(frame: pd.DataFrame) -> set[str]:
+    if frame.empty:
+        return set()
+    return set(frame["expected_source_sentence_id"].astype(str))
+
+
+def test_stage_filter_keeps_only_candidates_of_that_stage(monkeypatch, tmp_path):
+    built = _run_builder(monkeypatch, tmp_path, _stage_corpus(), "--stage", "Late Egyptian")
+    assert _selected_ids(built) <= {"LE1", "LE2", "LE3", "LE_TWIN", "LE_TWIN_RIVAL"}
+    assert not _selected_ids(built) & {"EE1", "EE2", "EE_TWIN"}
+    assert set(built["language_stage"]) == {"Late Egyptian"}
+
+
+def test_stage_filter_still_excludes_a_twin_that_lives_outside_the_stage(
+    monkeypatch, tmp_path
+):
+    """The regression this flag could easily have introduced.
+
+    LE_TWIN has a rival inside Late Egyptian (so it is a candidate at all) and an
+    exact twin in an Earlier Egyptian row. If --stage had narrowed the frame that
+    twin detection runs on, LE_TWIN would look clean and be selected — and at eval
+    time, with the whole corpus loaded and only LE_TWIN excluded, its Earlier
+    Egyptian duplicate would hand over the expected reading for free.
+    """
+    built = _run_builder(monkeypatch, tmp_path, _stage_corpus(), "--stage", "Late Egyptian")
+    assert "LE_TWIN" not in _selected_ids(built)
+    # Its rival has no twin and is unaffected — the guard is targeted, not blanket.
+    assert "LE_TWIN_RIVAL" in _selected_ids(built)
+
+
+def test_without_the_stage_flag_the_builder_is_unrestricted(monkeypatch, tmp_path):
+    built = _run_builder(monkeypatch, tmp_path, _stage_corpus())
+    assert _selected_ids(built) & {"EE1", "EE2"}, "default must consider every stage"
+    assert "LE_TWIN" not in _selected_ids(built)
+    assert "EE_TWIN" not in _selected_ids(built)
+
+
+def test_stage_filter_naming_an_absent_population_selects_nothing(monkeypatch, tmp_path):
+    built = _run_builder(monkeypatch, tmp_path, _stage_corpus(), "--stage", "Coptic")
+    assert _selected_ids(built) == set()
+
+
+def test_benchmark_rows_carry_the_corpus_language_stage(monkeypatch, tmp_path):
+    """`--stage declared` reads this column; without it a declared run declares
+    nothing and is indistinguishable from a pooled run."""
+    built = _run_builder(monkeypatch, tmp_path, _stage_corpus())
+    assert "language_stage" in built.columns
+    pairs = zip(built["expected_source_sentence_id"].astype(str), built["language_stage"])
+    for sentence_id, stage in pairs:
+        expected = "Late Egyptian" if sentence_id.startswith("LE") else "Earlier Egyptian"
+        assert stage == expected
+
+
+def _exclusion_file(path: Path, sentence_ids: list[str]) -> Path:
+    pd.DataFrame(
+        [
+            {"expected_source_text_id": "SYN", "expected_source_sentence_id": sentence_id}
+            for sentence_id in sentence_ids
+        ]
+    ).to_csv(path, index=False)
+    return path
+
+
+def test_exclude_benchmark_is_repeatable_and_takes_the_union(monkeypatch, tmp_path):
+    rows = _stage_corpus()
+    baseline = _selected_ids(_run_builder(monkeypatch, tmp_path, rows))
+    assert {"LE1", "LE2"} <= baseline, "precondition: both are selected without exclusions"
+
+    first = _exclusion_file(tmp_path / "exclude_a.csv", ["LE1"])
+    second = _exclusion_file(tmp_path / "exclude_b.csv", ["LE2"])
+    built = _run_builder(
+        monkeypatch,
+        tmp_path,
+        rows,
+        "--exclude-benchmark",
+        str(first),
+        "--exclude-benchmark",
+        str(second),
+    )
+    assert not _selected_ids(built) & {"LE1", "LE2"}
+
+
+def test_two_exclusion_files_equal_one_concatenated_file(monkeypatch, tmp_path):
+    """Repeating the flag must be exactly concatenation, not last-one-wins."""
+    rows = _stage_corpus()
+    first = _exclusion_file(tmp_path / "one.csv", ["LE1"])
+    second = _exclusion_file(tmp_path / "two.csv", ["LE2", "EE1"])
+    both = _exclusion_file(tmp_path / "both.csv", ["LE1", "LE2", "EE1"])
+
+    repeated = _run_builder(
+        monkeypatch,
+        tmp_path,
+        rows,
+        "--exclude-benchmark",
+        str(first),
+        "--exclude-benchmark",
+        str(second),
+    )
+    concatenated = _run_builder(
+        monkeypatch, tmp_path, rows, "--exclude-benchmark", str(both)
+    )
+    assert _selected_ids(repeated) == _selected_ids(concatenated)
+
+
+def test_a_single_exclusion_file_still_behaves_as_before(monkeypatch, tmp_path):
+    rows = _stage_corpus()
+    only = _exclusion_file(tmp_path / "only.csv", ["LE1"])
+    built = _run_builder(monkeypatch, tmp_path, rows, "--exclude-benchmark", str(only))
+    assert "LE1" not in _selected_ids(built)
+    assert {"LE2", "LE3"} <= _selected_ids(built)
