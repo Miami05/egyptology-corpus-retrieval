@@ -1870,3 +1870,38 @@ page attached); set `REVIEWER_KEY`; `passwd` on the box; approve
 `scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh`. (1) Experiment
 2 as above, its own worktree, `opus5-worker` + fresh verifier. (2) Item 6 (Late Egyptian set
 from Ramses), then E, B, C, D as planned. Standing rules unchanged.
+
+### Experiment 2 — result: the pre-check failed 0/7, the experiment stopped at step 0
+
+Run 2026-09-05 late evening (Opus 5 worker, worktree, merged as a null result;
+`docs/experiment-2-adjacency-2026-09-05.md`, raw output
+`data/benchmarks/experiment2_step0_precheck.txt`). The probe reproduced the harness digit for
+digit on all seven traces (COMP_007 0.5350 / 0.5330 / 0.5300 / 0.5250 etc.). Bigram counts of
+ranks 1..k, useful row last: COMP_007 `[0,0,0,0]`, COMP_014 `[0,0,0,0]`, HOLD_001 `[1,1,2,2]`,
+HOLD_002 `[0,1,0,0]`, HOLD_005 none in top 6, HOLD_014 `[1,1,2,2]`, HOLD_026 `[0,0,0,0]`.
+**Beaten in 0 of 7** (rule: ≥ 4). In four misses no top-6 candidate keeps a single consecutive
+query pair, so an additive bonus would be identically zero across the window; in the two where
+it is alive the useful row ties the row it must overtake. Two structural reasons: the builder's
+`simplified`/`partial` queries drop stop tokens, destroying consecutiveness by construction, and
+the loose fold splits compound names, so exact-token adjacency is stricter than it sounds.
+**This rejects the bigram measure, not word order in general.** Per the frozen protocol the
+ranker was not changed and held-out 2 / 3 were not built.
+
+**What step 0 did establish — the ranker's own per-term breakdown, shown for the first time:**
+`exact_or_near` (0.12) is 0.0 for every candidate of all seven misses and `reading_similarity`
+(0.08) never fires, so 0.20 of the nominal weight is dead at the boundary; `relative_score` +
+`mean_score` are nearly flat across the top 6 (0.82–1.00 of pool max). The boundary is decided
+between `translit_overlap` (0.20) and `char_similarity` (0.16), and **the useful row usually
+wins the overlap term and loses on character similarity**: COMP_007's rank-4 row leads
+`translit_overlap` by 0.078 and trails `char_similarity` by 0.080; same shape in HOLD_014;
+COMP_014, HOLD_001, HOLD_002 lose both, HOLD_026 wins char and loses overlap. This is a sharper
+statement of Experiment 1's mechanism and points at `char_similarity`'s role (the term CFG-B
+zeroed) rather than at a missing word-order signal. It is an observation read off the same
+seven misses, so it cannot be tested on them; it is NOT a proposal, and no third reweighting is
+scheduled. The instrument that settles the boundary remains the expert round (Email 7).
+
+Decisions: (a) held-out 2 and held-out 3 are built **before** any future ranking experiment,
+with the exclusion rules pre-registered above, not before; (b) any such experiment first
+re-reads this breakdown and the expert answers; (c) tomorrow proceeds to item 6, then E, then
+the wider expert round, then B, C, D. Suite after the merge: 527 passed (the 12 new tests pin
+the bigram definition and that `debug_signals` leaves suggestions byte-identical).
