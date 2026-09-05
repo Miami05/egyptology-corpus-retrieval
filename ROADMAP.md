@@ -1962,3 +1962,40 @@ the bigram definition and that `debug_signals` leaves suggestions byte-identical
 **Next: the St Andrews reviewer gate** (decision taken 2026-09-05 evening, option (i)), then
 Ledio's one email round with the key (Emails 6/7 + "E is live, here is the measured answer"), then
 B, C, D.
+
+## St Andrews reviewer-key gate — done 2026-09-05 night (option (i), adversarially verified)
+
+The private CC BY-NC-SA rows now load **only into sessions that have presented `REVIEWER_KEY`**.
+The app boots on the public frame; a keyed session gets public + private under its own
+`corpus_signature`, so every cached loader (search index, sign index, both Similar-text
+indexes, stage resources, reading model, segmenter) builds a second, lazily built set for
+keyed sessions — the frame is the gate, not a filter, so no surface can leak by being
+forgotten. Fails closed on every path (no key configured, empty or whitespace key, wrong or
+prefix key, forced session flag, key-check exception, malformed private CSV → public rows,
+logged). Key lives in `st.session_state` only; the `?q=` share link carries no key; the
+warm-up is handed the public frame. Comparison is `secrets.compare_digest`. Keyed set costs
+**+1.0 GB RSS / 16 s** on the Mac (+0.57 GB without Similar text), built on first unlock.
+
+**Adversarial verification (fresh Opus 5 agent):** 65 automated routes — every page, `?q=` /
+`?stage=` / `?view=` with private-only strings, the Corpus explorer search box, Source
+dropdown and last page, Sign readings' 7,048 options, the Reviews download bytes, all three
+Similar-text tiers, cache cross-talk after a keyed build (17 routes re-run in the same process
+plus direct re-fetch of all ten cached loaders under the public key), signature collision, key
+comparison edge cases, exceptions, logging under DEBUG, all DB tables before/after, the FastAPI
+endpoint, the export and warm-up scripts, module scope — **0 leaks to an unkeyed session.**
+One same-session defect found and fixed before merge: after "Lock this session" the workspace
+kept painting results computed while keyed, with the NC credit line gone; locking now clears
+every cached search/browse key (regression test). Test tracer signs moved to code points
+absent from the Helsinki lexicon as well as the corpus (they were present in the lexicon, a
+false-failure risk). Verdict: **safe to deploy with the private CSV on the server.**
+
+Operational order (DEPLOYMENT.md): Ledio sets `REVIEWER_KEY` in `/home/ledio/egyptology.env`
+and restarts the service **first**; only then
+`scp data/private/standrews.csv ledio@vela-optiplex-3070:egyptology-private/`. Key is one
+shared secret for the reviewers; rotate by editing the line, restarting, resending. Notes
+left open: `CORPUS_SOURCES_EXCLUDE` does not apply to private rows (the frame is the gate,
+not that knob); with the key unset the sidebar tells every visitor that private files are
+present (one bit, misconfigured state only).
+
+**Next: Ledio's email round** (Emails 6/7 + "E is live, here is the measured answer" + the
+key), then B, C, D.
