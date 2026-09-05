@@ -1912,3 +1912,53 @@ with the exclusion rules pre-registered above, not before; (b) any such experime
 re-reads this breakdown and the expert answers; (c) tomorrow proceeds to item 6, then E, then
 the wider expert round, then B, C, D. Suite after the merge: 527 passed (the 12 new tests pin
 the bigram definition and that `debug_signals` leaves suggestions byte-identical).
+
+## Items 6 and E — done 2026-09-05 evening (Opus 5 workers, worktrees, fresh verifiers)
+
+- **Item 6, Late Egyptian evaluation set LE-v1 — done** (`docs/late-egyptian-eval-set-2026-09-05.md`,
+  `data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv`, frozen). Pre-registered, then
+  built with the builder's rules plus a `--stage` pool filter (twin detection stays whole-corpus),
+  `--exhaustive-twins`, v4 and held-out 1 excluded, 30 rows. **All 30 targets are Ramses** — the
+  deterministic rival-count rule put Ramses (92 % of the 43,665-row Late Egyptian pool) on top and
+  the rule was not changed afterwards; so LE-v1 measures Ramses Late Egyptian, not TLA's. 15
+  simplified / 15 partial / 0 reading-order (Ramses has no `normalized_reading_order`; the 14
+  empty queries were dropped). Zero twins, zero overlap with v4 or held-out 1; no `_`, MdC or
+  ASCII-yod leakage (import_ramses.py already stores TLA-style yod). **Numbers, 130,472 rows,
+  `--query-path app`:** none 0.8667 top-3 / 0.8000 MRR / 22 rank-1; **auto 0.8667 / 0.8167 / 23**;
+  declared 0.8667 / 0.8000 / 22; misses LE_008, LE_014, LE_034, LE_044 in every mode; all 30
+  answerable (median 1,567 useful rows). Auto inferred Late Egyptian on 16/30 (all correct),
+  abstained on 14, wrong on 0. Only LE_001 and LE_005 move across modes: auto's lead over `none`
+  is LE_005 (it inferred Late Egyptian and promoted the useful row 2→1), its lead over
+  `declared` is LE_001 (it abstained and avoided the loss declaring caused). Reading: the stage machinery neither
+  helps nor hurts Ramses queries at the top-3 level; the misses are three-quarters within 0.03 of
+  the usefulness threshold; the 14 abstentions are probably the `lift ≥ 1.5` gate (inferred
+  from the code, not isolated by a run). Builder gains a `language_stage` column (without it `--stage declared`
+  silently degenerates to pooled). Suite 535.
+- **Item E, similar-text search across tiers — done** (`docs/similar-text-eval-2026-09-05.md`,
+  `data/benchmarks/cross_edition_pairs_v1.csv`, `similar_text_eval_v1_results.csv`,
+  `app/services/similar_text.py`, new **Similar text** page). Pre-registered pair rule: two rows
+  from different sources, loose-token Jaccard in [0.5, 0.9), ≥ 0.9 near-copies dropped (1,538),
+  300 pairs, 50 per source pair, deterministic, byte-identical on re-run. Hand-check of ten: 8
+  same sentence, 1 partial (sentence boundary), 1 false (short function-word clause) — ~10 %
+  noise, an upper bound on any method. **Nederhof's question, "can one improve on edit distance?",
+  answered on 600 directed queries:** transliteration T1 n-gram cosine MRR 0.718 / 0.723 vs T2
+  edit-distance re-rank 0.708 / 0.723 → **no improvement**; signs G1 0.726 / 0.741 vs G2 0.745 /
+  0.748 → small improvement; pre-registered rule (both tiers, both directions) → **edit distance
+  does NOT improve on n-gram cosine**. Translation L1 0.628 / 0.626 on the 48 AES↔TLA pairs (the
+  only same-language pairs; BBAW is English, Ramses has none). Tier combination is a wash on
+  like-for-like cases (T1 0.751 vs C2 0.754). Stated limits: pairs were selected by
+  transliteration overlap, so T3 token-Jaccard (0.80) is the selection statistic, not a result;
+  selected pairs sit at the easy end of the band (mean Jaccard 0.858); the predicted hard case
+  Ramses↔TLA is easy (T1 0.789) because the fold unifies yods and `.PL`, the real hard case is
+  AES↔Ramses (T1 0.477, different stage). **The page** ranks by what measured best — T1 for
+  transliteration, G2 for signs, L1 for translation — and its caption says so with the MRR; ten
+  parallel cards with per-tier scores and a "why it matched" line; no upload, nothing stored; the
+  two extra indexes build lazily (signs 1.3 s / +66 MB, translation 4.7 s / +456 MB). Workspace
+  ranking path untouched. Suite 549, paste 8/8.
+- Deviations recorded in each doc: the two-source ambition of LE-v1 not met; tier auto-detection
+  got a vocabulary test so `htp dj nswt` is not mistaken for a translation; the Ramses yod mapping
+  was unnecessary.
+
+**Next: the St Andrews reviewer gate** (decision taken 2026-09-05 evening, option (i)), then
+Ledio's one email round with the key (Emails 6/7 + "E is live, here is the measured answer"), then
+B, C, D.
