@@ -48,10 +48,15 @@ which the script rewrites, precisely because it is the script). Install or updat
 scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh
 ```
 
-Since 2026-09-06 the repo copy runs `import_examples.py --dry-run` before the real sync when
+Since 2026-09-05 the repo copy runs `import_examples.py --dry-run` before the real sync when
 the corpus changed, so the deploy log distinguishes "nothing to insert" from "N inserted"
 (the dry-run reports both what the default sync would insert and what `--refresh-existing`
 would change, and writes nothing). Copy the repo version to the box to pick that up.
+Cost of that pass, measured 2026-09-05 on a fully seeded 130,472-row SQLite file: **28 s on
+the Mac** (the `--refresh-existing` half is one SELECT per row), so expect roughly a minute on
+the box, paid only on corpus-changing deploys. It is cheap *because* the database is local
+SQLite — against hosted Postgres the same pass would be 130,472 round trips, the Neon-egress
+failure mode; do not carry it over unchanged if `DATABASE_URL` ever points off the machine.
 
 **It takes about three minutes**, nearly all of it the restart: the unit's `ExecStartPost`
 warms the stage resource sets before systemd calls the service started, so a deploy that
@@ -106,11 +111,12 @@ instead of 130,472 scalar ones. Build cost for all four stage sets rose 0.6 s in
 resident memory **+60 MB** across the four sets. Scores are bit-identical in 8 of 10
 signal columns; the two IDF columns differ by at most one double-precision rounding step
 (summation order), which never changes any top-1000 ordering. The FastAPI endpoint in
-`app/api/main.py` now gets the `SearchIndex` too (2026-09-06): it builds the frame and
+`app/api/main.py` now gets the `SearchIndex` too (2026-09-05): it builds the frame and
 index once behind an `lru_cache` (`load_corpus`) and passes `index=` to `retrieve_top_k`,
 so a warm request went from **8.4 s to 0.15 s** on the Mac (it previously reloaded the
-130,472-row CSV on *every* request and took the scalar retrieval path; the CSV reload was
-the bulk of the 8.4 s). Both the Streamlit and API paths are now fast.
+130,472-row CSV on *every* request and took the scalar retrieval path; the verifier's split
+of the old path was roughly half each — CSV load 3.9 s, scalar retrieval 4.2 s — and the
+change removes both). Both the Streamlit and API paths are now fast.
 
 ### Warming that cold build
 
@@ -119,6 +125,7 @@ The visitor no longer pays it. Measured on the box 2026-09-05:
 | | before | after |
 |---|---|---|
 | first hieroglyph paste after a restart | ~60 s (the build) | **5.3 s** |
+| the same paste after item 3's speed-up (box, 2026-09-05 evening, at 3d38721) | — | **2.6 s** (two runs, both 2.6 s; the "< 5 s" gate is met) |
 | page load, no search | — | 1.9 s |
 | the cold build itself (server, box) | on the visitor's first paste | 165 s inside `ExecStartPost`, before systemd calls the service started |
 | the three concrete stage sets (Mac, 2026-09-05) | — | **~30 s total** (~9–11 s each: Earlier 9.5–10.0 s, Late 10.4–11.1 s, Demotic 9.2–9.4 s), reusing the pooled index |

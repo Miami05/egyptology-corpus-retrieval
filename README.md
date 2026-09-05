@@ -8,8 +8,8 @@ behind each one, and records expert corrections.
 
 **It is not OCR and it is not machine translation.** Every suggestion is grouped from
 sentences that actually exist in the corpus, and every one is shown with the evidence
-that produced it — shared transliteration tokens, shared lemma IDs, shared context, and
-the specific corpus rows it came from. Nothing is generated.
+that produced it — shared transliteration tokens, the lemma IDs common to that reading's
+rows, shared context, and the specific corpus rows it came from. Nothing is generated.
 
 Live app: <https://vela-optiplex-3070.taile0409f.ts.net/> (self-hosted since 2026-09-04; the earlier Streamlit Community Cloud address is retired)
 
