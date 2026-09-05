@@ -19,6 +19,7 @@ Live app: <https://vela-optiplex-3070.taile0409f.ts.net/> (self-hosted since 202
 |---|---|
 | Reading workspace | Enter a reading; get the top 3 suggestions with scores and evidence, plus a sign-by-sign predicted reading with an editable sign grouping |
 | Corpus explorer | Search and page through the corpus by reading (in any notation), translation or text ID |
+| Similar text | Paste a transliteration, a string of hieroglyphs or a sentence of a translation and get the ten closest parallels elsewhere in the corpus, each with its source and why it matched — ranked by the method measured best for that tier in `docs/similar-text-eval-2026-09-05.md` (no upload, nothing stored) |
 | Sign readings | Which signs are genuinely multivalent, and how the reading model chooses between readings |
 | Projects / Reviews | Corpus composition by period, and the record of expert annotations |
 

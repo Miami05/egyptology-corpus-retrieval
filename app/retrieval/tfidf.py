@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -87,18 +88,36 @@ class NgramIndex:
     Field-generic by construction: `build` takes any `pd.Series` of strings, so
     the same class indexes `mdc_norm` today and can index a hieroglyph or
     translation column tomorrow without change.
+
+    Analyzer-generic too (ROADMAP item E): `build(values, analyzer=...)` swaps what
+    an n-gram *is*. The default is `_char_ngram_list`, the 2-4 character n-grams
+    every existing caller expects, so `mdc_norm` and `translation` are indexed
+    identically; the sign tier passes `app.services.similar_text.sign_ngram_list`
+    instead, which emits 1-3-grams of Unicode hieroglyph code points. The analyzer
+    is kept on the instance so `scores()` vectorises the query the same way the
+    rows were vectorised — the two must never be allowed to disagree.
     """
 
-    __slots__ = ("_vectorizer", "_matrix")
+    __slots__ = ("_vectorizer", "_matrix", "_analyzer")
 
-    def __init__(self, vectorizer: CountVectorizer, matrix: sparse.csr_matrix) -> None:
+    def __init__(
+        self,
+        vectorizer: CountVectorizer,
+        matrix: sparse.csr_matrix,
+        analyzer: Callable[[str], list[str]] = _char_ngram_list,
+    ) -> None:
         self._vectorizer = vectorizer
         self._matrix = matrix  # L2-normalised rows, dtype float64
+        self._analyzer = analyzer
 
     @classmethod
-    def build(cls, values: pd.Series) -> "NgramIndex":
+    def build(
+        cls,
+        values: pd.Series,
+        analyzer: Callable[[str], list[str]] = _char_ngram_list,
+    ) -> "NgramIndex":
         texts = [str(value) for value in values]
-        vectorizer = CountVectorizer(analyzer=_char_ngram_list, dtype=np.float64)
+        vectorizer = CountVectorizer(analyzer=analyzer, dtype=np.float64)
         if texts:
             counts = vectorizer.fit_transform(texts)
         else:
@@ -111,7 +130,7 @@ class NgramIndex:
         matrix = normalize(counts, norm="l2", copy=False).tocsr()
         matrix.indices = matrix.indices.astype(np.int32, copy=False)
         matrix.indptr = matrix.indptr.astype(np.int32, copy=False)
-        return cls(vectorizer, matrix)
+        return cls(vectorizer, matrix, analyzer)
 
     def __len__(self) -> int:
         return self._matrix.shape[0]
@@ -133,7 +152,7 @@ class NgramIndex:
         n_rows = self._matrix.shape[0]
         if n_rows == 0:
             return np.zeros(0, dtype=np.float64)
-        query_counter = _char_ngrams(query_text)
+        query_counter = Counter(self._analyzer(str(query_text)))
         query_norm = _norm(query_counter)
         if not query_counter or query_norm == 0.0:
             return np.zeros(n_rows, dtype=np.float64)

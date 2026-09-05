@@ -29,6 +29,7 @@ def test_all_enabled_sidebar_destinations_render() -> None:
         ("◇  Projects", "Projects"),
         ("✓  Reviews", "Reviews"),
         ("𓂀  Sign readings", "Signs"),
+        ("≋  Similar text", "Similar"),
         ("⌂  Home", "Home"),
     ]
     for label, page in destinations:
@@ -45,6 +46,7 @@ def test_home_links_have_working_query_parameter_destinations() -> None:
         "projects": "Projects",
         "reviews": "Reviews",
         "signs": "Signs",
+        "similar": "Similar",
     }
 
     for view, expected_page in expected_pages.items():
@@ -336,3 +338,43 @@ def test_the_query_box_and_the_search_button_submit_together() -> None:
     assert search.form_id == app.text_area[0].form_id, (
         "the search button must submit the same form as the query box"
     )
+
+
+def test_similar_text_page_renders_and_finds_parallels() -> None:
+    """ROADMAP item E. The page has to come up on a deep link, detect the tier from the
+    pasted text, and render parallel cards with the source of every match."""
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "similar"
+    app.run()
+    assert app.session_state["page"] == "Similar"
+    assert_clean(app)
+    assert app.text_area[0].form_id, "the query box must live in a form, like the workspace's"
+
+    app.text_area[0].set_value("ꞽri̯.n =f hrw.pl ꜥšꜣ.tpl ḥr ḥwi̯.t")
+    next(b for b in app.button if b.label == "Find parallels").click()
+    app.run(timeout=240)
+    assert_clean(app)
+
+    assert any(
+        "Detected tier" in c.value and "transliteration" in c.value for c in app.caption
+    ), "the page must say which tier it decided on"
+    assert any("300 cross-edition pairs" in c.value for c in app.caption), (
+        "the page must say which method ranks it and on what it was measured"
+    )
+    cards = [md.value for md in app.markdown if "parallel-card" in md.value]
+    assert cards, "a matching query must render parallel cards"
+    assert any("n-gram cosine" in card and "edit similarity" in card for card in cards)
+
+
+def test_similar_text_page_reads_a_german_sentence_as_a_translation() -> None:
+    """The tier detection's hard case: plain Latin prose must not be mistaken for a
+    transliteration, and a capitalised German sentence must not trip the MdC test."""
+    app = AppTest.from_file(APP_PATH, default_timeout=240)
+    app.query_params["view"] = "similar"
+    app.run()
+    app.text_area[0].set_value("Worte sprechen durch den Siegler des Königs")
+    next(b for b in app.button if b.label == "Find parallels").click()
+    app.run(timeout=240)
+    assert_clean(app)
+    assert any("Detected tier" in c.value and "translation" in c.value for c in app.caption)
+    assert [md.value for md in app.markdown if "parallel-card" in md.value]

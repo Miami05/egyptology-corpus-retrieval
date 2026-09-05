@@ -411,6 +411,15 @@ Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence
 column repeating the attribution, because a file that leaves the repository loses
 sight of this one.
 
+The **Similar text** page (ROADMAP item E, 2026-09-05) changes nothing on this page. It
+reads `hieroglyphs`/`hieroglyphs_norm` and `translation`, which are columns of the same
+corpus rows under the same per-source licences the workspace already displays, adds no new
+source, and shows the same attribution footer on every result. Its two frozen files —
+`data/benchmarks/cross_edition_pairs_v1.csv` (corpus transliterations, quoted verbatim)
+and `data/benchmarks/similar_text_eval_v1_results.csv` (ranks and scores only) — are
+covered by the `data/benchmarks/*.csv` row above: **CC BY-SA 4.0**. Nothing a visitor types
+into that page is stored anywhere.
+
 ## Sui generis database rights (§4)
 
 This project is hosted in the EU, where Directive 96/9/EC gives a database maker its
