@@ -354,6 +354,7 @@ def suggest_top_readings(
     top_n: int = 3,
     weights: SuggestionWeights = DEFAULT_SUGGESTION_WEIGHTS,
     query_hieroglyphs: str = "",
+    debug_signals: list[dict] | None = None,
 ) -> list[ReadingSuggestion]:
     """Group the retrieved rows by reading and rank the readings.
 
@@ -368,6 +369,13 @@ def suggest_top_readings(
     below 0.38 and made the numbers incomparable across query types. Dead signals
     now leave the denominator (mirroring combine_scores), and glyph queries get
     their own similarity and exactness signals in the vacated slots.
+
+    `debug_signals`, when a list is passed, receives one dict per candidate group
+    with this layer's *own* per-term breakdown (each live signal's weight, raw
+    value and weighted contribution, plus the weight mass and the confidence). It
+    is a read-only observation hook for Experiment 2's pre-check: nothing is read
+    back from it, no branch depends on it, and with the default `None` not a single
+    statement of the ranking path changes.
     """
     # A Manuel de Codage or ASCII-digraph query is not a reading, and this layer
     # compares readings as strings of sounds. Resolve it to the transliteration it
@@ -492,6 +500,25 @@ def suggest_top_readings(
         weighted = sum(weight * value for weight, value in signals.values())
         candidate_score = weighted / weight_mass if weight_mass > 0 else 0.0
         confidence = max(0.0, min(0.99, candidate_score))
+
+        if debug_signals is not None:
+            debug_signals.append(
+                {
+                    "candidate_key": candidate_key,
+                    "candidate_transliteration": best["candidate_transliteration"],
+                    "confidence_score": round(confidence, 3),
+                    "weight_mass": weight_mass,
+                    "weighted_sum": weighted,
+                    "signals": {
+                        name: {
+                            "weight": weight,
+                            "value": value,
+                            "weighted": weight * value,
+                        }
+                        for name, (weight, value) in signals.items()
+                    },
+                }
+            )
 
         rows.append(
             {
