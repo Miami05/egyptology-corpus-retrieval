@@ -1380,3 +1380,25 @@ div[data-testid="stDataFrame"] {
   font-size: .78rem;
   line-height: 1.5;
 }
+
+/* ---------------------------------------------------------------------------
+   Expanders inside the dark sidebar (the "Reviewer access" box).
+
+   Streamlit draws an expander header on its light secondary-background tint, and
+   the sidebar rule above paints every sidebar text light — so the header came out
+   light-on-light and unreadable (Ledio's screenshot, 2026-09-05 night). Give the
+   sidebar's expanders a translucent dark surface instead, so the light text reads.
+   --------------------------------------------------------------------------- */
+section[data-testid="stSidebar"] [data-testid="stExpander"] details,
+section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary,
+section[data-testid="stSidebar"] [data-testid="stExpander"] > div {
+  background: rgba(255, 255, 255, .06) !important;
+  border-color: rgba(255, 255, 255, .18) !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary:hover {
+  background: rgba(255, 255, 255, .12) !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary,
+section[data-testid="stSidebar"] [data-testid="stExpander"] details > summary * {
+  color: rgba(255, 255, 255, .92) !important;
+}
