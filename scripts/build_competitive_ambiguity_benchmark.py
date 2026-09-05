@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import defaultdict
+from fractions import Fraction
 from pathlib import Path
 
 import pandas as pd
@@ -147,6 +148,24 @@ def rivals_for(
     return rivals, best
 
 
+def twin_probe_count(size: int, threshold: float) -> int:
+    """How many of a row's rarest tokens the exhaustive twin scan must probe.
+
+    If |A∩B| / |A∪B| >= t then |A∩B| >= t·|A|, so a twin B misses at most
+    floor((1-t)·|A|) of A's tokens and must contain one of A's floor((1-t)·|A|) + 1
+    rarest ones. The arithmetic has to be exact: in binary floating point
+    `(1.0 - 0.9) * 10` is 0.9999999999999998, so `int()` gave 0 instead of 1 and the
+    scan probed one token too few whenever (1-t)·|A| was a whole number. A ten-token
+    row then missed a nine-token twin at exactly Jaccard 0.90 — reported and fixed
+    2026-09-05. `Fraction(str(t))` reads the threshold as the decimal that was typed,
+    and the floor is taken on the exact rational.
+    """
+    if size <= 0:
+        return 0
+    may_miss = int((1 - Fraction(str(threshold))) * size)
+    return may_miss + 1
+
+
 def exhaustive_best_twin_overlap(
     row_index: int,
     token_sets: list[set[str]],
@@ -175,8 +194,7 @@ def exhaustive_best_twin_overlap(
     if not target:
         return 0.0, None
     by_rarity = sorted(target, key=lambda token: len(token_index.get(token, ())))
-    may_miss = int((1.0 - threshold) * len(target))
-    probes = by_rarity[: may_miss + 1]
+    probes = by_rarity[: twin_probe_count(len(target), threshold)]
     candidates: set[int] = set()
     for token in probes:
         candidates.update(token_index.get(token, ()))
@@ -333,9 +351,8 @@ def main() -> None:
             # Exhaustive by construction (prefix filtering, no postings cap), so an
             # excluded row's edition twin cannot survive into the held-out set.
             by_rarity = sorted(target, key=lambda token: len(token_index.get(token, ())))
-            may_miss = int((1.0 - args.max_twin_overlap) * len(target))
             neighbours: set[int] = set()
-            for token in by_rarity[: may_miss + 1]:
+            for token in by_rarity[: twin_probe_count(len(target), args.max_twin_overlap)]:
                 neighbours.update(token_index.get(token, ()))
             for other in neighbours:
                 shared = len(target & corpus_token_sets[other])

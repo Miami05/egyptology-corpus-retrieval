@@ -178,3 +178,74 @@ Ledio
   owed in return is what it actually found, including the part she could not see.
 - Do **not** send this until the fixes are actually deployed, or the first two paragraphs
   become a promise rather than a report.
+
+---
+
+## Email 7 — expert round 2 (five before/after cases)
+
+Draft, not sent. The ask sheet is `docs/expert-round-2-ask.md` (and, if built, the page
+`data/benchmarks/expert_round_2.html`). Send whichever form the recipient prefers — the
+five cases and the five questions are identical in both.
+
+### To Camilla
+
+**Subject:** One ranking decision, five cases — 15 minutes, if you have them
+
+Dear Camilla,
+
+Your trial last time changed the shape of this project. The core criticism — that a tool
+guessing readings out of a model was the wrong thing to build — is why it is now a
+retrieval tool: it does not generate anything, it finds the closest real sentences in the
+corpus and shows you the evidence, and where the corpus is silent it says so. I would not
+have got there without your first look.
+
+I have hit a decision I cannot make from the numbers, and it is exactly the kind of thing
+only a reader can settle. I have a small change to the rule that orders the three
+suggestions. On five test strings it moves one suggestion up or down: in one case it
+rightly lifts a matching parallel from 6th place to 1st; in four cases it pushes a match
+that was near the top further down, twice out of the top three. My automatic score cannot
+tell whether that is an improvement or a loss — to it, a demoted 1st-place match and a
+rescued 3rd-place match count the same. Your judgement can.
+
+The ask is five short questions, one per case, a tick or a sentence each — under fifteen
+minutes. Each case shows the string, the two orderings side by side, and asks which one
+you would rather have been shown. There is no answer I am checking you against; your
+reading is the measurement, and I have frozen the two orderings in advance so it can only
+decide this one yes/no question and nothing else.
+
+The cases are attached / at the link below. No obligation, and thank you either way — and
+separately, if you ever have a text you have not shown me, a fresh trial remains the most
+useful thing anyone can give this.
+
+With thanks again,
+
+Ledio
+
+### Two-line variant — Sophie
+
+Hi Sophie — following the bug fixes you found, I have one ordering decision I can only
+settle by asking someone who reads this material: five strings, five quick questions (a
+tick or a sentence each, under 15 minutes), each showing two orderings of the tool's three
+suggestions and asking which you would rather have seen. The sheet is attached / at the
+link; no obligation, and thank you either way.
+
+### Two-line variant — Nederhof
+
+Dear Mark-Jan — two quick things: your sign-function table is now built into the public
+repository under CC BY 4.0 with the credit line to you (I can send the screenshot), and the
+St Andrews rows are imported privately under your CC BY-NC-SA grant — kept local and never
+redistributed, per `docs/standrews-attribution.md`. Separately, if you have fifteen
+minutes, I would value your read on five before/after ranking cases (sheet attached / at
+the link): five strings, five quick questions, asking which of two orderings of the three
+suggestions is the better one to show.
+
+### Notes on sending it
+
+- **Do not send anything until it is ready to send.** The page and sheet must be built and
+  attached, and Camilla's version should only go out once she can actually open the cases.
+- The Camilla version's second sentence is the one that matters — it credits her
+  criticism as the cause of the corpus-based framing, which is the honest record. Keep it.
+- Nederhof gets the attribution news first and the ask second, on purpose: the credit and
+  the private-import confirmation are owed regardless of whether he does the round.
+- All three are attachment-or-link: the five questions are identical across the ask sheet
+  and the HTML page, so send whichever form each person will find easier.

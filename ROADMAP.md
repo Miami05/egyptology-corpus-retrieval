@@ -1777,3 +1777,96 @@ About 13 working days after tomorrow's item 1. Standing rules: no constant is ch
 looking at a benchmark result; every benchmark change is a pre-registered rule reported next
 to the old number; the paste gate must stay 8/8 in Auto on every merge; the server is
 updated with `./egyptology-deploy.sh` after every push, and the live URL is checked.
+
+## Plan for 2026-09-06 — items 1–4 done on 2026-09-05 evening
+
+Ledio asked for tomorrow's three open items to be done the same evening. Three workers ran
+in parallel (Opus 4.8; one in its own worktree), each re-derived by a fresh Opus 5 verifier
+before acceptance. State at the start: 3d38721 committed, pushed and deployed; the box
+answered a warm hieroglyph paste in **2.6 s** (was 5.3 s before item 3), so item (1)'s
+"< 5 s" gate is met.
+
+- **(2) Follow-up batch — done** (worktree commit deee9d2, merged here). `verify_release.py`
+  reads a committed baseline (`data/benchmarks/release_baseline.json`: benchmark v4, `--stage
+  auto --query-path app`, floors 0.90 / 0.7917 / 8/8, corpus rows 130,472) and is NOT READY
+  below it; the floor check is a pure function with 16 corpus-free tests. Concrete-stage cold
+  build re-measured on the Mac: **30.5 s for all three** (Earlier 10.0, Late 11.1, Demotic
+  9.4), down from ~60 s, thanks to item 3's shared token tables — DEPLOYMENT.md updated, the
+  server row kept until re-measured there. Evidence line now says "lemma IDs common to this
+  reading's rows" instead of "shared lemma IDs" (it was never a query match). `import_examples.py
+  --dry-run` reports what the sync and the refresh would change without writing, through the
+  same diff code the real paths use; the canonical deploy script now lives at
+  `scripts/egyptology-deploy.sh` (server copy + a dry-run pass before the real sync) — **the
+  server still runs its old copy until Ledio approves the scp** (DEPLOYMENT.md has the
+  command). `scipy==1.18.0` pinned (imported directly). FastAPI endpoint builds the frame and
+  `SearchIndex` once: warm request **8.4 s → 0.15 s**. Suite **506 passed, 3 skipped**
+  (Ramses raw files gitignored); paste 8/8; v4 0.90 / 0.7917, misses COMP_007, COMP_014.
+- **(3) Held-out misses traced — done, diagnosis only**
+  (`docs/holdout-misses-trace-2026-09-05.md`). All five (HOLD_001, 002, 005, 014, 026) are
+  answerable (813–2,309 useful rows each) and all five are **re-rank boundary losses**: the
+  useful row is in the top-50 pool (retrieval ranks 3, 3, 13, 7, 6), the first accepted
+  suggestion sits at rank 4 (HOLD_005: 8), margins 0.004–0.029. Stage inference, query path
+  and fold are clean for all five. CFG-C rescues HOLD_001/002 to **exactly rank 3** and pushes
+  the other three further out (4→7, 4→6, 8→>10) — the top-3/MRR disagreement in miniature.
+  Seven of seven traced misses now share one mechanism: shared-vocabulary lookalikes outrank
+  the qualifying phrase by a few thousandths.
+- **(4) Expert round 2 ask — done** (`docs/expert-round-2-ask.md`, offline page
+  `data/benchmarks/expert_round_2.html` from `scripts/build_expert_round_2_page.py`, Email 7
+  drafted in `docs/outreach-messages.md` for Camilla with short variants for Sophie and
+  Nederhof). Five cases, one question each: COMP_007 6→1 (the rescue); COMP_001 1→off list;
+  COMP_022 3→7; HOLD_010 1→off list (the roadmap's "1→2" understated it — the first *useful*
+  row is at 2, but the best parallel with both royal names leaves the top 8); HOLD_016 1→3.
+  Nothing sent.
+- **Twin-guard bug (reported by Ledio, confirmed, fixed).** `int((1.0 - 0.9) * 10)` is 0 in
+  floating point, so the exhaustive twin scan probed one rarest token too few whenever
+  (1−t)·|A| was a whole number; a ten-token row missed a nine-token twin at exactly Jaccard
+  0.90. `twin_probe_count()` now does the arithmetic on exact rationals and is used at both
+  scan sites; regression tests added (the exact case, boundary sizes, brute-force equivalence
+  on random corpora). Re-scan with the fix: **v4 still has exactly two twins** (COMP_004,
+  COMP_017; targets matched on text id *and* sentence id — TLA sentence ids repeat across text
+  ids) and **held-out 1 has none** (HOLD_001 and HOLD_017 are 20-token boundary rows, now
+  probed with three tokens). Today's disclosure numbers stand.
+
+### Experiment 2 — pre-registered 2026-09-05 evening, runs after the deploy (Opus 5 worker)
+
+Question: do useful readings keep more of the query's *consecutive* words than the lookalikes
+that outrank them, and does rewarding that fix the boundary losses without demoting rank-1
+hits? Frozen before running:
+
+0. **Pre-check, the kill switch (no ranker code).** For each of the seven traced misses, count
+   the distinct query bigrams (two consecutive query tokens) that also occur consecutively in
+   each top-6 candidate. A `_` placeholder only spans (`a _ b` → a,b checked as adjacent across
+   one token); any bigram containing `_` earns nothing; query side only, a longer candidate is
+   never penalised. Alongside the bigram counts, print the ranker's OWN per-term score
+   breakdown (query token overlap, character similarity, relative score, IDF carry-over if
+   any) for the same top-6 rows — the traces' `token` column is the *evaluator's* overlap with
+   the target sentence, not a ranker term, so which term loses the boundary has not yet been
+   shown with numbers. Pass iff in **≥ 4 of 7** the useful candidate's count is **strictly**
+   greater than every candidate ranked above it (ties = not beaten). Fail → stop, write a null
+   pre-check; it rejects this bigram measure, not word order in general.
+1. **Build held-out 2 and held-out 3** (20 each) with the fixed twin guard, disjoint from v4,
+   held-out 1 and each other; exclusion also removes rows sharing a TLA/AES/Ramses
+   `source_text_id` with any existing target and, for BBAW (one text id for 52k rows), a fixed
+   window of neighbouring sequential sentence ids around each target (window fixed before
+   building; the build log reports rows removed per rule). Held-out 2 = selection set (once it
+   picks a winner its score is not confirmation). Held-out 3 = sealed until the final claim.
+2. **Adjacency bonus vs the unchanged default ranker** (not vs CFG-C). Formula and three
+   candidate weights written down first. Selection by rule on held-out 2 only: top-3 and MRR
+   both ≥ baseline, rank-1 hit count not lower, and at least one of top-3 / MRR strictly
+   higher; among qualifiers, highest MRR. None → null result.
+3. **Report** on v4, held-out 1, held-out 2: top-3 useful, MRR, and a per-query signed rank
+   change of the first useful candidate. Paste 8/8 required.
+4. **Confirm before promoting.** Open held-out 3 once, for the selected configuration only:
+   pass iff top-3 and MRR ≥ the default's numbers there and the rank-1 count is not lower.
+   Only then does it become the app default and the expert "after" column is regenerated.
+   Fail → default stays, failed confirmation reported, held-out 3 spent.
+
+Deferred: symmetric `.n` / `=` marker preservation in `search_fold` — exploratory, separate
+(only COMP_007 shows fold evidence). Lemma overlap is reported per candidate, never scored
+(queries carry no lemma ids; 70.7 % of rows have none, so a bonus would be a TLA-source bias).
+
+**Plan for 2026-09-06 (revised).** (0) Ledio: send Email 6 and Email 7 (with the ask sheet or
+page attached); set `REVIEWER_KEY`; `passwd` on the box; approve
+`scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh`. (1) Experiment
+2 as above, its own worktree, `opus5-worker` + fresh verifier. (2) Item 6 (Late Egyptian set
+from Ramses), then E, B, C, D as planned. Standing rules unchanged.

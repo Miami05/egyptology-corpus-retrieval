@@ -22,7 +22,9 @@ from app.services.suggestions import loose_reading_form  # noqa: E402
 from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
     _token_set,
     build_token_index,
+    exhaustive_best_twin_overlap,
     rivals_for,
+    twin_probe_count,
 )
 from scripts.import_tla_dataset import content_id  # noqa: E402
 from scripts.migrate_example_ids import build_mapping  # noqa: E402
@@ -65,6 +67,59 @@ def test_identical_twin_is_detected():
     index = build_token_index(token_sets)
     _, best = rivals_for(0, token_sets, index, min_overlap=0.9)
     assert best == pytest.approx(1.0)
+
+
+def test_exhaustive_scan_finds_a_twin_at_exactly_the_threshold():
+    """Regression, reported 2026-09-05: ten tokens, a nine-token twin, Jaccard exactly
+    9/10 = 0.90. `int((1.0 - 0.9) * 10)` is 0 in floating point, so the scan used to
+    probe only the rarest token, `a`, which the twin lacks — and returned (0.0, None)."""
+    token_sets = [set("abcdefghij"), set("bcdefghij")]
+    index = build_token_index(token_sets)
+
+    best, twin = exhaustive_best_twin_overlap(0, token_sets, index, threshold=0.90)
+
+    assert (best, twin) == (pytest.approx(0.9), 1)
+
+
+@pytest.mark.parametrize("size", [10, 20, 30, 40, 50, 100])
+def test_probe_count_is_exact_at_whole_number_boundaries(size):
+    """At t = 0.9 a row of 10·k tokens may miss exactly k tokens, so k + 1 probes are
+    needed. The float product (1 - 0.9)·size lands just under k for every one of these."""
+    assert twin_probe_count(size, 0.9) == size // 10 + 1
+    assert twin_probe_count(size, 0.9) > int((1.0 - 0.9) * size)  # the old, short answer
+
+
+def test_probe_count_never_below_one_and_zero_for_empty_rows():
+    assert twin_probe_count(0, 0.9) == 0
+    assert twin_probe_count(1, 0.9) == 1
+    assert twin_probe_count(3, 0.26) == int((1 - 0.26) * 3) + 1  # 3, i.e. every token
+
+
+def test_exhaustive_scan_agrees_with_brute_force_on_random_corpora():
+    """The prefix filter is only an optimisation: on small random corpora its answer must
+    equal the best Jaccard >= t found by comparing every pair, for every row and for
+    thresholds whose (1-t)·|A| is a whole number as often as possible."""
+    import random
+
+    rng = random.Random(20260905)
+    alphabet = [f"t{i}" for i in range(14)]
+    for trial in range(40):
+        token_sets = [
+            set(rng.sample(alphabet, rng.randint(1, 10))) for _ in range(rng.randint(2, 12))
+        ]
+        index = build_token_index(token_sets)
+        for threshold in (0.5, 0.75, 0.8, 0.9):
+            for row in range(len(token_sets)):
+                target = token_sets[row]
+                brute = 0.0
+                for other, other_tokens in enumerate(token_sets):
+                    if other == row or not (target & other_tokens):
+                        continue
+                    score = len(target & other_tokens) / len(target | other_tokens)
+                    if score >= threshold and score > brute:
+                        brute = score
+                found, _ = exhaustive_best_twin_overlap(row, token_sets, index, threshold)
+                assert found == pytest.approx(brute), (trial, threshold, row, token_sets)
 
 
 def test_row_with_no_shared_tokens_has_no_rivals():
