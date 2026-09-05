@@ -98,6 +98,15 @@ tables (see "Warming that cold build" below); the 60 s here was the 2026-09-04 f
 before that change. Peak RSS with all four sets resident: **3.0 GB**, of 23 GB — the
 1.9 GB first written here was an estimate and is low.
 
+**The Similar text page adds up to +522 MB, and only when someone opens it** (ROADMAP item
+E, 2026-09-05). Its two n-gram indexes are separate `st.cache_resource` loaders
+(`load_sign_ngram_index`, `load_translation_ngram_index`), so a visitor who never opens the
+page allocates neither. Measured on the developer's Mac on the 130,472-row corpus: the sign
+index costs 1.27 s to build and **+66 MB**, the translation index 4.66 s and **+456 MB** —
+the expensive one, because a German or English sentence has far more distinct character
+4-grams than a folded transliteration. Both are per process, not per session. On the 23 GB
+server that is fine on top of the 3.0 GB above; a 1 GB container must not open that page.
+
 Query latency, **measured on the developer's Mac, 2026-09-05** (ROADMAP item 3 — the
 server's slower CPU has not been re-measured since, so scale, do not copy): a warm
 transliteration query in Auto mode, end to end through the app's own path (stage

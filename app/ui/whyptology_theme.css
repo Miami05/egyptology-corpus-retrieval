@@ -1348,3 +1348,35 @@ div[data-testid="stDataFrame"] {
   border: 1px solid rgba(20, 35, 31, .12) !important;
   box-shadow: none !important;
 }
+
+/* Similar text page. The parallel cards reuse .corpus-card's frame and only add the
+   two rows the corpus explorer has no need for: the per-tier scores and the plain-words
+   explanation of why the row is in the list. */
+.parallel-card {
+  border-left: 3px solid var(--gold);
+}
+
+.parallel-glyphs {
+  margin-top: .6rem;
+  font-size: 1.5rem;
+  line-height: 1.6;
+}
+
+.parallel-scores {
+  margin-top: .7rem;
+  color: #6f7c77;
+  font-size: .72rem;
+  letter-spacing: .02em;
+}
+
+.parallel-scores strong {
+  color: #19332b;
+  font-variant-numeric: tabular-nums;
+}
+
+.parallel-why {
+  margin-top: .35rem;
+  color: #66736e;
+  font-size: .78rem;
+  line-height: 1.5;
+}

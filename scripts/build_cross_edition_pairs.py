@@ -150,11 +150,19 @@ def find_candidate_pairs(
         # Size bound: a partner at Jaccard >= t satisfies t*|A| <= |B| <= |A|/t.
         low, high = threshold * size, size / threshold
         source = sources[position]
+        # Two rows that are the same sentence share most of their prefix, so the inner
+        # loop reaches the same `other` once per shared prefix token. `seen_here` is what
+        # keeps that one candidate pair rather than five — it is added to before the
+        # source and size tests so a rejected candidate is not re-tested either. Per
+        # position and thrown away with it, unlike the corpus-wide set of seen pairs the
+        # first version kept.
+        seen_here: set[int] = set()
         for token in prefixes[position]:
             for other in postings[token]:
                 # Each unordered pair is emitted once, from its lower position.
-                if other <= position:
+                if other <= position or other in seen_here:
                     continue
+                seen_here.add(other)
                 if sources[other] == source:
                     continue
                 other_tokens = token_sets[other]

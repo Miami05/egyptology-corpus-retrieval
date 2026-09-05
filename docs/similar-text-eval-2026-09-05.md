@@ -163,18 +163,26 @@ evaluation reproduced every number below.
 
 `data/benchmarks/cross_edition_pairs_v1.csv` — 300 pairs, 600 distinct corpus rows.
 
-Candidate generation found **497,269** cross-source pairs in the band `[0.5, 0.9)` in
-**165 s** at **0.63 GB** peak RSS, and separately found and discarded **9,192** near-copy
-pairs at Jaccard `>= 0.9`. Eligible rows (>= 5 loose tokens): 107,637 of 130,472.
+Candidate generation found **182,843** distinct cross-source pairs in the band `[0.5, 0.9)`
+in **180 s** at **0.63 GB** peak RSS, and separately found and discarded **1,538**
+near-copy pairs at Jaccard `>= 0.9`. Eligible rows (>= 5 loose tokens): 107,637 of 130,472.
 
 | source pair | candidates in band | selected |
 |---|---|---|
-| AES↔BBAW | 51,889 | 50 |
-| AES↔Ramses | 15,921 | 50 |
-| AES↔TLA | 22,347 | 50 |
-| BBAW↔Ramses | 97,376 | 50 |
-| BBAW↔TLA | 251,013 | 50 |
-| Ramses↔TLA | 58,723 | 50 |
+| AES↔BBAW | 19,048 | 50 |
+| AES↔Ramses | 7,405 | 50 |
+| AES↔TLA | 9,751 | 50 |
+| BBAW↔Ramses | 42,261 | 50 |
+| BBAW↔TLA | 78,355 | 50 |
+| Ramses↔TLA | 26,023 | 50 |
+
+(An earlier run of the builder reported 497,269 and 9,192 here. Those were emission counts,
+not pair counts: two rows that are the same sentence share most of their prefix, and the
+candidate loop reached each pair once per shared prefix token. Caught by the synthetic-frame
+test in `tests/test_similar_text.py`, which expected one near-copy and was told five. The
+selected pair file is **byte-identical** either way — the greedy selection already skipped a
+pair whose rows were used — so no measured number below is affected; only these two totals
+were wrong.)
 
 Every source pair had far more than 50 candidates, so the round-robin gave all six an
 equal share: the stratification is exactly even, not "as even as the data allows".

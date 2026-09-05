@@ -42,6 +42,20 @@ from app.services.signs import (
     multivalence_summary,
     ranked_multivalent,
 )
+from app.services.similar_text import (
+    RERANK_DEPTH,
+    TIER_SIGNS,
+    TIER_TRANSLATION,
+    TIER_TRANSLITERATION,
+    build_sign_ngram_index,
+    build_translation_ngram_index,
+    cosine_ranking,
+    detect_tier,
+    edit_similarity,
+    edit_reranked,
+    query_sign_sequence,
+    sign_code_points,
+)
 from app.services.stage import (
     STAGES,
     StageResources,
@@ -519,6 +533,31 @@ def load_sign_index(_df: pd.DataFrame, signature: str):
     return build_sign_index(_df)
 
 
+@st.cache_resource(show_spinner="Indexing the sign tier…")
+def load_sign_ngram_index(_df: pd.DataFrame, signature: str):
+    """The Similar text page's sign index, built on first use and never before.
+
+    Deliberately NOT part of `load_search_index`: the workspace, the corpus explorer and
+    the sign readings page do not need it, and a visitor who never opens Similar text must
+    not pay for it. Measured on the 130,472-row corpus (developer's Mac, 2026-09-05):
+    1.27 s to build, +66 MB resident, 7 ms a query. See
+    docs/similar-text-eval-2026-09-05.md.
+    """
+    return build_sign_ngram_index(_df)
+
+
+@st.cache_resource(show_spinner="Indexing the translation tier…")
+def load_translation_ngram_index(_df: pd.DataFrame, signature: str):
+    """The Similar text page's translation index, built on first use and never before.
+
+    The expensive one: 4.66 s to build and **+456 MB** resident on the 130,472-row corpus,
+    because a German or English sentence has far more distinct character 4-grams than a
+    folded transliteration does. That is why it is lazy and why it is separate from the
+    sign index — a reader who only ever pastes hieroglyphs never allocates it.
+    """
+    return build_translation_ngram_index(_df)
+
+
 @st.cache_resource(show_spinner=False)
 def load_stage_resources(stage: str | None, signature: str, _df: pd.DataFrame) -> StageResources:
     """`StageResources` for one language stage, built lazily and cached per stage.
@@ -683,6 +722,12 @@ def sidebar(sidebar_df: pd.DataFrame | None = None) -> str:
             width="stretch",
             on_click=go_to,
             args=("Corpus",),
+        )
+        st.button(
+            "≋  Similar text",
+            width="stretch",
+            on_click=go_to,
+            args=("Similar",),
         )
         st.button(
             "◇  Projects",
@@ -2665,6 +2710,321 @@ def render_signs(df: pd.DataFrame) -> None:
                 )
 
 
+
+# --------------------------------------------------------------- Similar text page
+#
+# ROADMAP item E. One box, three annotation tiers, and parallels instead of reading
+# suggestions: the workspace answers "what does this sign group read?", this page answers
+# "where else in the corpus does this text occur?". No upload, no stored query, nothing
+# written to the database — the page reads the corpus and renders.
+
+SIMILAR_QUERY_KEY = "whyptology_similar_query"
+SIMILAR_TIER_KEY = "whyptology_similar_tier"
+SIMILAR_RESULT_COUNT = 10
+
+SIMILAR_TIER_LABELS: dict[str, str | None] = {
+    "Auto — detect from what I paste": None,
+    "Transliteration": TIER_TRANSLITERATION,
+    "Signs (hieroglyphs)": TIER_SIGNS,
+    "Translation (German or English)": TIER_TRANSLATION,
+}
+
+# Which method orders each tier, and the number that decided it. Straight out of
+# docs/similar-text-eval-2026-09-05.md ("What the feature uses"): the transliteration tier
+# is NOT edit-distance re-ranked because the re-rank measured slightly worse there
+# (T2 0.715 vs T1 0.721 MRR), and the sign tier IS, because there it measured better
+# (G2 0.747 vs G1 0.733, and better in both directions). The tuple is
+# (human name, whether to re-rank, measured MRR, number of measured cases).
+SIMILAR_TIER_METHOD: dict[str, tuple[str, bool, float, int]] = {
+    TIER_TRANSLITERATION: (
+        "character 2–4-gram cosine over the transliteration",
+        False,
+        0.721,
+        600,
+    ),
+    TIER_SIGNS: (
+        f"sign 1–3-gram cosine with an edit-distance re-rank of the top {RERANK_DEPTH}",
+        True,
+        0.747,
+        360,
+    ),
+    TIER_TRANSLATION: (
+        "character 2–4-gram cosine over the translation",
+        False,
+        0.627,
+        96,
+    ),
+}
+
+SIMILAR_TIER_NAME = {
+    TIER_TRANSLITERATION: "transliteration",
+    TIER_SIGNS: "sign sequence",
+    TIER_TRANSLATION: "translation",
+}
+
+
+class _SignTexts:
+    """`hieroglyphs_norm` seen as bare sign sequences, one row at a time.
+
+    The edit-distance re-rank touches 50 rows, so stripping the group boundaries from all
+    130,472 of them per query would be pure waste. This gives `edit_reranked` the same
+    strings the evaluation used (`sign_code_points`) without materialising them.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, values) -> None:
+        self._values = values
+
+    def __getitem__(self, position: int) -> str:
+        return sign_code_points(self._values[int(position)])
+
+
+@st.cache_resource(show_spinner=False)
+def load_similar_text_columns(_df: pd.DataFrame, signature: str) -> dict[str, object]:
+    """The three tier columns as numpy object arrays, converted once per corpus.
+
+    Cheap (the arrays point at the frame's own strings) but not free, and the page reads
+    them on every rerun.
+    """
+    return {
+        TIER_TRANSLITERATION: _df["mdc_norm"].astype(str).to_numpy(),
+        TIER_SIGNS: _df["hieroglyphs_norm"].astype(str).to_numpy(),
+        TIER_TRANSLATION: _df["translation"].astype(str).to_numpy(),
+    }
+
+
+def similar_text_query_key(df: pd.DataFrame, tier: str, query: str, signature: str) -> str:
+    """What the pasted text becomes in the tier's own index space.
+
+    The transliteration tier goes through `parse_query`, the same parser the workspace
+    uses, so every notation the workspace accepts works here too — Unicode, Manuel de
+    Codage, the documented ASCII digraphs — and is disambiguated against the corpus
+    vocabulary rather than guessed.
+    """
+    if tier == TIER_SIGNS:
+        return query_sign_sequence(query)
+    if tier == TIER_TRANSLATION:
+        return str(query).strip()
+    index = load_search_index(df, signature)
+    return parse_query(query, vocabulary=index.vocabulary).search_key
+
+
+def similar_text_search(
+    df: pd.DataFrame, tier: str, query: str, signature: str, k: int = SIMILAR_RESULT_COUNT
+) -> tuple[str, list[tuple[int, float, float]]]:
+    """`(query key, [(row position, n-gram cosine, edit similarity), …])`, best first.
+
+    Ranked by the method the measurement favoured for this tier (`SIMILAR_TIER_METHOD`).
+    Rows scoring zero are dropped rather than padded in: a parallel with no shared n-gram
+    at all is not a parallel, and the workspace makes the same promise.
+
+    The transliteration tier reuses the workspace's own `load_search_index` rather than
+    building a second n-gram index over the same column — the two pages then share one
+    object instead of paying for it twice, and a visitor who uses both allocates nothing
+    extra. Only the sign and translation indexes are new, and only they are lazy.
+    """
+    key = similar_text_query_key(df, tier, query, signature)
+    if not key:
+        return "", []
+    columns = load_similar_text_columns(df, signature)
+    if tier == TIER_SIGNS:
+        index = load_sign_ngram_index(df, signature)
+        texts: object = _SignTexts(columns[TIER_SIGNS])
+    elif tier == TIER_TRANSLATION:
+        index = load_translation_ngram_index(df, signature)
+        texts = columns[TIER_TRANSLATION]
+    else:
+        index = load_search_index(df, signature).text_index
+        texts = columns[TIER_TRANSLITERATION]
+
+    scores = index.scores(key)
+    order = cosine_ranking(scores)
+    _name, rerank, _mrr, _cases = SIMILAR_TIER_METHOD[tier]
+    similarities: dict[int, float] = {}
+    if rerank:
+        order, similarities = edit_reranked(order, key, texts, depth=RERANK_DEPTH)
+    results: list[tuple[int, float, float]] = []
+    for position in order[:k]:
+        position = int(position)
+        if scores[position] <= 0.0:
+            break
+        if position not in similarities:
+            similarities[position] = edit_similarity(key, texts[position])
+        results.append((position, float(scores[position]), similarities[position]))
+    return key, results
+
+
+def similar_match_reason(tier: str, key: str, row: pd.Series, edit: float) -> str:
+    """Why this row is in the list, in words rather than in numbers."""
+    if tier == TIER_SIGNS:
+        query_signs = list(key)
+        row_signs = sign_code_points(safe_str(row.get("hieroglyphs_norm")))
+        shared = sum(1 for sign in set(query_signs) if sign in row_signs)
+        return (
+            f"{shared} of the {len(set(query_signs))} distinct signs you pasted also occur "
+            f"here, and the two sign sequences are {edit:.0%} alike letter for letter."
+        )
+    if tier == TIER_TRANSLATION:
+        query_words = {word for word in key.lower().split() if len(word) > 3}
+        row_words = {word for word in safe_str(row.get("translation")).lower().split() if len(word) > 3}
+        shared = sorted(query_words & row_words)
+        if shared:
+            listed = ", ".join(shared[:5])
+            return f"Shares the wording {listed} with your text."
+        return "Matches on character sequences rather than on whole words."
+    query_words = set(key.split())
+    row_words = set(safe_str(row.get("mdc_norm")).split())
+    shared = sorted(query_words & row_words)
+    if shared:
+        listed = ", ".join(shared[:6])
+        return (
+            f"Shares {len(shared)} of your {len(query_words)} words "
+            f"({listed}) once both spellings are folded to one search form."
+        )
+    return "Matches on shared character sequences rather than on whole words."
+
+
+def render_similar_parallel_card(
+    rank: int, row: pd.Series, tier: str, key: str, cosine: float, edit: float
+) -> None:
+    """One corpus row shown as a parallel: what it says, where it is from, why it matched."""
+    reading = escape(value(row, "transliteration_gold", "No transliteration recorded"))
+    translation = value(row, "translation", "")
+    glyphs = value(row, "hieroglyphs", "")
+    source_label = escape(value(row, "source", "Unknown source"))
+    text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
+    sentence_label = escape(value(row, "source_sentence_id", "—"))
+    stage_label = escape(evidence_stage_label(row.get("language_stage")))
+    glyph_block = (
+        f'<div class="glyphs parallel-glyphs">{escape(glyphs)}</div>'
+        if glyphs and glyphs != "—"
+        else ""
+    )
+    translation_block = (
+        f"<p>{escape(translation)}</p>" if translation and translation != "—" else ""
+    )
+    st.markdown(
+        dedent(
+            f"""
+            <article class="corpus-card parallel-card">
+              <div class="corpus-card-top">
+                <span>{rank}. {source_label} · {text_label} · {sentence_label}</span>
+                <span>{stage_label}</span>
+              </div>
+              <div class="corpus-reading">{reading}</div>
+              {glyph_block}
+              {translation_block}
+              <div class="parallel-scores">
+                {escape(SIMILAR_TIER_NAME[tier])} n-gram cosine
+                <strong>{cosine:.3f}</strong> · edit similarity
+                <strong>{edit:.3f}</strong>
+              </div>
+              <div class="parallel-why">{escape(similar_match_reason(tier, key, row, edit))}</div>
+            </article>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
+    )
+
+
+def render_similar_text(df: pd.DataFrame) -> None:
+    st.markdown(
+        '<div class="breadcrumbs">Research &nbsp;›&nbsp; Similar text</div>'
+        '<h1 class="workspace-title">Similar text across the corpus</h1>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Paste a transliteration, a string of hieroglyphs, or a sentence of a German or "
+        "English translation, and this page shows where else in the corpus the same or a "
+        "similar text stands — as parallels, with their source, not as reading "
+        "suggestions. Nothing you paste is stored."
+    )
+
+    signature = corpus_signature(df)
+
+    with st.form("whyptology_similar", border=False):
+        st.markdown(
+            '<div class="panel-title">Text · transliteration, hieroglyphs or translation</div>',
+            unsafe_allow_html=True,
+        )
+        query = st.text_area(
+            "Similar-text query",
+            height=110,
+            value=st.session_state.get(SIMILAR_QUERY_KEY, ""),
+            key="whyptology_similar_input",
+            placeholder="ꞽri̯.n =f hrw.pl ꜥšꜣ.tpl  ·  𓊵𓏙𓇓𓏏  ·  Worte sprechen durch den Siegler",
+            label_visibility="collapsed",
+        )
+        st.markdown('<div class="panel-title">Tier</div>', unsafe_allow_html=True)
+        tier_label = st.selectbox(
+            "Tier",
+            list(SIMILAR_TIER_LABELS),
+            index=list(SIMILAR_TIER_LABELS).index(
+                st.session_state.get(SIMILAR_TIER_KEY, next(iter(SIMILAR_TIER_LABELS)))
+            ),
+            label_visibility="collapsed",
+            help=(
+                "Which annotation tier to search. Auto reads hieroglyphs as signs, "
+                "recognised Egyptian words as a transliteration, and anything else that "
+                "looks like running Latin prose as a translation."
+            ),
+        )
+        submitted = st.form_submit_button("Find parallels", type="primary")
+
+    if submitted:
+        st.session_state[SIMILAR_QUERY_KEY] = query
+        st.session_state[SIMILAR_TIER_KEY] = tier_label
+
+    query = st.session_state.get(SIMILAR_QUERY_KEY, "")
+    tier_label = st.session_state.get(SIMILAR_TIER_KEY, next(iter(SIMILAR_TIER_LABELS)))
+    if not str(query).strip():
+        st.info(
+            "Nothing to match yet. Paste a text above — any notation the workspace "
+            "accepts works here too.",
+            icon="🔎",
+        )
+        return
+
+    chosen = SIMILAR_TIER_LABELS[tier_label]
+    if chosen is None:
+        tier, reason = detect_tier(query, vocabulary=load_search_index(df, signature).vocabulary)
+        st.caption(f"Detected tier: **{SIMILAR_TIER_NAME[tier]}**. {reason}")
+    else:
+        tier = chosen
+        st.caption(f"Searching the **{SIMILAR_TIER_NAME[tier]}** tier, as selected.")
+
+    method_name, _rerank, mrr, cases = SIMILAR_TIER_METHOD[tier]
+    st.caption(
+        f"Ranked by {method_name}; measured on 300 cross-edition pairs "
+        f"(MRR {mrr:.3f} over {cases} query cases — see "
+        "docs/similar-text-eval-2026-09-05.md)."
+    )
+
+    key, results = similar_text_search(df, tier, query, signature)
+    if not key:
+        st.warning(
+            "Nothing searchable in that text for this tier — the sign tier needs Unicode "
+            "hieroglyphs, and the transliteration tier needs letters it can fold.",
+            icon="⚠️",
+        )
+        return
+    if not results:
+        st.warning(
+            "No corpus row shares anything with that text in this tier. Try another tier, "
+            "or a longer passage.",
+            icon="⚠️",
+        )
+        return
+
+    st.markdown(
+        f'<div class="panel-title">{len(results)} closest parallels</div>',
+        unsafe_allow_html=True,
+    )
+    for rank, (position, cosine, edit) in enumerate(results, start=1):
+        render_similar_parallel_card(rank, df.iloc[position], tier, key, cosine, edit)
+
+
 def render_reviews() -> None:
     st.markdown(
         '<div class="breadcrumbs">Workflow &nbsp;\u203a&nbsp; Reviews</div>'
@@ -2835,7 +3195,7 @@ if database_status != "ok":
     )
 
 query_page = st.query_params.get("view")
-if query_page in {"home", "workspace", "corpus", "projects", "reviews", "signs"}:
+if query_page in {"home", "workspace", "corpus", "similar", "projects", "reviews", "signs"}:
     st.session_state["page"] = query_page.title()
     # Consume the deep link, don't let it pin the page. This block runs on every
     # rerun, so leaving ?view= in the URL would overwrite whatever the sidebar
@@ -2876,6 +3236,8 @@ elif page == "Workspace":
     render_workspace(corpus)
 elif page == "Corpus":
     render_corpus(corpus)
+elif page == "Similar":
+    render_similar_text(corpus)
 elif page == "Projects":
     render_projects(corpus)
 elif page == "Signs":

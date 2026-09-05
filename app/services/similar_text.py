@@ -19,7 +19,6 @@ Nothing in this module writes anything: no uploads, no stored queries, no databa
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -90,14 +89,34 @@ def has_egyptological_letters(text: str) -> bool:
     return any(char in EGYPTOLOGICAL_LETTERS for char in str(text))
 
 
+#: `e`, `o` and `u` do not occur in Egyptological transliteration. A word containing one
+#: is a word of some modern language, which is what makes the two tests below safe to
+#: apply to a translation without them firing on it.
+NON_EGYPTOLOGICAL_VOWELS = frozenset("eou")
+
+
 def has_mdc_signature(text: str) -> bool:
     """True when the text carries an MdC-only capital (`aHa`, `stX`) or one of the app's
-    documented ASCII digraphs (`kh sh tj dj`)."""
-    raw = str(text)
-    if any(char in MDC_MARKED_LETTERS for char in raw):
-        return True
-    lowered = raw.lower()
-    return any(digraph in lowered for digraph in (d for d, _ in ASCII_DIGRAPHS))
+    documented ASCII digraphs (`kh sh tj dj`) in a word that could be Egyptological.
+
+    Both tests are narrower than they look, and both narrowings are load-bearing:
+
+    * the marked capital must be **word-internal**. `MDC_MARKED_LETTERS` is `AHXSTD`, so
+      testing the raw string fires on the capital of any ordinary sentence — "**S**iegler",
+      "**A**n offering" — and sent every capitalised translation to the transliteration
+      tier;
+    * the digraph must sit in a word with no `e`, `o` or `u`. "**sh**ould", "wi**sh**",
+      "**sh**ows" are English; `stkh` and `dj` are not.
+    """
+    for word in str(text).split():
+        if any(char in MDC_MARKED_LETTERS for char in word[1:]):
+            return True
+        lowered = word.lower()
+        if set(lowered) & NON_EGYPTOLOGICAL_VOWELS:
+            continue
+        if any(digraph in lowered for digraph, _letter in ASCII_DIGRAPHS):
+            return True
+    return False
 
 
 def _known_token_share(text: str, vocabulary: frozenset[str] | set[str]) -> tuple[int, int]:
@@ -176,22 +195,6 @@ def build_translation_ngram_index(df: pd.DataFrame) -> NgramIndex:
     tier is only ever compared within one language anyway (see the evaluation).
     """
     return NgramIndex.build(df["translation"].astype(str))
-
-
-@dataclass(frozen=True)
-class TierIndexes:
-    """The three tier indexes, any of which may be absent for a frame that lacks the field."""
-
-    transliteration: NgramIndex
-    signs: NgramIndex | None = None
-    translation: NgramIndex | None = None
-
-    def for_tier(self, tier: str) -> NgramIndex | None:
-        return {
-            TIER_TRANSLITERATION: self.transliteration,
-            TIER_SIGNS: self.signs,
-            TIER_TRANSLATION: self.translation,
-        }.get(tier)
 
 
 # ----------------------------------------------------------------------- ranking
