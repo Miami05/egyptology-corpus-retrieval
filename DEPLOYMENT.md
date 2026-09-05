@@ -80,13 +80,75 @@ first, then the environment. Set per host, never in code.
 | Variable | Server value | Meaning |
 |---|---|---|
 | `ANNOTATIONS_DURABLE` | `1` (in the unit) | SQLite on a real disk persists; turns off the "not stored durably" warning and the read-only gating |
-| `PRIVATE_DATA_DIR` | `/home/ledio/egyptology-private` (in the unit) | where NC rows are read from; empty dir = none |
-| `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving; unset = anyone may save |
+| `PRIVATE_DATA_DIR` | `/home/ledio/egyptology-private` (in the unit) | where NC rows are read from; empty dir = none. Since 2026-09-05 the files there are served **only to sessions that presented `REVIEWER_KEY`** — see the next section |
+| `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving **and the private NC rows**; unset = anyone may save and *nobody* gets the private rows |
 | `DATABASE_URL` | unset | unset = SQLite next to the code; a `postgres://` URL switches engines with no code change |
 | `DEFAULT_STAGE` | unset (= `auto`) | `auto` / `all` / a stage name; Auto builds one extra resource set per stage it uses |
 | `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated `source` values to drop at load — how a 1 GB host would stay on the 78k subset |
 | `MOVED_TO_URL` | unset | renders the "this app has moved" banner on a superseded deployment |
 | `WARM_STAGE_RESOURCES` | `1` (in the unit) | build every stage's resources on the first script run instead of leaving them to the first visitor. Holds all of `STAGES` resident — measured peak RSS 3.0 GB — so only a host with the memory sets it |
+
+## Private rows (St Andrews) — reviewer-key gate
+
+The St Andrews rows are CC BY-NC-SA 4.0 and licensed to this project alone; the files
+must not be redistributed and the rows must not be on a public URL. Until 2026-09-05
+the only thing keeping them off it was that `/home/ledio/egyptology-private` was
+empty. That is not a mechanism, it is an omission — so the rows are now gated on the
+reviewer key, and the empty directory is no longer load-bearing.
+
+**How it works.** The app boots on the public frame and only the public frame
+(`load_public_corpus`). A session that has presented `REVIEWER_KEY` in the sidebar gets
+`session_corpus` = public + private instead, which has its **own `corpus_signature`**,
+so every `st.cache_resource` loader below it — `load_search_index`, `load_sign_index`,
+the two Similar-text n-gram indexes, `load_stage_resources`, the reading model, the
+segmenter — builds a *second*, keyed set the first time that session needs it. The gate
+is therefore the frame, not a filter on the output: an unkeyed session never holds a
+handle to any object built from a private row, so there is no surface that can leak one
+by having been forgotten. The key lives in `st.session_state` only — never in the URL,
+never logged, never in the database — so a `?q=` link a reviewer copies out of their
+address bar opens public-only for whoever follows it. A "Lock this session" button in
+the same sidebar expander puts a session back to public-only without a reload.
+
+It fails closed in every direction: with `REVIEWER_KEY` unset the private rows are not
+loaded for anyone, however full the directory is (the sidebar says so, in one line, so
+a copied-but-invisible CSV does not read as a broken import); a wrong key leaves the
+session exactly as public as it was; and if the key check or the private CSV raises,
+the session gets the public frame. The failure mode is "a reviewer sees less", never
+"the public sees more". The credit line follows the same frame, so the CC BY-NC-SA
+attribution appears exactly in the sessions that hold NC rows.
+
+**Order matters — set the key BEFORE the CSV arrives.** On the server:
+
+```bash
+# 1. On the server: add the key to the env file (chmod 600) and restart.
+ssh ledio@vela-optiplex-3070
+echo 'REVIEWER_KEY=<the passphrase>' >> /home/ledio/egyptology.env   # needs sudo for the restart
+sudo systemctl restart egyptology
+# Confirm the app is up and the sidebar shows the "Reviewer access" expander.
+
+# 2. Only then, from the laptop, copy the rows in:
+scp data/private/standrews.csv ledio@vela-optiplex-3070:egyptology-private/
+```
+
+Copying the CSV first would put 7,659 NC rows on a host whose gate is not yet armed.
+The gate would still hold — no key configured means no private rows for anyone — but
+there is no reason to run the window.
+
+**Rotation.** Edit the `REVIEWER_KEY=` line in `/home/ledio/egyptology.env`,
+`sudo systemctl restart egyptology`, and send the new passphrase to the reviewers. Open
+sessions are lost on restart, which is what rotation is for. Nothing else changes; the
+CSV stays where it is.
+
+**What it costs, measured on the developer's Mac 2026-09-05** (130,472 public rows +
+the real 7,659-row `standrews.csv`): the keyed resource set is **+1,033 MB (1.01 GB)**
+resident on top of the public one and takes **19.3 s** to build — the concat 0.18 s and
++50 MB, the pooled stage resources 10.2 s and +524 MB, the Similar-text sign index
+1.2 s and +92 MB, the Similar-text translation index 4.6 s and +353 MB. The last two
+are lazy, so a reviewer who never opens Similar text pays +575 MB, not +1,033 MB. Peak
+RSS with both full sets resident was 2.73 GB in that measurement process. Against the
+3.0 GB peak recorded below and the Streamlit process's 2.37 GB after the 2026-09-05
+deploy, the worst case on the 23 GB box is roughly 3.4–4.0 GB. It is paid once per
+process, not per reviewer, and only after the first reviewer unlocks.
 
 ## What the service needs, measured 2026-09-04, warm-up added 2026-09-05
 
@@ -128,6 +190,14 @@ of the old path was roughly half each — CSV load 3.9 s, scalar retrieval 4.2 s
 change removes both). Both the Streamlit and API paths are now fast.
 
 ### Warming that cold build
+
+The warm-up builds the **public** resource set only. `scripts/warm_streamlit.py` opens
+an ordinary, unkeyed session, and the app's module scope hands `warm_stage_resources`
+the public frame rather than the session frame — so a keyed reviewer's rerun cannot
+turn the warm-up into a warm-up of the private set, which process-global
+`st.cache_resource` would then keep resident for the life of the service. A reviewer's
+first search after a restart therefore pays the keyed build (see the reviewer-key gate
+section above); a visitor's does not.
 
 The visitor no longer pays it. Measured on the box 2026-09-05:
 

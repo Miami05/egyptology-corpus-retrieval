@@ -88,8 +88,13 @@ DATA_PATH = PROJECT_ROOT / "data/processed/examples.csv"
 # CC BY-SA is share-alike and cannot carry NC material — so they live here instead:
 # a gitignored directory (see .gitignore and test_private_data_dir_is_gitignored),
 # loaded at runtime and concatenated onto the public corpus only after it has been
-# through the database step (see load_corpus below), so they never get a database
-# id, never enter the database itself, and are invisible to the exports and the API.
+# through the database step (see load_public_corpus below), so they never get a
+# database id, never enter the database itself, and are invisible to the exports and
+# the API. Since 2026-09-05 they are also invisible to any *session* that has not
+# presented the reviewer key: the app boots on the public frame and builds the
+# private one lazily, per session, behind `private_rows_unlocked` — see
+# `session_corpus`, `load_keyed_corpus` and the "reviewer-key gate" section of
+# DEPLOYMENT.md.
 PRIVATE_DATA_DIR = Path(
     os.environ.get("PRIVATE_DATA_DIR") or str(PROJECT_ROOT / "data" / "private")
 )
@@ -475,14 +480,32 @@ def load_corpus_with_ids(_df: pd.DataFrame, signature: str) -> pd.DataFrame:
 
 
 @st.cache_resource(show_spinner=False)
-def load_private_corpus() -> pd.DataFrame:
-    """The private, non-redistributed corpus (Ramses, St Andrews…), if present.
+def load_private_corpus(directory: str | None = None) -> pd.DataFrame:
+    """The private, non-redistributed corpus (the St Andrews texts), if present.
 
     Reads only `PRIVATE_DATA_DIR`; never touches `examples.csv`, the database, the
     exports or the API. Cached like the public corpus so the CSVs are parsed once
     per process rather than on every rerun.
+
+    `directory` is the cache key, not a convenience: with no argument the cache had
+    one slot for whatever directory the module happened to point at, so a test (or a
+    reconfigured process) that changed `PRIVATE_DATA_DIR` silently got the previous
+    directory's rows back. Callers pass `str(PRIVATE_DATA_DIR)`; the default keeps
+    the old signature working.
     """
-    return load_private_examples(PRIVATE_DATA_DIR)
+    return load_private_examples(Path(directory) if directory else PRIVATE_DATA_DIR)
+
+
+def private_data_dir_has_files() -> bool:
+    """Whether `PRIVATE_DATA_DIR` holds any CSV at all.
+
+    Used only to tell the operator that private files are present but unreachable
+    (no key configured). Never used to decide whether to load them.
+    """
+    try:
+        return any(PRIVATE_DATA_DIR.glob("*.csv"))
+    except Exception:  # unreadable path, permissions, a file where a dir was expected
+        return False
 
 
 def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -497,7 +520,7 @@ def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
     database has no matching key for (see `attach_db_ids` / the "not linked to the
     project database" message in the annotation form).
     """
-    private_df = load_private_corpus()
+    private_df = load_private_corpus(str(PRIVATE_DATA_DIR))
     if private_df.empty:
         return df
     private_df = private_df.copy()
@@ -505,16 +528,112 @@ def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([df, private_df], ignore_index=True, sort=False)
 
 
-def load_corpus() -> tuple[pd.DataFrame, str]:
-    """(corpus frame, database status). Status is "ok" or a failure message."""
+def load_public_corpus() -> tuple[pd.DataFrame, str]:
+    """(public corpus frame, database status). Status is "ok" or a failure message.
+
+    Never contains a private row, whatever is in `PRIVATE_DATA_DIR`. This is the
+    frame the app boots on, the frame an unkeyed session searches, and the frame the
+    warm-up builds resources for.
+    """
     df = load_corpus_csv()
     try:
-        with_ids = load_corpus_with_ids(df, corpus_signature(df))
-        return _append_private_rows(with_ids), "ok"
+        return load_corpus_with_ids(df, corpus_signature(df)), "ok"
     except DatabaseUnavailable as exc:
-        return _append_private_rows(df), str(exc)
+        return df, str(exc)
     except Exception as exc:  # bootstrap/driver failures land here too
-        return _append_private_rows(df), str(exc)
+        return df, str(exc)
+
+
+@st.cache_resource(show_spinner="Preparing the reviewer corpus…")
+def load_keyed_corpus(_public: pd.DataFrame, signature: str, private_dir: str) -> pd.DataFrame:
+    """public + private, built lazily the first time a keyed session asks for it.
+
+    Cached on the *public* signature plus the private directory, so the concat runs
+    once per process rather than on every rerun of every reviewer session, and so a
+    changed private directory cannot be served from a stale slot.
+
+    The frame this returns has its own `corpus_signature` (it has extra rows), which
+    is what makes every downstream `st.cache_resource` — `load_search_index`,
+    `load_sign_index`, the n-gram indexes, `load_stage_resources`, the reading model
+    and the segmenter — build a *second*, keyed set instead of reusing the public
+    one. That separation is the gate: an unkeyed session never holds a handle to any
+    object built from private rows, so no surface can leak one by omission.
+    """
+    return _append_private_rows(_public)
+
+
+# Session-state flags. The reviewer key itself is never stored — only the fact that a
+# valid one was presented — and neither flag is ever written to the URL, a log line
+# or the database.
+REVIEWER_OK_KEY = "whyptology_reviewer_ok"
+
+
+def private_rows_unlocked() -> bool:
+    """Whether THIS session may see the private (CC BY-NC-SA) rows.
+
+    Default off, and off on every error path. The St Andrews rows are licensed to
+    this project alone and must not be redistributed, so the only acceptable failure
+    mode is "a reviewer sees less": with no key configured on the host the answer is
+    False even if the directory is full, and any exception reading the session
+    answers False too.
+    """
+    try:
+        if not str(configured_reviewer_key() or ""):
+            return False
+        return bool(st.session_state.get(REVIEWER_OK_KEY, False))
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "private-row gate: could not determine the session's state; serving public rows"
+        )
+        return False
+
+
+SESSION_SEARCH_STATE_KEYS = (
+    "whyptology_results",
+    "whyptology_suggestions",
+    "whyptology_last_query",
+    "whyptology_last_parse",
+    "whyptology_segments",
+    "whyptology_resolved_stage",
+    "whyptology_stage_outcome",
+    "whyptology_corpus_page_rows",
+    "whyptology_export_csv",
+)
+
+
+def clear_session_search_state() -> None:
+    """Drop every cached search/browse result of this session.
+
+    Called when a reviewer locks the session: anything computed on the keyed frame
+    could contain private rows and must not outlive the key.
+    """
+    for key in SESSION_SEARCH_STATE_KEYS:
+        st.session_state.pop(key, None)
+
+
+def session_corpus(public: pd.DataFrame) -> pd.DataFrame:
+    """The frame this session searches: public, or public + private if it is keyed."""
+    if not private_rows_unlocked():
+        return public
+    try:
+        return load_keyed_corpus(public, corpus_signature(public), str(PRIVATE_DATA_DIR))
+    except Exception:
+        # A malformed private CSV must cost the reviewer the private rows, never the
+        # app — and must never fall through to serving them.
+        logging.getLogger(__name__).exception(
+            "private-row gate: the private corpus failed to load; serving public rows"
+        )
+        return public
+
+
+def load_corpus() -> tuple[pd.DataFrame, str]:
+    """(the frame for this session, database status).
+
+    Equal to `load_public_corpus()` unless the session has presented the reviewer
+    key — see `private_rows_unlocked`.
+    """
+    public, status = load_public_corpus()
+    return session_corpus(public), status
 
 
 @st.cache_resource(show_spinner=False)
@@ -1014,25 +1133,66 @@ def annotations_unlocked() -> bool:
     expected = str(configured_reviewer_key() or "")
     if not expected:
         return True
-    return st.session_state.get("whyptology_reviewer_ok", False)
+    return st.session_state.get(REVIEWER_OK_KEY, False)
 
 
 def render_reviewer_gate() -> None:
-    """Passphrase box shown once per session when a reviewer key is configured."""
+    """The reviewer key: annotation saving, and the private (NC) corpus rows.
+
+    One passphrase, two things behind it. Saving annotations writes to the shared
+    database, so it is limited to reviewers; the St Andrews rows are CC BY-NC-SA and
+    licensed to this project alone, so they are served only to a session that has
+    presented the key (see `private_rows_unlocked` / `session_corpus`). The key lives
+    in `st.session_state` for the life of the session and nowhere else — not the URL,
+    not a log, not the database — so a shared `?q=` link carries no access with it.
+
+    With no key configured the private rows stay unreachable however full the
+    directory is; the operator needs to be told that, or a copied-but-invisible CSV
+    looks like a broken import.
+    """
     expected = str(configured_reviewer_key() or "")
-    if not expected or st.session_state.get("whyptology_reviewer_ok", False):
+    if not expected:
+        if private_data_dir_has_files():
+            st.caption(
+                "Private corpus files are present but `REVIEWER_KEY` is not set, so "
+                "they are not loaded for anyone. Set it in the service environment "
+                "and restart."
+            )
+        return
+    if st.session_state.get(REVIEWER_OK_KEY, False):
+        with st.expander("Reviewer access — unlocked"):
+            if private_rows_unlocked() and not load_private_corpus(
+                str(PRIVATE_DATA_DIR)
+            ).empty:
+                st.caption(
+                    "This session also sees the private, non-commercial corpus rows. "
+                    "They are licensed to this project and must not be redistributed."
+                )
+            else:
+                st.caption("Annotation saving is unlocked for this session.")
+            if st.button("Lock this session", key="whyptology_reviewer_lock"):
+                st.session_state[REVIEWER_OK_KEY] = False
+                st.session_state.pop("whyptology_reviewer_key_input", None)
+                # Results computed while keyed may hold private rows; the workspace
+                # paints them straight from session state, so locking must drop
+                # them too — otherwise the NC rows would stay on screen while the
+                # NC credit line (which follows the frame) disappears (verifier,
+                # 2026-09-05).
+                clear_session_search_state()
+                st.rerun()
         return
     with st.expander("Reviewer access — unlock annotation saving"):
         st.caption(
-            "Reading, searching and browsing need no key. Saving annotations writes "
-            "to the shared project database, so it is limited to reviewers."
+            "Reading, searching and browsing the public corpus need no key. Saving "
+            "annotations writes to the shared project database, and the private "
+            "non-commercial rows are licensed to reviewers only, so both need one."
         )
         entered = st.text_input(
             "Reviewer key", type="password", key="whyptology_reviewer_key_input"
         )
         if st.button("Unlock", key="whyptology_reviewer_unlock"):
             if entered and secrets.compare_digest(entered, expected):
-                st.session_state["whyptology_reviewer_ok"] = True
+                st.session_state[REVIEWER_OK_KEY] = True
                 st.rerun()
             else:
                 st.error("That key was not recognised.")
@@ -3184,10 +3344,17 @@ def render_reviews() -> None:
 inject_theme()
 # One notice per page per run, not one per annotation form.
 st.session_state["_storage_warning_shown"] = set()
-corpus, database_status = load_corpus()
+public_corpus, database_status = load_public_corpus()
+# The frame THIS session searches: the public one, unless it has presented the
+# reviewer key, in which case it is public + the private CC BY-NC-SA rows and carries
+# its own corpus_signature, so every cached index below is built separately for it.
+corpus = session_corpus(public_corpus)
 # Only when the deployment sets WARM_STAGE_RESOURCES=1, and free after the first
 # run of the process. See warm_stage_resources for why it lives in the script.
-warm_stage_resources(corpus)
+# Deliberately `public_corpus`, not `corpus`: the warm-up runs at service start in an
+# unkeyed session (scripts/warm_streamlit.py), and a keyed reviewer's rerun must not
+# turn it into a warm-up of the private resource set for the whole process.
+warm_stage_resources(public_corpus)
 if database_status != "ok":
     st.warning(
         "**Read-only mode.** The project database is not reachable, so annotations "
