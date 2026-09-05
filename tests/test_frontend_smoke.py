@@ -29,6 +29,7 @@ def test_all_enabled_sidebar_destinations_render() -> None:
         ("◇  Projects", "Projects"),
         ("✓  Reviews", "Reviews"),
         ("𓂀  Sign readings", "Signs"),
+        ("≋  Similar text", "Similar"),
         ("⌂  Home", "Home"),
     ]
     for label, page in destinations:
@@ -45,6 +46,7 @@ def test_home_links_have_working_query_parameter_destinations() -> None:
         "projects": "Projects",
         "reviews": "Reviews",
         "signs": "Signs",
+        "similar": "Similar",
     }
 
     for view, expected_page in expected_pages.items():

@@ -227,7 +227,7 @@ Verdict pair by pair, from reading them:
 **Verdict: 8 of 10 are plainly the same sentence in two editions, 1 (XED_001) is the same
 text cut at a different sentence boundary, and 1 (XED_152) is a false pair** — two short,
 wholly formulaic Late Egyptian clauses that share every grammatical word and no content.
-So roughly one pair in ten is noise, and the failure mode is short sentences built only
+So roughly one to two pairs in ten are noise (the independent verifier's ten gave 8 same / 2 false, both AES↔Ramses function-word clauses), and the failure mode is short sentences built only
 from function words. That noise floor should be read into every number below: a method
 cannot score better than the pair set is right.
 
@@ -426,3 +426,10 @@ both, against a 3.0 GB peak on a 23 GB box, and only if someone opens the page.
    is in `assert_yod_folds_together`, which fails the build if that ever changes.
 3. `find_candidate_pairs` emits each pair once from its lower position instead of keeping a
    set of seen pairs. Same pairs, no memory blow-up. Not a rule change.
+- The code's sort key also carries `source_b` between `source_a` and the ids. Within a
+  source-pair group `source_b` is determined by `source_a`, so it cannot change the order —
+  the byte-identical rebuild by the verifier confirms it — but the doc's key above and the
+  code did not read the same, and this line records that.
+- `similar_text_search` skips (rather than stops at) a zero-cosine row after the sign-tier
+  edit re-rank, so the result list cannot be truncated early; found by the verifier, fixed
+  before merge, no measured number affected (the evaluation ranks the full order).

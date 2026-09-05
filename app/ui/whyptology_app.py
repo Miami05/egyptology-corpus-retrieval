@@ -2848,7 +2848,10 @@ def similar_text_search(
     for position in order[:k]:
         position = int(position)
         if scores[position] <= 0.0:
-            break
+            # Skip, don't stop: on the signs tier the head has been edit-re-ranked, so a
+            # zero-cosine row could in principle sit above scored ones (verifier note,
+            # 2026-09-05) and a `break` would truncate the list early.
+            continue
         if position not in similarities:
             similarities[position] = edit_similarity(key, texts[position])
         results.append((position, float(scores[position]), similarities[position]))
