@@ -314,9 +314,10 @@ inference itself.
 - **16/30 auto inferences match the target's declared stage; 0/30 are wrong.** When
   `infer_stage` commits on Late Egyptian material, it commits correctly — every single
   time on this set. There is no Earlier Egyptian or Demotic misfire anywhere in the 30.
-- **14/30 abstain.** The `lift ≥ 1.5` requirement over the stage's base rate among
-  labelled rows (added in the item A follow-up to remove Ramses' bulk bias) is what
-  holds these back, and they fall through to pooled retrieval. So on Late Egyptian text
+- **14/30 abstain.** They fall through to pooled retrieval. The likely cause, read from
+  the code and not isolated by any run here, is the `lift ≥ 1.5` requirement over the
+  stage's base rate among labelled rows (added in the item A follow-up to remove Ramses'
+  bulk bias); a `min_lift=None` comparison would confirm it and was not run. So on Late Egyptian text
   queries, auto is *conservative*, not *inaccurate* — a different failure shape from the
   one item A was fixing.
 - The abstentions are not concentrated among the misses: of the 4 misses, 2 had a stage
@@ -338,7 +339,7 @@ pre-registration was not taken. Its `--verify 200` cross-check against the unref
 |---|---|
 | answerable under Rule A | **30 / 30** |
 | unanswerable | 0 |
-| useful rows in the corpus per query | min 644, median 1,567, max 4,106 |
+| useful rows in the corpus per query | min 644, median 1,568 (1567.5), max 4,106 |
 | best achievable token overlap per query | min 0.4138, median 0.5000, max 0.8889 |
 | queries with any lemma-id intersection anywhere in the corpus | 0 |
 
@@ -395,8 +396,11 @@ visible as a top-3 gain on Late Egyptian queries; what it bought was the Earlier
 paste gate, and this set is evidence that the cost on the other side is approximately
 nil, not that there is a gain here.
 
-**The one graded difference runs in `auto`'s favour, and it comes from abstaining rather
-than from inferring.** `auto` leads on MRR (0.8167 vs 0.8000) and rank-1 count (23 vs 22)
+**The graded differences run in `auto`'s favour, one from inferring and one from
+abstaining.** Against `none`, the only rank change is LE_005, where `auto` *inferred* Late
+Egyptian and promoted the useful row from 2 to 1; against `declared`, the only change is
+LE_001, where `auto` *abstained* and avoided the loss that declaring caused. `auto` leads on
+MRR (0.8167 vs 0.8000) and rank-1 count (23 vs 22)
 because it declined to infer a stage on LE_001 — where declaring the correct stage
 demotes the useful row from rank 1 to rank 2 — while still inferring one on LE_005, where
 it promotes. A conservative inference layer beating an always-correct declaration is a
@@ -405,7 +409,8 @@ Egyptian` on all 30 rows, which is by definition the right answer for all 30, sc
 better than declaring nothing.
 
 **The inference itself is accurate but quiet: 16/30 correct, 0/30 wrong, 14/30 abstain.**
-On this material the `lift ≥ 1.5` gate is the binding constraint, and it fails safe. That
+On this material the `lift ≥ 1.5` gate is the probable binding constraint (inferred from the
+code, not isolated by a run), and whatever holds the 14 back fails safe. That
 is worth knowing before anyone tunes it, and it is the sharpest single fact this set
 produced — it could not have been measured on v4 or held-out 1, which between them carry
 2 Ramses targets.
@@ -423,3 +428,14 @@ the above. LE-v1 is frozen as of this commit.
 - Its 0.8667 is **not** comparable to v4's 0.90 or held-out 1's 0.75 as a "better" or
   "worse": different targets, different sources, different query mix, and LE-v1 alone has
   no twin-inflated hits.
+
+### After verification (2026-09-05)
+
+An independent verifier reproduced the set (byte-identical), all three evaluations (all 25
+columns identical), the twin check and the answerability file, and flagged three prose
+points, corrected above: the bolded "abstaining rather than inferring" sentence was true
+only against `declared` (against `none` the gain is LE_005, where auto inferred); the
+`lift ≥ 1.5` attribution is inferred from the code, not measured; the median is 1,568.
+Also noted: the builder's `language_stage` column goes through `normalize_stage` (identity
+for the three named stages, `""` for Unspecified) rather than copying the corpus cell
+verbatim — no effect on LE-v1, disclosed for a future non-LE build.
