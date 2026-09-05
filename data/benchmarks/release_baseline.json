@@ -1,0 +1,14 @@
+{
+  "_comment": "Release floor for scripts/verify_release.py. A build is NOT READY if the measured top-3 useful accuracy or MRR falls below the floors here, or if fewer than 8/8 expert pastes pass. The benchmark and the stage/query-path it must be run under are named explicitly so a quoted number can never be from a different benchmark than the one these floors were set on (see MEMORY: 'the default harness benchmark has been wrong before'). Update the floors and 'recorded_at'/'recorded_commit' together, in a commit that says why, only after re-measuring.",
+  "benchmark": "competitive_ambiguity_eval_queries_v4.csv",
+  "stage": "auto",
+  "query_path": "app",
+  "useful_rule": "v4",
+  "expected_corpus_rows": 130472,
+  "top3_useful_floor": 0.90,
+  "mrr_floor": 0.7917,
+  "expert_pastes_floor": "8/8",
+  "recorded_at": "2026-09-05",
+  "recorded_commit": "3d38721",
+  "recorded_note": "Merged-tree gates 2026-09-05 (ROADMAP 'Items 2,3,4 — done'): v4 0.90 / MRR 0.7917 in --stage auto --query-path app, misses COMP_007 and COMP_014; expert paste 8/8."
+}

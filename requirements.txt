@@ -5,6 +5,11 @@ pandas==2.3.2
 numpy==2.3.2
 rapidfuzz==3.14.1
 scikit-learn==1.7.1
+# Direct dependency since 2026-09-05: app/retrieval/tfidf.py and tokens.py
+# `from scipy import sparse` directly. It arrives transitively via scikit-learn,
+# but code we import ourselves must be pinned ourselves, not left to another
+# package's resolver. 1.18.0 is the version in the venv.
+scipy==1.18.0
 sqlalchemy==2.0.43
 # Postgres driver. Needed only when DATABASE_URL points at Postgres, which is how
 # annotations survive a redeploy — a container-local SQLite file does not. Harmless

@@ -66,6 +66,28 @@ def test_no_evidence_is_a_404_not_an_empty_list() -> None:
     assert excinfo.value.status_code == 404
 
 
+def test_corpus_is_loaded_and_indexed_once_across_requests(monkeypatch) -> None:
+    """The endpoint builds the frame and its `SearchIndex` once (a module-level
+    `lru_cache`), not on every request as it used to — so two searches read the CSV
+    once between them."""
+    from app.api import main
+
+    main.load_corpus.cache_clear()
+    calls = {"n": 0}
+    real_loader = main.load_examples_csv
+
+    def counting_loader(path):
+        calls["n"] += 1
+        return real_loader(path)
+
+    monkeypatch.setattr(main, "load_examples_csv", counting_loader)
+
+    main.search_examples(query_mdc="htp", k=1)
+    main.search_examples(query_mdc="htp", k=1)
+
+    assert calls["n"] == 1
+
+
 def test_search_route_declares_query_validation_contract() -> None:
     hints = get_type_hints(search_examples, include_extras=True)
     query_constraints = hints["query_mdc"].__metadata__[0]

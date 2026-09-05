@@ -125,11 +125,13 @@ def bulk_insert_examples(df: pd.DataFrame) -> int:
     return len(payloads)
 
 
-def upsert_examples(df: pd.DataFrame) -> dict[str, object]:
+def upsert_examples(df: pd.DataFrame, dry_run: bool = False) -> dict[str, object]:
     """Insert or refresh one corpus row per CSV row, preserving annotations.
 
     Returns counts of created/updated/unchanged rows plus a per-field tally of
-    what was refreshed on rows that already existed.
+    what was refreshed on rows that already existed. With `dry_run=True` the same
+    comparison runs against the database but nothing is written — the counts then
+    describe what a real `--refresh-existing` run would change.
     """
     session = SessionLocal()
     created = 0
@@ -141,7 +143,9 @@ def upsert_examples(df: pd.DataFrame) -> dict[str, object]:
         repo = ExampleRepo(session)
 
         for _, row in df.iterrows():
-            _, was_created, changed = repo.upsert_example(**example_payload(row))
+            _, was_created, changed = repo.upsert_example(
+                dry_run=dry_run, **example_payload(row)
+            )
 
             if was_created:
                 created += 1
@@ -162,18 +166,14 @@ def upsert_examples(df: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def sync_new_examples(df: pd.DataFrame) -> dict[str, int]:
-    """Insert corpus rows the database does not have yet, and touch nothing else.
+def _missing_example_payloads(df: pd.DataFrame) -> list[dict[str, object]]:
+    """The `example_payload` for every CSV row the database does not yet have.
 
-    The upsert path issues a SELECT and a write per row — fine for a first import
-    into an empty SQLite file, punishing against hosted Postgres: growing the corpus
-    from 12,772 to 16,373 rows would be 16,373 round trips on a free tier that has
-    already hit its transfer quota once. This reads the existing keys in one query
-    (four columns, the same call `attach_db_ids` uses) and bulk-inserts only what is
-    missing, so adding a corpus costs a handful of statements.
-
-    Existing rows keep their `id`, so every saved annotation stays attached. Use
-    `upsert_examples` instead when the *content* of existing rows has changed.
+    Reads the existing source keys in one query (four columns, the same call
+    `attach_db_ids` uses) and returns the payloads for the rows whose key is not
+    present. Shared by `sync_new_examples` (which inserts them) and
+    `diff_new_examples` (which only counts them), so the "what is missing" rule lives
+    in exactly one place.
     """
     create_tables()
     session = SessionLocal()
@@ -187,12 +187,42 @@ def sync_new_examples(df: pd.DataFrame) -> dict[str, int]:
     finally:
         session.close()
 
-    missing = [
+    return [
         example_payload(row)
         for _, row in df.iterrows()
         if (row["source"], row["source_text_id"], row["source_sentence_id"])
         not in existing
     ]
+
+
+def diff_new_examples(df: pd.DataFrame) -> dict[str, int]:
+    """What `sync_new_examples` would insert, without writing anything.
+
+    Same counts as `sync_new_examples` returns — `inserted` is how many rows a real
+    sync would add — so a deploy can print "N to insert" before deciding to run it.
+    """
+    missing = _missing_example_payloads(df)
+    return {
+        "already_present": len(df) - len(missing),
+        "inserted": len(missing),
+        "total": len(df),
+    }
+
+
+def sync_new_examples(df: pd.DataFrame) -> dict[str, int]:
+    """Insert corpus rows the database does not have yet, and touch nothing else.
+
+    The upsert path issues a SELECT and a write per row — fine for a first import
+    into an empty SQLite file, punishing against hosted Postgres: growing the corpus
+    from 12,772 to 16,373 rows would be 16,373 round trips on a free tier that has
+    already hit its transfer quota once. This reads the existing keys in one query
+    (four columns, the same call `attach_db_ids` uses) and bulk-inserts only what is
+    missing, so adding a corpus costs a handful of statements.
+
+    Existing rows keep their `id`, so every saved annotation stays attached. Use
+    `upsert_examples` instead when the *content* of existing rows has changed.
+    """
+    missing = _missing_example_payloads(df)
     if missing:
         session = SessionLocal()
         try:

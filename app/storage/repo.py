@@ -44,13 +44,19 @@ class ExampleRepo:
         self.session.refresh(example)
         return example, True
 
-    def upsert_example(self, **kwargs) -> tuple[Example, bool, list[str]]:
+    def upsert_example(
+        self, dry_run: bool = False, **kwargs
+    ) -> tuple[Example | None, bool, list[str]]:
         """Insert a corpus row, or refresh the corpus fields of an existing one.
 
         `add_or_get_example` leaves existing rows untouched, so a re-import after the
         importer improves (e.g. deriving a real period from the TLA dates) never
         reached the database. This updates the corpus columns in place and keeps the
         row's id, so saved annotations stay attached.
+
+        With `dry_run=True` nothing is written: the same comparison runs, but neither
+        the new row nor any field change is committed, so the caller can report what a
+        real run *would* do. The returned example is None for a would-be insert then.
 
         Returns (example, created, changed_fields).
         """
@@ -60,6 +66,8 @@ class ExampleRepo:
             source_sentence_id=kwargs["source_sentence_id"],
         )
         if existing is None:
+            if dry_run:
+                return None, True, []
             example = Example(**kwargs)
             self.session.add(example)
             self.session.commit()
@@ -73,9 +81,10 @@ class ExampleRepo:
             if field in immutable or not hasattr(existing, field):
                 continue
             if getattr(existing, field) != new_value:
-                setattr(existing, field, new_value)
+                if not dry_run:
+                    setattr(existing, field, new_value)
                 changed.append(field)
-        if changed:
+        if changed and not dry_run:
             self.session.commit()
             self.session.refresh(existing)
         return existing, False, changed
