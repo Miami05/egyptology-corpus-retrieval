@@ -202,7 +202,7 @@ have got there without your first look.
 I have hit a decision I cannot make from the numbers, and it is exactly the kind of thing
 only a reader can settle. I have a small change to the rule that orders the three
 suggestions. On five test strings it moves one suggestion up or down: in one case it
-rightly lifts a matching parallel from 6th place to 1st; in four cases it pushes a match
+lifts a matching parallel from 6th place to 1st; in four cases it pushes a match
 that was near the top further down, twice out of the top three. My automatic score cannot
 tell whether that is an improvement or a loss — to it, a demoted 1st-place match and a
 rescued 3rd-place match count the same. Your judgement can.
@@ -223,7 +223,7 @@ Ledio
 
 ### Two-line variant — Sophie
 
-Hi Sophie — following the bug fixes you found, I have one ordering decision I can only
+Hi Sophie — following the notation feedback you gave, I have one ordering decision I can only
 settle by asking someone who reads this material: five strings, five quick questions (a
 tick or a sentence each, under 15 minutes), each showing two orderings of the tool's three
 suggestions and asking which you would rather have seen. The sheet is attached / at the

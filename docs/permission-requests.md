@@ -433,13 +433,17 @@ Dear Mark-Jan,
 
 Thank you — and no apology needed; I know what the start of a semester looks like.
 
-The sign-function file is exactly what the segmentation work was waiting for. I will
-include it under CC BY 4.0, credited to you by name with a link to your Unicode page,
-next to the CC BY-SA corpus; if you would prefer different wording or a different licence,
-one line from you is enough and I will change it. Thank you also for the warning about
+The sign-function file is exactly what the segmentation work was waiting for. I have
+included it under CC BY 4.0, credited to you by name with a link to your Unicode page,
+next to the CC BY-SA corpus (1,444 entries covering 780 of the 1,071 Unicode 5.2 signs);
+I can send a screenshot of the credit line. If you would prefer different wording or a
+different licence, one line from you is enough and I will change it. Thank you also for the warning about
 UniKemet's functions coming from single attested tokens — I will treat it and the Thot
 Sign List as cross-checks, not as sources of truth, and stay with the Unicode 5.2 set your
 file covers.
+
+The St Andrews rows are imported privately under your CC BY-NC-SA grant — kept on the
+server only, never redistributed, exactly as agreed.
 
 Understood on the similar-text question: no user uploads, and the interesting problem is
 similarity across tiers — sign sequence, transliteration, translation and, once lemma
@@ -449,6 +453,10 @@ what I will build next, and I will report what the numbers say either way.
 Understood too that your students will evaluate on a corpus partition rather than on user
 queries; the offer stands if it is ever useful, and AED-TEI is a good place for them to
 start.
+
+Separately, if you have fifteen minutes: I would value your read on five before/after
+ranking cases (sheet attached). Five strings, five quick questions, each asking which of
+two orderings of the tool's three suggestions is the better one to show.
 
 I will write when the new functionality is up so you can test again.
 
