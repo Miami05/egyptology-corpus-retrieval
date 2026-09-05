@@ -26,7 +26,15 @@ Rendered by `_private_source_credit_html("StAndrews")` in
 `app/ui/whyptology_app.py`, from the `PRIVATE_CORPUS_CREDITS["StAndrews"]` entry.
 It appears in the **sidebar** and in the **footer of every page**
 (`render_attribution_footer`), whenever at least one St Andrews row is in the loaded
-frame — so on the server, where the private CSV is present, it is on every page.
+frame.
+
+Since 2026-09-05 the rows themselves are served **only to a session that has presented
+the reviewer key** (`REVIEWER_KEY`; see the "reviewer-key gate" section of
+`DEPLOYMENT.md`), so on the server this credit line is on every page of a reviewer's
+session and on no page of a public visitor's — which is correct, and is the same fact
+stated twice: the line appears exactly when NC rows are in the frame being shown.
+**The screenshot for Mark-Jan Nederhof must therefore be taken from an unlocked
+session**, or it will show the public CC BY-SA credit instead.
 
 Exactly, with "source" and the licence name as links:
 

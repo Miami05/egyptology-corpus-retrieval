@@ -294,6 +294,13 @@ loads `examples.csv` directly and has no knowledge of this directory). The app c
 it with its own licence line in `corpus_credit_html` — never folded into the CC BY-SA
 sentence above — so a viewer never mistakes an NC row for share-alike data.
 
+Since 2026-09-05 these rows are additionally **served only to sessions that have
+presented the reviewer key** (`REVIEWER_KEY`): the app boots on the public frame, and a
+session gets public + private only after unlocking, with its own indexes built from it
+(see `private_rows_unlocked` / `session_corpus` in `app/ui/whyptology_app.py` and the
+"reviewer-key gate" section of `DEPLOYMENT.md`). An ordinary visitor to the public URL
+never receives a private row, whatever is in the directory.
+
 (The Ramses Transliteration Corpus used to be documented here too. It moved to "Fifth
 corpus: the Ramses Transliteration Corpus" above on 2026-09-04, once its rights
 holders granted CC BY-SA 4.0 directly for this project's use.)

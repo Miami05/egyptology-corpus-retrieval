@@ -153,7 +153,10 @@ temporary path when run through
 
 Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
 secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is
-fully open, which is the default for local use. If the database is unreachable the
+fully open, which is the default for local use. The same key also gates the private,
+non-commercial corpus rows (the St Andrews texts, kept out of this repository): a
+session sees them only after unlocking, and with no key configured they are never
+loaded for anyone — see the "reviewer-key gate" section of [DEPLOYMENT.md](DEPLOYMENT.md). If the database is unreachable the
 app drops to read-only: searching, sign-by-sign readings and the corpus explorer keep
 working, and a banner explains that annotations are unavailable.
 
