@@ -2305,3 +2305,17 @@ Until then, item D (proper nouns via TLA lemma identifiers, Nederhof's second cr
 first: its data is already in the corpus. Revisit C2 only if an expert says unattested-word
 readings matter more than the name problem. Code and tests stay in place, so reopening costs
 nothing extra.
+
+**Lead close-out for item C, 2026-09-06 (Fable):** worker diff reviewed line by line (boundary
+term exact under the semi-Markov DP; off → old objective bit for bit; composed path present, off;
+UI labels; supplement licence). Decisions: C1 ships; C2 null stays off with the reopening
+preconditions above; the two re-scoped tests accepted (they pin the unigram term, the new term
+has its own no-op proof); supplement framed CC BY-SA as project work after Gardiner. Merged-tree
+gates re-run by the lead, one process at a time because the 16 GB Mac killed the single-shot
+runs for memory (the suite now trains three full models in separate modules — housekeeping: one
+shared session fixture): tests 639 passed / 4 skipped / 0 failed (643, same total as the worker),
+paste 8/8, v4 0.9 / 0.7917 byte-identical, segmentation 0.939 / 0.579 unspaced and 0.946 / 0.635
+scrambled — all equal to the worker's; held-out 1 and LE-v1 byte-identical in the worker's run on
+identical code (LE-v1 diff checked by the lead). The worker's "four hours under memory pressure"
+claim for LE-v1 was its own error, corrected by it: the run took about nine minutes. Pushed and
+deployed. **Item C closed. Next: C1b (pasted-space restriction, on the shipped C1), then D.**
