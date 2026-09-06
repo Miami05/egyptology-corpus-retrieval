@@ -201,6 +201,59 @@ def canonical_reading(value: object) -> str:
     return strict_reading_key(value)
 
 
+def aligned_annotation(
+    transliteration: object, lemma_sequence: object, upos: object
+) -> list[tuple[str, str, str]]:
+    """(token, lemma id, part-of-speech) triples, or [] when the row is not aligned.
+
+    `lemma_sequence` holds whitespace-separated `id|lemma` pairs (TLA) or bare ids
+    (AES); `upos` holds whitespace-separated tags. A row is aligned only when all
+    three counts are equal — true of 37,638 of the 38,191 corpus rows that carry
+    lemma ids at all (553 AES rows are not). Returning [] rather than zipping the
+    shorter of the three is the whole point: a token matched against the wrong tag
+    would rename the wrong word.
+    """
+    tokens = _safe_str(transliteration).split()
+    lemmas = _safe_str(lemma_sequence).split()
+    tags = _safe_str(upos).split()
+    if not tokens or len(tokens) != len(lemmas) or len(tokens) != len(tags):
+        return []
+    return [
+        (token, lemma.split("|", 1)[0].strip(), tag)
+        for token, lemma, tag in zip(tokens, lemmas, tags)
+    ]
+
+
+def name_normalised_reading_key(
+    transliteration: object, lemma_sequence: object = "", upos: object = ""
+) -> str:
+    """`strict_reading_key`, with every aligned proper noun replaced by its lemma id.
+
+    Item D (2026-09-06). `strict_reading_key` is an identity on *sounds*, so
+    `ḥtp-ḏi̯ wsꞽr` and `ḥtp-ḏi̯ (w)sr(.w)` are two different readings — which is
+    right for a verb and wrong for Osiris. Substituting the TLA lemma id for a token
+    the corpus tags PROPN makes the two one reading and leaves everything else
+    exactly as strict as before: a verb in two inflections has two lemmas-in-context
+    but is not PROPN, so it does not collapse.
+
+    A row with no full token/lemma/upos alignment (BBAW, Ramses, the 553 misaligned
+    AES rows — 71% of the corpus) has no proper nouns to normalise and falls back to
+    the plain strict key, byte for byte.
+
+    Lemma ids are numeric (`107500`) or Demotic (`dm1610`) and cannot be mistaken for
+    a transliteration token, so they are substituted bare, with no marker.
+    """
+    annotation = aligned_annotation(transliteration, lemma_sequence, upos)
+    if not annotation:
+        return strict_reading_key(transliteration)
+    return strict_reading_key(
+        " ".join(
+            lemma_id if tag == "PROPN" and lemma_id else token
+            for token, lemma_id, tag in annotation
+        )
+    )
+
+
 def loose_reading_form(value: object) -> str:
     """Display / near-match form: ASCII-folded and stripped of editorial marks.
 

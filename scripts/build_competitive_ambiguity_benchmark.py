@@ -12,22 +12,29 @@ inverted index over rare tokens makes the full-corpus check affordable: instead 
 163 million pairwise comparisons, each row is compared only with rows that share at
 least one of its tokens.
 
-Three flags narrow *candidacy* and nothing else — `--pool-size`, `--exclude-benchmark`
-(repeatable) and `--stage` — and they all share one invariant, because breaking it
-would be the same bug three times over: **twin detection always runs against the whole
-corpus**. The eval loads the whole corpus, so a candidate whose edition twin sits
-outside the narrowed candidate set would still be handed its expected reading for free
-at eval time. `--stage` was added on 2026-09-05 to build LE-v1, the Late Egyptian
-evaluation set (docs/late-egyptian-eval-set-2026-09-05.md); `--exclude-benchmark`
-became repeatable in the same change so LE-v1 could be held out from v4 *and* from
-held-out 1 at once.
+Four flags narrow *candidacy* and nothing else — `--pool-size`, `--exclude-benchmark`
+(repeatable), `--stage` and `--require-propn-variant` — and they all share one
+invariant, because breaking it would be the same bug four times over: **twin detection
+always runs against the whole corpus**. The eval loads the whole corpus, so a candidate
+whose edition twin sits outside the narrowed candidate set would still be handed its
+expected reading for free at eval time. `--stage` was added on 2026-09-05 to build
+LE-v1, the Late Egyptian evaluation set (docs/late-egyptian-eval-set-2026-09-05.md);
+`--exclude-benchmark` became repeatable in the same change so LE-v1 could be held out
+from v4 *and* from held-out 1 at once. `--require-propn-variant` was added on
+2026-09-06 for NAME-v1, item D's proper-noun set (docs/proper-nouns-2026-09-06.md).
+
+`--substitute-name-spelling` is the one flag here that touches the *query* rather than
+candidacy: it rewrites the generated query so the name in it is spelled the way another
+corpus row spells the same lemma. It changes no selection rule, no threshold and no twin
+test — the target row, its rivals and its expected columns are exactly what they would
+have been without it.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from fractions import Fraction
 from pathlib import Path
 
@@ -117,6 +124,33 @@ def _parse_args() -> argparse.Namespace:
             "would otherwise be handed its own answer for free. The corpus column is "
             "matched verbatim rather than through normalize_stage, so the flag names "
             "exactly the population it selects."
+        ),
+    )
+    parser.add_argument(
+        "--require-propn-variant",
+        action="store_true",
+        help=(
+            "Restrict benchmark *candidates* to rows that carry a proper noun with "
+            "more than one attested spelling: the row must have a full "
+            "token/lemma/part-of-speech alignment (equal counts, i.e. a TLA or AES "
+            "row) and at least one PROPN token whose lemma id is spelled >= 2 ways "
+            "anywhere in the corpus. Like --pool-size, --exclude-benchmark and "
+            "--stage this narrows candidacy ONLY: the spelling table and twin "
+            "detection are both computed over the whole corpus."
+        ),
+    )
+    parser.add_argument(
+        "--substitute-name-spelling",
+        action="store_true",
+        help=(
+            "Write the query with the name spelled the *other* way. The query is "
+            "the row's simplified transliteration (the `simplified_transliteration` "
+            "recipe, for every row — the three-way query-type rotation is off) with "
+            "the chosen PROPN token replaced by the most frequent other attested "
+            "spelling of the same lemma id, which is what a reader who knows the "
+            "name under that spelling would type. Requires --require-propn-variant, "
+            "since only those rows have another spelling to substitute. The "
+            "substitution is recorded per row in `notes`."
         ),
     )
     parser.add_argument(
@@ -269,6 +303,82 @@ def _overlap(left: set[str], right: set[str]) -> float:
     return len(left & right) / len(left | right)
 
 
+def aligned_tokens(
+    transliteration: object, lemma_sequence: object, upos: object
+) -> list[tuple[str, str, str]]:
+    """(token, lemma id, part-of-speech) triples, or [] when the row is not aligned.
+
+    `lemma_sequence` is whitespace-separated `id|lemma` pairs (TLA) or bare ids
+    (AES); `upos` is whitespace-separated tags. A row counts as aligned only when
+    all three counts are equal — 37,638 of the 38,191 rows that carry lemma ids
+    (553 AES rows are misaligned). Everything downstream of proper-noun handling
+    asks this function first, so an unaligned row can never have a token silently
+    matched against the wrong tag.
+    """
+    tokens = str(transliteration or "").split()
+    lemmas = str(lemma_sequence or "").split()
+    tags = str(upos or "").split()
+    if not tokens or len(tokens) != len(lemmas) or len(tokens) != len(tags):
+        return []
+    return [
+        (token, lemma.split("|", 1)[0].strip(), tag)
+        for token, lemma, tag in zip(tokens, lemmas, tags)
+    ]
+
+
+def propn_spelling_table(df: pd.DataFrame) -> dict[str, Counter]:
+    """lemma id -> Counter of the surface spellings its PROPN tokens are written with.
+
+    Over the whole corpus, aligned rows only. `ḥr.w` 424 / `ḥr` 22 / `ḥr(.w)` 19 /
+    `ḥr.w.DU` 1 for Horus (107500); 606 of the 3,560 PROPN lemma ids are spelled two
+    or more ways, 187 three or more. Spellings are counted as raw surface strings:
+    the point of item D is precisely that `ḥr` and `ḥr.w` are typed differently, so
+    normalising them here would erase the phenomenon being measured.
+    """
+    table: dict[str, Counter] = defaultdict(Counter)
+    upos_column = (
+        df["upos"] if "upos" in df.columns else pd.Series([""] * len(df), index=df.index)
+    )
+    for transliteration, lemma_sequence, upos in zip(
+        df["transliteration_gold"], df["lemma_sequence"], upos_column
+    ):
+        for token, lemma_id, tag in aligned_tokens(transliteration, lemma_sequence, upos):
+            if tag == "PROPN" and lemma_id:
+                table[lemma_id][token] += 1
+    return table
+
+
+def variant_name_token(
+    transliteration: object,
+    lemma_sequence: object,
+    upos: object,
+    spellings: dict[str, Counter],
+) -> tuple[int, str, str, str] | None:
+    """The row's first variably spelled proper noun, as
+    (token position, spelling used here, lemma id, most frequent other spelling).
+
+    "Most frequent other" is the lemma's commonest spelling that is not the one this
+    row uses — the form a reader who knows the name from another edition would type.
+    Ties break on the spelling string so the builder stays deterministic. None when
+    the row is unaligned or carries no name with a second attested spelling.
+    """
+    for position, (token, lemma_id, tag) in enumerate(
+        aligned_tokens(transliteration, lemma_sequence, upos)
+    ):
+        if tag != "PROPN" or not lemma_id:
+            continue
+        counts = spellings.get(lemma_id)
+        if not counts or len(counts) < 2:
+            continue
+        others = [(count, spelling) for spelling, count in counts.items() if spelling != token]
+        if not others:
+            continue
+        best_count = max(count for count, _ in others)
+        substitute = min(spelling for count, spelling in others if count == best_count)
+        return position, token, lemma_id, substitute
+    return None
+
+
 def _content_tokens(tokens: list[str]) -> list[str]:
     content = [token for token in tokens if token not in STOP_TOKENS]
     return content or tokens
@@ -304,6 +414,41 @@ def query_has_signal(
     return share <= MAX_SINGLE_TOKEN_DOC_SHARE
 
 
+def _simplified_query_tokens(transliteration: object) -> list[str]:
+    """The `simplified_transliteration` recipe, factored out so the name-substituted
+    query below goes through exactly the same steps as the ordinary one."""
+    tokens = _strip_some_endings(_tokens(loose_reading_form(transliteration)))
+    content = _content_tokens(tokens)
+    return content[:8] if len(content) > 8 else content
+
+
+def _name_substituted_query(
+    row: pd.Series, spellings: dict[str, Counter]
+) -> tuple[str, str, str] | None:
+    """(query, query_type, notes) for a row whose name is respelled, or None.
+
+    The substitution happens on the row's *whitespace tokens*, which is the only
+    level where the token/lemma/upos alignment holds — the simplified fold splits
+    `ꜥḥꜥ.n` into two tokens and would break it. The folded query is then built from
+    the substituted sentence by the ordinary simplified recipe, so nothing about how
+    a query is generated changes except which letters the name contributes.
+    """
+    found = variant_name_token(
+        row["transliteration_gold"], row.get("lemma_sequence", ""), row.get("upos", ""), spellings
+    )
+    if found is None:
+        return None
+    position, original, lemma_id, substitute = found
+    tokens = str(row["transliteration_gold"]).split()
+    tokens[position] = substitute
+    query = " ".join(_simplified_query_tokens(" ".join(tokens)))
+    notes = (
+        "Target row excluded; editorial markers and light endings removed; "
+        f"name lemma {lemma_id} respelled {original} -> {substitute}."
+    )
+    return query, "simplified_transliteration", notes
+
+
 def _competitive_query(row: pd.Series, row_num: int) -> tuple[str, str, str]:
     loose = loose_reading_form(row["transliteration_gold"])
     tokens = _strip_some_endings(_tokens(loose))
@@ -334,6 +479,12 @@ def _competitive_query(row: pd.Series, row_num: int) -> tuple[str, str, str]:
 
 def main() -> None:
     args = _parse_args()
+    if args.substitute_name_spelling and not args.require_propn_variant:
+        raise SystemExit(
+            "--substitute-name-spelling needs --require-propn-variant: only rows "
+            "selected for carrying a variably spelled name have another spelling "
+            "to substitute."
+        )
     df = load_examples_csv(args.examples)
     prepared = df.copy()
     prepared["competitive_tokens"] = prepared["transliteration_gold"].map(
@@ -421,8 +572,32 @@ def main() -> None:
             f"{len(corpus_stages)} corpus rows); twin detection stays whole-corpus."
         )
 
+    # The proper-noun spelling table (item D). Built over the WHOLE corpus, like the
+    # twin index above and for the same reason: "spelled two ways" is a fact about
+    # the corpus the eval loads, not about whatever candidate slice this run keeps.
+    propn_spellings: dict[str, Counter] = {}
+    name_variant_positions: set[int] = set()
+    if args.require_propn_variant:
+        propn_spellings = propn_spelling_table(prepared)
+        variable = sum(1 for counts in propn_spellings.values() if len(counts) >= 2)
+        upos_values = (
+            list(prepared["upos"]) if "upos" in prepared.columns else [""] * len(prepared)
+        )
+        for position, (transliteration, lemma_sequence, upos) in enumerate(
+            zip(prepared["transliteration_gold"], prepared["lemma_sequence"], upos_values)
+        ):
+            if variant_name_token(transliteration, lemma_sequence, upos, propn_spellings):
+                name_variant_positions.add(position)
+        print(
+            f"Proper nouns over the full corpus: {len(propn_spellings)} PROPN lemma "
+            f"ids, {variable} of them spelled >= 2 ways; "
+            f"{len(name_variant_positions)} of {len(prepared)} rows carry one "
+            "(candidacy filter --require-propn-variant)."
+        )
+
     positional_index = list(prepared.index)
     candidates: list[tuple[int, float, int]] = []
+    skipped_no_name_variant = 0
     skipped_excluded = 0
     skipped_wrong_stage = 0
     skipped_near_duplicate = 0
@@ -434,6 +609,9 @@ def main() -> None:
             continue
         if args.stage and corpus_stages[position] != args.stage:
             skipped_wrong_stage += 1
+            continue
+        if args.require_propn_variant and position not in name_variant_positions:
+            skipped_no_name_variant += 1
             continue
         index = positional_index[position]
         target_tokens = corpus_token_sets[position]
@@ -484,10 +662,15 @@ def main() -> None:
         if args.stage
         else ""
     )
+    name_note = (
+        f"{skipped_no_name_variant} without a variably spelled proper noun, "
+        if args.require_propn_variant
+        else ""
+    )
     print(
         f"Candidates considered: {len(list(candidate_positions))} rows -> "
         f"{len(candidates)} eligible (skipped {skipped_excluded} excluded by "
-        f"--exclude-benchmark, {stage_note}{skipped_too_short} too short, "
+        f"--exclude-benchmark, {stage_note}{name_note}{skipped_too_short} too short, "
         f"{skipped_no_distractor} without distractors, {skipped_near_duplicate} "
         f"with a near-identical twin anywhere in the corpus at overlap >= "
         f"{args.max_twin_overlap})"
@@ -501,10 +684,26 @@ def main() -> None:
 
     rows: list[dict[str, str]] = []
     skipped_no_signal = 0
+    unchanged_after_substitution = 0
     for row_num, (_, row) in enumerate(selected.iterrows(), start=1):
         key_tokens = sorted(row["competitive_tokens"])
         lemma_ids = row["competitive_lemma_ids"]
-        query_input, query_type, notes = _competitive_query(row, row_num)
+        substituted = (
+            _name_substituted_query(row, propn_spellings)
+            if args.substitute_name_spelling
+            else None
+        )
+        respelling_is_visible = False
+        if substituted is not None:
+            query_input, query_type, notes = substituted
+            # Worth measuring rather than assuming: the simplified fold is lossy
+            # (ḥr.w -> "hr w", ḥr -> "hr"), so for some rows the respelling leaves
+            # the generated query letter for letter what it would have been.
+            respelling_is_visible = query_input != " ".join(
+                _simplified_query_tokens(row["transliteration_gold"])
+            )
+        else:
+            query_input, query_type, notes = _competitive_query(row, row_num)
         if not query_has_signal(
             query_input, token_document_frequency, len(corpus_token_sets)
         ):
@@ -533,9 +732,18 @@ def main() -> None:
                 "language_stage": normalize_stage(row.get("language_stage", "")) or "",
             }
         )
+        if substituted is not None and not respelling_is_visible:
+            unchanged_after_substitution += 1
         if len(rows) >= args.limit:
             break
 
+    if args.substitute_name_spelling:
+        print(
+            f"Name respelling: visible in the generated query for "
+            f"{len(rows) - unchanged_after_substitution} of {len(rows)} rows; "
+            f"{unchanged_after_substitution} rows where the simplified fold makes "
+            "the two spellings identical."
+        )
     if skipped_no_signal:
         print(
             f"Dropped {skipped_no_signal} selected rows whose generated query was a "
