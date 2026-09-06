@@ -2478,3 +2478,62 @@ rows and 9,822 AES rows (9,269 aligned), none for BBAW/Ramses; on v4 / held-out 
 top-3 never repeat one lemma sequence in different spellings (60% of those suggestions come from
 rows without lemma ids), so Nederhof's proper-noun complaint needs its own name-query set before
 D can be pre-registered — that set is D's step 0.
+
+### Item D — proper nouns via TLA lemma identifiers — pre-registered 2026-09-06 night (Opus 5 worker)
+
+Nederhof's second criticism: "proper nouns are not normalised, so 'alternatives' are one name in
+different forms." Written before any run. Worktree off `main` at 247bcc1+.
+
+**Diagnosis (measured 2026-09-06 night).** Lemma ids exist on all 28,369 TLA rows and 9,822 AES
+rows (38,191 = 29% of the corpus; none on BBAW/Ramses); tokens, lemma ids and part-of-speech tags
+align on 37,638 of them (553 AES rows misaligned). 3,560 PROPN lemma ids; **606 are spelled ≥ 2
+ways, 187 ≥ 3** (Horus ḥr.w / ḥr / ḥr(.w) / ḥr.w.DU, Osiris wsꞽr / (w)sr(.w) / (w)sꞽr / ws-ꞽr,
+Seth stš / stẖ / swtḫ, Anubis ꞽnp.w / ꞽnp(.w) / ꞽnpw, Re rꜥw / rꜥ / rꜥ.w …); 6,314 TLA rows
+contain a variably spelled name. Suggestions are grouped today by `strict_reading_key` (sound
+string), so two readings differing only in a name's spelling are two "alternatives". On v4,
+held-out 1 and LE-v1 the top-3 never repeat one lemma sequence (60% of those suggestions come
+from rows without lemma ids) → the symptom is not visible on the existing benchmarks and needs
+its own set.
+
+**Step 0 — NAME-v1, the name-query set (30 queries).** Built with
+`build_competitive_ambiguity_benchmark.py`'s machinery (twin guard against the WHOLE corpus,
+`--exclude-benchmark` for v4, held-out 1 and LE-v1 — that invariant is not touched), with two
+new *candidacy-only* flags: `--require-propn-variant` (the target row is a TLA/AES row whose
+aligned PROPN token belongs to a lemma with ≥ 2 attested spellings) and
+`--substitute-name-spelling` (the query is the row's simplified transliteration with that name
+token replaced by the lemma's most frequent *other* attested spelling — what a reader who knows
+the name under another spelling would type). `query_type = simplified_transliteration`,
+`expected_lemma_ids` as usual. If fewer than 30 rows survive the guard, report the count and
+proceed with ≥ 20; below 20, STOP and report.
+
+**The symptom metric — name-duplicate slots.** For a query's top-3, the *name-normalised key* of
+a suggestion = `strict_reading_key` with every aligned PROPN token replaced by its lemma id (rows
+without a full token/lemma/upos alignment keep the plain strict key). A slot is a duplicate when
+its key equals an earlier slot's. Report the total over NAME-v1 and, for reference, over v4,
+held-out 1 and LE-v1 (expected 0). **Baseline first, on the pristine tree.** If the baseline
+duplicate count on NAME-v1 is 0, the symptom is absent from our data and D1 is a null before it
+is built: STOP D1, keep the set, report.
+
+**D1 — group suggestions by the name-normalised key.** In `suggest_top_readings`, the grouping
+key becomes the name-normalised key (verbs, nouns and inflections stay distinct — only a name's
+spelling collapses); the displayed reading is the best-scoring row's; the suggestion gains
+`variant_readings` (the other spellings with their counts), rendered in the card as "also
+written …"; support and lemma density are computed over the merged group. Rows without
+alignment behave exactly as today. **No retrieval or ranking-weight change.**
+
+**Decision rule (frozen).** Ship iff on NAME-v1: name-duplicate slots decrease strictly vs the
+baseline, top-3 useful ≥ baseline, MRR ≥ baseline − 0.01; AND v4 (0.9 / 0.7917), held-out 1
+(0.75 / 0.6667), LE-v1 (0.8667 / 0.8167) top-3 useful and MRR not lower; paste 8/8; segmentation
+eval byte-identical (nothing in segmentation changes). Per-query rank changes reported. Null
+allowed.
+
+**D2 (recorded, not in this launch).** The query side: a name lexicon (surface form → lemma →
+all attested spellings from TLA/AES PROPN tokens) used to expand a query's name tokens in
+retrieval. It is a retrieval change and gets its own pre-registration iff NAME-v1's baseline
+shows a *recall* problem (target row absent from the top-50 pool for ≥ 5 of the 30 queries) —
+the baseline run reports that count.
+
+**Gates, machine rules, STOPs:** as for C1c — pytest per module, one heavy process at a time,
+never commit/push/server, never touch `data/private/` or `examples.csv`. STOP on: < 20 NAME-v1
+rows; baseline duplicate slots 0; any retrieval change needed; wall clock > 4 h. Report
+`docs/proper-nouns-2026-09-06.md`; "Result: …" here.
