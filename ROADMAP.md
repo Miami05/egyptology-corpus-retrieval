@@ -2403,7 +2403,12 @@ ceiling is below fallback accuracy on that sample, candidate generation must imp
 scoring can help; if it is higher, scoring is worth investigating, but C2 still has not passed
 its shipping gates. The held-out test stays untouched; the 200-position floor stays; combination
 matching and morphology remain possible future work until this diagnostic shows what is needed.
-Until then the C2 wording in `docs/sign-function-2026-09-06.md` §5.3 is provisional.
+**Done 2026-09-06 evening (lead):** same fitted model, same dev sentences; 489 paired positions
+(composition covers AND baseline falls back). Fallback exact **0.3476** vs composition oracle
+**0.1186** (lenient 0.3558 vs 0.1697), composition top-1 0.0327. **Ceiling below fallback on the
+same sample → the null is confirmed, paired: generation must improve before scoring can help.**
+The unpaired comparison had understated the gap (fallback's dev accuracy over all 726 fallback
+positions is 0.39). Held-out untouched, floor unchanged. §5.3a of the report records it.
 
 **C1c — lift the veto only when the spaces are known to be quadrats — pre-registered 2026-09-06
 evening (lead, from the C1b contradiction; runs after the C2 paired diagnostic).** C1b showed

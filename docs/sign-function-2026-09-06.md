@@ -363,6 +363,32 @@ unrestricted table entries with at least one value-bearing sign; my Stage 1 meas
 a population difference rather than a disagreement — the 200-position floor and the
 decision rules were not affected either way.
 
+### 5.3a Paired diagnostic on the same positions (lead, 2026-09-06 evening; requested by Ledio)
+
+§5.3 compared composition's dev oracle recall (0.122) with the fallback's held-out accuracy
+(0.2835) — two different populations. The comparison was re-done on the **same dev positions
+with the same fitted model** (fit 42,842 sentences, dev 4,761, test 11,901 untouched):
+
+| | count |
+|---|---|
+| dev positions with no corpus and no lexicon reading | 778 |
+| … composition produces ≥ 1 candidate | 516 |
+| … baseline actually uses the glyph-similarity fallback | 726 |
+| **paired: composition covers AND baseline falls back** | **489** |
+
+| on the 489 paired positions | exact | lenient fold |
+|---|---|---|
+| fallback accuracy | **0.3476** (170) | 0.3558 (174) |
+| composition oracle recall (gold anywhere in the list) | **0.1186** (58) | 0.1697 (83) |
+| composition top-1 | 0.0327 (16) | — |
+
+The fallback is right almost three times as often as composition's *ceiling* on exactly the
+positions where both apply, so the §5.3 conclusion stands, now paired: candidate generation
+must improve before any scoring change can help on this sample. (The fallback's dev accuracy,
+0.39 over all 726 of its positions, is higher than its held-out 0.2835 — the unpaired comparison
+had understated the gap, not overstated it.) Held-out test untouched; 200-position floor
+unchanged. Script: the lead's `c2_paired.py` run on 2026-09-06, output quoted verbatim.
+
 ### 5.4 Why it fails, for the record
 
 The dev dump makes the reason concrete, and it is structural rather than a matter of
