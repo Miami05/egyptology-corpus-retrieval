@@ -40,6 +40,7 @@ on their own.
 from __future__ import annotations
 
 from collections import Counter
+from copy import copy
 from dataclasses import dataclass, field
 from math import log
 
@@ -170,6 +171,12 @@ class SegmentationWeights:
     #
     # Unspaced input carries no hints, so the flag cannot change an unspaced result;
     # it is measurable only on input with spaces.
+    #
+    # C1b's own rule (scrambled corpus spacing) was a null and this default stays
+    # False. C1c makes it *conditional on the input* instead: `segment_paste` turns it
+    # on for one call when the paste carries quadrat hints, because then its spaces are
+    # known to be quadrat boundaries rather than possible word boundaries. See
+    # `segment_paste` and docs/quadrat-conditional-veto-2026-09-06.md.
     unattested_may_cross_hints: bool = False
 
     def replace(self, **changes: float | bool) -> SegmentationWeights:
@@ -454,9 +461,32 @@ def segment_paste(
     segmenter as `no_cut` positions; without it the controls are simply deleted, which
     is what every caller did before item B. Either way `groups_as_pasted` is exactly
     `normalize_hieroglyphs(query).split()`.
+
+    Item C1c — what a pasted space *means*. `Segmenter.segment` vetoes an unattested
+    multi-glyph span that crosses one of the paste's spaces (see
+    `SegmentationWeights.unattested_may_cross_hints`). That veto is right when a space
+    might separate two words, which is all the segmenter can assume about a bare paste.
+    It is wrong when the paste carries layout controls: those controls say the spaces
+    are *quadrat* boundaries, and a word routinely spans several quadrats, so the
+    correct span crosses a space by construction — and on Hannig-convention material it
+    is frequently a span this corpus never attested, which is exactly what the veto
+    forbids. So when — and only when — `quadrat_hints` finds at least one quadrat hint,
+    this one call is made with the veto lifted. C1b measured the trade both ways: on
+    scrambled corpus spacing (spaces that may separate words) lifting it costs boundary
+    F1; on real quadrat spacing it buys +0.021 reading token F1.
+
+    The lifted view is a shallow copy of the segmenter, so the group counts, the
+    lexicon set, the boundary model and the log-probability cache are the same objects
+    — nothing is refitted, and the caller's segmenter is never mutated. No paste
+    without controls can reach it, and `no_cut` is empty for every corpus benchmark
+    (the corpus carries no controls at all), so every earlier number is unaffected.
     """
     if use_format_hints:
         groups, no_cut = quadrat_hints(query)
+        if no_cut and not segmenter.weights.unattested_may_cross_hints:
+            lifted = copy(segmenter)
+            lifted.weights = segmenter.weights.replace(unattested_may_cross_hints=True)
+            return lifted.segment(groups, no_cut=no_cut), groups
         return segmenter.segment(groups, no_cut=no_cut), groups
     groups = normalize_hieroglyphs(query).split()
     return segmenter.segment(groups), groups

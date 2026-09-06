@@ -2428,3 +2428,28 @@ as-rendered improved/worsened line counts favour improvement. Report the per-sha
 Andrews table and the unseen-word breakdown for the as-rendered shape if the harness can
 produce it; otherwise say so. Null allowed. This is not a re-run of C1b: C1b's rule and its
 null stand; C1c asks a different question (when do spaces mean quadrats?).
+
+**Result 2026-09-06 evening (worker, worktree off `fe5c77b`): SHIPS.** The rule as
+pre-registered, implemented only in `segment_paste` — when `quadrat_hints` returns a non-empty
+`no_cut`, that one call runs on a shallow-copied segmenter whose weights carry
+`unattested_may_cross_hints=True`; nothing is refitted, the caller's segmenter is not mutated,
+and the dataclass default stays `False`. **St Andrews as-rendered token F1 0.5814 → 0.6017**
+(+0.0203; paired on the same 1,701 lines, 590 better / 145 worse / 966 unchanged; precision
+0.533 → 0.571, recall 0.640 → 0.635, mean |groups − gold tokens| 2.975 → 2.158; 1,695 of the
+1,701 lines carry at least one control, which is why the conditional rule reproduces C1b's
+global lift almost exactly). Harness table at `--constant 1.0`: as_rendered 0.578 (hints off) /
+**0.602** (on), unspaced 0.598 / **0.603** — the unspaced pair unchanged to three decimals, as
+predicted. **Every byte-identical prediction held:** `run_segmentation_eval.py` output diffed
+against a pristine-tree run of the same command (unspaced 0.939 / 0.579, scrambled 0.946 /
+0.635, unseen-word breakdown identical); expert paste **8/8** with all 23 columns of all 8 rows
+identical to a pristine-tree run — PASTE_005, the only paste with controls (11 of them,
+`no_cut` of size 11), included; v4 **0.90 / 0.7917**, held-out 1 **0.75 / 0.6667**, LE-v1
+**0.8667 / 0.8167**, each `diff`-empty against its committed results CSV (none of the seven
+benchmark query files contains a single U+13430–U+1345F character, so the branch is unreachable
+there). Suite **656 passed, 3 skipped** in five chunks (648 + 8 new tests in
+`tests/test_quadrat_conditional_veto.py`). Reported as not producible: the unseen-word breakdown
+for the as-rendered shape — St Andrews has no gold word-level grouping to classify boundaries
+against, which is why that harness scores reading tokens; `|grp-tok|` is the nearest proxy and
+moved −0.82. Not run: `check_standrews_urkiv_gate.py` (needs `data/private/`, which the worker
+may not write; PASTE_001 carries no controls, so no movement is expected). Report:
+`docs/quadrat-conditional-veto-2026-09-06.md`.
