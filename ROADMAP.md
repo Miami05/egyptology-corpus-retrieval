@@ -2364,3 +2364,15 @@ scrambled — all equal to the worker's; held-out 1 and LE-v1 byte-identical in 
 identical code (LE-v1 diff checked by the lead). The worker's "four hours under memory pressure"
 claim for LE-v1 was its own error, corrected by it: the run took about nine minutes. Pushed and
 deployed. **Item C closed. Next: C1b (pasted-space restriction, on the shipped C1), then D.**
+**C2 — paired diagnostic still owed (Ledio, 2026-09-06 evening; runs right after C1b, one process
+at a time).** The C2 null rests on an UNPAIRED comparison: composition's oracle recall on the dev
+cut (0.122) against the fallback's accuracy on the held-out test set (0.2835) — different
+sentences, different positions. To be re-earned: (1) run the existing fallback on the same dev
+sentences with the same fitted model; (2) compare fallback accuracy with composition's oracle
+recall on exactly the positions where composition produces candidates AND the baseline actually
+uses fallback; report that position count; (3) correct the report and this roadmap — if the
+ceiling is below fallback accuracy on that sample, candidate generation must improve before
+scoring can help; if it is higher, scoring is worth investigating, but C2 still has not passed
+its shipping gates. The held-out test stays untouched; the 200-position floor stays; combination
+matching and morphology remain possible future work until this diagnostic shows what is needed.
+Until then the C2 wording in `docs/sign-function-2026-09-06.md` §5.3 is provisional.
