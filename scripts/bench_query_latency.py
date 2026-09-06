@@ -36,10 +36,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv  # noqa: E402
-from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs  # noqa: E402
+from app.data.normalizer import contains_hieroglyphs  # noqa: E402
 from app.services import retrieval as retrieval_module  # noqa: E402
 from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.retrieval import resolve_auto_stage, retrieve_with_stage  # noqa: E402
+from app.services.segmentation import segment_paste  # noqa: E402
 from app.services.stage import STAGES, StageResources, build_stage_resources  # noqa: E402
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 
@@ -95,8 +96,8 @@ def run_query(query: str, get_resources) -> None:
     resources = get_resources(resolved_stage)
     regrouped: str | None = None
     if contains_hieroglyphs(query):
-        as_pasted = normalize_hieroglyphs(query).split()
-        regrouped = " ".join(resources.segmenter.segment(as_pasted).groups)
+        segmentation, _as_pasted = segment_paste(query, resources.segmenter)
+        regrouped = " ".join(segmentation.groups)
     stage_result = retrieve_with_stage(
         resources.frame,
         resources_by_stage=get_resources,

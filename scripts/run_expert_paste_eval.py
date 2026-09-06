@@ -37,13 +37,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv  # noqa: E402
-from app.data.normalizer import (  # noqa: E402
-    contains_hieroglyphs,
-    normalize_hieroglyphs,
-)
+from app.data.normalizer import contains_hieroglyphs  # noqa: E402
 from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.retrieval import resolve_auto_stage, retrieve_top_k  # noqa: E402
-from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS  # noqa: E402
+from app.services.segmentation import (  # noqa: E402
+    DEFAULT_SEGMENTATION_WEIGHTS,
+    segment_paste,
+)
 from app.services.stage import (  # noqa: E402
     StageResources,
     build_stage_resources,
@@ -95,6 +95,7 @@ def evaluate_row(
     stage_mode: str,
     inferred: bool,
     stage_scores: dict[str, float] | None = None,
+    use_format_hints: bool = True,
 ) -> dict:
     query = str(row["query_input"])
     expected_reading = _text(row.get("expected_reading"))
@@ -116,8 +117,9 @@ def evaluate_row(
     regrouped = ""
 
     if is_glyph_query:
-        as_pasted = normalize_hieroglyphs(query).split()
-        segmentation = segmenter.segment(as_pasted)
+        segmentation, _as_pasted = segment_paste(
+            query, segmenter, use_format_hints=use_format_hints
+        )
         groups = segmentation.groups
         regrouped = " ".join(groups)
         predictions = model.predict_sequence(groups)
@@ -198,6 +200,21 @@ def main() -> None:
         help="Override SegmentationWeights.lexicon_weight (for sweeps).",
     )
     parser.add_argument(
+        "--quadrat-crossed",
+        type=float,
+        default=None,
+        help="Override SegmentationWeights.quadrat_crossed (item B constant sweep).",
+    )
+    parser.add_argument(
+        "--no-format-hints",
+        action="store_true",
+        help=(
+            "Delete the paste's layout controls (U+13430-1345F) instead of reading "
+            "them as 'do not cut inside this quadrat' hints — the behaviour before "
+            "item B."
+        ),
+    )
+    parser.add_argument(
         "--stage",
         choices=["none", "auto", "declared"],
         default="auto",
@@ -216,6 +233,8 @@ def main() -> None:
     weights = DEFAULT_SEGMENTATION_WEIGHTS
     if args.lexicon_weight is not None:
         weights = weights.replace(lexicon_weight=args.lexicon_weight)
+    if args.quadrat_crossed is not None:
+        weights = weights.replace(quadrat_crossed=args.quadrat_crossed)
 
     # One StageResources per stage actually needed, built lazily and reused across
     # rows — training the reading model and building the search index are the
@@ -248,7 +267,16 @@ def main() -> None:
     for _, row in queries.iterrows():
         stage, inferred, scores = resolve_stage(args.stage, row, get_resources)
         resources = get_resources(stage)
-        rows.append(evaluate_row(row, resources, args.stage, inferred, stage_scores=scores))
+        rows.append(
+            evaluate_row(
+                row,
+                resources,
+                args.stage,
+                inferred,
+                stage_scores=scores,
+                use_format_hints=not args.no_format_hints,
+            )
+        )
     results = pd.DataFrame(rows)
 
     pooled = get_resources(None)

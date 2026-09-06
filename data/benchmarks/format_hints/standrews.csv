@@ -1,0 +1,5 @@
+shape,arm,quadrat_crossed,lines,precision,recall,f1,exact_line_rate,mean_group_token_gap,delta_f1,delta_exact,delta_group_gap,improved,worsened,unchanged
+as_rendered,hints_off,0.0,1701,0.5237,0.6416,0.5767,0.0253,3.3192,0.0038,0.0,-0.174,178,56,1467
+as_rendered,hints_on,1.0,1701,0.5307,0.6405,0.5805,0.0253,3.1452,0.0038,0.0,-0.174,178,56,1467
+unspaced,hints_off,0.0,1701,0.5586,0.6173,0.5865,0.027,2.3574,0.0046,-0.0005,-0.1699,195,69,1437
+unspaced,hints_on,1.0,1701,0.5675,0.6168,0.5911,0.0265,2.1875,0.0046,-0.0005,-0.1699,195,69,1437

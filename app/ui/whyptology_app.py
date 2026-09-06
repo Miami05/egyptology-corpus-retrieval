@@ -36,7 +36,7 @@ from app.services.retrieval import (
 )
 from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
 from app.services.reading_model import train_reading_model
-from app.services.segmentation import Segmenter, glyph_stream
+from app.services.segmentation import Segmenter, glyph_stream, segment_paste
 from app.services.signs import (
     build_sign_index,
     multivalence_summary,
@@ -421,8 +421,8 @@ def resegment_query(resources: StageResources, query: str):
     """
     model = resources.reading_model
     segmenter = resources.segmenter
-    as_pasted = normalize_hieroglyphs(query).split()
-    return segmenter.segment(as_pasted), as_pasted, model, segmenter
+    segmentation, as_pasted = segment_paste(query, segmenter)
+    return segmentation, as_pasted, model, segmenter
 
 
 @st.cache_resource(show_spinner="Preparing the corpus…")

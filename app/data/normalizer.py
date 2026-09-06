@@ -36,7 +36,9 @@ def fold_plural_marker(value: str) -> str:
 #   format controls  U+13430-1345F: quadrat joiners, insertion and enclosure marks
 #                    used by layout-aware editors. They say how signs are arranged,
 #                    not which signs there are. The corpus contains none, so a pasted
-#                    query carrying them could never match — they are deleted.
+#                    query carrying them could never match — they are deleted. Their
+#                    *structure* is read off first by `quadrat_hints` (item B), which
+#                    turns "these signs share a quadrat" into segmenter hints.
 #   placeholders     Private Use Area codepoints this module allocates for TLA's
 #                    `<g>M12B</g>` markup (signs that have no Unicode codepoint yet).
 #                    See `markup_to_placeholder`.
@@ -204,6 +206,150 @@ def normalize_hieroglyphs(value: object) -> str:
 
 def normalize_whitespace(value: str) -> str:
     return WHITESPACE_RE.sub(" ", value.strip())
+
+
+# ---------------------------------------------------------------------------
+# Quadrat hints (item B, 2026-09-06)
+#
+# `normalize_hieroglyphs` deletes U+13430-1345F because the corpus contains none of
+# them, so a query carrying them could never match. But they are not noise: they say
+# how the pasted signs were laid out, and "these two signs sit in one quadrat" is
+# evidence — weak evidence — that a word boundary does not fall between them.
+# `quadrat_hints` reads that structure off the raw paste *before* it is thrown away
+# and returns it as boundary indices the segmenter may penalise cutting at
+# (`SegmentationWeights.quadrat_crossed`).
+#
+# Which controls carry adjacency information:
+#
+#   13430-13436  joiners: vertical, horizontal, insert at top/bottom start/end,
+#                overlay middle. The signs either side share a quadrat.
+#   13439-1343B  insert at middle/top/bottom. Same reading.
+#   13437/13438  begin/end segment       -> everything strictly inside is one unit
+#   1343C/1343D  begin/end enclosure     -> ditto (cartouche and friends)
+#   1343E/1343F  begin/end walled enclosure
+#   13440        mirror horizontally     -> about one sign's orientation, no adjacency
+#   13441-13446  blanks and lost-sign shapes  -> no adjacency
+#   13447-13455  damage modifiers             -> no adjacency
+#
+# Positions are indices into the *normalised* sign stream, so they line up with
+# `glyph_stream(normalize_hieroglyphs(value).split())`: a position b means "a group
+# would end before sign b". This is why the hints cannot simply be counted off the
+# raw string - placeholder folding, bracket deletion and the intra-group noise rule
+# all move signs around first.
+# ---------------------------------------------------------------------------
+QUADRAT_JOINERS = frozenset(
+    [*range(0x13430, 0x13437), *range(0x13439, 0x1343C)]
+)
+# (opening codepoint, closing codepoint) for the bracketing controls.
+QUADRAT_BRACKETS: dict[int, int] = {
+    0x13437: 0x13438,  # begin/end segment
+    0x1343C: 0x1343D,  # begin/end enclosure
+    0x1343E: 0x1343F,  # begin/end walled enclosure
+}
+_QUADRAT_CLOSERS = {close: open_ for open_, close in QUADRAT_BRACKETS.items()}
+FORMAT_CONTROL_RE = re.compile(f"[{FORMAT_CONTROL_CLASS}]")
+# The same three rules as `normalize_hieroglyphs`, but with the format controls
+# treated as part of a sign group instead of deleted, so their position survives.
+_GROUP_CHAR_CLASS = f"{SIGN_CLASS}{PLACEHOLDER_CLASS}{FORMAT_CONTROL_CLASS}"
+_DELETE_KEEPING_CONTROLS_RE = re.compile(f"[{VARIATION_SELECTOR_CLASS}]")
+_NON_GROUP_CHAR_KEEPING_CONTROLS_RE = re.compile(f"[^{_GROUP_CHAR_CLASS}\\s]")
+_INTRA_GROUP_NOISE_KEEPING_CONTROLS_RE = re.compile(
+    f"(?<=[{_GROUP_CHAR_CLASS}])[^{_GROUP_CHAR_CLASS}\\s]+(?=[{_GROUP_CHAR_CLASS}])"
+)
+
+
+def _normalize_keeping_controls(value: object) -> str:
+    """`normalize_hieroglyphs`, except that format controls are kept in place.
+
+    Every step is the same and in the same order; only the character classes differ,
+    so that a control neither splits a group (it is treated as group content) nor
+    vanishes. Deleting the controls from the result must give `normalize_hieroglyphs`
+    back exactly - that is the invariant `quadrat_hints` asserts on its own output.
+    """
+    text = nfc(value)
+    if not text.strip():
+        return ""
+    text = G_NESTED_RE.sub(lambda m: m.group(1), text)
+    text = G_MARKUP_RE.sub(lambda m: markup_to_placeholder(m.group(1)), text)
+    text = BARE_GARDINER_TOKEN_RE.sub(lambda m: markup_to_placeholder(m.group(0)), text)
+    text = _DELETE_KEEPING_CONTROLS_RE.sub("", text)
+    text = EDITORIAL_BRACKETS_RE.sub("", text)
+    text = _INTRA_GROUP_NOISE_KEEPING_CONTROLS_RE.sub("", text)
+    text = text.translate(_SIGN_VARIANT_TABLE)
+    text = _NON_GROUP_CHAR_KEEPING_CONTROLS_RE.sub(" ", text)
+    return normalize_whitespace(text)
+
+
+def quadrat_hints(value: object) -> tuple[list[str], frozenset[int]]:
+    """Read the layout controls of a paste as "do not cut here" positions.
+
+    Returns `(groups_as_pasted, no_cut)`:
+
+      groups_as_pasted  exactly `normalize_hieroglyphs(value).split()` - the caller
+                        can use this instead of normalising a second time.
+      no_cut            glyph-stream boundary indices (the indexing of
+                        `app.services.segmentation.glyph_stream`) that fall between
+                        two signs a format control says share a quadrat.
+
+    A joiner contributes the one boundary between the sign before it and the sign
+    after it; the two must be immediate neighbours in the normalised stream (only
+    other controls may sit between them, never a group-separating space). A
+    bracketing pair contributes every boundary strictly inside it, so a three-sign
+    cartouche yields two positions. Unmatched or empty brackets contribute nothing.
+    Positions 0 and len(stream) are never returned: they are not boundaries.
+    """
+    text = _normalize_keeping_controls(value)
+    if not text:
+        return [], frozenset()
+
+    groups: list[str] = []
+    # Sign index at the *start* of each character of `text`, plus a flag saying what
+    # the character is. Signs are the characters that survive into the stream.
+    signs_before: list[int] = []
+    seen = 0
+    for char in text:
+        signs_before.append(seen)
+        if char != " " and not FORMAT_CONTROL_RE.match(char):
+            seen += 1
+    signs_before.append(seen)
+    total = seen
+
+    for chunk in text.split(" "):
+        stripped = FORMAT_CONTROL_RE.sub("", chunk)
+        if stripped:
+            groups.append(stripped)
+
+    no_cut: set[int] = set()
+    stack: list[int] = []
+    for position, char in enumerate(text):
+        code = ord(char)
+        if code in QUADRAT_JOINERS:
+            left = position - 1
+            while left >= 0 and FORMAT_CONTROL_RE.match(text[left]):
+                left -= 1
+            right = position + 1
+            while right < len(text) and FORMAT_CONTROL_RE.match(text[right]):
+                right += 1
+            if left < 0 or right >= len(text):
+                continue
+            if text[left] == " " or text[right] == " ":
+                continue
+            boundary = signs_before[position]
+            if 0 < boundary < total:
+                no_cut.add(boundary)
+        elif code in QUADRAT_BRACKETS:
+            stack.append(position)
+        elif code in _QUADRAT_CLOSERS:
+            if not stack or ord(text[stack[-1]]) != _QUADRAT_CLOSERS[code]:
+                continue  # unmatched closer: no structure to trust
+            opener = stack.pop()
+            first = signs_before[opener]
+            last = signs_before[position]  # one past the last sign inside
+            for boundary in range(first + 1, last):
+                if 0 < boundary < total:
+                    no_cut.add(boundary)
+
+    return groups, frozenset(no_cut)
 
 
 def normalize_text(value: str) -> str:

@@ -2100,3 +2100,37 @@ numbers must come out byte-identical.
 STOP conditions for the worker: the invariant in (1) fails on any line; < 500 eligible BBAW
 rows; a gate fails at every candidate constant; any step needs ranking/retrieval changes; or
 wall clock > 3 h. Stop that step, finish the rest, report.
+
+**Result 2026-09-06: hints ship ON at `quadrat_crossed = 1.0`** (`docs/format-hints-2026-09-06.md`,
+`data/benchmarks/format_hints/`). No stop condition fired. The invariant held on all 8
+pastes, all 1,710 St Andrews lines and a 400-case seeded fuzz (`hypothesis` is not
+installed, so the fuzz is a seeded `random`, not a strategy); the empty-`no_cut` no-op is
+proved against a re-implementation of the old objective on 500 scrambled corpus rows.
+**BBAW upper bound**, 11,386 eligible rows, hint precision exactly 1.0, seed-7 dev/test
+5,693/5,693, memorisation guard removing 10,246 of 130,472 training rows: unspaced
+boundary F1 **0.784 → 0.940** on test (exact 0.541 → 0.631). Constant chosen by the
+pre-registered rule — best dev F1 was 2.0 (0.9485) and it **fails PASTE_005** exactly as
+predicted (7/8), so 1.0 is the highest candidate keeping the gate at 8/8 (0.5 and 0.25
+also pass). **St Andrews, the real input**, 1,701 lines (one dropped by the memorisation
+guard — `urkIV-024` line 2-8 is the single sign 𓅱, which the TLA rows also carry, so the
+pre-registered bare assert was turned into the drop-and-name rule `run_segmentation_eval`
+uses): unspaced token F1 **0.587 → 0.591** (+0.0046, improved 195 / worsened 69 /
+unchanged 1,437), as-rendered **0.577 → 0.581** (+0.0038, 178/56), group-vs-token gap
+−0.17 on both shapes; the decision rule's three conditions are all met. On Camilla's line
+the hints make one real correction, `𓈖𓏏 𓈖` → `𓈖 𓏏𓈖`, i.e. `n.t n` → `n =tn`, the very
+place the first expert trial flagged. **Gates:** suite **594 passed, 4 skipped** in a
+clean checkout, **595 passed, 3 skipped** with the gitignored `standrews_lines.csv`
+reachable (the all-1,710-lines invariant test skips without it); expert
+paste **8/8** auto; v4 **0.90 / 0.7917**, held-out 1 **0.75 / 0.6667** and LE-v1
+**0.8667 / 0.8167**, each byte-identical to a re-run of the same command on the pristine
+`bb3aa80` tree; segmentation eval unchanged (unspaced F1 0.923 / exact 0.539);
+`check_standrews_urkiv_gate.py` 8/8 on the keyed 138,131-row corpus. One thing found on
+the way: the committed `ceval_v4_v4_app_auto_results.csv` and
+`ceval_holdout_v4_app_auto_results.csv` are stale in their `evidence_summaries` column
+only ("shared lemma IDs:" → "lemma IDs common to this reading's rows:", changed by
+deee9d2, before item B); every rank, flag and score matches, and item B changes no byte
+of either. A bug in the BBAW control synthesiser (a joiner emitted in front of a token
+that appends no sign) was found and fixed mid-step: precision 0.9992 → 1.0, the ranking
+of the four constants unchanged. Not done, deliberately: no ranking or retrieval change,
+and the workspace does not yet *show* `Segmentation.crossed_quadrats` — the obvious next
+small UI step. **Next: C.**

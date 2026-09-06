@@ -6,6 +6,7 @@ import pandas as pd
 
 from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs, normalize_sign_sequence
 from app.data.query import QueryParse, parse_query
+from app.services.segmentation import segment_paste
 from dataclasses import dataclass
 
 import numpy as np
@@ -291,8 +292,8 @@ def retrieve_with_stage(
         resources = resources_by_stage(inferred_stage)
         regrouped = query_hieroglyphs_norm
         if contains_hieroglyphs(query_mdc):
-            as_pasted = normalize_hieroglyphs(query_mdc).split()
-            regrouped = " ".join(resources.segmenter.segment(as_pasted).groups)
+            segmentation, _as_pasted = segment_paste(query_mdc, resources.segmenter)
+            regrouped = " ".join(segmentation.groups)
         second_pass = retrieve_top_k(
             resources.frame,
             query_mdc,

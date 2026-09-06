@@ -43,6 +43,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from math import log
 
+from app.data.normalizer import normalize_hieroglyphs, quadrat_hints
 from app.services.reading_model import ReadingModel
 
 # Groups longer than this are never proposed by the segmenter (they may still be
@@ -90,6 +91,34 @@ class SegmentationWeights:
     #   0.05        0.928 / 0.552         0.940 / 0.597         8/8
     #   0.02        0.927 / 0.549         0.938 / 0.576         8/8
     lexicon_weight: float = 0.2
+    # Penalty per boundary the segmentation places at a position the paste's own
+    # layout controls (U+13430-1345F, read by `normalizer.quadrat_hints`) say is
+    # inside one quadrat (nats). The corpus carries no controls at all, so this
+    # weight only ever fires on a paste from a layout-aware editor; every benchmark
+    # here is unaffected by construction.
+    #
+    # Swept 2026-09-06 (item B) on 11,386 raw BBAW rows whose Manuel de Codage glyph
+    # field marks its own quadrats, controls synthesised from `:`/`*`, memorisation
+    # guard applied, seed 7, dev/test 50/50
+    # (scripts/run_format_hint_eval_bbaw.py). Boundary scores on the unspaced input:
+    #
+    #   weight   dev F1 / exact   test F1 / exact   expert paste gate
+    #   0 (off)   0.781 / 0.547     0.784 / 0.541     8/8
+    #   0.25      0.941 / 0.639     0.938 / 0.625     8/8
+    #   0.5       0.941 / 0.642     0.938 / 0.628     8/8
+    #   1.0       0.943 / 0.645     0.940 / 0.631     8/8  <- chosen
+    #   2.0       0.949 / 0.654     0.945 / 0.643     7/8  <- fails PASTE_005
+    #
+    # 2.0 has the best dev F1 and is rejected by the hard constraint: PASTE_005 joins
+    # every sign of each wrongly chunked piece, so at 2.0 the quadrat structure
+    # outvotes the corpus evidence (𓆑 → =f, 3,878/3,907) and the paste is read as one
+    # long group. 1.0 is the highest constant that keeps the gate at 8/8.
+    #
+    # On real RES-derived input — 1,701 St Andrews lines, reading measured end to end
+    # (scripts/run_format_hint_eval_standrews.py) — 1.0 buys token F1 0.587 -> 0.591
+    # unspaced (+0.0046, 195 lines better / 69 worse) and 0.577 -> 0.581 as rendered
+    # (+0.0038, 178 / 56). Small, positive, and in the pre-registered direction.
+    quadrat_crossed: float = 1.0
 
     def replace(self, **changes: float) -> SegmentationWeights:
         return SegmentationWeights(**{**self.__dict__, **changes})
@@ -108,6 +137,10 @@ class Segmentation:
     crossed_hints: list[int] = field(default_factory=list)
     inserted_boundaries: list[int] = field(default_factory=list)
     unattested_groups: list[str] = field(default_factory=list)
+    # Positions the paste's layout controls said were inside one quadrat and the
+    # segmentation cut at anyway — the reverse of `crossed_hints`, and the places
+    # where the corpus evidence outvoted the quadrat structure.
+    crossed_quadrats: list[int] = field(default_factory=list)
 
     @property
     def changed_from_hints(self) -> bool:
@@ -191,8 +224,18 @@ class Segmenter:
 
     # ---------- decoding ----------
 
-    def segment(self, groups_as_pasted: list[str]) -> Segmentation:
-        """Best segmentation of the pasted groups, spaces treated as hints."""
+    def segment(
+        self,
+        groups_as_pasted: list[str],
+        no_cut: frozenset[int] | set[int] = frozenset(),
+    ) -> Segmentation:
+        """Best segmentation of the pasted groups, spaces treated as hints.
+
+        `no_cut` holds boundary positions (same indexing as `glyph_stream`) that the
+        paste's layout controls say sit inside one quadrat; placing a boundary at one
+        costs `weights.quadrat_crossed`. The default empty set leaves the objective
+        exactly as it was, so every earlier number is reproduced bit for bit.
+        """
         stream, hints = glyph_stream(groups_as_pasted)
         n = len(stream)
         if n == 0:
@@ -223,11 +266,15 @@ class Segmenter:
                 # A boundary at i (start of this group) is "kept" when the user also
                 # had one there; the sentence start is not a hint.
                 kept = 1 if i in hints else 0
+                # A boundary at i cuts a quadrat when the layout controls joined the
+                # signs either side of i. i == 0 is the start of the stream, not a cut.
+                cut_quadrat = 1 if (i > 0 and i in no_cut) else 0
                 score = (
                     prefix_score
                     + group_score
                     + w.hint_kept * kept
                     - w.hint_crossed * crossed
+                    - w.quadrat_crossed * cut_quadrat
                 )
                 if score > top:
                     top = score
@@ -255,9 +302,15 @@ class Segmenter:
             crossed_hints=crossed,
             inserted_boundaries=inserted,
             unattested_groups=unattested,
+            crossed_quadrats=sorted(boundaries & set(no_cut)),
         )
 
-    def score_segmentation(self, groups: list[str], hints: set[int]) -> float:
+    def score_segmentation(
+        self,
+        groups: list[str],
+        hints: set[int],
+        no_cut: frozenset[int] | set[int] = frozenset(),
+    ) -> float:
         """Score an arbitrary segmentation with the same objective, for comparison
         (e.g. the user's own spacing against the suggested one)."""
         w = self.weights
@@ -271,9 +324,35 @@ class Segmenter:
                 group_score = -self.unattested_cost(group)
             crossed = sum(1 for b in hints if start < b < end)
             kept = 1 if (index > 0 and start in hints) else 0
-            total += group_score + w.hint_kept * kept - w.hint_crossed * crossed
+            cut_quadrat = 1 if (index > 0 and start in no_cut) else 0
+            total += (
+                group_score
+                + w.hint_kept * kept
+                - w.hint_crossed * crossed
+                - w.quadrat_crossed * cut_quadrat
+            )
             position = end
         return total
+
+
+def segment_paste(
+    query: str,
+    segmenter: Segmenter,
+    use_format_hints: bool = True,
+) -> tuple[Segmentation, list[str]]:
+    """Normalise a raw paste and segment it — the one path every caller uses.
+
+    Returns `(segmentation, groups_as_pasted)`. With `use_format_hints` the paste's
+    layout controls are read by `normalizer.quadrat_hints` first and handed to the
+    segmenter as `no_cut` positions; without it the controls are simply deleted, which
+    is what every caller did before item B. Either way `groups_as_pasted` is exactly
+    `normalize_hieroglyphs(query).split()`.
+    """
+    if use_format_hints:
+        groups, no_cut = quadrat_hints(query)
+        return segmenter.segment(groups, no_cut=no_cut), groups
+    groups = normalize_hieroglyphs(query).split()
+    return segmenter.segment(groups), groups
 
 
 def resegment(

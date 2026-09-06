@@ -33,14 +33,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import load_examples_csv, load_private_examples  # noqa: E402
-from app.data.normalizer import (  # noqa: E402
-    contains_hieroglyphs,
-    normalize_hieroglyphs,
-    search_fold,
-)
+from app.data.normalizer import contains_hieroglyphs, search_fold  # noqa: E402
 from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.retrieval import retrieve_top_k  # noqa: E402
-from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS  # noqa: E402
+from app.services.segmentation import (  # noqa: E402
+    DEFAULT_SEGMENTATION_WEIGHTS,
+    segment_paste,
+)
 from app.services.stage import StageResources, build_stage_resources  # noqa: E402
 from app.services.suggestions import suggest_top_readings  # noqa: E402
 from scripts.run_expert_paste_eval import evaluate_row, resolve_stage  # noqa: E402
@@ -119,8 +118,8 @@ def main() -> None:
     query = str(gate["query_input"])
     regrouped = ""
     if contains_hieroglyphs(query):
-        as_pasted = normalize_hieroglyphs(query).split()
-        regrouped = " ".join(resources.segmenter.segment(as_pasted).groups)
+        segmentation, _as_pasted = segment_paste(query, resources.segmenter)
+        regrouped = " ".join(segmentation.groups)
     rank_k = args.rank_k or len(df)
     pool = retrieve_top_k(
         resources.frame,
