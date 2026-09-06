@@ -141,7 +141,9 @@ def test_strict_key_keeps_yod_and_suffix_marker():
 
 def test_strict_key_drops_editorial_marks_but_never_letters():
     assert strict_reading_key("zꜣ-(ꜣ)st") == strict_reading_key("zꜣ-ꜣs.t") == "zꜣ-ꜣst"
-    assert strict_reading_key("(w)di̯") == "wdi̯"
+    # The bracketed w survives; the weak-consonant marker does not — item D′ folds
+    # `i̯` to `ꞽ` inside the key (see tests/test_notation_fold.py).
+    assert strict_reading_key("(w)di̯") == "wdꞽ"
     assert strict_reading_key("ḏd⸗f") == "ḏd=f"
 
 

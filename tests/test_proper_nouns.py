@@ -51,7 +51,9 @@ def test_two_spellings_of_one_name_share_a_name_normalised_key():
     upos = "NOUN VERB PROPN"
     first = name_normalised_reading_key("ḥtp ḏi̯ wsꞽr", lemma, upos)
     second = name_normalised_reading_key("ḥtp ḏi̯ (w)sr(.w)", lemma, upos)
-    assert first == second == f"ḥtp ḏi̯ {OSIRIS}"
+    # `ḏꞽ`, not `ḏi̯`: item D′ folds the weak-consonant marker inside the strict key
+    # this is built on (tests/test_notation_fold.py). The name still collapses.
+    assert first == second == f"ḥtp ḏꞽ {OSIRIS}"
     # And the key this replaces did *not* consider them one reading — which is the
     # whole reason item D was pre-registered.
     assert strict_reading_key("ḥtp ḏi̯ wsꞽr") != strict_reading_key("ḥtp ḏi̯ (w)sr(.w)")
