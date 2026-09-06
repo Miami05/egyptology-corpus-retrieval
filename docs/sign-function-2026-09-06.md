@@ -421,11 +421,11 @@ Two changes, no others.
 | St Andrews, after | `run_format_hint_eval_standrews.py --constant 1.0` | unspaced hints-on F1 0.603 |
 | St Andrews / Urk. IV | `check_standrews_urkiv_gate.py` | keyed corpus **138,131 rows** (StAndrews 7,659), expert paste checks **8/8**, PASTE_001 retrieval pool 27,917, 0 St Andrews rows in the pool, done in 69.5 s |
 
-LE-v1 took about four hours of wall clock for roughly nine minutes of CPU: the eval's
-resident set reaches ~2.7 GB and the machine spent most of that time under memory
-pressure. It finished, and it is byte-identical. All three benchmarks came back exactly
-as the pre-registration predicted, on the ground that none of them contains a glyph
-query and C1 only changes how a glyph paste is segmented.
+LE-v1 ran 14:31 to 14:40, about nine and a half minutes of wall clock for roughly nine
+minutes of CPU — the whole benchmark suite is simply slow (the eval's resident set
+reaches ~2.7 GB and it rebuilds stage resources per stage). All three benchmarks came
+back exactly as the pre-registration predicted, on the ground that none of them
+contains a glyph query and C1 only changes how a glyph paste is segmented.
 
 Two tests were re-scoped rather than left to fail, both for the same reason and both
 recorded in the code:

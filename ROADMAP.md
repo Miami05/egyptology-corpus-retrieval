@@ -2282,8 +2282,7 @@ matching (which would restore the 94 excluded rows) and a morphological layer.
 and St Andrews as above; reading eval identical to baseline in every field; **v4
 (0.90 / 0.7917), held-out 1 (0.75 / 0.6667) and LE-v1 (0.8667 / 0.8167) all
 byte-identical** to the committed result files (`diff` empty on each);
-`check_standrews_urkiv_gate.py` green (keyed 138,131 rows, paste 8/8). LE-v1 needed ~4 h
-wall for ~9 min CPU under memory pressure, which is a machine property, not a result.
+`check_standrews_urkiv_gate.py` green (keyed 138,131 rows, paste 8/8).
 Two tests were re-scoped, not weakened:
 item B's no-op proof and the two singleton-discount cases now pin their own term with
 `boundary_model=0.0`, because they re-implement the pre-item-C objective and their
