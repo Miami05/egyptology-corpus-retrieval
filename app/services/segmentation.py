@@ -155,8 +155,24 @@ class SegmentationWeights:
     # On real RES-derived input (1,701 St Andrews lines, reading measured end to end)
     # unspaced token F1 rises 0.591 -> 0.603.
     boundary_model: float = 1.0
+    # C1b — may an *unattested* multi-glyph span cross one of the paste's own spaces?
+    #
+    # False (the shipped behaviour up to item C) is the hard restriction in `segment`:
+    # an unattested span is only ever proposed as a whole pasted group or as a single
+    # glyph. It protects against merging two unrelated words, but it makes a correct
+    # unseen word impossible whenever the paste split it — no amount of evidence can
+    # buy that span, because the lattice never offers it.
+    #
+    # True removes only the veto. The span still pays the soft crossing penalty
+    # `hint_crossed` per crossed hint and κ (`unattested_per_glyph`) per glyph, and
+    # `MAX_GROUP_GLYPHS` is unchanged, so the objective is otherwise identical: this
+    # flag adds candidates to the lattice, it does not rescore anything.
+    #
+    # Unspaced input carries no hints, so the flag cannot change an unspaced result;
+    # it is measurable only on input with spaces.
+    unattested_may_cross_hints: bool = False
 
-    def replace(self, **changes: float) -> SegmentationWeights:
+    def replace(self, **changes: float | bool) -> SegmentationWeights:
         return SegmentationWeights(**{**self.__dict__, **changes})
 
 
@@ -329,8 +345,15 @@ class Segmenter:
                 if group_score is None:
                     # Only propose an unattested span as a *whole pasted group* or a
                     # single glyph: a made-up multi-glyph span across a user boundary
-                    # is not a hypothesis worth paying for.
-                    if len(span) > 1 and any(i < b < j for b in hints):
+                    # is not a hypothesis worth paying for. With
+                    # `unattested_may_cross_hints` (item C1b) the veto is lifted and
+                    # the span is merely charged the usual `hint_crossed` per crossed
+                    # hint below, plus κ per glyph here.
+                    if (
+                        not w.unattested_may_cross_hints
+                        and len(span) > 1
+                        and any(i < b < j for b in hints)
+                    ):
                         continue
                     group_score = -self.unattested_cost(span)
                 crossed = sum(1 for b in hints if i < b < j)

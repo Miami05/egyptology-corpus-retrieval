@@ -219,6 +219,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--unattested-may-cross-hints",
+        action="store_true",
+        help=(
+            "Item C1b: let an unattested multi-glyph span cross the paste's own "
+            "spaces, paying `hint_crossed` per crossed hint instead of being vetoed. "
+            "PASTE_001-005 are the wrongly spaced pastes this can help or hurt."
+        ),
+    )
+    parser.add_argument(
         "--no-format-hints",
         action="store_true",
         help=(
@@ -250,6 +259,8 @@ def main() -> None:
         weights = weights.replace(quadrat_crossed=args.quadrat_crossed)
     if args.boundary_model is not None:
         weights = weights.replace(boundary_model=args.boundary_model)
+    if args.unattested_may_cross_hints:
+        weights = weights.replace(unattested_may_cross_hints=True)
 
     # One StageResources per stage actually needed, built lazily and reused across
     # rows — training the reading model and building the search index are the

@@ -161,6 +161,15 @@ def main() -> None:
             "candidate lambda_b has to be measurable here before it is the default."
         ),
     )
+    parser.add_argument(
+        "--unattested-may-cross-hints",
+        action="store_true",
+        help=(
+            "Item C1b: let an unattested multi-glyph span cross a pasted space on "
+            "both arms. In the as-rendered shape the pasted spaces are the quadrat "
+            "spaces, so that is the shape this flag can move."
+        ),
+    )
     args = parser.parse_args()
 
     lines_path = Path(args.lines)
@@ -206,6 +215,8 @@ def main() -> None:
     base = DEFAULT_SEGMENTATION_WEIGHTS
     if args.boundary_model is not None:
         base = base.replace(boundary_model=args.boundary_model)
+    if args.unattested_may_cross_hints:
+        base = base.replace(unattested_may_cross_hints=True)
     print(f"segmentation weights: {base}")
     # Fitted once and shared, so the two arms differ only in `quadrat_crossed`.
     shared_boundary = fit_boundary_model(model) if base.boundary_model else None
