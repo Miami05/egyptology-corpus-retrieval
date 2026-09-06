@@ -1,0 +1,802 @@
+[
+ {
+  "reading": "mꜣꜣ(.t)-ḥr.w zꜣ.t-nzw ḥtp-ḥr-nb.tꞽ",
+  "pristine_strict_key": "mꜣꜣt-ḥrw zꜣt-nzw ḥtp-ḥr-nbtꞽ"
+ },
+ {
+  "reading": "zꜣ =f sms.w n ẖ.t =f rnp.t-nfr.t",
+  "pristine_strict_key": "zꜣ =f smsw n ẖt =f rnpt-nfrt"
+ },
+ {
+  "reading": "sn =f n(.ꞽ) mw.t =f wr-mḏ-šmꜥ(.w) ꞽmn-ꜥꜣ",
+  "pristine_strict_key": "sn =f nꞽ mwt =f wr-mḏ-šmꜥw ꞽmn-ꜥꜣ"
+ },
+ {
+  "reading": "zꜣ =f n ẖ.t =f htꞽ",
+  "pristine_strict_key": "zꜣ =f n ẖt =f htꞽ"
+ },
+ {
+  "reading": "r tꜣ",
+  "pristine_strict_key": "r tꜣ"
+ },
+ {
+  "reading": "ḥw.t-nbw",
+  "pristine_strict_key": "ḥwt-nbw"
+ },
+ {
+  "reading": "ḫꜣs.wt",
+  "pristine_strict_key": "ḫꜣswt"
+ },
+ {
+  "reading": "ḥꜣb-sd",
+  "pristine_strict_key": "ḥꜣb-sd"
+ },
+ {
+  "reading": "ṯꜣw mr.wꞽ pw ꞽw =f ḥꜣ wḥm.w",
+  "pristine_strict_key": "ṯꜣw mrwꞽ pw ꞽw =f ḥꜣ wḥmw"
+ },
+ {
+  "reading": "ḏ(d)-mdw",
+  "pristine_strict_key": "ḏd-mdw"
+ },
+ {
+  "reading": "ꞽp (ꞽ)ḫ.t (ꞽ)m(.ꞽ)-rʾ-pr",
+  "pristine_strict_key": "ꞽp ꞽḫt ꞽmꞽ-rʾ-pr"
+ },
+ {
+  "reading": "ḫꜣ tʾ ḫꜣ pzn ḫꜣ ḥnq.t ḫꜣ ꞽḥ ḫꜣ ḏꜣ(.t) ḫꜣ ꜣpd šs mnḫ(.t) n zwn.w-pr-ꜥꜣ ꞽrꞽ",
+  "pristine_strict_key": "ḫꜣ tʾ ḫꜣ pzn ḫꜣ ḥnqt ḫꜣ ꞽḥ ḫꜣ ḏꜣt ḫꜣ ꜣpd šs mnḫt n zwnw-pr-ꜥꜣ ꞽrꞽ"
+ },
+ {
+  "reading": "mnw.t ḫꜣ",
+  "pristine_strict_key": "mnwt ḫꜣ"
+ },
+ {
+  "reading": "ꞽnk ḥr.w",
+  "pristine_strict_key": "ꞽnk ḥrw"
+ },
+ {
+  "reading": "hꜣ ppy nfr-kꜣ-rꜥw pw",
+  "pristine_strict_key": "hꜣ ppy nfr-kꜣ-rꜥw pw"
+ },
+ {
+  "reading": "ḥtp=w(ꞽ) ḫr.t =k",
+  "pristine_strict_key": "ḥtp=wꞽ ḫrt =k"
+ },
+ {
+  "reading": "zꜣ =f sms.w (ꞽ)m(.ꞽ)-rʾ-pr nfr-bꜣ.w-ptḥ",
+  "pristine_strict_key": "zꜣ =f smsw ꞽmꞽ-rʾ-pr nfr-bꜣw-ptḥ"
+ },
+ {
+  "reading": "smr-wꜥ.t(ꞽ) ḥr(.ꞽ)-tp-ꜥꜣ(-n)-ꜣtf.t hnqw",
+  "pristine_strict_key": "smr-wꜥtꞽ ḥrꞽ-tp-ꜥꜣ-n-ꜣtft hnqw"
+ },
+ {
+  "reading": "(w)sr(.w) n(ꞽ).t m n =k ꞽr(.t)-ḥr.w ꞽtḥ.t.n =f",
+  "pristine_strict_key": "wsrw nꞽt m n =k ꞽrt-ḥrw ꞽtḥtn =f"
+ },
+ {
+  "reading": "ꞽkꜣš",
+  "pristine_strict_key": "ꞽkꜣš"
+ },
+ {
+  "reading": "sfḫ ꞽm =f",
+  "pristine_strict_key": "sfḫ ꞽm =f"
+ },
+ {
+  "reading": "bn zꜣw ꜣ.tꞽ n ḫꜣb =s",
+  "pristine_strict_key": "bn zꜣw ꜣtꞽ n ḫꜣb =s"
+ },
+ {
+  "reading": "ꞽr.y =ꞽ trꞽ.PL ꜥꜣ.PL wr wr m ḏꜥm nfr.w =sn ḥr ẖnm p.t",
+  "pristine_strict_key": "ꞽry =ꞽ trꞽw ꜥꜣw wr wr m ḏꜥm nfrw =sn ḥr ẖnm pt"
+ },
+ {
+  "reading": "wn.ꞽn pꜣ wr n nꜣ~hꜣ~rn~nꜣ ḥr qnd.t r ꜥꜣ.t wr.t",
+  "pristine_strict_key": "wnꞽn pꜣ wr n nꜣ~hꜣ~rn~nꜣ ḥr qndt r ꜥꜣt wrt"
+ },
+ {
+  "reading": "spd.wsꞽ sḫr.w.PL =f",
+  "pristine_strict_key": "spdwsꞽ sḫrw =f"
+ },
+ {
+  "reading": "wsr =k",
+  "pristine_strict_key": "wsr =k"
+ },
+ {
+  "reading": "rd r ḫpr =k m nfr",
+  "pristine_strict_key": "rd r ḫpr =k m nfr"
+ },
+ {
+  "reading": "snnꞽ =ꞽ pr =st wḫꜣ.wt",
+  "pristine_strict_key": "snnꞽ =ꞽ pr =st wḫꜣwt"
+ },
+ {
+  "reading": "ḥꜣ.tꞽ =f m ḫpr.ꞽ",
+  "pristine_strict_key": "ḥꜣtꞽ =f m ḫprꞽ"
+ },
+ {
+  "reading": "wꜥf =st bw-rḫ=w r wnw.t =w",
+  "pristine_strict_key": "wꜥf =st bw-rḫ=w r wnwt =w"
+ },
+ {
+  "reading": "ꞽp ꞽḫ.t m =s",
+  "pristine_strict_key": "ꞽp ꞽḫt m =s"
+ },
+ {
+  "reading": "nm mꞽ.t.t =k ꞽm",
+  "pristine_strict_key": "nm mꞽtt =k ꞽm"
+ },
+ {
+  "reading": "ꞽw =f ꜥpr rw~bꜣ~šꜣ",
+  "pristine_strict_key": "ꞽw =f ꜥpr rw~bꜣ~šꜣ"
+ },
+ {
+  "reading": "šms n ḫr nb nb-mrw.t",
+  "pristine_strict_key": "šms n ḫr nb nb-mrwt"
+ },
+ {
+  "reading": "ꞽ pꜣ nb-snd ḫpr-ḏs=f",
+  "pristine_strict_key": "ꞽ pꜣ nb-snd ḫpr-ḏs=f"
+ },
+ {
+  "reading": "ꞽw šꜥyd.n =ꞽ ꜥ.du.wꞽ =f",
+  "pristine_strict_key": "ꞽw šꜥydn =ꞽ ꜥduwꞽ =f"
+ },
+ {
+  "reading": "ḥsq =sn bꜣ =f ẖꜣ =f šw.t =f ꜣḫ.t〈w〉 =f ḥkꜣ.w =f",
+  "pristine_strict_key": "ḥsq =sn bꜣ =f ẖꜣ =f šwt =f ꜣḫtw =f ḥkꜣw =f"
+ },
+ {
+  "reading": "rn =ꞽ pw ḥkꜣ.w",
+  "pristine_strict_key": "rn =ꞽ pw ḥkꜣw"
+ },
+ {
+  "reading": "ꞽ nb-ḥr.pl ꜥšꜣ-ꞽꜥrꜥ.t〈.pl〉",
+  "pristine_strict_key": "ꞽ nb-ḥrw ꜥšꜣ-ꞽꜥrꜥtw"
+ },
+ {
+  "reading": "sꜥḥꜥ.tw sꜥḥ.pl =sn m-bꜣḥ rꜥ ꞽw r(m)ṯ.pl =sn m nḫ.wt",
+  "pristine_strict_key": "sꜥḥꜥtw sꜥḥw =sn m-bꜣḥ rꜥ ꞽw rmṯw =sn m nḫwt"
+ },
+ {
+  "reading": "wḫꜣ =tw rn〈.pl〉 =s(n) m nḏnḏ",
+  "pristine_strict_key": "wḫꜣ =tw rnw =sn m nḏnḏ"
+ },
+ {
+  "reading": "ꞽz.wtt =n ꞽy.t(ꞽ) ꜥd.t(ꞽ)",
+  "pristine_strict_key": "ꞽzwtt =n ꞽytꞽ ꜥdtꞽ"
+ },
+ {
+  "reading": "kꜣp z ḥr =st",
+  "pristine_strict_key": "kꜣp z ḥr =st"
+ },
+ {
+  "reading": "sẖb ꞽn s",
+  "pristine_strict_key": "sẖb ꞽn s"
+ },
+ {
+  "reading": "ḥꜣ.t-ꜥ-m pẖr.t n(.ꞽ).t smn.t ꞽbḥ",
+  "pristine_strict_key": "ḥꜣt-ꜥ-m pẖrt nꞽt smnt ꞽbḥ"
+ },
+ {
+  "reading": "sp.w pw n mꞽs.t",
+  "pristine_strict_key": "spw pw n mꞽst"
+ },
+ {
+  "reading": "k.t n(.ꞽ).t dr snf wnm.w m-ẖnw ḥꜥ.PL",
+  "pristine_strict_key": "kt nꞽt dr snf wnmw m-ẖnw ḥꜥw"
+ },
+ {
+  "reading": "ḥr-n.tꞽ ꞽr wf(ꜣ)t =k wf(ꜣ)t pw n ꜥꜣ-krꞽ=f",
+  "pristine_strict_key": "ḥr-ntꞽ ꞽr wfꜣt =k wfꜣt pw n ꜥꜣ-krꞽ=f"
+ },
+ {
+  "reading": "zꜣ.t =f mw.t-nfr.t",
+  "pristine_strict_key": "zꜣt =f mwt-nfrt"
+ },
+ {
+  "reading": "rḫt.ꞽ",
+  "pristine_strict_key": "rḫtꞽ"
+ },
+ {
+  "reading": "qmꜣm ḫt-n-ꜥnḫ",
+  "pristine_strict_key": "qmꜣm ḫt-n-ꜥnḫ"
+ },
+ {
+  "reading": "n",
+  "pristine_strict_key": "n"
+ },
+ {
+  "reading": "ḏd =tw r =k stꜣ.n =f Skr dꞽ =k Ḥnw ḥr m{ꜥ}〈f〉ḫ{.t} =f pẖr =k ꞽnb.pl m šms.wt =f ṯḥn.t n šnb.t =f",
+  "pristine_strict_key": "ḏd =tw r =k stꜣn =f skr dꞽ =k ḥnw ḥr mꜥfḫt =f pẖr =k ꞽnbw m šmswt =f ṯḥnt n šnbt =f"
+ },
+ {
+  "reading": "pꜣ 4 qꜥḥ.w nn",
+  "pristine_strict_key": "pꜣ 4 qꜥḥw nn"
+ },
+ {
+  "reading": "šꜥ(w).t 2 npꜣ.t ꜥ 2 mz(w).t ꜥ 2 ḏsr.t ꜥ 2 ꞽꜣ.tt ḏsr.t ꜥ 2 ḥ(n)q.t ḫnms ꜥ 2 ḥ(n)q.t ꜥ 2 s(ḫ)p.t ꜥ 2 pḫꜣ{.t} ꜥ 2 ḏwꞽ.w.wꞽ sšr 2 dꜣb ꜥ 2 ꞽrp ꜥ 2",
+  "pristine_strict_key": "šꜥwt 2 npꜣt ꜥ 2 mzwt ꜥ 2 ḏsrt ꜥ 2 ꞽꜣtt ḏsrt ꜥ 2 ḥnqt ḫnms ꜥ 2 ḥnqt ꜥ 2 sḫpt ꜥ 2 pḫꜣt ꜥ 2 ḏwꞽwwꞽ sšr 2 dꜣb ꜥ 2 ꞽrp ꜥ 2"
+ },
+ {
+  "reading": "k.t pẖr.t 2.nw.t",
+  "pristine_strict_key": "kt pẖrt 2nwt"
+ },
+ {
+  "reading": "šnꞽ-tꜣ rʾ-8 bꞽ.t {{rʾ-8}}[[ḥsb]]",
+  "pristine_strict_key": "šnꞽ-tꜣ rʾ-8 bꞽt rʾ-8ḥsb"
+ },
+ {
+  "reading": "k⸢ꜣ⸣ wḫꜣ =f tꜣy =k sḫ.t n.(ꞽ).t",
+  "pristine_strict_key": "kꜣ wḫꜣ =f tꜣy =k sḫt nꞽt"
+ },
+ {
+  "reading": "wdd n ⸮ꞽḥ? gs ḥmꜣ.t-mḥ.t rʾ-8 bꞽ.t rʾ-32 mw 1/32",
+  "pristine_strict_key": "wdd n ⸮ꞽḥ? gs ḥmꜣt-mḥt rʾ-8 bꞽt rʾ-32 mw 1/32"
+ },
+ {
+  "reading": "ꞽrw ky twt.〈pl〉 n ḫft 4 m ḥr n ꜣpd ntt m ꜥ.du.{ṱ}〈wꞽ〉 =sn rd.du =sn 〈n〉-ḥꜣ =sn mdn =w 〈m〉-ḏd ms-bdš.pl pw",
+  "pristine_strict_key": "ꞽrw ky twtpl n ḫft 4 m ḥr n ꜣpd ntt m ꜥduṱwꞽ =sn rddu =sn n-ḥꜣ =sn mdn =w m-ḏd ms-bdšw pw"
+ },
+ {
+  "reading": "ꞽ nb-snd ꜥꜣ-sdd",
+  "pristine_strict_key": "ꞽ nb-snd ꜥꜣ-sdd"
+ },
+ {
+  "reading": "zꜣ.t =f Nb.t-ḥw.t",
+  "pristine_strict_key": "zꜣt =f nbt-ḥwt"
+ },
+ {
+  "reading": "sḫr.n =f wr.pl =sn ḥnꜥ mšꜥ =w",
+  "pristine_strict_key": "sḫrn =f wrw =sn ḥnꜥ mšꜥ =w"
+ },
+ {
+  "reading": "di.n n =k ꜣw.t-ꞽb nb ḫr =k",
+  "pristine_strict_key": "din n =k ꜣwt-ꞽb nb ḫr =k"
+ },
+ {
+  "reading": "šsp n =k ḫpš r ḫꜣs.t.pl nb ḥsq =k tp.pl bšt.pl r =k ꞽw =k m Ḥr.w ḥr-tp-Tꜣ.du",
+  "pristine_strict_key": "šsp n =k ḫpš r ḫꜣstw nb ḥsq =k tpw bštw r =k ꞽw =k m ḥrw ḥr-tp-tꜣdu"
+ },
+ {
+  "reading": "[ḥbs] =sn ḏw.wpl ꞽ[n.t].pl [s]t mꞽ ⸢pꜣ⸣ ⸢snḥm.pl⸣ m-dꞽ ꜥšꜣ =sn",
+  "pristine_strict_key": "ḥbs =sn ḏwwpl ꞽntw st mꞽ pꜣ snḥmw m-dꞽ ꜥšꜣ =sn"
+ },
+ {
+  "reading": "nb ⸮ḏ.t? m ⸮grg? 13 ⸮ꞽwn? 12 zꜣt 5 nh.t zn-mw 3 m ⸮⸢ḥw.t⸣?-nṯr nb ⸮tn? šm__",
+  "pristine_strict_key": "nb ⸮ḏt? m ⸮grg? 13 ⸮ꞽwn? 12 zꜣt 5 nht zn-mw 3 m ⸮ḥwt?-nṯr nb ⸮tn? šm__"
+ },
+ {
+  "reading": "s~ꜥꜣ~mw.pl ꞽm =f",
+  "pristine_strict_key": "s~ꜥꜣ~mww ꞽm =f"
+ },
+ {
+  "reading": "[__]r pꜣy =k",
+  "pristine_strict_key": "__r pꜣy =k"
+ },
+ {
+  "reading": "ꞽw spr.pl dmḏ =sn ḫr =k pꜣ wpp.w-mꜣꜥ.t nṯr-ꜥꜣ sšm-n-sbꜣ pẖr.w n s{n}bḥ n =f",
+  "pristine_strict_key": "ꞽw sprw dmḏ =sn ḫr =k pꜣ wppw-mꜣꜥt nṯr-ꜥꜣ sšm-n-sbꜣ pẖrw n snbḥ n =f"
+ },
+ {
+  "reading": "nꜣ-n ꜥꜣm.w.pl n.tꞽ(.w)",
+  "pristine_strict_key": "nꜣ-n ꜥꜣmw ntꞽw"
+ },
+ {
+  "reading": "rnwy.pl =f",
+  "pristine_strict_key": "rnwyw =f"
+ },
+ {
+  "reading": "bꞽwk〈.pl〉 {nṯr.pl} 〈nṯr.ꞽ.w〉 ḥtp",
+  "pristine_strict_key": "bꞽwkw nṯrw nṯrꞽw ḥtp"
+ },
+ {
+  "reading": "ꞽr ḫꜣꜥ.tw pꜣ nwḥ.w r-bw~npl~rʾ ꞽw tꜣ ḫntꞽ~tʾ~tꞽ m ḫḫ.wꞽ =f",
+  "pristine_strict_key": "ꞽr ḫꜣꜥtw pꜣ nwḥw r-bw~npl~rʾ ꞽw tꜣ ḫntꞽ~tʾ~tꞽ m ḫḫwꞽ =f"
+ },
+ {
+  "reading": "mꜣꞽw-[ḥḏ] [ꞽnm.pl] n ꜣb[y.pl] [šmꜥ(.ꞽ)] __p.pl nbw nfr [nb]sꞽ.pl [kꜣ~ꞽrʾ~tꞽ~bw~ꞽ]ꜣ.pl m ⸮sš? [ẖr] [sꜣ~n~rʾ]~ꞽꜣ nḥs.y.pl [m] [tnw] nb.t",
+  "pristine_strict_key": "mꜣꞽw-ḥḏ ꞽnmw n ꜣbyw šmꜥꞽ __pw nbw nfr nbsꞽw kꜣ~ꞽrʾ~tꞽ~bw~ꞽꜣw m ⸮sš? ẖr sꜣ~n~rʾ~ꞽꜣ nḥsyw m tnw nbt"
+ },
+ {
+  "reading": "{r} nfr 〈r〉 ḥr〈-nb〉 {nb.t.pl}",
+  "pristine_strict_key": "r nfr r ḥr-nb nbtw"
+ },
+ {
+  "reading": "ꜣbd 3 ꜣḫ.t sw 21",
+  "pristine_strict_key": "ꜣbd 3 ꜣḫt sw 21"
+ },
+ {
+  "reading": "ḫr ptrꞽ bw sḏm =k mtr.[t] nb.t ꞽ:ḏd.w =ꞽ n =k ẖrꞽ-ḥꜣ.t",
+  "pristine_strict_key": "ḫr ptrꞽ bw sḏm =k mtrt nbt ꞽ:ḏdw =ꞽ n =k ẖrꞽ-ḥꜣt"
+ },
+ {
+  "reading": "ẖꜣ{rꞽ}.ṱ =f m ꞽwtn",
+  "pristine_strict_key": "ẖꜣrꞽṱ =f m ꞽwtn"
+ },
+ {
+  "reading": "nn ꜥq =ꞽ r ḫb.t dwꜣ.w.pl",
+  "pristine_strict_key": "nn ꜥq =ꞽ r ḫbt dwꜣw"
+ },
+ {
+  "reading": "nn ḏw =ꞽ",
+  "pristine_strict_key": "nn ḏw =ꞽ"
+ },
+ {
+  "reading": "ꞽ:nḏ ḥr =k {t}〈ꜥ〉b n =f hꜣmm ḫrp n =f p.t r ꞽꜣ.t twy wr.t",
+  "pristine_strict_key": "ꞽ:nḏ ḥr =k tꜥb n =f hꜣmm ḫrp n =f pt r ꞽꜣt twy wrt"
+ },
+ {
+  "reading": "wn wꜣ.t",
+  "pristine_strict_key": "wn wꜣt"
+ },
+ {
+  "reading": "wḏꜣ =ꞽ wḏꜣ hrw pn",
+  "pristine_strict_key": "wḏꜣ =ꞽ wḏꜣ hrw pn"
+ },
+ {
+  "reading": "nn nwḥ =ṯn {n}〈w〉ꞽ n mnꞽ.t.pl =ṯn",
+  "pristine_strict_key": "nn nwḥ =ṯn nwꞽ n mnꞽtw =ṯn"
+ },
+ {
+  "reading": "ky-ḏd hrw pw n ꞽw=n-mn.〈wꞽ〉n",
+  "pristine_strict_key": "ky-ḏd hrw pw n ꞽw=n-mnwꞽn"
+ },
+ {
+  "reading": "ꞽnk n-mḥ=f",
+  "pristine_strict_key": "ꞽnk n-mḥ=f"
+ },
+ {
+  "reading": "ꞽ ḥr(.ꞽ)-tp ꞽꜣ.t twy št(ꜣ.t)",
+  "pristine_strict_key": "ꞽ ḥrꞽ-tp ꞽꜣt twy štꜣt"
+ },
+ {
+  "reading": "ꜥ.wꞽ pw n nṯr nb sḏm mdw m Ꞽwn.w grḥ pwy n smd.t m ḥw.t-ꞽꜥḥ sꜣb",
+  "pristine_strict_key": "ꜥwꞽ pw n nṯr nb sḏm mdw m ꞽwnw grḥ pwy n smdt m ḥwt-ꞽꜥḥ sꜣb"
+ },
+ {
+  "reading": "Wsꞽr nb-pḥ.tꞽ ptpt sbꞽ.pl",
+  "pristine_strict_key": "wsꞽr nb-pḥtꞽ ptpt sbꞽw"
+ },
+ {
+  "reading": "ꞽw ꞽꜥr.t.pl 4 ḥr =s",
+  "pristine_strict_key": "ꞽw ꞽꜥrtw 4 ḥr =s"
+ },
+ {
+  "reading": "rʾ n ḫsf ꜥpš.t",
+  "pristine_strict_key": "rʾ n ḫsf ꜥpšt"
+ },
+ {
+  "reading": "ꜣs.t wr.t mw.t-nṯr",
+  "pristine_strict_key": "ꜣst wrt mwt-nṯr"
+ },
+ {
+  "reading": "ḏd-mdw ꞽn z wꜥb(.w) wnḫ.n =f mnḫ.t n mꜣwꞽ ṯb.t.ꞽ m ṯb.t.ꞽ ḥḏ.t wrḥ.tw m tp.t n.t ꜥnt.pl",
+  "pristine_strict_key": "ḏd-mdw ꞽn z wꜥbw wnḫn =f mnḫt n mꜣwꞽ ṯbtꞽ m ṯbtꞽ ḥḏt wrḥtw m tpt nt ꜥntw"
+ },
+ {
+  "reading": "ꞽw wꜥ nmmꞽ ꜥḥꜥ(.w) m-bꜣḥ =s ḥꜣ =s",
+  "pristine_strict_key": "ꞽw wꜥ nmmꞽ ꜥḥꜥw m-bꜣḥ =s ḥꜣ =s"
+ },
+ {
+  "reading": "ḏd-md.t ꜥbꜣ =k r-ꜥ =k ky-ḏd r-rʾ =k",
+  "pristine_strict_key": "ḏd-mdt ꜥbꜣ =k r-ꜥ =k ky-ḏd r-rʾ =k"
+ },
+ {
+  "reading": "n ḫsf Wsꞽr mꜣꜥ-ḫrw ḥr Rꜥ.w",
+  "pristine_strict_key": "n ḫsf wsꞽr mꜣꜥ-ḫrw ḥr rꜥw"
+ },
+ {
+  "reading": "ꜥq =f m-ḥtp r ꞽmn.tt",
+  "pristine_strict_key": "ꜥq =f m-ḥtp r ꞽmntt"
+ },
+ {
+  "reading": "wḏḏ!.t pw r =k m-bꜣḥ",
+  "pristine_strict_key": "wḏḏ!t pw r =k m-bꜣḥ"
+ },
+ {
+  "reading": "ꞽw mḥ 4 m-ḥꜣ.t =f m ds",
+  "pristine_strict_key": "ꞽw mḥ 4 m-ḥꜣt =f m ds"
+ },
+ {
+  "reading": "n Wsꞽr nb-ḏ.t",
+  "pristine_strict_key": "n wsꞽr nb-ḏt"
+ },
+ {
+  "reading": "n ꜥḫm =ꞽ ḫ.t m wnw.t =s",
+  "pristine_strict_key": "n ꜥḫm =ꞽ ḫt m wnwt =s"
+ },
+ {
+  "reading": "zꜣb-zẖꜣw Mrrꞽ",
+  "pristine_strict_key": "zꜣb-zẖꜣw mrrꞽ"
+ },
+ {
+  "reading": "sḫm.t(ꞽ) =sn m d[⸮_?]",
+  "pristine_strict_key": "sḫmtꞽ =sn m d⸮_?"
+ },
+ {
+  "reading": "ꞽmn.t ꞽw B(ꜣ)t(ꜣ) ṯn(ꞽ)",
+  "pristine_strict_key": "ꞽmnt ꞽw bꜣtꜣ ṯnꞽ"
+ },
+ {
+  "reading": "(Ꞽꜣ)rt",
+  "pristine_strict_key": "ꞽꜣrt"
+ },
+ {
+  "reading": "qmḥw 4",
+  "pristine_strict_key": "qmḥw 4"
+ },
+ {
+  "reading": "[Md]d.ꞽ",
+  "pristine_strict_key": "mddꞽ"
+ },
+ {
+  "reading": "šms.t =f ꞽn kꜣ.pl =f",
+  "pristine_strict_key": "šmst =f ꞽn kꜣw =f"
+ },
+ {
+  "reading": "mnꞽ.w",
+  "pristine_strict_key": "mnꞽw"
+ },
+ {
+  "reading": "sḥḏ-ḫnt.w-š-pr-ꜥꜣ Ḥzꞽ",
+  "pristine_strict_key": "sḥḏ-ḫntw-š-pr-ꜥꜣ ḥzꞽ"
+ },
+ {
+  "reading": "qrs.t =f nfr m ẖr-nṯr ẖr.ꞽ-tp-nswt-pr-ꜥꜣ (ꞽ)m(.ꞽ)-rʾ-ḫnt.w-š Sbk-ḥtp(.w) rn =f +nfr Ḥpꞽ",
+  "pristine_strict_key": "qrst =f nfr m ẖr-nṯr ẖrꞽ-tp-nswt-pr-ꜥꜣ ꞽmꞽ-rʾ-ḫntw-š sbk-ḥtpw rn =f +nfr ḥpꞽ"
+ },
+ {
+  "reading": "smr ḫrp-ꜥḥ",
+  "pristine_strict_key": "smr ḫrp-ꜥḥ"
+ },
+ {
+  "reading": "⸢qbḥ(.w)⸣ ⸢ṯꜣ⸣ ⸢2⸣ 1",
+  "pristine_strict_key": "qbḥw ṯꜣ 2 1"
+ },
+ {
+  "reading": "(ꞽ)r(.ꞽt-ꞽ)ḫ.t-nswt rn =s nfr Ḥm.ꞽ",
+  "pristine_strict_key": "ꞽrꞽt-ꞽḫt-nswt rn =s nfr ḥmꞽ"
+ },
+ {
+  "reading": "ḫrw =f rn =f nfr Ššꞽ",
+  "pristine_strict_key": "ḫrw =f rn =f nfr ššꞽ"
+ },
+ {
+  "reading": "nnꞽ-tḫt",
+  "pristine_strict_key": "nnꞽ-tḫt"
+ },
+ {
+  "reading": "ḥꜣ.tꞽ-ꜥ ꞽm(.ꞽ)-ꞽz-Nḫn mnꞽw-Nḫn ḥrꞽ-tp-Nḫb ꞽmꜣḫ.w-ḫr-nṯr-ꜥꜣ ꜥnḫ-m-ꜥ-Ḥr.w rn+ =f +nfr Zzꞽ",
+  "pristine_strict_key": "ḥꜣtꞽ-ꜥ ꞽmꞽ-ꞽz-nḫn mnꞽw-nḫn ḥrꞽ-tp-nḫb ꞽmꜣḫw-ḫr-nṯr-ꜥꜣ ꜥnḫ-m-ꜥ-ḥrw rn+ =f +nfr zzꞽ"
+ },
+ {
+  "reading": "ꜥmꞽ",
+  "pristine_strict_key": "ꜥmꞽ"
+ },
+ {
+  "reading": "⸢ḥꜣ.tꞽ-ꜥ⸣ [ẖr.ꞽ-ḥ(ꜣ)]b(.t) ḥr.ꞽ-tp smr-wꜥ.tꞽ zẖꜣ.w-mḏꜣ.t-nṯr Hnqw",
+  "pristine_strict_key": "ḥꜣtꞽ-ꜥ ẖrꞽ-ḥꜣbt ḥrꞽ-tp smr-wꜥtꞽ zẖꜣw-mḏꜣt-nṯr hnqw"
+ },
+ {
+  "reading": "n.t(ꞽ) mꜣs",
+  "pristine_strict_key": "ntꞽ mꜣs"
+ },
+ {
+  "reading": "(ꞽ)m(.ꞽ)-rʾ-nʾ.t-Nṯr.ꞽ-s.wt-Mn-kꜣ.w-Ḥr.w sḥḏ-ḥm(.w)-nṯr-〈〈Nṯr.ꞽ-s.wt-Mn-kꜣ.w-Ḥr.w〉〉 ꞽmꜣḫ.w-ḫr-nswt 〈〈ẖr.ꞽ-tp-nswt〉〉 〈〈Ptḥ-ḥtp.w〉〉",
+  "pristine_strict_key": "ꞽmꞽ-rʾ-nʾt-nṯrꞽ-swt-mn-kꜣw-ḥrw sḥḏ-ḥmw-nṯr-nṯrꞽ-swt-mn-kꜣw-ḥrw ꞽmꜣḫw-ḫr-nswt ẖrꞽ-tp-nswt ptḥ-ḥtpw"
+ },
+ {
+  "reading": "snṯr sḏ.t wꜣḏ(.w) msd(m.)t ꞽšd.du nbs tʾ(-n)-nbs nḥr(.w) tʾ-nḥr(.w)",
+  "pristine_strict_key": "snṯr sḏt wꜣḏw msdmt ꞽšddu nbs tʾ-n-nbs nḥrw tʾ-nḥrw"
+ },
+ {
+  "reading": "ṯ[rp] z.t s mnw.t tʾ-z(ꞽ)f 1 šꜥ(w).t 2 npꜣ.t ꜥ 2 ⸢m[z.w]t⸣ ⸢ꜥ⸣ ⸢2⸣ ⸢ḏsr.t⸣ ⸢2⸣",
+  "pristine_strict_key": "ṯrp zt s mnwt tʾ-zꞽf 1 šꜥwt 2 npꜣt ꜥ 2 mzwt ꜥ 2 ḏsrt 2"
+ },
+ {
+  "reading": "sḥḏ-zwn.w Sšm-nfr",
+  "pristine_strict_key": "sḥḏ-zwnw sšm-nfr"
+ },
+ {
+  "reading": "ꞽr n=f ḥnꜥ=f ⸢ꞽmꞽ-rʾ⸣-sr.w ⸢Nmt⸣-ꞽw Šps-pw-ptḥ Sꜣb=ꞽ zꜣb-zẖꜣ Wsr-Ptḥ zẖꜣ-ḥmt.ꞽ Ḫwns ḫrp-ꜥpr-nfr Ꜣbdw Mrꞽ-nṯr-Ꞽzzꞽ Nꞽ-ꜥnḫ-Mnw Ḥrw ꞽmꞽ-rʾ-⸢ꞽꜥꜣw⸣ ꞽmꞽ-ḫt-ꞽꜥꜣw N-kꜣ=ꞽ-ꜥnḫ sḥḏ-sr Wꜣš-kꜣ=ꞽ Ḥtp.n=ꞽ Nꞽ-sbk sḥḏ-ḥmt.ꞽ ⸢Špss⸣",
+  "pristine_strict_key": "ꞽr n=f ḥnꜥ=f ꞽmꞽ-rʾ-srw nmt-ꞽw šps-pw-ptḥ sꜣb=ꞽ zꜣb-zẖꜣ wsr-ptḥ zẖꜣ-ḥmtꞽ ḫwns ḫrp-ꜥpr-nfr ꜣbdw mrꞽ-nṯr-ꞽzzꞽ nꞽ-ꜥnḫ-mnw ḥrw ꞽmꞽ-rʾ-ꞽꜥꜣw ꞽmꞽ-ḫt-ꞽꜥꜣw n-kꜣ=ꞽ-ꜥnḫ sḥḏ-sr wꜣš-kꜣ=ꞽ ḥtpn=ꞽ nꞽ-sbk sḥḏ-ḥmtꞽ špss"
+ },
+ {
+  "reading": "ꞽr mn rn (=ꞽ) m-bꜣḥ Ḥp-Wsꞽr ꞽw =f mn r nḥḥ nn sk ḏ.t",
+  "pristine_strict_key": "ꞽr mn rn =ꞽ m-bꜣḥ ḥp-wsꞽr ꞽw =f mn r nḥḥ nn sk ḏt"
+ },
+ {
+  "reading": "[sšr.w] 3 šzp.t dꜣꞽ.w.w",
+  "pristine_strict_key": "sšrw 3 šzpt dꜣꞽww"
+ },
+ {
+  "reading": "⸢m-bꜣḥ⸣ 2 3 ⸢m-bꜣḥ⸣ 3 ⸢ẖr.ꞽ-ḥ(ꜣ)b(.t)⸣ ⸢2⸣ ⸢2⸣ ⸢2⸣ ⸢3⸣ ⸢m-⸣[bꜣḥ] ⸢2⸣",
+  "pristine_strict_key": "m-bꜣḥ 2 3 m-bꜣḥ 3 ẖrꞽ-ḥꜣbt 2 2 2 3 m-bꜣḥ 2"
+ },
+ {
+  "reading": "⸢N.ꞽ⸣-sw-rdꞽ 4 2 3",
+  "pristine_strict_key": "nꞽ-sw-rdꞽ 4 2 3"
+ },
+ {
+  "reading": "⸢ḥtp⸣ ⸢ꜥꜣ⸣ ⸢⸮_?⸣",
+  "pristine_strict_key": "ḥtp ꜥꜣ ⸮_?"
+ },
+ {
+  "reading": "zwšt 3",
+  "pristine_strict_key": "zwšt 3"
+ },
+ {
+  "reading": "sḥḏ-ḥm(.w)-nṯr ⸢Mr⸣-nswt ⸢sw.t⸣",
+  "pristine_strict_key": "sḥḏ-ḥmw-nṯr mr-nswt swt"
+ },
+ {
+  "reading": "hnnꞽ hnnꞽ hpꜣṯ hpꜣṯ",
+  "pristine_strict_key": "hnnꞽ hnnꞽ hpꜣṯ hpꜣṯ"
+ },
+ {
+  "reading": "sn Ppy pn p.t m bꞽk",
+  "pristine_strict_key": "sn ppy pn pt m bꞽk"
+ },
+ {
+  "reading": "šzp.n n =f Ppy pn swḥ sꜣ(.wꞽ)",
+  "pristine_strict_key": "šzpn n =f ppy pn swḥ sꜣwꞽ"
+ },
+ {
+  "reading": "nꜥ.w zbn",
+  "pristine_strict_key": "nꜥw zbn"
+ },
+ {
+  "reading": "wn n =k ꜥꜣ.du p.t znšš n =k ꜥꜣ.du qbḥ(.w) ꞽ⸢r⸣ [⸮swn?] =k n.ꞽ nb.w [⸮ꞽmꜣḫ?]",
+  "pristine_strict_key": "wn n =k ꜥꜣdu pt znšš n =k ꜥꜣdu qbḥw ꞽr ⸮swn? =k nꞽ nbw ⸮ꞽmꜣḫ?"
+ },
+ {
+  "reading": "ḏd ꞽr =k nḫḫ pn",
+  "pristine_strict_key": "ḏd ꞽr =k nḫḫ pn"
+ },
+ {
+  "reading": "ꞽ:gr m r(m)ṯ sḏm =[ṯn] ḫr Ḫnt(.ꞽ)-Ꞽmn.t(ꞽ)w",
+  "pristine_strict_key": "ꞽ:gr m rmṯ sḏm =ṯn ḫr ḫntꞽ-ꞽmntꞽw"
+ },
+ {
+  "reading": "Ppy Nfr-kꜣ-Rꜥw pw ḥz(w).t",
+  "pristine_strict_key": "ppy nfr-kꜣ-rꜥw pw ḥzwt"
+ },
+ {
+  "reading": "hꜣ nḫḫ n =k ꞽr.t-Ḥr.w ḫr =[k]",
+  "pristine_strict_key": "hꜣ nḫḫ n =k ꞽrt-ḥrw ḫr =k"
+ },
+ {
+  "reading": "Nmt.ꞽ-m-zꜣ=f Mr.n-Rꜥw pw Qrqr",
+  "pristine_strict_key": "nmtꞽ-m-zꜣ=f mrn-rꜥw pw qrqr"
+ },
+ {
+  "reading": "ꞽ:šm Ppy Nfr-kꜣ-Rꜥw ꞽm ḫr mʾw.t =f Nw.t ꞽꜣq Ppy Nfr-kꜣ-Rꜥw ḥr =s m rn =s pw n(.ꞽ) mꜣq.t",
+  "pristine_strict_key": "ꞽ:šm ppy nfr-kꜣ-rꜥw ꞽm ḫr mʾwt =f nwt ꞽꜣq ppy nfr-kꜣ-rꜥw ḥr =s m rn =s pw nꞽ mꜣqt"
+ },
+ {
+  "reading": "mn btꜣ r =f",
+  "pristine_strict_key": "mn btꜣ r =f"
+ },
+ {
+  "reading": "nfr snb =ṯ",
+  "pristine_strict_key": "nfr snb =ṯ"
+ },
+ {
+  "reading": "wn bn bꜣk.w.pl ḫr bn bꜣk.pl n nꜣ ⸢r(m)ṯ⸣[.pl]",
+  "pristine_strict_key": "wn bn bꜣkw ḫr bn bꜣkw n nꜣ rmṯw"
+ },
+ {
+  "reading": "y wn hrw dy r-ḥꜣ.t =tn",
+  "pristine_strict_key": "y wn hrw dy r-ḥꜣt =tn"
+ },
+ {
+  "reading": "wn ꞽmꜣḫ =k nfr ⸢ḫr⸣ ⸢kꜣ⸣ Ḥr(.ꞽ)-š=f nb-⸢nn-nswt⸣",
+  "pristine_strict_key": "wn ꞽmꜣḫ =k nfr ḫr kꜣ ḥrꞽ-š=f nb-nn-nswt"
+ },
+ {
+  "reading": "ꞽn =f ꞽ.ḏd m rꜣ =f tp =f",
+  "pristine_strict_key": "ꞽn =f ꞽḏd m rꜣ =f tp =f"
+ },
+ {
+  "reading": "ḥsb.t 2 ḫr ḥm n nswt bꞽty nb tꜣ.wy mn-mꜣꜥ.t-rꜥ sꜣ rꜥ stḫy-mr.n-ptḥ dd ꜥnḫ",
+  "pristine_strict_key": "ḥsbt 2 ḫr ḥm n nswt bꞽty nb tꜣwy mn-mꜣꜥt-rꜥ sꜣ rꜥ stḫy-mrn-ptḥ dd ꜥnḫ"
+ },
+ {
+  "reading": "ꞽry =f ꜥnḫ ḏ.t",
+  "pristine_strict_key": "ꞽry =f ꜥnḫ ḏt"
+ },
+ {
+  "reading": "mw.t =f ꜣs.t (ḥr) ꜥš m šnb",
+  "pristine_strict_key": "mwt =f ꜣst ḥr ꜥš m šnb"
+ },
+ {
+  "reading": "nn n =s šrꞽ",
+  "pristine_strict_key": "nn n =s šrꞽ"
+ },
+ {
+  "reading": "twꞽ ḥr ḏd n nꜣ nꜣ nṯr.w nb.w pr-rꜥ-ms-sw-mry-ꞽmn ꜥ.w.s",
+  "pristine_strict_key": "twꞽ ḥr ḏd n nꜣ nꜣ nṯrw nbw pr-rꜥ-ms-sw-mry-ꞽmn ꜥws"
+ },
+ {
+  "reading": "mtw =tn mḥ m rmṯ.w nb.w nty m pꜣ dmꞽ",
+  "pristine_strict_key": "mtw =tn mḥ m rmṯw nbw nty m pꜣ dmꞽ"
+ },
+ {
+  "reading": "pꜣ ꜥꜣ n ꞽs.t ẖꜣr 1/2 ꞽr.w n ẖꜣr 1/2 s 10 1 wꜥ nb ẖꜣr 1/4 ꞽr.w n ẖꜣr 2 3/4 pꜣ sꜣw ẖꜣr 1/4 ꞽr.w n ẖꜣr 1/4 s 6 wꜥ nb ẖꜣr 1/4 ꞽr.w n ẖꜣr 1 1/2 dmḏ ẖꜣr 5 r mḥ pꜣ 10 5 n ẖꜣr ꞽt n sš pꜣ-sr",
+  "pristine_strict_key": "pꜣ ꜥꜣ n ꞽst ẖꜣr 1/2 ꞽrw n ẖꜣr 1/2 s 10 1 wꜥ nb ẖꜣr 1/4 ꞽrw n ẖꜣr 2 3/4 pꜣ sꜣw ẖꜣr 1/4 ꞽrw n ẖꜣr 1/4 s 6 wꜥ nb ẖꜣr 1/4 ꞽrw n ẖꜣr 1 1/2 dmḏ ẖꜣr 5 r mḥ pꜣ 10 5 n ẖꜣr ꞽt n sš pꜣ-sr"
+ },
+ {
+  "reading": "gm =tw m tꜣy.f wšb.t tpy.t",
+  "pristine_strict_key": "gm =tw m tꜣyf wšbt tpyt"
+ },
+ {
+  "reading": "ḥsmn db.t šrꞽ.t 10 4",
+  "pristine_strict_key": "ḥsmn dbt šrꞽt 10 4"
+ },
+ {
+  "reading": "bw.t =s ꞽṯ",
+  "pristine_strict_key": "bwt =s ꞽṯ"
+ },
+ {
+  "reading": "bn ꞽw =n (r) rḫ sṯꜣ nꜣ sš.w nty r-ḥry",
+  "pristine_strict_key": "bn ꞽw =n r rḫ sṯꜣ nꜣ sšw nty r-ḥry"
+ },
+ {
+  "reading": "psn ꜥꜣ 2000 600 10 6",
+  "pristine_strict_key": "psn ꜥꜣ 2000 600 10 6"
+ },
+ {
+  "reading": "ꞽw =f (ḥr) mtr",
+  "pristine_strict_key": "ꞽw =f ḥr mtr"
+ },
+ {
+  "reading": "ꞽw =f ḥr ꜥq r tꜣ wꜥb.t",
+  "pristine_strict_key": "ꞽw =f ḥr ꜥq r tꜣ wꜥbt"
+ },
+ {
+  "reading": "ꞽw ḏd =ꞽ n =k qꞽ =f",
+  "pristine_strict_key": "ꞽw ḏd =ꞽ n =k qꞽ =f"
+ },
+ {
+  "reading": "sꜣ.t n.t sꜣ =f rnw.t",
+  "pristine_strict_key": "sꜣt nt sꜣ =f rnwt"
+ },
+ {
+  "reading": "twꞽ mꞽ mnṯw",
+  "pristine_strict_key": "twꞽ mꞽ mnṯw"
+ },
+ {
+  "reading": "ꞽw =n (ḥr) gmꞽ.t wꜥ ks",
+  "pristine_strict_key": "ꞽw =n ḥr gmꞽt wꜥ ks"
+ },
+ {
+  "reading": "pꜣ s (ḥr) ḫm dwꜣw mꞽ ꞽḫ",
+  "pristine_strict_key": "pꜣ s ḥr ḫm dwꜣw mꞽ ꞽḫ"
+ },
+ {
+  "reading": "ṯs =n sk n sp",
+  "pristine_strict_key": "ṯs =n sk n sp"
+ },
+ {
+  "reading": "m-bꜣḥ tꞽ-p-ꜥꜣ sꜣ pꜣ-šrꞽ-n-gꜣy.w",
+  "pristine_strict_key": "m-bꜣḥ tꞽ-p-ꜥꜣ sꜣ pꜣ-šrꞽ-n-gꜣyw"
+ },
+ {
+  "reading": "ḫr ḥn =ꞽ",
+  "pristine_strict_key": "ḫr ḥn =ꞽ"
+ },
+ {
+  "reading": "dmḏ ẖꜣr 70 8",
+  "pristine_strict_key": "dmḏ ẖꜣr 70 8"
+ },
+ {
+  "reading": "nbw ḥḏ dbn 300 80 9",
+  "pristine_strict_key": "nbw ḥḏ dbn 300 80 9"
+ },
+ {
+  "reading": "nfr-ꜥb.t",
+  "pristine_strict_key": "nfr-ꜥbt"
+ },
+ {
+  "reading": "dꞽ.n =<ꞽ> n =k snb nb ḫr =ꞽ",
+  "pristine_strict_key": "dꞽn =<ꞽ> n =k snb nb ḫr =ꞽ"
+ },
+ {
+  "reading": "ꞽw =ꞽ (r) rdꞽ.t nw ꞽr.t =f =<s>",
+  "pristine_strict_key": "ꞽw =ꞽ r rdꞽt nw ꞽrt =f =<s>"
+ },
+ {
+  "reading": "nn mꜣꜣ =<ꞽ> sy",
+  "pristine_strict_key": "nn mꜣꜣ =<ꞽ> sy"
+ },
+ {
+  "reading": "sš ḏḥwty-ms n pꜣ ḫr ꜥꜣ špsy ḥr ꞽmn.t wꜣs.t n ẖrty-nṯr ꞽmn-m-ꞽp.t-nḫt m ꜥ.w.s m ḥs.t ꞽmn-rꜥ nswt nṯr.w",
+  "pristine_strict_key": "sš ḏḥwty-ms n pꜣ ḫr ꜥꜣ špsy ḥr ꞽmnt wꜣst n ẖrty-nṯr ꞽmn-m-ꞽpt-nḫt m ꜥws m ḥst ꞽmn-rꜥ nswt nṯrw"
+ },
+ {
+  "reading": "nꜣy.k bkꜣ.wt mḥ",
+  "pristine_strict_key": "nꜣyk bkꜣwt mḥ"
+ },
+ {
+  "reading": "bw rḫ =ꞽ nꜣ mꜥḥꜥ.wt",
+  "pristine_strict_key": "bw rḫ =ꞽ nꜣ mꜥḥꜥwt"
+ },
+ {
+  "reading": "ḥnꜥ-ḏd ꞽḫ-dꞽ =k ḥr =k r ꞽrꞽ.t wp.t nb.t rdy.t m-ḥr =k m-sšr r-ꞽqr sp-sn ḏrꞽ mꞽ ḥmty",
+  "pristine_strict_key": "ḥnꜥ-ḏd ꞽḫ-dꞽ =k ḥr =k r ꞽrꞽt wpt nbt rdyt m-ḥr =k m-sšr r-ꞽqr sp-sn ḏrꞽ mꞽ ḥmty"
+ },
+ {
+  "reading": "rdy.t n =f ꞽn mnn ꜥḏ wꜣḏ hnw 40 ꞽr.w n dbn 30 dmḏ 60 5",
+  "pristine_strict_key": "rdyt n =f ꞽn mnn ꜥḏ wꜣḏ hnw 40 ꞽrw n dbn 30 dmḏ 60 5"
+ },
+ {
+  "reading": "ꞽw ḏd =w",
+  "pristine_strict_key": "ꞽw ḏd =w"
+ },
+ {
+  "reading": "nswt ḥm.t ḥnw.t šmꜥw mḥw nb.t tꜣ.wy ꜣs.t-nfr.t ꜥnḫ.ty",
+  "pristine_strict_key": "nswt ḥmt ḥnwt šmꜥw mḥw nbt tꜣwy ꜣst-nfrt ꜥnḫty"
+ },
+ {
+  "reading": "nswt bꞽty wsr-mꜣꜥ.t-rꜥ-stp.n-rꜥ sꜣ rꜥ nb ḫꜥw.w rꜥ-ms-sw-mry-ꞽmn dd ꜥnḫ",
+  "pristine_strict_key": "nswt bꞽty wsr-mꜣꜥt-rꜥ-stpn-rꜥ sꜣ rꜥ nb ḫꜥww rꜥ-ms-sw-mry-ꞽmn dd ꜥnḫ"
+ },
+ {
+  "reading": "smꜣw mnw ꞽr.n nswt bꞽty mn-mꜣꜥ.t-rꜥ n ꞽt =<f> ꞽmn-rꜥ nswt nṯr.w nb.w",
+  "pristine_strict_key": "smꜣw mnw ꞽrn nswt bꞽty mn-mꜣꜥt-rꜥ n ꞽt =<f> ꞽmn-rꜥ nswt nṯrw nbw"
+ },
+ {
+  "reading": "rdy.t ẖry-ḥꜣ.t rmw 200",
+  "pristine_strict_key": "rdyt ẖry-ḥꜣt rmw 200"
+ },
+ {
+  "reading": "ꜥšꜣ msw.wt wꜥ wꜥty.w ḏ.t =f m ḥḥ.w mꜣw sšmw.w srwḏ ꞽrw =f rnpꞽ sw",
+  "pristine_strict_key": "ꜥšꜣ mswwt wꜥ wꜥtyw ḏt =f m ḥḥw mꜣw sšmww srwḏ ꞽrw =f rnpꞽ sw"
+ },
+ {
+  "reading": "ḥsy sw m prꞽ.w nšn",
+  "pristine_strict_key": "ḥsy sw m prꞽw nšn"
+ },
+ {
+  "reading": "ꞽw =ꞽ (r) ꞽrꞽ.t =f",
+  "pristine_strict_key": "ꞽw =ꞽ r ꞽrꞽt =f"
+ },
+ {
+  "reading": "nb =n stḫ ẖpt r m-ꜥ =n",
+  "pristine_strict_key": "nb =n stḫ ẖpt r m-ꜥ =n"
+ },
+ {
+  "reading": "wšd tw sw m rꜣ =k",
+  "pristine_strict_key": "wšd tw sw m rꜣ =k"
+ },
+ {
+  "reading": "ꞽw =f (ḥr) šꜥd wꜥ.t dhn.t n ḏw",
+  "pristine_strict_key": "ꞽw =f ḥr šꜥd wꜥt dhnt n ḏw"
+ },
+ {
+  "reading": "qmꜣ.n =k nb",
+  "pristine_strict_key": "qmꜣn =k nb"
+ },
+ {
+  "reading": "twk ꜥq.tw r ꞽpw",
+  "pristine_strict_key": "twk ꜥqtw r ꞽpw"
+ },
+ {
+  "reading": "ꜣbd 2 pr.t sw 2 ḫꜥ-m-nwn",
+  "pristine_strict_key": "ꜣbd 2 prt sw 2 ḫꜥ-m-nwn"
+ },
+ {
+  "reading": "šsp m-ḏr.t ꞽdnw ḥꜣy tꜣy.f psš.t <n> pꜣ dꜣꞽw <n> tꜣy-nḫt-ꞽmn dbn 3 1/2 r nꜣ sš.w qdw.t ꞽ.ꞽr =ꞽ ꞽrm =f m tꜣ ḏbꜣ.t n rmṯ ꞽs.t ẖnm-ms",
+  "pristine_strict_key": "šsp m-ḏrt ꞽdnw ḥꜣy tꜣyf psšt <n> pꜣ dꜣꞽw <n> tꜣy-nḫt-ꞽmn dbn 3 1/2 r nꜣ sšw qdwt ꞽꞽr =ꞽ ꞽrm =f m tꜣ ḏbꜣt n rmṯ ꞽst ẖnm-ms"
+ },
+ {
+  "reading": "ꞽw =n (r) rdꞽ.t nfr.t n =s md.t nb.t m-bꜣḥ nṯr.w rmṯ.w",
+  "pristine_strict_key": "ꞽw =n r rdꞽt nfrt n =s mdt nbt m-bꜣḥ nṯrw rmṯw"
+ },
+ {
+  "reading": "n sꜣw ḫꜥy",
+  "pristine_strict_key": "n sꜣw ḫꜥy"
+ }
+]

@@ -26,6 +26,32 @@ def fold_plural_marker(value: str) -> str:
     """Fold the `.PL`/`.pl` plural marker to `.w`, the phonemic plural ending."""
     return PLURAL_MARKER_RE.sub(".w", value)
 
+
+# TLA's weak-consonant marker, the combining inverted breve below (U+032F): `i̯` and
+# `u̯` write the *same* weak radical as the plain yod `ꞽ` and the plain `w`, in an
+# edition that marks it. It sits on 36,547 corpus tokens (3.4%: TLA 5,960, AES 4,079,
+# BBAW 26,508, Ramses 0) and only ever after `i` or `u` (36,322 / 582), and 554
+# lowercased token types are attested both with and without it (`rdi̯`/`rdꞽ`,
+# `ḏi̯.t`/`ḏꞽ.t`, `hru̯`/`hrw`). There is no precomposed codepoint for either, so the
+# NFC and NFD shapes of the marker are the same two codepoints and one pattern covers
+# both. Uppercase is folded to the lowercase letter: the only caller lowercases first,
+# and the marker is a notation, not a letter whose case carries information.
+WEAK_CONSONANT_MARKER_RE = re.compile("([iuIU])\u032f")
+_WEAK_CONSONANT_FOLD = {"i": "ꞽ", "u": "w"}
+
+
+def fold_weak_consonant_marker(value: str) -> str:
+    """Fold TLA's weak-consonant notation: `i̯` → `ꞽ`, `u̯` → `w` (item D′).
+
+    A notation for a weak radical, not a different sound, so two readings that differ
+    only in it are the same reading. Composes to NFC first, because the marker is a
+    combining character and a caller may hand over either shape.
+    """
+    text = unicodedata.normalize("NFC", value)
+    return WEAK_CONSONANT_MARKER_RE.sub(
+        lambda match: _WEAK_CONSONANT_FOLD[match.group(1).lower()], text
+    )
+
 # ---------------------------------------------------------------------------
 # Hieroglyph character classes
 #

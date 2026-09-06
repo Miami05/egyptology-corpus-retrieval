@@ -53,6 +53,7 @@ from app.services.suggestions import (
     canonical_reading,
     loose_reading_form,
     name_normalised_reading_key,
+    notation_folded_reading_key,
     suggest_top_readings,
 )
 
@@ -288,6 +289,29 @@ def name_duplicate_slots(
     return duplicates
 
 
+def notation_duplicate_slots(suggestions: list) -> int:
+    """How many of a query's top-3 slots repeat an earlier slot's *notation-folded* key.
+
+    Item D′'s symptom metric, pre-registered 2026-09-06: the key of a suggestion is
+    `notation_folded_reading_key` (the strict key with `i̯`→`ꞽ` and `u̯`→`w`), and a
+    slot counts as a duplicate when its key equals that of a slot above it. Two slots
+    that are one sentence in two editions' weak-consonant notation score 1.
+
+    Unlike item D's name metric this needs no corpus lookup: the fold is a property of
+    the reading string alone, so the suggestion's own `candidate_transliteration` is
+    all it reads. Before the fold ships this counts the pairs that *would* merge;
+    after, it counts the pairs the shipped key failed to merge, and should be 0.
+    """
+    keys: list[str] = []
+    duplicates = 0
+    for suggestion in suggestions:
+        key = notation_folded_reading_key(suggestion.candidate_transliteration)
+        if key in keys:
+            duplicates += 1
+        keys.append(key)
+    return duplicates
+
+
 def _load_benchmark(benchmark_path: str = BENCHMARK_PATH) -> pd.DataFrame:
     path = Path(benchmark_path)
     if not path.exists():
@@ -374,6 +398,7 @@ def main() -> None:
     # pass over the corpus, reused for every query.
     annotations = build_annotation_lookup(examples_df)
     name_duplicate_total = 0
+    notation_duplicate_total = 0
     expected_absent_from_pool = 0
 
     rows: list[dict[str, object]] = []
@@ -531,6 +556,12 @@ def main() -> None:
         query_name_duplicates = name_duplicate_slots(suggestions, annotations)
         name_duplicate_total += query_name_duplicates
 
+        # Item D′, pre-registered 2026-09-06: how many of this query's top-3 slots are
+        # the same reading in another edition's weak-consonant notation. Another
+        # appended column; nothing above it reads this value either.
+        query_notation_duplicates = notation_duplicate_slots(suggestions)
+        notation_duplicate_total += query_notation_duplicates
+
         # Item D2's trigger, reported only in the summary. The benchmark excludes the
         # target row by construction, so "is the target in the pool?" cannot be asked
         # literally; what is asked instead is whether the top-50 pool the re-ranker
@@ -589,10 +620,11 @@ def main() -> None:
                     for suggestion in suggestions
                 ),
                 "notes": bench_row["notes"],
-                # Last column on purpose: appended after every column this file has
+                # Last columns on purpose: appended after every column this file has
                 # ever had, so a run against a frozen benchmark diffs clean against
-                # its committed results apart from this one addition.
+                # its committed results apart from these additions.
                 "name_duplicate_slots": query_name_duplicates,
+                "notation_duplicate_slots": query_notation_duplicates,
             }
         )
 
@@ -618,6 +650,10 @@ def main() -> None:
         # one name in different forms", counted. Expected 0 on v4, held-out 1 and
         # LE-v1, which is why item D needed its own NAME-v1 set.
         "name_duplicate_slots": name_duplicate_total,
+        # Item D′ (2026-09-06). Total over the run of top-3 slots that repeat an
+        # earlier slot's notation-folded reading — the same complaint counted for
+        # ordinary vocabulary written `ḏi̯` in one edition and `ḏꞽ` in another.
+        "notation_duplicate_slots": notation_duplicate_total,
         # Item D2's trigger: queries whose top-50 retrieval pool holds no
         # useful-family row at all, so no re-ranking rule could have answered them.
         "expected_absent_from_pool": expected_absent_from_pool,

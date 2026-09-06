@@ -12,6 +12,7 @@ import pandas as pd
 from app.data.query import parse_query
 from app.data.normalizer import (
     fold_plural_marker,
+    fold_weak_consonant_marker,
     nfc,
     normalize_mdc,
     normalize_sign_sequence,
@@ -189,11 +190,37 @@ def strict_reading_key(value: object) -> str:
 
     The `.PL`/`.pl` plural marker is folded to `.w` before the dots are dropped
     below — once the dots are gone the marker is unrecognisable.
+
+    TLA's weak-consonant marker is folded with it (item D′, 2026-09-06): `i̯` → `ꞽ`
+    and `u̯` → `w`. It is a *notation* for a weak radical, not a different sound —
+    `rdi̯ =f` and `rdꞽ =f` are one reading in two editions' conventions, and the
+    search fold and the loose form already treat them as one, so keeping them apart
+    here made the same sentence two suggestion groups. 26,914 of 130,472 corpus rows
+    have their key rewritten by this and 25 pairs of distinct readings merge.
+    Consonants stay distinct as before: ꜣ ≠ ꜥ, ḥ ≠ h, ḫ ≠ ẖ, ṯ ≠ t, ḏ ≠ d, and a
+    genuine spelling variant like `ꞽt` / `ꞽtꞽ` remains two readings.
     """
     text = nfc(_safe_str(value)).lower().replace("⸗", "=")
     text = fold_plural_marker(text)
+    text = fold_weak_consonant_marker(text)
     text = STRICT_DROP_RE.sub("", text)
     return normalize_whitespace(text)
+
+
+def notation_folded_reading_key(value: object) -> str:
+    """`strict_reading_key` with TLA's weak-consonant notation folded (`i̯`→`ꞽ`, `u̯`→`w`).
+
+    Item D′'s measurement key (2026-09-06). Applied to the raw reading *before* the
+    strict key, which is equivalent to folding inside it: the fold composes to NFC
+    itself and touches no character the strict key drops or rewrites.
+
+    Once the fold is part of `strict_reading_key` this returns exactly what
+    `strict_reading_key` returns — the fold is idempotent — and the two are pinned
+    equal by `tests/test_notation_fold.py`. It stays a separate name so the
+    duplicate-slot metric keeps measuring the same thing whether or not the fold
+    shipped, and so a later change to the key that undid the fold would fail loudly.
+    """
+    return strict_reading_key(fold_weak_consonant_marker(_safe_str(value)))
 
 
 def canonical_reading(value: object) -> str:

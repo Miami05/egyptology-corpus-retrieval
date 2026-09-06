@@ -2618,3 +2618,36 @@ still distinct; idempotent; the key of a marker-free reading is unchanged (fixtu
 readings without the marker, byte-identical before/after).
 
 **Machine rules and STOPs** as for D. Report `docs/notation-fold-2026-09-06.md`; "Result: …" here.
+
+**Result: SHIPS — every clause of the frozen rule met, and the whole footprint on 100 benchmark
+queries is three of them.** Diagnosis reproduced on the pristine tree (36,547 tokens carry U+032F:
+TLA 5,960 / AES 4,079 / BBAW 26,508 / Ramses 0; the marker occurs only after `i` (36,322) and `u`
+(582), so the two-case fold is exhaustive; token types attested both ways **538 raw / 554
+lowercased**, not the pre-registration's 493 — my count is over whitespace tokens of
+`transliteration_gold`, reported rather than smoothed over). **Baseline notation-duplicate slots:
+NAME-v1 2** (NAME_020 and NAME_022 — item D's `ḏi̯`/`ḏꞽ` offering-formula pair), **v4 / held-out 1
+/ LE-v1 0**; the measurement code is additive, proved by re-running all four sets on the pristine
+key and diffing against the committed files (25/26 shared columns, **NONE differ**; only the
+appended `name_duplicate_slots` / `notation_duplicate_slots` are new). Corpus-wide: **125,338
+distinct strict keys → 125,313**, **25 folded keys merge 50 distinct readings** (> 0, clause met),
+26,914 of 130,472 rows have their key rewritten; the merged pairs are 7 `i̯` + 3 `u̯`, headed by
+`ḥtp-ḏi̯ nswt` / `ḥtp-ḏꞽ nswt`. **After the change every set is unchanged to the digit** — v4
+0.9 / 0.7917 (2 failures), held-out 1 0.75 / 0.6667 (5), LE-v1 0.8667 / 0.8167 (4), NAME-v1
+0.9667 / 0.8833 (1), top-1 exact 0.0 and top-3 exact 0.05 (v4) / 0.0 elsewhere before **and**
+after — while **NAME-v1's notation duplicates go 2 → 0**. Per-query: only NAME_020, NAME_022
+(duplicate slot 3 replaced by the Osiris formula; the merged slot-2 group's support 23 → 30 rows;
+`exact_rank` and `useful_family_rank` unchanged, and honestly, the freed slot is a *different*
+reading, not a *right* one — the useful answer was already rank 1) and LE_016 (third confidence
+0.555 → 0.557, from `sꜣu̯`→`sꜣw` moving `char_similarity` 0.4758 → 0.4894; order unchanged). v4 and
+held-out 1 byte-identical. **`exact_or_near` fired identically on all 100 queries** — checked as a
+superset over the whole corpus (26,276 of 125,623 distinct readings have their key rewritten, 543
+of them also through the ASCII lens; no benchmark query carries the marker; **0 candidates flip**),
+so no pool could have held a flip. Gates: paste **8/8** with its results file diffing clean against
+the committed one, segmentation **byte-identical** (0.939 / 0.579 unspaced, 0.946 / 0.635
+scrambled), **pytest 439 passed, 0 failed** across six chunks. Shipped as the definition of
+`strict_reading_key` (no switch). Two existing test literals updated because the key's definition
+changed (`strict_reading_key("(w)di̯")` → `wdꞽ`; item D's name key → `ḥtp ḏꞽ 49460`); nothing
+weakened or xfailed. `ꞽt`/`ꞽtꞽ` deliberately still two readings, pinned by a test. Note for later:
+`canonical_reading` also feeds `build_competitive_ambiguity_benchmark.py`'s twin guard, so a set
+**built** after this change could pick marginally different distractors — the frozen sets were not
+rebuilt. Report `docs/notation-fold-2026-09-06.md`.
