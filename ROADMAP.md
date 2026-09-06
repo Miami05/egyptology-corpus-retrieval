@@ -2537,3 +2537,31 @@ the baseline run reports that count.
 never commit/push/server, never touch `data/private/` or `examples.csv`. STOP on: < 20 NAME-v1
 rows; baseline duplicate slots 0; any retrieval change needed; wall clock > 4 h. Report
 `docs/proper-nouns-2026-09-06.md`; "Result: …" here.
+
+**Result: NULL — the pre-registration's own STOP fired and D1 was never built.** NAME-v1 built
+as specified (30 rows, so the "< 20" clause did not fire): 130,472 corpus rows → 4,335 eligible
+after 72 excluded as v4 / held-out 1 / LE-v1 targets or near-twins, 124,092 without a variably
+spelled proper noun, 30 too short, 206 without distractors, 1,737 with a whole-corpus twin at
+overlap ≥ 0.9; all 30 targets TLA, 15 Demotic / 15 Earlier Egyptian; the respelling is visible in
+the generated query for only 10 of 30 (the ASCII fold hides `ḥr.w`/`ḥr`, `ꞽnp.w`/`ꞽnp(.w)`), and
+NAME_028's substitution `wnꞽs → ntr.PL` is a corpus mis-tag. **Baseline name-duplicate slots: 0
+on NAME-v1** (also 0 on v4, held-out 1, LE-v1) → *"the symptom is absent from our data … STOP
+D1, keep the set, report."* Baselines: NAME-v1 0.9667 / MRR 0.8833 (1 failure), v4 0.9 / 0.7917,
+held-out 1 0.75 / 0.6667, LE-v1 0.8667 / 0.8167 — the three committed sets reproduced exactly,
+and their result files differ from the committed ones in the new `name_duplicate_slots` column
+and **nothing else** (25 shared columns, NONE differ). The metric is not vacuous: 56 of NAME-v1's
+90 top-3 slots resolve to an annotated row, **32 have their key rewritten by a lemma id**, and 17
+of 30 queries have ≥ 2 annotated slots, so a collapse was reachable and did not happen. **The
+symptom is real but proper nouns are not its cause:** loosening the key finds 3 duplicate slot
+pairs (NAME_020, NAME_022, NAME_029) and the differing token is the verb `ḏi̯`/`ḏꞽ` twice and the
+noun `ꞽt`/`ꞽt(ꞽ)` once — 0 of 3 names. Ceiling corpus-wide: the name-normalised key merges 128 of
+125,338 distinct readings, **0.10%**. **D2 not triggered** — its literal rule is inapplicable
+(`_exclude_expected` removes the target from the pool for every query by construction); the
+substituted measure, queries whose top-50 pool holds no useful-family row at all, is 0/30 (and
+0 on v4 / held-out 1 / LE-v1). Gates on the tree that carries the measurement code: segmentation
+byte-identical (0.939 / 0.579 unspaced, 0.946 / 0.635 scrambled), paste 8/8 with its results file
+unmodified, pytest 40 + 52 passed. Kept: NAME-v1, the two builder flags, `name_normalised_reading_key`
+(called by nothing in the ranking path), the eval column, `tests/test_proper_nouns.py` (9 tests,
+one of which asserts grouping is *unchanged*). Report `docs/proper-nouns-2026-09-06.md`.
+**Next lever for Nederhof's complaint is edition-level orthographic normalisation of ordinary
+vocabulary, not a name lexicon — a different pre-registration.**

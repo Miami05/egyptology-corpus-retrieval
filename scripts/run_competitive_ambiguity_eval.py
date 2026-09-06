@@ -52,6 +52,7 @@ from app.services.suggestions import (
     SuggestionWeights,
     canonical_reading,
     loose_reading_form,
+    name_normalised_reading_key,
     suggest_top_readings,
 )
 
@@ -221,6 +222,72 @@ def _useful_reason(
     )
 
 
+def _row_label(row: pd.Series) -> str:
+    """The `source/text_id/sentence_id` label `suggestions._source_label` prints.
+
+    Kept identical to it on purpose (including the `unknown` / `no_text_id` /
+    `no_sentence_id` fallbacks): the name-duplicate metric below identifies the row
+    a suggestion was built from by matching that printed label, so any drift here
+    would silently turn every suggestion into an unannotated one.
+    """
+    def text(value: object) -> str:
+        if value is None:
+            return ""
+        stripped = str(value).strip()
+        return "" if stripped.lower() == "nan" else stripped
+
+    source = text(row.get("source")) or "unknown"
+    text_id = text(row.get("source_text_id")) or "no_text_id"
+    sentence_id = text(row.get("source_sentence_id")) or "no_sentence_id"
+    return f"{source}/{text_id}/{sentence_id}"
+
+
+def build_annotation_lookup(examples_df: pd.DataFrame) -> dict[tuple[str, str], tuple[str, str]]:
+    """(row label, canonical reading) -> (lemma_sequence, upos), over the whole corpus.
+
+    Item D's symptom metric needs the *token annotation of the row a suggestion was
+    built from*, and a `ReadingSuggestion` carries only its reading and its source
+    labels. `suggest_top_readings` puts the best-scoring row first in both, so the
+    first supporting source plus the reading pins that row down. The reading is part
+    of the key because a label alone is not guaranteed unique across the corpus.
+    """
+    upos_column = (
+        examples_df["upos"]
+        if "upos" in examples_df.columns
+        else pd.Series([""] * len(examples_df), index=examples_df.index)
+    )
+    lookup: dict[tuple[str, str], tuple[str, str]] = {}
+    for (_, row), upos in zip(examples_df.iterrows(), upos_column):
+        key = (_row_label(row), canonical_reading(row.get("transliteration_gold")))
+        lookup.setdefault(key, (str(row.get("lemma_sequence") or ""), str(upos or "")))
+    return lookup
+
+
+def name_duplicate_slots(
+    suggestions: list, annotations: dict[tuple[str, str], tuple[str, str]]
+) -> int:
+    """How many of a query's top-3 slots repeat an earlier slot's *name-normalised* key.
+
+    Item D's symptom metric, pre-registered 2026-09-06: the name-normalised key of a
+    suggestion is `strict_reading_key` with every aligned PROPN token replaced by its
+    lemma id (rows without a full token/lemma/upos alignment keep the plain strict
+    key), and a slot counts as a duplicate when its key equals that of a slot above
+    it. Two slots that are the same sentence with one name spelled two ways score 1;
+    three such slots score 2.
+    """
+    keys: list[str] = []
+    duplicates = 0
+    for suggestion in suggestions:
+        reading = suggestion.candidate_transliteration
+        label = suggestion.supporting_sources[0] if suggestion.supporting_sources else ""
+        lemma_sequence, upos = annotations.get((label, canonical_reading(reading)), ("", ""))
+        key = name_normalised_reading_key(reading, lemma_sequence, upos)
+        if key in keys:
+            duplicates += 1
+        keys.append(key)
+    return duplicates
+
+
 def _load_benchmark(benchmark_path: str = BENCHMARK_PATH) -> pd.DataFrame:
     path = Path(benchmark_path)
     if not path.exists():
@@ -302,6 +369,12 @@ def main() -> None:
     args = _parse_args()
     examples_df = load_examples_csv(args.examples)
     benchmark_df = _load_benchmark(args.benchmark)
+
+    # Item D's symptom metric needs the token annotation behind each suggestion; one
+    # pass over the corpus, reused for every query.
+    annotations = build_annotation_lookup(examples_df)
+    name_duplicate_total = 0
+    expected_absent_from_pool = 0
 
     rows: list[dict[str, object]] = []
     top1_exact_hits = 0
@@ -452,6 +525,36 @@ def main() -> None:
         if useful_rank is not None:
             reciprocal_rank_sum += 1.0 / useful_rank
 
+        # Item D, pre-registered 2026-09-06: how many of this query's top-3 slots are
+        # the same reading with a proper noun spelled another way. An additional
+        # column; nothing above it reads this value, so no existing number moves.
+        query_name_duplicates = name_duplicate_slots(suggestions, annotations)
+        name_duplicate_total += query_name_duplicates
+
+        # Item D2's trigger, reported only in the summary. The benchmark excludes the
+        # target row by construction, so "is the target in the pool?" cannot be asked
+        # literally; what is asked instead is whether the top-50 pool the re-ranker
+        # chooses from contains ANY row that would count as a useful-family answer.
+        # If it does not, no re-ranking rule could have succeeded and the miss is a
+        # retrieval (recall) problem — which is what D2 would address.
+        pool_reachable = False
+        for _, pool_row in retrieval_results.iterrows():
+            pool_reading = str(pool_row.get("transliteration_gold") or "")
+            reachable, _, _, _ = useful_decision(
+                is_exact=canonical_reading(pool_reading) == canonical_reading(expected),
+                candidate_tokens=_tokens(loose_reading_form(pool_reading)),
+                candidate_lemmas=_lemma_ids(pool_row.get("lemma_sequence")),
+                expected_key_tokens=expected_key_tokens,
+                expected_lemma_ids=expected_lemma_ids,
+                token_threshold=token_threshold,
+                rule=args.useful_rule,
+            )
+            if reachable:
+                pool_reachable = True
+                break
+        if not pool_reachable:
+            expected_absent_from_pool += 1
+
         rows.append(
             {
                 "benchmark_id": bench_row["benchmark_id"],
@@ -486,6 +589,10 @@ def main() -> None:
                     for suggestion in suggestions
                 ),
                 "notes": bench_row["notes"],
+                # Last column on purpose: appended after every column this file has
+                # ever had, so a run against a frozen benchmark diffs clean against
+                # its committed results apart from this one addition.
+                "name_duplicate_slots": query_name_duplicates,
             }
         )
 
@@ -506,6 +613,14 @@ def main() -> None:
         "top3_useful_family_accuracy": round(top3_useful_hits / total, 4) if total else 0.0,
         "mrr": round(reciprocal_rank_sum / total, 4) if total else 0.0,
         "failures": failures,
+        # Item D (2026-09-06). Total over the run of top-3 slots that repeat an
+        # earlier slot's name-normalised reading — Nederhof's "the alternatives are
+        # one name in different forms", counted. Expected 0 on v4, held-out 1 and
+        # LE-v1, which is why item D needed its own NAME-v1 set.
+        "name_duplicate_slots": name_duplicate_total,
+        # Item D2's trigger: queries whose top-50 retrieval pool holds no
+        # useful-family row at all, so no re-ranking rule could have answered them.
+        "expected_absent_from_pool": expected_absent_from_pool,
     }
     if args.stage != "none":
         summary["stages_used"] = dict(pd.Series(stages_used).value_counts())
