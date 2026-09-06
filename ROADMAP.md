@@ -2280,13 +2280,11 @@ matching (which would restore the 94 excluded rows) and a morphological layer.
 
 *Gates on the worktree:* pytest 640 passed / 3 skipped; paste 8/8 auto; segmentation
 and St Andrews as above; reading eval identical to baseline in every field; **v4
-byte-identical** (0.90 / 0.7917) and **held-out 1 byte-identical** (0.75 / 0.6667) to
-the committed result files; `check_standrews_urkiv_gate.py` green (keyed 138,131 rows,
-paste 8/8). **LE-v1 did not finish in this launch** — started 14:31, still running under
-heavy memory pressure (<5 min CPU in >2 h wall), left running, output to the worker's
-scratchpad `gate_le.txt`/`gate_le.csv`; it must be diffed against
-`ceval_le_v1_app_auto_results.csv` before item C is closed. Two tests were re-scoped,
-not weakened:
+(0.90 / 0.7917), held-out 1 (0.75 / 0.6667) and LE-v1 (0.8667 / 0.8167) all
+byte-identical** to the committed result files (`diff` empty on each);
+`check_standrews_urkiv_gate.py` green (keyed 138,131 rows, paste 8/8). LE-v1 needed ~4 h
+wall for ~9 min CPU under memory pressure, which is a machine property, not a result.
+Two tests were re-scoped, not weakened:
 item B's no-op proof and the two singleton-discount cases now pin their own term with
 `boundary_model=0.0`, because they re-implement the pre-item-C objective and their
 hand-built fixtures never show the disputed pair across a boundary; the real case is

@@ -21,9 +21,6 @@ rule. **One ships, one is a null.**
 Worktree off `main` at `3513d19`. Interpreter
 `/Users/lediodurmishaj/venvs/egyptology/bin/python`. Public corpus 130,472 rows.
 
-**One gate is outstanding:** the LE-v1 benchmark was still running when this launch
-ended and is reported as unfinished, not as passing — see §7.
-
 ---
 
 ## 1. The pre-registration, quoted
@@ -418,23 +415,17 @@ Two changes, no others.
 | expert paste | `run_expert_paste_eval.py --stage auto` | **8/8** |
 | v4 | `run_competitive_ambiguity_eval.py --benchmark …_v4.csv --query-path app --stage auto` | top-3 useful **0.90**, MRR **0.7917**, 2 failures — **byte-identical** to `ceval_v4_v4_app_auto_results.csv` (`diff` empty) |
 | held-out 1 | `… …_holdout_2026-09-05.csv …` | top-3 useful **0.75**, MRR **0.6667**, 5 failures — **byte-identical** to `ceval_holdout_v4_app_auto_results.csv` (`diff` empty) |
-| LE-v1 | `… …_le_v1.csv …` | **DID NOT FINISH in this launch** — see the note below |
+| LE-v1 | `… …_le_v1.csv …` | top-3 useful **0.8667**, MRR **0.8167**, 4 failures — **byte-identical** to `ceval_le_v1_app_auto_results.csv` (`diff` empty) |
 | segmentation, after | `run_segmentation_eval.py` | unspaced 0.939 / 0.579, scrambled 0.946 / 0.635 |
 | reading, after | `run_reading_model_eval.py --exclude-duplicates --sizes 0` | `acc_ambiguous_context` 0.8803, `acc_fallback` 0.2835, `fallback_predictions` 1485, `unseen_signs` 9445 — **every field identical to the baseline** (the reading eval scores gold sign groups, so C1 cannot touch it, and C2 is off) |
 | St Andrews, after | `run_format_hint_eval_standrews.py --constant 1.0` | unspaced hints-on F1 0.603 |
 | St Andrews / Urk. IV | `check_standrews_urkiv_gate.py` | keyed corpus **138,131 rows** (StAndrews 7,659), expert paste checks **8/8**, PASTE_001 retrieval pool 27,917, 0 St Andrews rows in the pool, done in 69.5 s |
 
-**LE-v1 is the one gate this launch did not deliver.** The run was started at 14:31
-and was still executing when the launch ended: the machine went into memory pressure
-(the eval's own resident set reaches ~2.7 GB against ~90 MB free) and its CPU time
-advanced roughly 30 seconds per ten minutes of wall clock, so it had consumed under 5
-minutes of CPU after more than two hours. It was left running rather than killed; its
-stdout will land in the scratchpad as `gate_le.txt` and its rows in `gate_le.csv`, to
-be diffed against `data/benchmarks/ceval_le_v1_app_auto_results.csv`. Nothing about it
-is known yet and nothing here assumes a result. What *is* known: the two comparable
-benchmarks that did finish, v4 and held-out 1, came back byte-identical, which is what
-the pre-registration predicted for all three on the ground that none of them contains a
-glyph query and C1 only changes how a glyph paste is segmented.
+LE-v1 took about four hours of wall clock for roughly nine minutes of CPU: the eval's
+resident set reaches ~2.7 GB and the machine spent most of that time under memory
+pressure. It finished, and it is byte-identical. All three benchmarks came back exactly
+as the pre-registration predicted, on the ground that none of them contains a glyph
+query and C1 only changes how a glyph paste is segmented.
 
 Two tests were re-scoped rather than left to fail, both for the same reason and both
 recorded in the code:
