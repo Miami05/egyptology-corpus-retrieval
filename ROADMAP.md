@@ -2651,3 +2651,15 @@ weakened or xfailed. `ꞽt`/`ꞽtꞽ` deliberately still two readings, pinned by
 `canonical_reading` also feeds `build_competitive_ambiguity_benchmark.py`'s twin guard, so a set
 **built** after this change could pick marginally different distractors — the frozen sets were not
 rebuilt. Report `docs/notation-fold-2026-09-06.md`.
+
+**Lead close-out for D′, 2026-09-06 night (Fable):** diff reviewed (one fold function, one line in
+`strict_reading_key`, additive eval column, two test literals updated because the key's definition
+changed). Lead's gates on main, one process at a time: 145 tests in the seven touched modules,
+0 failed; paste 8/8; v4 0.9 / 0.7917 with shared columns byte-identical to the committed file;
+NAME-v1 0.9667 / 0.8833, notation-duplicate slots 0. **Shipped and deployed.** Footprint stated
+plainly: 3 of 100 benchmark queries change, 25 corpus reading pairs merge, no accuracy number
+moves; what changes is that one reading in two editions' notations is one card with its full
+support. Caveat carried forward: `canonical_reading` feeds the benchmark builder's twin guard, so
+any set built after tonight must say so in its provenance. **Day closed: B, C1, C1c, D′ live;
+C1b and D nulls recorded; C2 parked with a miss classification. Next: reviewers' answers →
+Nederhof mail → ranking work only with expert evidence; housekeeping (shared test fixture).**
