@@ -47,9 +47,27 @@ def filler(tokens: int = 10_000, distinct: int = 50) -> pd.DataFrame:
     return corpus([(f"F{i}", f"f{i}") for i in range(distinct)], repeat=per_group)
 
 
-def segmenter(pairs: list[tuple[str, str]] | pd.DataFrame) -> Segmenter:
+def segmenter(
+    pairs: list[tuple[str, str]] | pd.DataFrame, boundary_model: float | None = None
+) -> Segmenter:
     df = pairs if isinstance(pairs, pd.DataFrame) else corpus(pairs)
-    return Segmenter(train_reading_model(df))
+    weights = DEFAULT_SEGMENTATION_WEIGHTS
+    if boundary_model is not None:
+        weights = weights.replace(boundary_model=boundary_model)
+    return Segmenter(train_reading_model(df), weights)
+
+
+# Item C1 added the adjacent-glyph boundary bigram and shipped it on. Two tests below
+# pin the *unigram* design decision (the Good-Turing singleton discount) on a corpus
+# built by hand, and they switch that term off, for a reason worth stating: in these
+# fixtures the two groups whose boundary is at issue are only ever attested as
+# one-group sentences, so the pair straddling the disputed cut is never once observed
+# across a boundary and the bigram, correctly, has no evidence for cutting there. The
+# real corpus does not have that hole, and the behaviour these tests are about is
+# checked on it by the expert paste gate — PASTE_005 is the same 𓈖𓏏𓈖𓏥 case and
+# passes 8/8 at the shipped weight. Mixing the two terms here would let a change in
+# either silently rewrite a test about the other.
+NO_BOUNDARY_TERM = 0.0
 
 
 # ---------- glyph stream and hints ----------
@@ -96,7 +114,7 @@ def test_well_attested_split_beats_once_attested_long_group():
             corpus([("NTNS", "(ꞽ)ntn")], repeat=1),
         ]
     )
-    result = segmenter(df).segment(["NTNS"])
+    result = segmenter(df, boundary_model=NO_BOUNDARY_TERM).segment(["NTNS"])
     assert result.groups == ["N", "TNS"]
 
 
@@ -130,9 +148,10 @@ def test_singleton_discount_is_what_decides_the_split_case():
         ]
     )
     model = train_reading_model(df)
-    with_discount = Segmenter(model).segment(["NTNS"]).groups
+    base = DEFAULT_SEGMENTATION_WEIGHTS.replace(boundary_model=NO_BOUNDARY_TERM)
+    with_discount = Segmenter(model, base).segment(["NTNS"]).groups
     no_discount = Segmenter(
-        model, DEFAULT_SEGMENTATION_WEIGHTS.replace(singleton_discount=1.0)
+        model, base.replace(singleton_discount=1.0)
     ).segment(["NTNS"]).groups
     assert with_discount == ["N", "TNS"]
     # Under raw counts P(N)·P(TNS) = 300·20/N² is below P(NTNS) = 1/N once N is

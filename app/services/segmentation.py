@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from math import log
 
 from app.data.normalizer import normalize_hieroglyphs, quadrat_hints
+from app.services.boundary_model import BoundaryModel, fit_boundary_model
 from app.services.reading_model import ReadingModel
 
 # Groups longer than this are never proposed by the segmenter (they may still be
@@ -119,6 +120,41 @@ class SegmentationWeights:
     # unspaced (+0.0046, 195 lines better / 69 worse) and 0.577 -> 0.581 as rendered
     # (+0.0038, 178 / 56). Small, positive, and in the pre-registered direction.
     quadrat_crossed: float = 1.0
+    # λ_b — weight of the adjacent-glyph boundary bigram (app.services.boundary_model),
+    # the term that gives the lattice an opinion about a group it has never seen.
+    # Scored exactly under the semi-Markov DP: at every placed boundary
+    # log P(boundary | s_{i-1}, s_i), and at every position *inside* a chosen span
+    # log P(no boundary | s_{k-1}, s_k). At 0.0 no boundary model is built at all and
+    # the objective is bit-for-bit the pre-item-C one (tests/test_boundary_model.py
+    # proves it on 500 scrambled corpus rows).
+    #
+    # Swept 2026-09-06 (item C1) on the pre-registered {0.25, 0.5, 1.0, 2.0}. Dev =
+    # the last 10% of the shuffled training split (4,746 sentences after twins),
+    # fitted on the first 90%; the test split was not looked at during selection.
+    # Boundary scores on the unspaced input, expert paste gate as the hard constraint:
+    #
+    #   weight   dev F1 / exact   expert paste gate
+    #   0 (off)   0.921 / 0.548    8/8
+    #   0.25      0.928 / 0.560    8/8
+    #   0.5       0.932 / 0.572    8/8
+    #   1.0       0.937 / 0.582    8/8  <- chosen (best dev F1, gate intact)
+    #   2.0       0.936 / 0.576    7/8  <- fails PASTE_005
+    #
+    # 1.0 is both the dev argmax and the largest candidate that keeps the gate, so the
+    # constraint and the criterion agree here; 2.0 is already past the dev peak and
+    # would have been rejected either way. Its failure is the same shape as item B's
+    # at 2.0: the boundary bigram outvotes the corpus evidence on PASTE_005 and reads
+    # 𓈖𓏏𓈖𓏥 as the once-attested "(ꞽ)ntn" instead of the 3,039x + 19x split "n =tn".
+    #
+    # Held-out test at 1.0 (5,298 sentences, the same split every earlier number in
+    # this file used): unspaced F1 0.923 -> 0.939, exact 0.539 -> 0.579; scrambled
+    # 0.937 -> 0.946, exact 0.599 -> 0.635. Ablation at the same weight with the
+    # function-class back-off removed (sign bigram alone, unseen pair -> the global
+    # prior): unspaced 0.938 / 0.578, scrambled 0.946 / 0.635 — so of the +0.016 F1
+    # the adjacent-sign bigram contributes +0.015 and the sign-function table +0.001.
+    # On real RES-derived input (1,701 St Andrews lines, reading measured end to end)
+    # unspaced token F1 rises 0.591 -> 0.603.
+    boundary_model: float = 1.0
 
     def replace(self, **changes: float) -> SegmentationWeights:
         return SegmentationWeights(**{**self.__dict__, **changes})
@@ -172,6 +208,8 @@ class Segmenter:
         weights: SegmentationWeights = DEFAULT_SEGMENTATION_WEIGHTS,
         max_group_glyphs: int = MAX_GROUP_GLYPHS,
         use_lexicon: bool = True,
+        boundary_model: BoundaryModel | None = None,
+        boundary_class_backoff: bool = True,
     ) -> None:
         self.model = model
         self.weights = weights
@@ -193,6 +231,13 @@ class Segmenter:
         self.total = sum(self.group_counts.values())
         self.vocabulary = len(self.group_counts) + len(self.lexicon_groups)
         self._log_prob_cache: dict[str, float] = {}
+        # Built only when the term is switched on, so a default segmenter costs
+        # exactly what it cost before item C and behaves identically.
+        self.boundary_model: BoundaryModel | None = boundary_model
+        if self.weights.boundary_model and self.boundary_model is None:
+            self.boundary_model = fit_boundary_model(
+                model, use_class_backoff=boundary_class_backoff
+            )
 
     def is_known(self, group: str) -> bool:
         """Attested in this corpus or in the lexicon — i.e. a span worth proposing."""
@@ -222,6 +267,27 @@ class Segmenter:
     def unattested_cost(self, span: str) -> float:
         return self.weights.unattested_per_glyph * len(span)
 
+    # ---------- boundary bigram (item C1) ----------
+
+    def _boundary_terms(self, stream: str) -> tuple[list[float], list[float]]:
+        """`(log_boundary, no_boundary_prefix)` for one stream, or `([], [])` when off.
+
+        The empty result is the switch: every caller guards on it, so with
+        `weights.boundary_model == 0.0` not one extra term is computed or added and
+        the objective is the pre-item-C one exactly.
+        """
+        if not self.weights.boundary_model or self.boundary_model is None:
+            return [], []
+        log_boundary, log_no_boundary = self.boundary_model.stream_terms(stream)
+        prefix = [0.0] * (len(stream) + 1)
+        for k in range(1, len(stream)):
+            prefix[k] = prefix[k - 1] + log_no_boundary[k]
+        # There is no adjacency at position len(stream); carrying the last value there
+        # lets the span arithmetic run without a special case at the end of a stream.
+        if stream:
+            prefix[len(stream)] = prefix[len(stream) - 1]
+        return log_boundary, prefix
+
     # ---------- decoding ----------
 
     def segment(
@@ -246,6 +312,11 @@ class Segmenter:
         best: list[tuple[float, int]] = [(float("-inf"), -1)] * (n + 1)
         best[0] = (0.0, -1)
         w = self.weights
+        # λ_b term (item C1), precomputed once per stream. `no_boundary_prefix[m]` is
+        # Σ_{k=1..m} log P(no boundary | stream[k-1], stream[k]), so the internal
+        # positions of the span [i, j) cost prefix[j-1] - prefix[i] — exact under the
+        # semi-Markov DP, no approximation. Empty when the term is off.
+        log_boundary, no_boundary_prefix = self._boundary_terms(stream)
         for j in range(1, n + 1):
             top = float("-inf")
             arg = -1
@@ -276,6 +347,12 @@ class Segmenter:
                     - w.hint_crossed * crossed
                     - w.quadrat_crossed * cut_quadrat
                 )
+                if log_boundary:
+                    score += w.boundary_model * (
+                        (log_boundary[i] if i > 0 else 0.0)
+                        + no_boundary_prefix[j - 1]
+                        - no_boundary_prefix[i]
+                    )
                 if score > top:
                     top = score
                     arg = i
@@ -316,6 +393,7 @@ class Segmenter:
         w = self.weights
         total = 0.0
         position = 0
+        log_boundary, no_boundary_prefix = self._boundary_terms("".join(groups))
         for index, group in enumerate(groups):
             start = position
             end = position + len(group)
@@ -331,6 +409,12 @@ class Segmenter:
                 - w.hint_crossed * crossed
                 - w.quadrat_crossed * cut_quadrat
             )
+            if log_boundary and group:
+                total += w.boundary_model * (
+                    (log_boundary[start] if start > 0 else 0.0)
+                    + no_boundary_prefix[end - 1]
+                    - no_boundary_prefix[start]
+                )
             position = end
         return total
 

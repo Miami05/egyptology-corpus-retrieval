@@ -124,8 +124,11 @@ def evaluate_row(
         regrouped = " ".join(groups)
         predictions = model.predict_sequence(groups)
         reading = " ".join(p.predicted for p in predictions if p.predicted)
-        fallbacks = sum(1 for p in predictions if p.is_fallback)
-        unreadable = sum(1 for p in predictions if not p.was_seen and not p.is_fallback)
+        # `is_borrowed` covers a borrowed reading and an item C2 composed one: both
+        # are leads rather than attestations, and `must_be_attested` rows must fail on
+        # either. C2 ships off, so today this counts exactly what it counted before.
+        fallbacks = sum(1 for p in predictions if p.is_borrowed)
+        unreadable = sum(1 for p in predictions if not p.was_seen and not p.is_borrowed)
 
     pool = retrieve_top_k(
         df,
@@ -206,6 +209,16 @@ def main() -> None:
         help="Override SegmentationWeights.quadrat_crossed (item B constant sweep).",
     )
     parser.add_argument(
+        "--boundary-model",
+        type=float,
+        default=None,
+        help=(
+            "Override SegmentationWeights.boundary_model, the item C1 adjacent-glyph "
+            "boundary bigram (lambda_b). The gate is the hard constraint on that "
+            "sweep, so every candidate weight is run through here."
+        ),
+    )
+    parser.add_argument(
         "--no-format-hints",
         action="store_true",
         help=(
@@ -235,6 +248,8 @@ def main() -> None:
         weights = weights.replace(lexicon_weight=args.lexicon_weight)
     if args.quadrat_crossed is not None:
         weights = weights.replace(quadrat_crossed=args.quadrat_crossed)
+    if args.boundary_model is not None:
+        weights = weights.replace(boundary_model=args.boundary_model)
 
     # One StageResources per stage actually needed, built lazily and reused across
     # rows — training the reading model and building the search index are the

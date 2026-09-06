@@ -2276,3 +2276,60 @@ rows, abstaining on unknown signs and excluding uncertain rows; informative, nev
 input. (ii) That count was taken on held-out positions; harmless here because it counted
 eligibility and tuned nothing, but any further diagnostic of this kind runs on the dev cut, not
 the held-out set, so the single test run stays a test.
+
+**Result 2026-09-06 (Opus 5 worker):** **C1 ships, C2 is a null.** Report:
+`docs/sign-function-2026-09-06.md`. Baselines on the pristine tree matched the
+pre-registration exactly (segmentation 0.923/0.539 and 0.937/0.599; St Andrews unspaced
+token F1 0.591; reading at the largest size `acc_ambiguous_context` 0.8803,
+`acc_fallback` 0.2835, `fallback_predictions` 1485, `unseen_signs` 9445).
+
+*Step 1.* `data/processed/sign_functions_supplement.csv` — the lead's 13 rows over 11
+signs, every codepoint verified against Nederhof's `signunicode.xml`, `source_note =
+"project supplement"`, CC BY-SA 4.0 with its own DATA-LICENSE section. One loader
+`app/services/sign_functions.py:load_sign_functions()` folds both tables to the five
+classes + `unk`; 12 unit tests.
+
+*C1.* `app/services/boundary_model.py`, α = 1 as frozen, statistics read off the fitted
+`ReadingModel` (42,842 adjacent sign pairs, prior P(boundary) 0.3097). Dev sweep (last
+10% of the shuffled training split, 438 twins removed, 4,746 sentences): unspaced F1
+0.921 (off) → 0.928 → 0.932 → **0.937 at λ_b = 1.0** → 0.936 at 2.0; the gate is 8/8 at
+0.25/0.5/1.0 and **7/8 at 2.0** (PASTE_005 reads 𓈖𓏏𓈖𓏥 as `(ꞽ)ntn`), so the dev argmax
+and the constraint agree on 1.0. **Held-out test: unspaced 0.923/0.539 → 0.939/0.579,
+scrambled 0.937/0.599 → 0.946/0.635.** St Andrews unspaced token F1 **0.591 → 0.603**.
+Every C1.5 condition met → shipped, `SegmentationWeights.boundary_model = 1.0`.
+Unseen-word breakdown, unspaced, baseline → shipped: spurious cuts *inside an
+unattested gold group* **1,793 → 1,431 (−20.2%)**, inside an attested one 601 → 559;
+missed between two attested 2,638 → 2,028, touching an unattested 351 → 287.
+**Ablation** (sign bigram only, unseen pair → global prior) at the same λ_b: 0.938/0.578
+and the same error breakdown (1,428 spurious inside unattested). So of the +0.016 F1
+the adjacent-sign bigram gives ≈ +0.015 and **Nederhof's function table ≈ +0.001** —
+because 98.2% of held-out adjacent pairs were already seen and only 14.9% of sign
+tokens have a single class. His criticism was right about the model; the fix came from
+sign adjacency, not from sign function, on a corpus this size.
+
+*C2 (amended by the lead mid-implementation; the pre-amendment 5,000-sentence run is
+kept in the report).* Amended filters exclude 110 of 1,457 table rows (94 group-scoped,
+9 numeral, 7 `certain=false`); 779 of 791 signs keep a standalone row. Stage 1 on dev
+only (4,761 sentences, 778 positions neither corpus nor lexicon can read): coverage
+0.6632 (516). Oracle recall exact/lenient — as pre-registered 0.0581/0.0930; + dev
+revision 1 (phonetic complement) 0.1008/0.1570; + revision 2 (optional logogram)
+**0.1221/0.1764**; with the cap raised 24 → 500, 0.1880/0.2655. Top-1 exact **0.0349**.
+Against the fallback's **0.2835** the ceiling is below the incumbent's accuracy, so
+**Stage 2 was not run** and C2 is a null: `USE_COMPOSED_BY_DEFAULT = False`, code
+present and tested. Cause is structural, not tuning — phonetic complements and TLA's
+written morphology (`.PL`, `(w)`) are not derivable from a per-sign inventory; the
+lenient fold recovers only 0.122 → 0.176 of it. Revisiting needs RES sign-combination
+matching (which would restore the 94 excluded rows) and a morphological layer.
+
+*Gates on the worktree:* pytest 640 passed / 3 skipped; paste 8/8 auto; segmentation
+and St Andrews as above; reading eval identical to baseline in every field; **v4
+(0.90 / 0.7917), held-out 1 (0.75 / 0.6667) and LE-v1 (0.8667 / 0.8167) all
+byte-identical** to the committed result files (`diff` empty on each);
+`check_standrews_urkiv_gate.py` green (keyed 138,131 rows, paste 8/8). LE-v1 needed ~4 h
+wall for ~9 min CPU under memory pressure, which is a machine property, not a result.
+Two tests were re-scoped, not weakened:
+item B's no-op proof and the two singleton-discount cases now pin their own term with
+`boundary_model=0.0`, because they re-implement the pre-item-C objective and their
+hand-built fixtures never show the disputed pair across a boundary; the real case is
+covered by PASTE_005. Not touched: κ, the singleton discount, the lexicon weight,
+`quadrat_crossed`, retrieval/ranking, and the lattice's pasted-space restriction.
