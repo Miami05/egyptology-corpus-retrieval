@@ -2404,3 +2404,22 @@ scoring can help; if it is higher, scoring is worth investigating, but C2 still 
 its shipping gates. The held-out test stays untouched; the 200-position floor stays; combination
 matching and morphology remain possible future work until this diagnostic shows what is needed.
 Until then the C2 wording in `docs/sign-function-2026-09-06.md` §5.3 is provisional.
+
+**C1c — lift the veto only when the spaces are known to be quadrats — pre-registered 2026-09-06
+evening (lead, from the C1b contradiction; runs after the C2 paired diagnostic).** C1b showed
+the veto costs +0.021 as-rendered token F1 on real quadrat-spaced input while the scramble
+benchmark (spurious spaces inside attested groups) says it protects recall. The two inputs
+differ in what a space *means*. Rule: `unattested_may_cross_hints` is switched on per paste
+**iff the paste carries at least one quadrat hint** (`quadrat_hints(query)` returns a non-empty
+`no_cut` set — i.e. layout controls are present, so its spaces separate quadrats, not words);
+otherwise today's veto stands. No new constants; the switch is a property of the input.
+Predictions, written before the run: scrambled and unspaced eval results **byte-identical**
+(no controls in the corpus); PASTE_001–004, 006–008 byte-identical (no controls);
+PASTE_005 (controls present, every group attested) unchanged in groups and reading; St Andrews
+as-rendered token F1 rises from 0.581 (expected ≈ 0.602 as in C1b), unspaced identical at
+0.603; v4 / held-out 1 / LE-v1 byte-identical. Decision: ship iff St Andrews as-rendered
+token F1 > 0.581 strictly, every "byte-identical" prediction holds, paste 8/8, and the
+as-rendered improved/worsened line counts favour improvement. Report the per-shape St
+Andrews table and the unseen-word breakdown for the as-rendered shape if the harness can
+produce it; otherwise say so. Null allowed. This is not a re-run of C1b: C1b's rule and its
+null stand; C1c asks a different question (when do spaces mean quadrats?).
