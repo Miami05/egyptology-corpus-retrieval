@@ -2269,4 +2269,10 @@ read-only count of held-out positions lacking corpus/lexicon readings, with unre
 entries for every sign and at least one potentially value-bearing sign), not measured
 composition coverage. We will not use it as an expected result. The worker records actual valid
 composed predictions on the same positions where the baseline used fallback. The minimum of 200
-comparable positions remains unchanged.
+comparable positions remains unchanged. Two additions (lead, 2026-09-06): (i) 813 is an *upper
+bound* on what the conservative rules could ever cover, so the report states the gap between it
+and the measured Stage 1 coverage on comparable data as one line — the price of standalone-only
+rows, abstaining on unknown signs and excluding uncertain rows; informative, never a decision
+input. (ii) That count was taken on held-out positions; harmless here because it counted
+eligibility and tuned nothing, but any further diagnostic of this kind runs on the dev cut, not
+the held-out set, so the single test run stays a test.
