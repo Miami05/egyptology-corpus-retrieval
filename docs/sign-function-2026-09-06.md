@@ -415,6 +415,44 @@ reweighting of what exists.
 
 ---
 
+### 5.5 Miss classification — what would reopening C2 actually need? (lead, 2026-09-06 night)
+
+Ledio asked whether the two reopening preconditions (combination matching, a morphology layer)
+were worth building. Before building either, the 431 paired misses (489 − 58 oracle hits, dev
+cut, same fitted model) were sorted by cause and each cause turned into a ceiling:
+
+| cause | misses | share |
+|---|---|---|
+| the needed values all exist among the group's signs but the composition rule never assembles the gold reading (not even at cap 500) | 217 | 50.3% |
+| a needed consonant is absent from every table value of the group's signs | 111 | 25.8% |
+| the gold reading is generated but falls outside the cap of 24 (recovered at 500) | 44 | 10.2% |
+| a Nederhof combination row (86 of 94 parseable) would supply it | 34 | 7.9% |
+| differs from a candidate only under the lenient fold (written morphology) | 25 | 5.8% |
+
+| oracle ceiling on the same 489 positions | value | fallback |
+|---|---|---|
+| as shipped | 0.1186 | 0.3476 |
+| + morphology layer | 0.1697 | |
+| + combination matching | 0.1881 | |
+| + cap 500 | 0.2086 | |
+| + combination + morphology | 0.2393 | |
+| + combination + morphology + cap 500 | 0.3292 | |
+| + a generator that assembles every reachable reading (theoretical) | 0.7730 | |
+
+**Verdict: the two preconditions are not sufficient, even together and even with the cap
+lifted (0.329 < 0.348).** The dominant cause is the assembly rule: half the misses have every
+needed value present and the fixed left-to-right, silent-or-value rule still never produces the
+gold. Examples (group | gold | first candidates): `𓅘𓎛𓇓𓏲𓆱𓏥 | nḥs | ḥw, ḥwḫt, ḥswt…` (the first
+sign's value is dropped), `𓈖𓉔𓐛𓅱𓀁 | nhm | nmw, nw, nꞽmw, nhmw` (the reading is reachable
+but a `w` is appended from a sign that is silent here), `𓉲𓀀𓏥 | sḥ.w | ḥꜣb, ḥꜣb=ꞽ, =ꞽ, sḥ`
+(the classifier 𓀀 is read as =ꞽ), `𓄞𓂧𓇋𓇋𓈒𓏥 | šd.t | ꞽ, ꞽꞽ, ḏrt` (𓄞 contributes nothing).
+Missing values (26%) include `𓃀𓅯𓄿 | bꜣy`, `𓇋𓎛𓉐𓏏 | ꞽḥw`, `𓄟𓋴𓏲𓏫 | msy` — signs whose
+table rows lack the value the corpus uses (3 of the 111 are rows whose gold is `?`).
+Reopening C2 therefore means a **generator redesign** (which signs may be silent, value ordering,
+classifier handling, complements), measured by the same two-stage method, plus more table
+values — not the two preconditions. C2 stays parked; D comes first. Script: the lead's
+`c2_miss_classes.py`, dev only, held-out untouched.
+
 ## 6. UI
 
 Two changes, no others.

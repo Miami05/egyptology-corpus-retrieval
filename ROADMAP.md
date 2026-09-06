@@ -2464,3 +2464,17 @@ identical code. **Shipped and deployed.** Result for Nederhof: his format contro
 work — where they mark the spaces as quadrats, the lattice may keep an unseen word whole across a
 space; St Andrews as-rendered reading token F1 0.581 → 0.602 (590 lines better / 145 worse).
 Next: C2 miss classification (diagnosis only), then D.
+
+**C2 miss classification, 2026-09-06 night (lead; Ledio's "is it worth trying?").** 431 paired
+misses sorted by cause: assembly rule 217 (50%), value missing from both tables 111 (26%),
+truncated by the cap 44 (10%), needs a combination row 34 (8%), morphology only 25 (6%).
+Ceilings on the same 489 positions vs fallback 0.3476: combination matching alone 0.188,
+morphology alone 0.170, both + cap 500 **0.329 — still below the fallback**; only a generator
+that assembles every reachable reading reaches 0.773 (theoretical; selection then becomes the
+problem). **Decision: the two preconditions are NOT sufficient; do not build them for C2's sake.
+C2 stays parked. Reopening = generator redesign + more table values, two-stage method.**
+Report §5.5. **Next: D.** First D step, diagnosed tonight: lemma ids exist for all 28,369 TLA
+rows and 9,822 AES rows (9,269 aligned), none for BBAW/Ramses; on v4 / held-out 1 / LE-v1 the
+top-3 never repeat one lemma sequence in different spellings (60% of those suggestions come from
+rows without lemma ids), so Nederhof's proper-noun complaint needs its own name-query set before
+D can be pre-registered — that set is D's step 0.
