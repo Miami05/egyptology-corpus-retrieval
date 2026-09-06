@@ -2251,3 +2251,18 @@ breakdown as in C1. Null allowed. Two questions, answered separately: does bound
 improve the choices (C1); does relaxing the restriction make previously impossible correct
 choices available (C1b). Also added to the running C1 as reporting only: the unseen-word error
 breakdown and dev-twin exclusion.
+
+**C2 amended before its run, 2026-09-06 (Ledio's proposal, adopted by the lead; sent to the
+worker while it was still on C1).** Conservative prototype: standalone table rows only (`group`
+empty; combination-specific readings excluded until combinations can be matched); rows with
+`certain=false` or plural/dual/numeral qualifiers excluded; period/texttype ignored; a group
+containing any sign with no entry yields no composed candidate (abstain, never silently drop a
+sign); all-silent groups yield none; identical readings deduplicated before the cap of 24;
+corpus and lexicon first, composed readings labelled unattested. Evaluation in two stages:
+**Stage 1** candidate-generation check on dev data with gold boundaries — coverage and oracle
+recall (gold reading anywhere among the candidates), candidates per position; composition
+rules may be revised on dev only, every revision logged with its named failure pattern.
+**Stage 2** the paired fallback-vs-composed test exactly as pre-registered, run once, only if
+Stage 1 looks useful. Rationale: a failed paired test alone cannot say whether generation or
+selection failed. The figure "813 covered positions" that circulated is not from any
+measurement here and is not used; the worker records the real count.
