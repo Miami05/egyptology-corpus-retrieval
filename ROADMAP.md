@@ -2134,3 +2134,12 @@ that appends no sign) was found and fixed mid-step: precision 0.9992 → 1.0, th
 of the four constants unchanged. Not done, deliberately: no ranking or retrieval change,
 and the workspace does not yet *show* `Segmentation.crossed_quadrats` — the obvious next
 small UI step. **Next: C.**
+
+**Lead close-out 2026-09-06 (Fable):** worker diff reviewed line by line (hint indexing, penalty
+placement, empty-set no-op, five call sites); the verbatim St Andrews line (CC BY-NC-SA) was
+removed from `data/benchmarks/format_hints/standrews.md` and the report before commit — only
+the described correction stays. Merged-tree gates re-run by the lead: `verify_release.py`
+READY (598 passed; v4 0.9 / 0.7917; paste 8/8), held-out 1 0.75 / 0.6667, LE-v1 0.8667 /
+0.8167, segmentation eval 0.923 / 0.539 — all equal to the worker's. The two stale result
+files were refreshed in their own commit (6046b74; only `evidence_summaries` wording moved).
+Pushed and deployed: box 36d8c38 → 6046b74, healthy after ~2 s. **Item B closed. Next: C.**
