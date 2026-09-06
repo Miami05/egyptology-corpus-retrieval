@@ -2264,5 +2264,9 @@ recall (gold reading anywhere among the candidates), candidates per position; co
 rules may be revised on dev only, every revision logged with its named failure pattern.
 **Stage 2** the paired fallback-vs-composed test exactly as pre-registered, run once, only if
 Stage 1 looks useful. Rationale: a failed paired test alone cannot say whether generation or
-selection failed. The figure "813 covered positions" that circulated is not from any
-measurement here and is not used; the worker records the real count.
+selection failed. The earlier figure of 813 was a preliminary table-coverage diagnostic (Ledio's
+read-only count of held-out positions lacking corpus/lexicon readings, with unrestricted table
+entries for every sign and at least one potentially value-bearing sign), not measured
+composition coverage. We will not use it as an expected result. The worker records actual valid
+composed predictions on the same positions where the baseline used fallback. The minimum of 200
+comparable positions remains unchanged.
