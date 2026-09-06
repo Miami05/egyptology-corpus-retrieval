@@ -87,7 +87,16 @@ function, `search_fold`, now defines the key on both sides.
 
 The scoring combines exact, fuzzy and TF-IDF retrieval (`app/retrieval/`) with a
 sign-level reading model (`app/services/reading_model.py`) fed by a resegmentation
-lattice (`app/services/segmentation.py`) that treats pasted spaces as hints.
+lattice (`app/services/segmentation.py`). The lattice scores attested sign groups, treats
+the paste's own spaces as soft hints, and since 2026-09-06 also (i) reads the Unicode
+format controls U+13430–1345F a layout-aware editor emits as "these signs share a quadrat"
+(`docs/format-hints-2026-09-06.md`), (ii) carries a boundary model over adjacent signs with
+a soft function-class back-off from Mark-Jan Nederhof's sign-function list — the term that
+stopped it cutting unseen words into seen fragments (`docs/sign-function-2026-09-06.md`), and
+(iii) lets an unseen word span a pasted space when the controls say that space is a quadrat
+boundary (`docs/quadrat-conditional-veto-2026-09-06.md`). Suggestions are grouped by an
+identity key that keeps every Egyptological consonant distinct but folds TLA's weak-consonant
+notation (`rdi̯` = `rdꞽ`, `docs/notation-fold-2026-09-06.md`).
 
 ## Layout
 
@@ -165,10 +174,15 @@ working, and a banner explains that annotations are unavailable.
 An external expert trial (Urk. IV 1, August 2026) exposed the current weak points —
 each is understood and scheduled in [ROADMAP.md](ROADMAP.md):
 
-- ~~Sign groups are split on whitespace~~ — fixed (Phase 1): the paste's spaces are
-  now hints. A lattice regroups the signs against the corpus's attested groups
-  (boundary F1 0.86 on held-out sentences vs 0.67 for trusting the spaces), shows
-  where it disagreed with the paste, and lets you edit the grouping.
+- ~~Sign groups are split on whitespace~~ — fixed (Phase 1, extended 2026-09-06): the
+  paste's spaces are hints, a lattice regroups the signs against the corpus's attested
+  groups and a boundary model over adjacent signs (unspaced boundary F1 0.939 on 5,298
+  held-out sentences, 0.946 with scrambled spacing, vs 0.653 for trusting the spaces),
+  shows where it disagreed with the paste, and lets you edit the grouping. Layout
+  controls from a sign editor are read as quadrat evidence. Still open: a sign group the
+  corpus has never seen is read by borrowing from the most similar attested group, right
+  about a third of the time and always labelled as a guess — a function-based alternative
+  was measured and parked (`docs/sign-function-2026-09-06.md`, §5).
 - ~~`<g>…</g>` markup breaks glyph/reading alignment~~ — fixed (Phase 0): markup for
   signs without a Unicode codepoint is now one placeholder glyph, so all 26,196
   rows are aligned and used; the loader reports the count on every start.
