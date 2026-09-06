@@ -2233,3 +2233,21 @@ readings; show item B's `crossed_quadrats` in the workspace caption (one small s
 STOP conditions: C1 exceeds 0.923 at no λ_b → C1 null, continue to C2; C2 covers < 200
 positions → C2 null; any gate fails; any retrieval/ranking change needed; wall clock > 6 h in
 one launch → report state for a second launch. Never commit, never touch the server.
+
+**C1b — the pasted-space restriction, pre-registered 2026-09-06 (Ledio's proposal; runs after the
+C report, separate launch).** Today the lattice refuses to propose an unattested multi-sign span
+that crosses a pasted space (`segmentation.py`: "only propose an unattested span as a whole pasted
+group or a single glyph"). That protects against merging unrelated words but makes a correct
+unseen word *impossible* when the paste split it; once C1's boundary model exists the lattice
+has evidence to judge such spans. Experiment: allow unattested spans to cross pasted spaces,
+keeping the soft crossing penalty (`hint_crossed`) and `MAX_GROUP_GLYPHS` unchanged, on top of
+the best C1 configuration (or the pristine lattice if C1 was null). Measured on **scrambled**
+input, where pastes have spaces (unspaced input has no hints, so it must come out identical —
+that is the no-op check). Dev first, then one test run. Decision: ship iff scrambled test F1
+rises above the C1 value, unspaced is byte-identical, paste 8/8 (PASTE_001–005 are exactly the
+wrongly-spaced pastes this could help or hurt), and the St Andrews as-rendered token F1 (quadrat
+spaces are pasted spaces there) does not fall by more than 0.010. Report the unseen-word
+breakdown as in C1. Null allowed. Two questions, answered separately: does boundary evidence
+improve the choices (C1); does relaxing the restriction make previously impossible correct
+choices available (C1b). Also added to the running C1 as reporting only: the unseen-word error
+breakdown and dev-twin exclusion.
