@@ -2252,6 +2252,34 @@ improve the choices (C1); does relaxing the restriction make previously impossib
 choices available (C1b). Also added to the running C1 as reporting only: the unseen-word error
 breakdown and dev-twin exclusion.
 
+**Result 2026-09-06 (Opus 5 worker): C1b is a null on its own rule, but the one real-input
+measurement contradicts it.** Report `docs/pasted-space-restriction-2026-09-06.md`. The veto is
+now the switchable `SegmentationWeights.unattested_may_cross_hints`, **default `False`**, proved
+byte-identical to `main` on 500 scrambled corpus rows (groups and scores, same MD5) and covered
+by `tests/test_pasted_space_restriction.py`. Scrambled **test** F1 **0.946 → 0.944**, exact
+**0.635 → 0.617**, so the strict rise the rule demanded did not happen and the flag ships off;
+dev agreed beforehand (0.945 → 0.943). Unspaced is byte-identical with the flag on or off, at
+the dump level and in the eval (0.939 / 0.579 both arms). Unseen-word breakdown, scrambled test:
+cuts inside an unattested gold group fall 1,708 → 1,499 — the class C1b targeted really does
+improve — but missed boundaries rise 1,549 → 1,836 (209 of the extra between two *attested*
+groups), so precision 0.935 → 0.941 is bought with recall 0.956 → 0.948. Per sentence: 444 of
+5,298 changed, 35 exact gained, 129 exact lost. Paste gate 8/8 with the flag on **and byte-equal
+to the flag-off run on all eight rows** — PASTE_001–005 cannot move, because every group in the
+correct analysis of Urk. IV 1 is attested and the veto only ever applied to unattested spans, so
+the gate turned out to be no evidence about this change at all. The contradiction: on the 1,701
+St Andrews lines, whose spaces are real quadrat boundaries, lifting the veto raises the
+as-rendered reading token F1 **0.581 → 0.602** (+0.021, 592 lines better / 145 worse, mean
+|groups − gold tokens| 2.975 → 2.156) with unspaced unchanged at 0.603. The scramble inserts its
+spurious spaces *inside attested* gold groups, where merging was already allowed, so there the
+veto only ever blocked harmful merges; on quadrat-spaced input a correct word crosses a space by
+construction and is often unattested here, so the veto blocked the right answer — exactly the
+failure Ledio named. Gates for the null path: pytest 648 passed / 3 skipped / 0 failed (the
+item-C 639 plus 8 new tests plus one St Andrews import test that stops skipping when the
+gitignored file is present), paste 8/8 with the flag off. Follow-up worth a *new*
+pre-registration, not a tweak to this one: condition the restriction on what the spaces *mean*
+(layout controls present, or spacing far denser than the corpus's own group length) rather than
+on whether the span is attested.
+
 **C2 amended before its run, 2026-09-06 (Ledio's proposal, adopted by the lead; sent to the
 worker while it was still on C1).** Conservative prototype: standalone table rows only (`group`
 empty; combination-specific readings excluded until combinations can be matched); rows with

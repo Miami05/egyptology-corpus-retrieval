@@ -256,6 +256,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--cross-hints",
+        action="store_true",
+        help=(
+            "Item C1b: run two configs in one process — the shipped restriction "
+            "(unattested_may_cross_hints=False) and the relaxed one (True), with the "
+            "counts and the scramble seed shared, so the two arms are paired."
+        ),
+    )
+    parser.add_argument(
         "--no-class-backoff",
         action="store_true",
         help=(
@@ -302,6 +311,15 @@ def main() -> None:
                 DEFAULT_SEGMENTATION_WEIGHTS.replace(boundary_model=float(value)),
             )
             for value in args.boundary_weights.split(",")
+        ]
+
+    if args.cross_hints:
+        configs = [
+            ("restriction_on__cross_False", DEFAULT_SEGMENTATION_WEIGHTS),
+            (
+                "restriction_off__cross_True",
+                DEFAULT_SEGMENTATION_WEIGHTS.replace(unattested_may_cross_hints=True),
+            ),
         ]
 
     # Fit once, reuse across every config: neither the group counts nor the boundary
