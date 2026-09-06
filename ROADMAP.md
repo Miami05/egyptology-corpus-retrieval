@@ -2289,3 +2289,19 @@ item B's no-op proof and the two singleton-discount cases now pin their own term
 hand-built fixtures never show the disputed pair across a boundary; the real case is
 covered by PASTE_005. Not touched: κ, the singleton discount, the lexicon weight,
 `quadrat_crossed`, retrieval/ranking, and the lattice's pasted-space restriction.
+
+**C2 — preconditions for reopening (decided 2026-09-06, Ledio + lead).** C2 stays off and is NOT
+re-run as it stands: its generation ceiling (oracle recall 0.122 on dev, 0.188 with the cap at
+500) is below the incumbent fallback's accuracy (0.2835), so no scoring or decoding change can
+help. It is reopened only when both of these exist, each a separate measured item:
+1. **Sign-combination matching.** Nederhof's table has 94 rows whose reading belongs to a
+   combination of signs (A1 with plural strokes → `rḥw` "men"). The conservative rules excluded
+   them because his RES combination notation cannot yet be matched against a corpus sign group.
+   That is exactly the multi-sign knowledge composition was missing.
+2. **A morphology layer.** The gold readings carry written morphology — plural marks, restored
+   letters (`.PL`, `(w)`), dots and brackets. A per-sign inventory can never produce those;
+   something has to propose them.
+Until then, item D (proper nouns via TLA lemma identifiers, Nederhof's second criticism) comes
+first: its data is already in the corpus. Revisit C2 only if an expert says unattested-word
+readings matter more than the name problem. Code and tests stay in place, so reopening costs
+nothing extra.
