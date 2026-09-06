@@ -2585,3 +2585,36 @@ vocabulary in the *grouping key only* (TLA's weak-consonant marker `i̯` ↔ `�
 handled), measured by the duplicate-slot metric on NAME-v1 / v4 / held-out 1 / LE-v1 and by their
 top-3 / MRR not falling; `ꞽt` vs `ꞽtꞽ` is a genuine spelling variant and stays out unless lemma
 ids say otherwise. Small (½ day). Not started tonight.
+
+### D′ — notation fold in the suggestion identity key — pre-registered 2026-09-06 night (Opus 5 worker)
+
+**Diagnosis (measured tonight).** The weak-consonant marker U+032F (`i̯`, `u̯`) sits on 36,547
+corpus tokens (3.4%): TLA 5,960, AES 4,079, BBAW 26,508, Ramses 0; 493 token types are attested
+both with and without it (`rdi̯`/`rdꞽ`, `ḏi̯.t`/`ḏꞽ.t`, `mi̯`/`mꞽ`, `ꞽwi̯.n`/`ꞽwꞽ.n`). The search
+fold and the loose form already equate them (`rdi̯ =f` and `rdꞽ =f` both fold to `rdi f`), so
+retrieval finds both; only `strict_reading_key` keeps them distinct, so two rows that differ only
+in this notation are two suggestion groups — the duplicate pairs item D found (`ḏi̯`/`ḏꞽ`).
+The marker is a notation for the same weak radical, not a different sound, so folding it belongs
+in the identity key.
+
+**Change (the whole of it).** In `strict_reading_key`, after NFC and before the dots are dropped:
+`i̯` → `ꞽ` and `u̯` → `w` (the combining U+032F after `i`/`u`). Nothing else: no search, loose,
+retrieval or ranking-weight change. `ḥ`/`h`, `ꜣ`/`ꜥ`, `ṯ`/`t`, `ḏ`/`d` stay distinct.
+
+**Measurements.** Baseline first on the pristine tree: (a) *notation-duplicate slots* — top-3
+slots on NAME-v1, v4, held-out 1, LE-v1 whose new key equals an earlier slot's (the pairs that
+would merge); (b) corpus-wide, how many of the 125,338 distinct strict keys merge under the new
+key. After the change: the four sets' top-3 useful, MRR, failures, exact-rank columns, with every
+per-query rank change listed; paste 8/8; `run_segmentation_eval.py` byte-identical. Also state
+whether `exact_or_near` fired differently on any query (the key feeds it).
+
+**Decision.** Ship iff no set's top-3 useful or MRR is lower than its committed value (v4 0.9 /
+0.7917, held-out 1 0.75 / 0.6667, LE-v1 0.8667 / 0.8167, NAME-v1 0.9667 / 0.8833), paste 8/8,
+segmentation byte-identical, and the corpus-wide merge count is > 0 (the change does something).
+Report every exact-metric movement even when the rule passes. Null allowed.
+
+**Tests.** `rdi̯ =f` and `rdꞽ =f` share a key; `ḏi̯.t`/`ḏꞽ.t`; `u̯`→`w`; NFD input; `ḥtp`/`htp`
+still distinct; idempotent; the key of a marker-free reading is unchanged (fixture of 200 corpus
+readings without the marker, byte-identical before/after).
+
+**Machine rules and STOPs** as for D. Report `docs/notation-fold-2026-09-06.md`; "Result: …" here.
