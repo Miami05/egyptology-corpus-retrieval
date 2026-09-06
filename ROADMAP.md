@@ -2453,3 +2453,14 @@ against, which is why that harness scores reading tokens; `|grp-tok|` is the nea
 moved −0.82. Not run: `check_standrews_urkiv_gate.py` (needs `data/private/`, which the worker
 may not write; PASTE_001 carries no controls, so no movement is expected). Report:
 `docs/quadrat-conditional-veto-2026-09-06.md`.
+
+**Lead close-out for C1c, 2026-09-06 night (Fable):** diff reviewed (one per-call shallow-copied
+segmenter view; default unchanged; no new constant). Lead's gates on main, one process at a time:
+the five segmentation test modules 67 passed / 0 failed; paste 8/8; segmentation eval byte-identical
+(0.939 / 0.579, 0.946 / 0.635); `check_standrews_urkiv_gate.py` green on the keyed corpus (31 min
+under memory pressure; only its tail captured — PASTE_001 carries no controls so C1c cannot reach
+it, and the worker's paste CSV diff was empty). Worker's v4 / held-out 1 / LE-v1 diffs empty on
+identical code. **Shipped and deployed.** Result for Nederhof: his format controls now do real
+work — where they mark the spaces as quadrats, the lattice may keep an unseen word whole across a
+space; St Andrews as-rendered reading token F1 0.581 → 0.602 (590 lines better / 145 worse).
+Next: C2 miss classification (diagnosis only), then D.
