@@ -2565,3 +2565,23 @@ unmodified, pytest 40 + 52 passed. Kept: NAME-v1, the two builder flags, `name_n
 one of which asserts grouping is *unchanged*). Report `docs/proper-nouns-2026-09-06.md`.
 **Next lever for Nederhof's complaint is edition-level orthographic normalisation of ordinary
 vocabulary, not a name lexicon — a different pre-registration.**
+
+**Lead close-out for item D, 2026-09-06 night (Fable):** null accepted — the pre-registered STOP
+fired at step 2 (baseline name-duplicate slots 0 on NAME-v1, with 32 of 90 slots actually rewritten
+by a lemma id and 17 queries where a collapse was reachable; 0 on v4 / held-out 1 / LE-v1;
+corpus-wide the name-normalised key would merge 128 of 125,338 distinct readings, 0.10%). D1 was
+never built and the grouping key is untouched, pinned by a test. Merged: NAME-v1 (30 rows; note
+its weakness — the ASCII fold hides the respelling in 20 of 30 queries, so the set tests names only
+partly, while the duplicate-slot metric does not depend on that), the additive `name_duplicate_slots`
+column (v4 / held-out 1 / LE-v1 shared columns unchanged), the builder's candidacy flags, 9 tests.
+D2 not triggered (0/30 queries lack a useful row in the top-50 pool; the literal "target absent"
+trigger was unusable because the eval excludes the target by construction — reported, not
+substituted silently). Nederhof's mail: his second criticism was measured and found not to be
+about names in this corpus; the three real duplicate pairs differ in ordinary-word orthography
+(`ḏi̯`/`ḏꞽ`, `ꞽt`/`ꞽtꞽ`) — edition conventions, not proper nouns.
+
+**D′ — candidate follow-up, to pre-register before running:** fold notation variants of ordinary
+vocabulary in the *grouping key only* (TLA's weak-consonant marker `i̯` ↔ `ꞽ`; brackets already
+handled), measured by the duplicate-slot metric on NAME-v1 / v4 / held-out 1 / LE-v1 and by their
+top-3 / MRR not falling; `ꞽt` vs `ꞽtꞽ` is a genuine spelling variant and stays out unless lemma
+ids say otherwise. Small (½ day). Not started tonight.
