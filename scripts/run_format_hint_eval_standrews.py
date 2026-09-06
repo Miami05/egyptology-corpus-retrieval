@@ -46,6 +46,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.data.loader import load_examples_csv  # noqa: E402
 from app.data.normalizer import normalize_hieroglyphs  # noqa: E402
+from app.services.boundary_model import fit_boundary_model  # noqa: E402
 from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.reading_model import train_reading_model  # noqa: E402
 from app.services.segmentation import (  # noqa: E402
@@ -150,6 +151,16 @@ def main() -> None:
         help="quadrat_crossed to test, as selected on the BBAW dev half.",
     )
     parser.add_argument("--no-lexicon", action="store_true")
+    parser.add_argument(
+        "--boundary-model",
+        type=float,
+        default=None,
+        help=(
+            "Override SegmentationWeights.boundary_model on both arms (item C1). "
+            "Item C's decision rule reads this script's unspaced token F1, so the "
+            "candidate lambda_b has to be measurable here before it is the default."
+        ),
+    )
     args = parser.parse_args()
 
     lines_path = Path(args.lines)
@@ -192,15 +203,23 @@ def main() -> None:
 
     lexicon = None if args.no_lexicon else load_lexicon()
     model = train_reading_model(frame, lexicon)
+    base = DEFAULT_SEGMENTATION_WEIGHTS
+    if args.boundary_model is not None:
+        base = base.replace(boundary_model=args.boundary_model)
+    print(f"segmentation weights: {base}")
+    # Fitted once and shared, so the two arms differ only in `quadrat_crossed`.
+    shared_boundary = fit_boundary_model(model) if base.boundary_model else None
     off = Segmenter(
         model,
-        DEFAULT_SEGMENTATION_WEIGHTS.replace(quadrat_crossed=0.0),
+        base.replace(quadrat_crossed=0.0),
         use_lexicon=not args.no_lexicon,
+        boundary_model=shared_boundary,
     )
     on = Segmenter(
         model,
-        DEFAULT_SEGMENTATION_WEIGHTS.replace(quadrat_crossed=args.constant),
+        base.replace(quadrat_crossed=args.constant),
         use_lexicon=not args.no_lexicon,
+        boundary_model=shared_boundary,
     )
 
     records: list[dict] = []

@@ -1,0 +1,2 @@
+label,complement_skip,optional_logogram,corpus_sentences,fit_sentences,dev_sentences,dev_twins_removed,positions_unreadable,positions_covered,coverage,oracle_recall_exact,oracle_recall_lenient,top1_exact,candidates_mean,candidates_median,candidates_max
+v3 + optional logogram,True,True,59504,42842,4761,0,778,516,0.6632,0.1221,0.1764,0.0349,19.314,24.0,24

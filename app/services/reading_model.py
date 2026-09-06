@@ -44,6 +44,9 @@ from math import log
 
 import pandas as pd
 
+from app.services.composition import compose_group, composed_distribution
+from app.services.sign_functions import SignFunctions, load_sign_functions
+
 BOUNDARY = "<s>"
 # Additive smoothing. Small, because most sign/reading pairs are genuinely unattested
 # and we do not want to invent readings the corpus never shows.
@@ -86,6 +89,38 @@ FALLBACK_THRESHOLD = 0.4
 # lost a determinative. 0.5 = equal weight; the measured effect on fallback precision
 # is recorded in ROADMAP.md, Phase 1.
 FALLBACK_ORDER_WEIGHT = 0.5
+
+# Whether a group neither the corpus nor the lexicon attests is read from what its
+# signs *do* (app.services.composition, item C2) before the glyph-similarity fallback
+# is tried. The pre-registered rule C2.4 ships it only if composed accuracy strictly
+# beats fallback accuracy on the same positions, over at least 200 of them, without
+# lowering acc_ambiguous_context.
+#
+# NULL RESULT, 2026-09-06. Stage 1 of the amended C2 evaluation asked the prior
+# question — does the composition *generate* the gold reading at all? — on the dev cut
+# of the reading eval's training split (4,761 sentences, 778 positions the corpus and
+# the Helsinki lexicon both fail to read). Coverage 0.6632 (516 of 778). Oracle recall
+# on the covered positions, i.e. the gold reading appearing ANYWHERE among the
+# candidates:
+#
+#   rules                                   oracle exact / lenient   top-1 exact
+#   as pre-registered (amended filters)        0.0581 / 0.0930         0.0058
+#   + phonetic-complement skip (rev. 1)        0.1008 / 0.1570         0.0174
+#   + optional logogram (rev. 2)               0.1221 / 0.1764         0.0349
+#   the same, cap raised 24 -> 500             0.1880 / 0.2655         0.0349
+#
+# The glyph-similarity fallback these readings would replace scores **0.2835** on the
+# comparable held-out positions. An oracle over the whole candidate list tops out at
+# 0.188 and the composition's own top choice is right 3.5% of the time, so no scoring
+# or decoding change can close that gap: the ceiling is below the incumbent's floor.
+# Stage 2 (the paired accuracy test) was therefore not run — see
+# `docs/sign-function-2026-09-06.md` for why, and for what would have to change first
+# (the tables give a sign's readings out of context; Egyptian orthography writes
+# phonetic complements and TLA transliteration writes morphology, neither of which a
+# per-sign inventory can supply).
+#
+# The source kind stays in the code, off, as rule C2.4 prescribes.
+USE_COMPOSED_BY_DEFAULT = False
 
 
 def glyph_similarity(left: str, right: str, order_weight: float | None = None) -> float:
@@ -132,10 +167,26 @@ class ReadingPrediction:
     # labels it as such. `was_seen` stays False: it was not seen *here*.
     lexicon_count: int = 0
     lexicon_source: str = ""
+    # Set when neither the corpus nor the lexicon attests this group and the reading
+    # was *composed* from what each of its signs does (app.services.composition,
+    # item C2). Like a fallback this is a lead, not an attestation — it is counted as
+    # borrowed everywhere fallbacks are counted, and the UI says it was read sign by
+    # sign from the sign-function list rather than observed.
+    is_composed: bool = False
 
     @property
     def is_fallback(self) -> bool:
         return bool(self.fallback_from)
+
+    @property
+    def is_borrowed(self) -> bool:
+        """Not attested here: a borrowed reading or a composed one.
+
+        The one predicate every caller that used to test `is_fallback` for "this is a
+        guess, label it" should test, so item C2 cannot silently make a composed
+        reading look attested.
+        """
+        return self.is_fallback or self.is_composed
 
     @property
     def is_lexicon(self) -> bool:
@@ -175,6 +226,12 @@ class ReadingModel:
     # lexicon must never make an unattested group look attested.
     lexicon: dict[str, Counter] = field(default_factory=dict)
     lexicon_sources: dict[str, str] = field(default_factory=dict)
+    # Sign functions (Nederhof's table plus this project's supplement), used by
+    # `compose_group` to read a group neither the corpus nor the lexicon attests.
+    # Loaded lazily on first use so a model that never meets an unattested group
+    # never touches the file (item C2).
+    sign_functions: SignFunctions | None = None
+    _composed_cache: dict[str, Counter] = field(default_factory=dict, repr=False)
     sentences_seen: int = 0
     # Rows skipped because sign groups and readings did not align. Reported, not
     # hidden: on a clean load this must be 0 (see app.data.loader.alignment_report).
@@ -308,6 +365,24 @@ class ReadingModel:
         scored.sort(key=lambda row: (-row[1], -row[3], row[0]))
         return scored[:limit]
 
+    def composed_readings(self, sign: str) -> Counter:
+        """`Counter(reading -> probability)` composed from the group's sign functions.
+
+        Empty when the signs compose to nothing, which is the signal to fall through
+        to the glyph-similarity fallback exactly as before item C2. Cached per group:
+        the same unattested spelling recurs across a document, and the composition is
+        a pure function of the group and the corpus counts.
+        """
+        cached = self._composed_cache.get(sign)
+        if cached is not None:
+            return cached
+        if self.sign_functions is None:
+            self.sign_functions = load_sign_functions()
+        readings = compose_group(sign, self.sign_functions, self.sign_reading)
+        distribution = composed_distribution(readings)
+        self._composed_cache[sign] = distribution
+        return distribution
+
     def nearest_known_group(self, sign: str) -> tuple[str, float]:
         """Closest attested sign group to an unattested one, by order-aware glyph overlap.
 
@@ -355,6 +430,7 @@ class ReadingModel:
         use_fallback: bool = True,
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
+        use_composed: bool | None = None,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -375,6 +451,12 @@ class ReadingModel:
         lexicon-only group would score differently across stages for a reason that
         has nothing to do with which stage is the right one. Default `True` keeps
         every other caller's behaviour unchanged.
+
+        `use_composed` (item C2) reads a group neither the corpus nor the lexicon
+        attests from what each of its signs does, before trying the glyph-similarity
+        fallback. `None` means "the shipped default", `USE_COMPOSED_BY_DEFAULT` —
+        which the C2.4 decision rule sets, and which is what every caller that does
+        not pass the argument gets.
         """
         predictions, _path_score = self.predict_sequence_scored(
             signs,
@@ -385,6 +467,7 @@ class ReadingModel:
             use_fallback=use_fallback,
             fallback_threshold=fallback_threshold,
             use_lexicon=use_lexicon,
+            use_composed=use_composed,
         )
         return predictions
 
@@ -398,6 +481,7 @@ class ReadingModel:
         use_fallback: bool = True,
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
+        use_composed: bool | None = None,
     ) -> tuple[list[ReadingPrediction], float]:
         """`predict_sequence`, plus the chosen path's total Viterbi log-probability.
 
@@ -414,18 +498,31 @@ class ReadingModel:
             return [], 0.0
         if fallback_threshold is None:
             fallback_threshold = FALLBACK_THRESHOLD
+        if use_composed is None:
+            use_composed = USE_COMPOSED_BY_DEFAULT
 
         # Resolve which group's statistics each position will use, in order of how
         # much the evidence is worth: attested in this corpus → attested in the
-        # external lexicon → borrowed from the most similar attested group → nothing.
+        # external lexicon → composed from the signs' own functions → borrowed from
+        # the most similar attested group → nothing.
         # (group whose statistics are used, fallback origin or "", glyph similarity, kind)
         sources: list[tuple[str, str, float, str]] = []
-        for sign in signs:
+        # position -> Counter(reading -> probability) for the composed positions.
+        composed: dict[int, Counter] = {}
+        for position, sign in enumerate(signs):
             if sign in self.sign_reading:
                 sources.append((sign, "", 1.0, "corpus"))
-            elif use_lexicon and sign in self.lexicon:
+                continue
+            if use_lexicon and sign in self.lexicon:
                 sources.append((sign, "", 1.0, "lexicon"))
-            elif use_fallback:
+                continue
+            if use_composed:
+                distribution = self.composed_readings(sign)
+                if distribution:
+                    composed[position] = distribution
+                    sources.append((sign, "", 0.0, "composed"))
+                    continue
+            if use_fallback:
                 group, score = self.nearest_known_group(sign)
                 # Require real glyph overlap; a token sharing almost nothing is not
                 # evidence for anything.
@@ -438,6 +535,8 @@ class ReadingModel:
 
         def counts_for(position: int) -> Counter:
             group, _, _, kind = sources[position]
+            if kind == "composed":
+                return composed[position]
             if kind == "lexicon":
                 return self.lexicon.get(group, Counter())
             return self.sign_reading.get(group, Counter())
@@ -456,11 +555,15 @@ class ReadingModel:
                 # A lexicon group has no corpus context statistics, so only its
                 # emission carries information there; the context terms fall back to
                 # their smoothing defaults, which is the honest amount of knowledge.
-                emission = (
-                    self._lexicon_emission(source_group, reading)
-                    if sources[position][3] == "lexicon"
-                    else self._emission(source_group, reading)
-                )
+                kind = sources[position][3]
+                if kind == "composed":
+                    # Already a normalised distribution over the composed candidates
+                    # (app.services.composition), so it is its own emission.
+                    emission = log(max(composed[position].get(reading, 0.0), 1e-12))
+                elif kind == "lexicon":
+                    emission = self._lexicon_emission(source_group, reading)
+                else:
+                    emission = self._emission(source_group, reading)
                 local = (
                     emission_weight * emission
                     + next_sign_weight
@@ -518,7 +621,12 @@ class ReadingModel:
                     candidates=candidates,
                     # Corpus attestations only. For a lexicon group this is 0: the
                     # count lives in `lexicon_count`, so the two are never confused.
-                    attested_count=sum(counts.values()) if kind != "lexicon" else 0,
+                    # A composed group has no attestations at all — its "counts" are
+                    # probabilities summing to 1 — so it reports 0, like a lexicon
+                    # group whose count lives in its own field.
+                    attested_count=(
+                        sum(counts.values()) if kind not in ("lexicon", "composed") else 0
+                    ),
                     is_ambiguous=len(counts) > 1,
                     # "Seen" means this exact group was attested in this corpus. A
                     # fallback reading is a lead from a similar group, and a lexicon
@@ -528,6 +636,7 @@ class ReadingModel:
                     fallback_similarity=round(similarity, 3) if fallback_from else 0.0,
                     lexicon_count=sum(counts.values()) if kind == "lexicon" else 0,
                     lexicon_source=self.lexicon_sources.get(sign, "") if kind == "lexicon" else "",
+                    is_composed=kind == "composed",
                 )
             )
         return predictions, lattice[-1][best_final][0]

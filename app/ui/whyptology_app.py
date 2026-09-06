@@ -2042,6 +2042,16 @@ def render_workspace(df: pd.DataFrame) -> None:
                         f"added {len(segmentation.inserted_boundaries)} boundar"
                         f"{'ies' if len(segmentation.inserted_boundaries) != 1 else 'y'}"
                     )
+                # Item B's quadrat hints, item C step 4: the places where the paste's
+                # own layout controls said "one quadrat" and the corpus evidence was
+                # strong enough to cut there anyway. Only ever non-empty for a paste
+                # from a layout-aware editor, so most readers never see this clause.
+                if segmentation.crossed_quadrats:
+                    parts.append(
+                        f"cut inside {len(segmentation.crossed_quadrats)} quadrat"
+                        f"{'s' if len(segmentation.crossed_quadrats) != 1 else ''} "
+                        "your layout joined"
+                    )
                 st.caption(
                     "Regrouped from your spacing (" + ", ".join(parts) + ") to match "
                     "how the corpus writes these signs. Every group shown as a chip is "
@@ -2066,9 +2076,14 @@ def render_workspace(df: pd.DataFrame) -> None:
             predictions = model.predict_sequence(signs)
             reading = " ".join(p.predicted for p in predictions if p.predicted)
             unseen = [p for p in predictions if not p.was_seen]
-            fallbacks = [p for p in predictions if p.is_fallback]
+            # A composed reading (item C2) is counted with the fallbacks: both are
+            # leads rather than attestations, and the badge below must not claim more
+            # than the evidence. C2 shipped switched off, so `composed` is empty
+            # unless a caller turns `use_composed` on.
+            fallbacks = [p for p in predictions if p.is_borrowed]
+            composed = [p for p in predictions if p.is_composed]
             from_lexicon = [p for p in predictions if p.is_lexicon]
-            unreadable = [p for p in unseen if not p.is_fallback and not p.is_lexicon]
+            unreadable = [p for p in unseen if not p.is_borrowed and not p.is_lexicon]
             ambiguous = [p for p in predictions if p.is_ambiguous]
 
             # The badge must reflect what the reading is worth: a tick claims every
@@ -2095,7 +2110,8 @@ def render_workspace(df: pd.DataFrame) -> None:
                 f'<div class="suggestion-support">{len(signs)} sign groups · '
                 f"{len(ambiguous)} multivalent · {len(from_lexicon)} from the lexicon · "
                 f"{len(fallbacks)} inferred from a similar sign · "
-                f"{len(unreadable)} unreadable</div>"
+                + (f"{len(composed)} read sign by sign · " if composed else "")
+                + f"{len(unreadable)} unreadable</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -2109,6 +2125,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                             f"inferred from {display_sign_group(p.fallback_from)} "
                             f"({p.fallback_similarity:.0%} glyph match)"
                             if p.is_fallback
+                            # Item C2: composed from the sign-function list, not seen
+                            # anywhere. Said plainly, because it is the weakest kind
+                            # of evidence this app ever shows.
+                            else "read sign by sign from the sign-function list — "
+                            "not attested"
+                            if p.is_composed
                             else f"attested {p.attested_count}×"
                             if p.was_seen
                             # An attested count from another corpus: real evidence, but

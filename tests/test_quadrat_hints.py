@@ -34,7 +34,12 @@ from app.data.normalizer import (
     quadrat_hints,
 )
 from app.services.reading_model import train_reading_model
-from app.services.segmentation import Segmenter, glyph_stream, segment_paste
+from app.services.segmentation import (
+    DEFAULT_SEGMENTATION_WEIGHTS,
+    Segmenter,
+    glyph_stream,
+    segment_paste,
+)
 
 PASTES_PATH = Path("data/benchmarks/expert_paste_queries.csv")
 STANDREWS_LINES = Path("data/raw/standrews/standrews_lines.csv")
@@ -221,10 +226,22 @@ def scramble(groups: list[str], rng: random.Random) -> list[str]:
 
 @pytest.fixture(scope="module")
 def segmenter() -> Segmenter:
+    """The pre-item-C segmenter: item B's objective and nothing after it.
+
+    `reference_segment` below re-implements the objective as it stood when item B
+    shipped, so the fixture has to hold the weights of that moment. Item C1 added
+    `boundary_model` and, having passed its decision rule, turned it on by default —
+    which is a real change to the objective and is proved separately in
+    `tests/test_boundary_model.py`. Switching it off here keeps this file's no-op
+    proof about the thing it was written to prove.
+    """
     from app.data.loader import load_examples_csv
 
     df = load_examples_csv("data/processed/examples.csv")
-    return Segmenter(train_reading_model(df))
+    return Segmenter(
+        train_reading_model(df),
+        DEFAULT_SEGMENTATION_WEIGHTS.replace(boundary_model=0.0),
+    )
 
 
 def test_empty_no_cut_is_byte_identical_to_the_old_objective(segmenter):

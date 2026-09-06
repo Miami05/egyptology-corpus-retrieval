@@ -401,6 +401,33 @@ confirm a sign's existence and so are incomplete; he suggests the Thot Sign List
 (<https://thotsignlist.org/>) for comparison. Both are cross-checks here, never
 sources of truth.
 
+### This project's supplement to it (`sign_functions_supplement.csv`, CC BY-SA 4.0)
+
+`data/processed/sign_functions_supplement.csv` holds **thirteen rows covering eleven
+signs**, written by this project on **2026-09-06** for item C. They are not Nederhof's
+and are not covered by his grant: his list is Unicode 5.2 only, and the signs most
+frequent in *this* corpus that it does not reach are exactly the ones a sign-function
+model most needs — Z7 𓏲 alone is 36k corpus tokens, Z2 𓏥 32k. The rows are Z7 𓏲
+phonogram *w*; Z2 𓏥, Z3 𓏪, Z3A 𓏫 typographic (plural strokes); V31A 𓎢 phonogram *k*;
+N35A 𓈗 phonogram *mw* and determinative (water); N17 𓇿 logogram *tꜣ* and determinative
+(land); Z6 𓏱 determinative (death, enemy); U7 𓌻 phonogram *mr*; Aa15 𓐝 phonogram *m*;
+D6 𓁻 determinative (actions of the eye).
+
+Source: the **Gardiner sign list** (A. H. Gardiner, *Egyptian Grammar*, 3rd ed., Sign
+List) — standard reference facts about what these signs do, restated in the column
+shape of the table beside them, with transliterations in this corpus's TLA convention.
+Licence: **CC BY-SA 4.0**, this project's own work, like the corpus it is built for.
+
+> Sign-function supplement: Egyptology-APP, 2026-09-06, after the Gardiner sign list.
+> CC BY-SA 4.0.
+
+Every row carries `source_note = "project supplement"`, so a reader of the merged
+inventory can always tell which half a class came from; the file is separate from
+`sign_functions.csv` for the same reason, and the two never name the same sign.
+`app/services/sign_functions.py` loads both and folds the seven function labels into
+five classes plus `unk`. Note that Nederhof writes the Gardiner variants lower-case
+(`Z3a`, `V31a`, `N35a`) and the supplement upper-case; nothing joins on that column.
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
@@ -413,6 +440,7 @@ CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
 | `data/benchmarks/*.csv` | queries and expectations derived from corpus readings | CC BY-SA 4.0 |
 | `data/processed/helsinki_lexicon.csv` | sign-group → reading counts (see "Sign-reading lexicon" above) | CC BY 4.0 upstream, wrapped **CC BY-SA 4.0** here[^lexicon] |
 | `data/processed/sign_functions.csv` | sign → function inventory (see "Sign functions" above) | **CC BY 4.0**, Mark-Jan Nederhof — *not* CC BY-SA[^signfunctions] |
+| `data/processed/sign_functions_supplement.csv` | 13 rows for 11 signs Nederhof's Unicode 5.2 list does not cover (see "This project's supplement" above) | CC BY-SA 4.0, this project, after the Gardiner sign list |
 
 Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence`
 column repeating the attribution, because a file that leaves the repository loses

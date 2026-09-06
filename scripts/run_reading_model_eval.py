@@ -66,6 +66,16 @@ def main() -> None:
         help="Share of aligned sentences held out for testing.",
     )
     parser.add_argument(
+        "--composed",
+        action="store_true",
+        help=(
+            "Item C2: also decode every test sentence with composed readings on and "
+            "with them off, and report the paired comparison on exactly the positions "
+            "where the pristine (composed-off) model used its glyph-similarity "
+            "fallback. That paired accuracy is the C2.4 decision rule."
+        ),
+    )
+    parser.add_argument(
         "--exclude-duplicates",
         action="store_true",
         help=(
@@ -115,6 +125,14 @@ def main() -> None:
             "single": 0,
             "fallback": 0,
             "lexicon": 0,
+            "composed": 0,
+            # Item C2's paired denominator: positions where the pristine
+            # (composed-off) decode used its glyph-similarity fallback AND the
+            # composed decode produced a composed reading. Only these can be compared.
+            "paired": 0,
+            # Fallback positions the composition could not reach at all.
+            "fallback_not_composed": 0,
+            "ambiguous_composed_arm": 0,
         }
         correct = {
             "freq_all": 0,
@@ -124,6 +142,10 @@ def main() -> None:
             "left_only_ambiguous": 0,
             "fallback": 0,
             "lexicon": 0,
+            "composed": 0,
+            "paired_fallback": 0,
+            "paired_composed": 0,
+            "ctx_ambiguous_composed": 0,
         }
 
         for _, row in test.iterrows():
@@ -138,6 +160,38 @@ def main() -> None:
             # difference is attributable to that term alone.
             left_only = model.predict_sequence(signs, next_sign_weight=0.0)
             baseline = model.predict_most_frequent(signs)
+
+            if args.composed:
+                # The two arms of the C2 paired comparison, on the same sentence:
+                # the pristine decode (composition off, so an unattested group
+                # borrows) and the composed decode. The pristine arm is what defines
+                # which positions are comparable at all.
+                pristine = model.predict_sequence(signs, use_composed=False)
+                composed_arm = model.predict_sequence(signs, use_composed=True)
+                # A composed position feeds the reading-bigram chain, so switching
+                # composition on can move a *seen ambiguous* sign beside it. C2.4
+                # forbids that from lowering acc_ambiguous_context, so it is measured
+                # rather than assumed.
+                for sign, truth, now in zip(signs, gold, composed_arm):
+                    if now.was_seen and sign in ambiguous:
+                        totals["ambiguous_composed_arm"] += 1
+                        if now.predicted == truth:
+                            correct["ctx_ambiguous_composed"] += 1
+                for truth, was, now in zip(gold, pristine, composed_arm):
+                    if now.is_composed:
+                        totals["composed"] += 1
+                        if now.predicted == truth:
+                            correct["composed"] += 1
+                    if not was.is_fallback:
+                        continue
+                    if not now.is_composed:
+                        totals["fallback_not_composed"] += 1
+                        continue
+                    totals["paired"] += 1
+                    if was.predicted == truth:
+                        correct["paired_fallback"] += 1
+                    if now.predicted == truth:
+                        correct["paired_composed"] += 1
 
             for sign, truth, prediction, base, left in zip(
                 signs, gold, predictions, baseline, left_only
@@ -229,6 +283,22 @@ def main() -> None:
                 4,
             ),
         }
+        if args.composed:
+            paired = totals["paired"] or 1
+            row_out.update(
+                {
+                    "composed_predictions": totals["composed"],
+                    "acc_composed": round(correct["composed"] / (totals["composed"] or 1), 4),
+                    # The C2.4 decision rule: same positions, both arms.
+                    "paired_positions": totals["paired"],
+                    "paired_acc_fallback": round(correct["paired_fallback"] / paired, 4),
+                    "paired_acc_composed": round(correct["paired_composed"] / paired, 4),
+                    "paired_gain": round(
+                        (correct["paired_composed"] - correct["paired_fallback"]) / paired, 4
+                    ),
+                    "fallback_positions_not_composed": totals["fallback_not_composed"],
+                }
+            )
         row_out["ambiguous_gain"] = round(
             row_out["acc_ambiguous_context"] - row_out["acc_ambiguous_most_frequent"], 4
         )
@@ -247,6 +317,18 @@ def main() -> None:
             f"(lexicon {row_out['lexicon_predictions']} @ acc {row_out['acc_lexicon']:.3f}; "
             f"fallback {row_out['fallback_predictions']} @ acc {row_out['acc_fallback']:.3f})"
         )
+        if args.composed:
+            print(
+                f"         composed: {row_out['composed_predictions']} positions @ acc "
+                f"{row_out['acc_composed']:.4f}\n"
+                f"         PAIRED on the {row_out['paired_positions']} positions the "
+                f"pristine model read by fallback: "
+                f"fallback {row_out['paired_acc_fallback']:.4f} vs composed "
+                f"{row_out['paired_acc_composed']:.4f} "
+                f"({row_out['paired_gain']:+.4f}); "
+                f"{row_out['fallback_positions_not_composed']} fallback positions the "
+                "composition could not reach"
+            )
 
     summary = pd.DataFrame(summary_rows)
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
