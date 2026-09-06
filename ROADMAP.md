@@ -2026,3 +2026,77 @@ sign-function lattice on Nederhof's table (5 days; gate: Camilla's line from any
 (Neon close, Cloud app, DEPLOYMENT.md follow-ups). Expert answers to the five cases decide the
 CFG-C question when they arrive; held-out 2/3 are built only if a ranking experiment is planned.
 Standing rules unchanged.
+
+### Item B — format controls as weak segmenter hints — pre-registered 2026-09-06 (Opus 5 worker)
+
+Written before any run. Worktree off `main` at 36d8c38, 130,472-row public corpus, project
+interpreter. Nederhof's fourth criticism: we delete U+13430–1345F, which carry the quadrat
+structure of a paste. Question: read as "these signs share a quadrat", used as a **soft**
+penalty against cutting inside a quadrat, do they improve segmentation on (a) real St Andrews
+RES-derived input and (b) a BBAW upper bound? A null result is a real answer and is allowed.
+
+**Diagnosis (measured 2026-09-06 before writing this).** `data/processed/examples.csv` has 0
+format controls and 0 glyph layout operators (the TLA `mdc` column's `:` is the ꞽ: prefix, not
+layout). Raw `data/raw/bbaw_egyptian/train.parquet`: 35,503 glyph rows, **19,140** with `:`/`*`;
+42.5% of within-word adjacencies are joined by `:`/`*` (the earlier 22.5% figure is superseded).
+`data/raw/standrews/standrews_lines.csv`: 1,710 lines, **1,698** carry controls (13430 ×12,733,
+13431 ×8,481, 13437/13438 ×1,355 each, 13433 ×374 …); spaces there separate **quadrats**, not
+words (line 1: 12 quadrats, 5 readings), the `transliteration` column is already TLA-folded, and
+no word-level gold grouping exists → the St Andrews metric must be end-to-end reading. PASTE_005
+has horizontal joiners between *every* sign of each wrongly chunked piece (`𓆓𓂧𓆑`), so a hard
+"no cut inside a quadrat" rule fails the gate; the penalty must lose to the corpus evidence
+(𓆑 → =f 3,878/3,907). Benchmarks v4, held-out 1 and LE-v1 contain **no** controls, so their
+numbers must come out byte-identical.
+
+**Frozen design.**
+1. `app/data/normalizer.py`: `quadrat_hints(value) -> (groups_as_pasted, no_cut)`. `no_cut` =
+   glyph-stream boundary indices (same indexing as `glyph_stream`: b means "a group ends before
+   glyph b") that fall between two signs joined by a **joiner** U+13430–13436 or U+13439–1343B,
+   or strictly inside a **segment** 13437…13438 or an **enclosure** 1343C…1343F. Mirror (13440),
+   blanks and damage marks (13441–13455) carry no adjacency information → no hint. Invariant,
+   tested on the 8 pastes, all 1,710 St Andrews lines and the pipeline fuzz: `groups_as_pasted
+   == normalize_hieroglyphs(value).split()` exactly.
+2. `SegmentationWeights.quadrat_crossed` (nats), penalty per boundary the segmentation places
+   at a `no_cut` position. `Segmenter.segment(groups, no_cut=frozenset())` and
+   `score_segmentation` apply it; `Segmentation.crossed_quadrats` lists them. Empty set → the
+   objective is unchanged, so every existing test and number stays identical.
+3. One helper `segment_paste(query, segmenter, use_format_hints=True)` replaces the five
+   `normalize_hieroglyphs(q).split()` → `segment` sites (`whyptology_app.py:424`,
+   `retrieval.py:294`, `run_expert_paste_eval.py:119`, `bench_query_latency.py:98`,
+   `check_standrews_urkiv_gate.py:122`); the manual-edit site at `whyptology_app.py:2025` is
+   left alone. `run_expert_paste_eval.py` gains `--no-format-hints`. No ranking or retrieval
+   code changes; no UI beyond the wiring.
+4. **BBAW upper bound** (`scripts/run_format_hint_eval_bbaw.py`): raw rows accepted by
+   `import_bbaw_egyptian.parse_glyph_field` + the importer's alignment filter, with `:`/`*`
+   present. Emit U+13430 for a `:` token, U+13431 for `*`, nothing for `-`; gold = the
+   importer's word groups. Rows must be **removed from the training frame** by normalised glyph
+   string (memorisation guard, as in `run_segmentation_eval.split`). Fixed seed 7 split: dev 50%
+   / test 50%. Inputs: unspaced + controls vs unspaced with controls deleted (= today). Metric:
+   boundary P/R/F1 + exact, the segmentation eval's own. Print hint precision (share of
+   control-marked adjacencies inside a gold group; ~1.0 by construction — that is why this is an
+   upper bound). **Constant selection**: `quadrat_crossed ∈ {0.25, 0.5, 1.0, 2.0}` by highest
+   unspaced F1 on the **dev** half, subject to paste 8/8 (auto) as a hard constraint; report on
+   the test half only. Standing rule respected: no benchmark number picks the constant.
+5. **St Andrews, the real input** (`scripts/run_format_hint_eval_standrews.py`, data
+   gitignored, script committed): resources on the **public** corpus only; assert no line's
+   normalised glyph string occurs in it. Two shapes per line: *as rendered* (quadrat spaces +
+   controls) and *unspaced* (spaces removed, controls kept); each with hints off vs on. Metric:
+   predicted reading tokens vs the line's `transliteration`, both through one lenient fold fixed
+   now — NFC, lowercase, delete `. ( ) [ ] { } ⸢ ⸣`, nothing else (ṯ/t and yod differences count
+   as misses on both arms equally) — multiset token P/R/F1, exact-line rate, and |groups −
+   tokens| mean; paired deltas with lines improved / worsened / unchanged. Print Camilla's line
+   (`urkIV-001`, line 2) both ways.
+6. **Decision rule.** Hints ship ON (default = the selected constant) iff on St Andrews the
+   unspaced-shape token F1 delta is > 0 **and** improved lines > worsened lines **and** every
+   gate holds. Otherwise the code ships with `quadrat_crossed = 0.0` (present, off) and the null
+   result is reported. BBAW is informative only and never decides.
+7. **Gates on the merged tree**: pytest green; paste 8/8 auto; v4 results byte-identical to
+   the committed file (0.90 / 0.7917); held-out 1 0.75 / 0.6667; LE-v1 0.8667 / 0.8167;
+   `run_segmentation_eval.py` default numbers unchanged. PASTE_005 must pass at the chosen
+   constant.
+8. **Report** `docs/format-hints-2026-09-06.md` with numbers exactly as printed, the two numbers
+   for Nederhof, and this section's close-out. Then C.
+
+STOP conditions for the worker: the invariant in (1) fails on any line; < 500 eligible BBAW
+rows; a gate fails at every candidate constant; any step needs ranking/retrieval changes; or
+wall clock > 3 h. Stop that step, finish the rest, report.

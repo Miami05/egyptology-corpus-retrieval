@@ -249,3 +249,177 @@ suggestions is the better one to show.
   the private-import confirmation are owed regardless of whether he does the round.
 - All three are attachment-or-link: the five questions are identical across the ask sheet
   and the HTML page, so send whichever form each person will find easier.
+
+## Email 8 — the live-site round (2026-09-06): new address, reviewer key, the five cases
+
+Supersedes Emails 6 and 7 as the thing actually sent. One mail per person; the reviewer
+key goes in a **separate** message (text message or a second email), never in the same mail
+as the address and never in this file.
+
+### To Mark-Jan Nederhof
+
+**Subject:** Re: Permission to include St Andrews Corpus texts in an open Egyptology tool — it is live
+
+Dear Mark-Jan,
+
+Thank you again — and no apology needed; I know what the start of a semester looks like.
+
+The tool has moved to its own server: https://vela-optiplex-3070.taile0409f.ts.net/
+The old Streamlit Cloud address is retired. The public corpus there is now 130,472
+sentences (TLA, AES, BBAW and, under the CC BY-SA grant Liège gave this project, Ramses).
+
+Your sign-function file is built in under CC BY 4.0, credited to you by name with a link
+to your Unicode page, next to the corpus credits in the footer (1,444 entries covering 780
+of the 1,071 Unicode 5.2 signs). If you would prefer different wording or a different
+licence, one line from you is enough. Thank you also for the warning about UniKemet's
+functions coming from single attested tokens; I will treat it and the Thot Sign List as
+cross-checks, not as sources of truth.
+
+The St Andrews rows are imported privately under your CC BY-NC-SA grant, exactly as
+agreed: they live only on the server and are served only to a session that has entered a
+reviewer key. Nobody visiting the public address sees them, and they are in no export,
+share link or repository. I am sending you the key in a separate message. In the sidebar,
+open "Reviewer access", paste the key and press Unlock; the record count then rises to
+138,131 and a CC BY-NC-SA credit line for the St Andrews Corpus appears in the footer.
+The same key also lets you save annotations. Please do not pass the key on; anyone else
+who needs it can ask me.
+
+Your similar-text request is live as well: a "Similar text" page that searches across
+tiers (sign sequence, transliteration, translation) and shows the matched parallel per
+tier. As promised, the number either way: on same-sentence pairs across editions, edit
+distance did not beat n-gram cosine on transliteration, and gave a small gain on signs
+only. No uploads, as you asked.
+
+Next on my list is your format-control point: I will try the U+13430–1345F controls as
+weak quadrat hints in segmentation, starting with the St Andrews texts, and report the
+result whether it helps or not.
+
+Separately, if you have fifteen minutes: I would value your read on five before/after
+ranking cases. Five strings, five quick questions, each asking which of two orderings of
+the tool's three suggestions is the better one to show. The cases are in the attached
+file expert_round_2.html; it opens in any browser, needs no internet connection, and a
+reply by email with your five answers is all I need.
+
+With best regards,
+Ledio Durmishaj
+
+### To Camilla
+
+**Subject:** Your Urk. IV line now reads correctly — and the tool is live at a new address
+
+Dear Camilla,
+
+First, the result you were waiting for. Your trial line, the opening of Ahmose son of
+Ibana, pasted exactly as you pasted it, now reads
+
+    ḏd =f ḏd =ꞽ n =tn r(m)ṯ(.t) nb.t
+
+with no fallbacks and no unattested group, against your ḏd=f ḏd=j n=ṯn rmṯ(.t) nb.t. The
+only differences are conventions, not readings: the corpus writes yod as ꞽ and separates
+suffix pronouns with a space, and it gives =tn because that spelling is what the openly
+licensed TLA sentences attest (18 times) for your 𓏏𓈖 group. The four or five errors you
+counted came from one cause: the tool trusted the spaces in your paste as sign groups and
+never moved a glyph across one, so 𓆑 stayed glued to the wrong ḏd and 𓀀 was cut off from
+its noun. It now segments from the corpus instead. The same line reads correctly from
+four different spacings (yours, word by word, no spaces, TLA's), and that has been a
+release gate since: nothing ships if your line stops reading.
+
+Your trial also changed what the tool is. You said the hard step is not recognising signs
+but choosing the reading, since one sign has several values. So it does not generate
+readings out of a language model. For each sign group it picks the reading the corpus
+actually attests most often, shows you the real sentences that support it, and where the
+corpus has nothing it says so instead of guessing. That was my answer to your criticism,
+not something you asked for in those words, so I would rather you judged it than took my
+word: is this the step you meant, or did you have something else in mind?
+
+It now runs on its own server: https://vela-optiplex-3070.taile0409f.ts.net/
+The old address is retired. The public corpus is 130,472 sentences (TLA, AES, BBAW and
+Ramses), and a language-stage selector lets you restrict or let the tool infer the stage.
+
+You are not the only Egyptologist looking at it. Dr Mark-Jan Nederhof of the University
+of St Andrews reviewed the tool in early September and is testing it as well; his
+observations on notation normalisation and segmentation have set two of the next steps,
+and he has made his St Andrews Corpus and his sign-function table available to the
+project. I mention this so that you know your assessment will sit alongside a second
+specialist reading rather than stand alone.
+
+Two things sit behind a reviewer key, which I am sending you in a separate message.
+First, saving annotations: your corrections now persist, so if you mark a reading wrong
+it stays recorded. Second, Dr Nederhof has allowed his St Andrews Corpus, which
+includes the Urkunden IV texts, into the tool for reviewers only (it is CC BY-NC-SA, so it
+cannot be shown publicly). In the sidebar, open "Reviewer access", paste the key and press
+Unlock; the record count rises to 138,131 and the St Andrews credit appears in the
+footer. With the key, your own line appears as a parallel in his edition (ḏd =ꞽ n =ṯn
+rmṯ nbt, with the =ṯn you expected), and the tool can be tested on Urk. IV directly.
+Please keep the key to yourself; the licence is to this project alone.
+
+I have also hit a decision I cannot make from the numbers, and it is exactly the kind of
+thing only a reader can settle. A small change to the rule that orders the three
+suggestions moves one suggestion up or down on five test strings: in one case it lifts a
+matching parallel from 6th place to 1st; in four cases it pushes a match that was near
+the top further down, twice out of the top three. My automatic score cannot tell whether
+that is an improvement or a loss. Your judgement can.
+
+The ask is five short questions, one per case, a tick or a sentence each, under fifteen
+minutes. Each case shows the string, the two orderings side by side, and asks which one
+you would rather have been shown. The two orderings were frozen in advance, so your answer
+decides only this one question. The cases are in the attached file expert_round_2.html;
+it opens in any browser, needs no internet connection, and a reply by email with your five
+answers is all I need.
+
+No obligation, and thank you either way. And separately, if you ever have a text you have
+not shown me, a fresh trial remains the most useful thing anyone can give this: it is the
+one test that shows where the tool still falls short.
+
+With thanks again,
+Ledio
+
+### To Sophie — LinkedIn, two messages (she is a LinkedIn contact, not an email one)
+
+LinkedIn does not accept an .html attachment, so she gets the PDF: `expert_round_2.pdf`
+(built 2026-09-06 with headless Chrome from a print variant of the page: the repo's
+GentiumPlus-Translit font embedded so ꜣ ꜥ ꞽ render, the answer bar and buttons hidden,
+one case per page). Copy on the Desktop.
+
+**Message 1 (with the PDF attached):**
+
+Hi Sophie,
+
+Everything you found in your test is fixed and live, and the tool has moved to its own
+server: https://vela-optiplex-3070.taile0409f.ts.net/ (the old link no longer works).
+
+What changed: 130,472 sentences now (TLA, AES, BBAW and the Ramses Late Egyptian
+corpus); it accepts Unicode, Manuel de Codage, plain ASCII or pasted hieroglyphs and
+shows which reading it understood; a tap-to-insert row of ꜣ ꜥ ꞽ ḥ ḫ ẖ š ṯ ḏ above the box
+for phones; and a "Similar text" page for parallels. Your Horus-and-Seth sentence is in
+there now: both your original queries, phone and web, return ꜥḥꜥ.n stḫ (ḥr) qnd r-ḏrw ꜥꜣ
+wr as the first suggestion, even though you typed stẖ and the edition writes stḫ.
+
+I am sending you a reviewer key in a separate message. In the sidebar, open "Reviewer
+access", paste it and press Unlock. Your annotations are then saved, and you see about
+7,700 extra sentences from the St Andrews Corpus, which its author has licensed to this
+project for reviewers only, so please don't pass the key on.
+
+One favour, if you have 15 minutes: the attached PDF has five strings, each with two
+orderings of the tool's three suggestions. For each, just tell me which ordering you
+would rather have seen, case number plus Yes or No, in a reply here. No obligation, and
+thank you either way.
+
+Ledio
+
+**Message 2 (sent separately, key only, never in this file):**
+
+Reviewer key for the tool: [key]. Sidebar → "Reviewer access" → paste → Unlock. It is
+one shared key for the three reviewers, so please keep it to yourself. Tell me if it is
+not accepted.
+
+### Notes on sending it
+
+- Attach `data/benchmarks/expert_round_2.html` to the two emails (a copy was put on the
+  Desktop on 2026-09-06); Sophie gets `expert_round_2.pdf` on LinkedIn instead. It is self-contained: no external scripts or fonts, so it renders offline
+  and inside webmail previews. `docs/expert-round-2-ask.md` carries the same five cases as
+  plain text if anyone prefers that.
+- The key goes by a separate channel. Ask them to reply "unlocked" once it works so you
+  know the gate behaves on their side.
+- Nederhof gets the attribution and private-import confirmation first, the ask last, on
+  purpose: those are owed regardless of whether he does the round.
