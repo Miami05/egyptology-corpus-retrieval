@@ -2143,3 +2143,93 @@ READY (598 passed; v4 0.9 / 0.7917; paste 8/8), held-out 1 0.75 / 0.6667, LE-v1 
 0.8167, segmentation eval 0.923 / 0.539 — all equal to the worker's. The two stale result
 files were refreshed in their own commit (6046b74; only `evidence_summaries` wording moved).
 Pushed and deployed: box 36d8c38 → 6046b74, healthy after ~2 s. **Item B closed. Next: C.**
+
+### Item C — sign-function segmentation and reading — pre-registered 2026-09-06 (Opus 5 worker)
+
+Written before any run. Worktree off `main` at HEAD (item B merged, 6046b74+). Nederhof's third
+criticism: the lattice is a unigram over attested groups and knows nothing about sign
+function. Camilla's core want: readings where the corpus has no parallel. Two measurable
+steps, each with its own decision rule; a null on either is a real answer and is reported.
+
+**Diagnosis (measured 2026-09-06, unspaced input, eval split seed 7, segmenter without lexicon
+groups so the unattested share is an upper bound).** Test 5,298 sentences, 35,170 gold
+boundaries: **7,029 spurious vs 3,407 missed**. Of the spurious, **6,351 fall inside a gold
+group the training split never saw whole** (10.7% of gold groups are unattested and cause 90%
+of false boundaries): the lattice cuts an unseen word into seen fragments. Adjacent sign pairs
+seen in training: 98.2%; a bare sign-bigram "majority boundary" rule alone is right 90.6% of
+the time on seen pairs — weaker than the lattice (F1 0.923) but it generalises to unattested
+groups, which the unigram cannot. Nederhof's table covers **87.0%** of corpus sign tokens (680
+of 2,084 distinct training signs) but only **14.9%** of tokens have a single function class, so
+class must be soft. Most frequent uncovered signs: Z7 𓏲 (36k), Z2 𓏥 (32k), V31A 𓎢, Z3A 𓏫,
+Z3 𓏪, N35A 𓈗, N17 𓇿, Z6 𓏱, U7 𓌻, Aa15 𓐝, D6 𓁻, plus TLA placeholder signs. The reading
+model's glyph-similarity fallback was last measured at **acc 0.2537** on unseen groups
+(11,959-sentence corpus); no 130k number exists yet — the worker measures the baseline on the
+pristine tree first. v4, held-out 1 and LE-v1 contain **no** glyph queries → byte-identical.
+
+**Supplement table, written by the lead now (not tuned), `data/processed/sign_functions_
+supplement.csv`, CC BY-SA, source "Gardiner sign list", column `source_note = 'project
+supplement'` so it is never confused with Nederhof's CC BY 4.0 rows:** Z7 𓏲 phonogram `w`;
+Z2 𓏥, Z3 𓏪, Z3A 𓏫 typographic (plural strokes); V31A 𓎢 phonogram `k`; N35A 𓈗 phonogram `mw`
+and determinative (water); N17 𓇿 logogram `tꜣ` and determinative (land); Z6 𓏱 determinative
+(death, enemy); U7 𓌻 phonogram `mr`; Aa15 𓐝 phonogram `m`; D6 𓁻 determinative (actions of the
+eye). Placeholder signs (TLA `<g>` codes) and every other uncovered sign get class `unk`.
+
+**C1 — boundary model with function-class back-off, inside the lattice.**
+1. Classes: fold Nederhof's labels to {phon, log, det, phondet, typ}; "logogram or
+   determinative" → {log, det}; "phonogram or phonetic determinative" → {phon, phondet};
+   uncovered → {unk}. `P(c | sign)` uniform over the sign's classes. Training data = the
+   segmentation eval's training split (seed 7); **dev = the last 10% of that shuffled training
+   split**, test = the eval's test split, untouched for selection.
+2. Boundary statistics from training streams: per adjacent sign pair (a, b) counts of boundary /
+   no boundary; per class pair (c1, c2) expected counts under the soft class assignment;
+   global prior. Estimate `P(boundary | a, b) = (n_b(a,b) + α · P_class) / (n(a,b) + α)` with
+   `P_class = Σ P(c1|a) P(c2|b) P(boundary | c1, c2)` (additive smoothing 0.5 toward the
+   global prior), **α = 1, fixed, not tuned**. Unseen pair → `P_class` alone.
+3. Lattice term, exact under the semi-Markov DP: `λ_b · [ log P(boundary | s_{i-1}, s_i) at
+   every placed boundary i > 0  +  Σ log P(no boundary | s_{k-1}, s_k) over the internal
+   positions k of every span ]`. All other terms unchanged; **κ (6.0), lexicon weight (0.2),
+   quadrat_crossed (1.0) are not re-tuned**.
+4. Selection: `λ_b ∈ {0.25, 0.5, 1.0, 2.0}` by highest **dev** unspaced F1 subject to paste
+   8/8 (auto). Ablation at the chosen λ_b: sign-bigram only (no class back-off: unseen pair →
+   global prior) — this isolates what the function table itself contributed.
+5. Decision: ship (default = chosen λ_b) iff **test unspaced F1 > 0.923 strictly**, scrambled
+   F1 ≥ 0.937, paste 8/8, and the item B St Andrews reading token F1 (unspaced) is not more
+   than 0.010 below 0.591. Otherwise `λ_b = 0.0` (code present, off), null reported.
+
+**C2 — function-composed readings for unattested groups.**
+1. New source kind `composed` in `predict_sequence_scored`, consulted after corpus and lexicon
+   and **before** the glyph-similarity fallback, only when composition yields ≥ 1 candidate;
+   otherwise fallback as today. Marked on `ReadingPrediction` (`is_composed`), counted as
+   *borrowed* for every gate that counts fallbacks, confidence capped like a fallback, and
+   labelled in the UI "read sign by sign from the sign-function list — not attested".
+2. Composition rule, frozen: walk the group's signs left to right, using Nederhof's rows plus
+   the supplement. phonogram `v` → append `v`; logogram `v` → append `v`; "logogram or
+   determinative" `v` → append `v` OR nothing; "phonogram or phonetic determinative" `v` →
+   nothing if `v`'s consonants are a suffix of the reading so far, else append `v`; phonetic
+   determinative → nothing; determinative, typographic → nothing. Candidates = the product of
+   choices, **cap 24 per group** (entries ordered by the corpus's own `P(value | sign)` where
+   the single sign is attested alone with that value, else table order). Empty string → no
+   candidate. Candidate score = Σ over contributing signs of `log P(value | sign)` from the
+   corpus where available, else `log(1 / entries of the sign)`; emission = that score
+   normalised over the candidates; transition/context terms as for lexicon groups.
+3. Metric: extend `run_reading_model_eval.py` with `composed` totals and a **paired**
+   comparison on the positions where the pristine model used fallback: accuracy of fallback
+   vs composed on exactly those positions (exact match, the eval's own rule; the lenient fold
+   of item B reported alongside). Largest corpus size, `--exclude-duplicates`.
+4. Decision: ship iff composed accuracy on the positions it covers is **strictly higher** than
+   fallback on the same positions, with **≥ 200** such positions, and `acc_ambiguous_context`
+   at the largest size is not lower than the pristine baseline the worker records first.
+   Otherwise the source kind stays in the code but disabled (`use_composed=False`), null
+   reported. **PASTE_008** (unattested signs, honest empty result) must still pass; if a
+   composed reading makes the gate fail, STOP C2 — do not change the gate or the paste row.
+
+**Gates on the merged tree:** pytest green; paste 8/8 auto; v4 0.90 / 0.7917, held-out 1
+0.75 / 0.6667, LE-v1 0.8667 / 0.8167 all byte-identical; segmentation eval reported before and
+after; reading eval before and after; St Andrews token F1 (item B script) before and after.
+**Report** `docs/sign-function-2026-09-06.md`, numbers exactly as printed, one paragraph for
+Nederhof (his table's contribution, from the C1 ablation), close-out here. UI: label composed
+readings; show item B's `crossed_quadrats` in the workspace caption (one small step).
+
+STOP conditions: C1 exceeds 0.923 at no λ_b → C1 null, continue to C2; C2 covers < 200
+positions → C2 null; any gate fails; any retrieval/ranking change needed; wall clock > 6 h in
+one launch → report state for a second launch. Never commit, never touch the server.
