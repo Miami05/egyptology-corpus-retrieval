@@ -485,6 +485,148 @@ inventory can always tell which half a class came from; the file is separate fro
 five classes plus `unk`. Note that Nederhof writes the Gardiner variants lower-case
 (`Z3a`, `V31a`, `N35a`) and the supplement upper-case; nothing joins on that column.
 
+## Open-data additions of 2026-10-25 (separate files, not in `examples.csv`)
+
+Four sources were downloaded and converted on **2026-10-25**. None of them changes
+`data/processed/examples.csv`; each lands in its own file under `data/processed/`, and
+whether any UD row joins the corpus is a separate decision. Licences were re-read from
+the publishers' own files on that date.
+
+### UD_Egyptian-PC — Pyramid Texts treebank (CC BY-SA 4.0)
+
+`data/processed/ud_egyptian_pc_candidates.csv`, built by
+`scripts/import_ud_egyptian_pc.py` from
+<https://github.com/UniversalDependencies/UD_Egyptian-PC> (UD v2.18). The README's
+metadata block states **"License: CC BY-SA 4.0"** and `LICENSE.txt` states "The
+treebank is licensed under the Creative Commons License Attribution-ShareAlike 4.0
+International."
+
+> Pyramid Texts sentences: UD_Egyptian-PC (Universal Dependencies v2.18), University of
+> Jaén — Roberto Antonio Díaz Hernández, with Bruno Guillaume and Daniel Zeman;
+> <https://github.com/UniversalDependencies/UD_Egyptian-PC>; licensed under
+> [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Changes were made.
+
+Changes made: the Tübingen transcription converted to the TLA convention by an explicit
+table (s→z, ś→s, č→ṯ, ṭ→d, č̣→ḏ, ḳ→q, ⸗→=; `˹ ˺`→`⸢ ⸣`), unwritten (supplied)
+suffix pronouns glued to their word as TLA writes them while supplied or restored whole
+words stay separate words, multiword ranges taken as one word, `|` line dividers
+dropped, the `Hiero=` grouping (`:`, `()`) removed to plain signs (rows whose signs
+include an unknown-sign marker such as `UC_No`, or a word without signs, are left
+text-only and flagged in `glyphs_incomplete` / `alignment_issue`), overlap flags against
+the corpus added, and a `citation` column (PT spell, Sethe §, witness, edition) added. Every row keeps its UD `sent_id` and
+TLA sentence ids.
+
+### ORAEC text metadata (CC BY-SA 4.0, with CC0 Trismegistos mapping)
+
+`data/processed/source_metadata_oraec.csv` (one row per linked text: title, date, find
+place, object type, location, inventory numbers, bibliography, hierarchical path,
+Trismegistos id), `data/processed/source_metadata_oraec_bbaw_links.csv` (accepted BBAW
+sentence → ORAEC text links) and `data/processed/source_metadata_oraec_bbaw_link_candidates.csv`
+(proposed links that were *not* accepted, for review only), built by `scripts/import_oraec_metadata.py` from
+<https://github.com/oraec/corpus_raw_data>. Its README's licence table gives
+`oraec1.json .. oraec13026.json` and `oraec_hierarchical_path.tsv` as **cc-by-sa-4.0**
+and `mapping_oraec_trismegistos.csv` as **cc0 | ORAEC**; each JSON's own `credits`
+block repeats `"license": "cc-by-sa-4.0"` with its author. Files the table does not
+list (`mapping_oraec_karnak.tsv`, `mapping_oraec_lemmata_karnak.tsv`) were not used.
+
+> Text metadata: ORAEC, corpus_raw_data (<https://github.com/oraec/corpus_raw_data>),
+> from the AED/AES publications of the Berlin-Brandenburg Academy's "Strukturen und
+> Transformationen des Wortschatzes der ägyptischen Sprache" (database excerpt of
+> January 2018); authors: Burkhard Backes, Susanne Beck, Marc Brose, Adelheid
+> Burkhardt, Roberto A. Díaz Hernández, Peter Dils, Roland Enmarch, Frank Feder, Heinz
+> Felber, Silke Grallert, Stefan Grunert, Ingelore Hafemann, Anne Herzberg, John M.
+> Iskander, Ines Köhler, Renata Landgrafova, Verena Lepper, Lutz Popko, Alexander
+> Schütze, Stephan Seidlmayer, Gunnar Sperveslage, Susanne Töpfer, Doris Topmann,
+> Altägyptisches Wörterbuch; [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+> Trismegistos text ids: ORAEC mapping, CC0. Changes were made.
+
+Changes made: fields flattened to one row per text, labels joined with ` | `, duplicate
+inventory numbers collapsed, joined to our AES rows by AED-TEI text id and to our BBAW
+rows by unique sentence match — accepted only when the match key has at least three
+words and the row's translation equals the ORAEC sentence's after whitespace
+normalisation; shorter or disagreeing matches go to the candidates file; every row names the source JSON, its per-text author
+(`text_authors`) and licence, and the Trismegistos columns name their own file and CC0.
+
+### Sign reference: Unicode Unikemet 18.0 (Unicode License V3) and JSesh (CC BY 4.0)
+
+`data/processed/sign_reference.csv`, built by `scripts/build_sign_reference.py` — one
+row per Unikemet code point (catalogue number, Gardiner/JSesh code, description,
+function, value), with JSesh's sign values, variants and tags joined on the JSesh code.
+
+Unikemet (<https://www.unicode.org/Public/18.0.0/ucd/Unikemet.txt>) is a Unicode Data
+File; Unicode's terms (<https://www.unicode.org/terms_of_use.html>) state: "All Unicode
+Data Files and Unicode Software are subject to the terms and conditions of the free and
+open-source Unicode License v3". That licence requires its notice to appear with copies
+or in associated documentation, so it is reproduced here in full:
+
+> UNICODE LICENSE V3
+>
+> COPYRIGHT AND PERMISSION NOTICE
+>
+> Copyright © 1991-2026 Unicode, Inc.
+>
+> NOTICE TO USER: Carefully read the following legal agreement. BY
+> DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+> SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+> TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+> DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of data files and any associated documentation (the "Data Files") or
+> software and any associated documentation (the "Software") to deal in the
+> Data Files or Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, and/or sell
+> copies of the Data Files or Software, and to permit persons to whom the
+> Data Files or Software are furnished to do so, provided that either (a)
+> this copyright and permission notice appear with all copies of the Data
+> Files or Software, or (b) this copyright and permission notice appear in
+> associated Documentation.
+>
+> THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+> KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+> THIRD PARTY RIGHTS.
+>
+> IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+> BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+> OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+> WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+> ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+> FILES OR SOFTWARE.
+>
+> Except as contained in this notice, the name of a copyright holder shall
+> not be used in advertising or otherwise to promote the sale, use or other
+> dealings in these Data Files or Software without prior written
+> authorization of the copyright holder.
+
+The JSesh README (<https://github.com/rosmord/jsesh>) states: "the file
+`jsesh/src/main/resources/jsesh/glyphs/resources/signs_description.xml` is licensed
+under [CC-BY](https://creativecommons.org/licenses/by/4.0/)." Only that XML is used.
+**JSesh fonts are under separate terms and nothing from them is used or redistributed.**
+
+> Sign data: Unicode® Unikemet 18.0.0, © 1991-2026 Unicode, Inc., Unicode License V3;
+> JSesh `signs_description.xml`, Serge Rosmorduc and JSesh contributors,
+> <https://github.com/rosmord/jsesh>, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+> Changes were made.
+
+Changes made: Unikemet's tagged lines pivoted to columns, values kept verbatim, plus a
+`unikemet_value_tla` column that writes Unikemet's `ḳ` as TLA's `q`; JSesh's Manuel-de-Codage
+values converted to the corpus's TLA letters (raw values kept in `jsesh_values_mdc`);
+corpus and Nederhof-table membership columns added. Every row names its sources in a
+`source` column.
+
+### English lemma glosses from Wikidata (CC0)
+
+`data/processed/lemma_glosses_en.csv`, built by `scripts/fetch_wikidata_lemma_glosses.py`
+from four SPARQL requests to <https://query.wikidata.org/> (Egyptian lexemes with
+P12188, "Thesaurus Linguae Aegyptiae lemma ID", and their English sense glosses).
+Wikidata's licensing page (<https://www.wikidata.org/wiki/Wikidata:Licensing>) states:
+"All data in Wikidata has a CC0 license." No attribution is required; the file keeps
+lexeme and sense ids and the site credits it as a courtesy:
+
+> English glosses: Wikidata contributors, Egyptian lexemes,
+> <https://www.wikidata.org/>, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
@@ -498,6 +640,10 @@ CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
 | `data/processed/helsinki_lexicon.csv` | sign-group → reading counts (see "Sign-reading lexicon" above) | CC BY 4.0 upstream, wrapped **CC BY-SA 4.0** here[^lexicon] |
 | `data/processed/sign_functions.csv` | sign → function inventory (see "Sign functions" above) | **CC BY 4.0**, Mark-Jan Nederhof — *not* CC BY-SA[^signfunctions] |
 | `data/processed/sign_functions_supplement.csv` | 13 rows for 11 signs Nederhof's Unicode 5.2 list does not cover (see "This project's supplement" above) | CC BY-SA 4.0, this project, after the Gardiner sign list |
+| `data/processed/ud_egyptian_pc_candidates.csv` | candidate Pyramid Texts rows from UD_Egyptian-PC (not in the corpus) | CC BY-SA 4.0, UD_Egyptian-PC |
+| `data/processed/source_metadata_oraec.csv`, `source_metadata_oraec_bbaw_links.csv`, `source_metadata_oraec_bbaw_link_candidates.csv` | ORAEC text metadata linked to AES/BBAW rows | CC BY-SA 4.0, ORAEC/AED authors; Trismegistos columns CC0 |
+| `data/processed/sign_reference.csv` | Unikemet 18.0 + JSesh sign reference | Unicode License V3 (notice above) + **CC BY 4.0**, JSesh |
+| `data/processed/lemma_glosses_en.csv` | English glosses per TLA lemma id | **CC0**, Wikidata |
 
 Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence`
 column repeating the attribution, because a file that leaves the repository loses
