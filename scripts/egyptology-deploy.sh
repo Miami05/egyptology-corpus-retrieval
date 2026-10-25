@@ -594,20 +594,32 @@ roll_back_and_exit() {
   trap '' HUP INT TERM
   APPLYING=0
   if rollback "$BEFORE"; then
-    rm -f "$INPROGRESS_MARKER"
+    remove_own_marker
     exit 1
   fi
   {
     echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git -C "$REPO" rev-parse --short "$BEFORE") -> $(git -C "$REPO" rev-parse --short "$AFTER"), the rollback failed"
     cat "$SCRATCH/manual.txt" 2>/dev/null || true
   } > "$FAILED_MARKER"
-  rm -f "$INPROGRESS_MARKER"
+  remove_own_marker
   echo "deploy: wrote $FAILED_MARKER; no deploy runs until it is deleted" >&2
   exit 2
 }
 
+# The INPROGRESS marker is removed only by the run that wrote it. The traps are set
+# before the lock is taken, so a run interrupted while it waits for the lock (or while
+# it refuses to start over another run's marker) must leave that marker alone.
+OWNS_INPROGRESS=0
+remove_own_marker() {
+  if [[ "$OWNS_INPROGRESS" == "1" ]]; then
+    rm -f "$INPROGRESS_MARKER"
+    OWNS_INPROGRESS=0
+  fi
+}
+
 # HUP (the ssh session dropped), INT (Ctrl-C), TERM. Before any live change there is
-# nothing to undo; during one, the same rollback as a failure. After a HUP the terminal
+# nothing to undo; during one, the same rollback as a failure (APPLYING is set only
+# after this run wrote its own marker, so it never rolls back another run's changes). After a HUP the terminal
 # is gone, so everything from here on goes to $INTERRUPT_LOG.
 on_signal() {
   trap '' HUP INT TERM PIPE
@@ -620,7 +632,7 @@ on_signal() {
   if [[ "$APPLYING" == "1" ]]; then
     roll_back_and_exit
   fi
-  rm -f "$INPROGRESS_MARKER"
+  remove_own_marker
   exit 1
 }
 
@@ -711,7 +723,9 @@ main() {
   fi
 
   # From here until the run ends cleanly, a run that dies without the chance to roll
-  # back leaves this behind, and no later run starts while it exists.
+  # back leaves this behind, and no later run starts while it exists. Owned from before
+  # the first byte, so a signal mid-write still removes this run's partial marker.
+  OWNS_INPROGRESS=1
   {
     echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER") was cut off before it finished. On the box:"
     echo "  systemctl --user stop egyptology.service"
@@ -728,7 +742,7 @@ main() {
     roll_back_and_exit
   fi
   APPLYING=0
-  rm -f "$INPROGRESS_MARKER"
+  remove_own_marker
 
   prune_releases
   # Refresh the operational copy of this script from the repo. Never in place: the
