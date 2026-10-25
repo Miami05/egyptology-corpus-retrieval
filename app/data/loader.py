@@ -243,7 +243,7 @@ def load_private_examples(directory: str | Path) -> pd.DataFrame:
         if "source" not in frame.columns or blank.any():
             raise ValueError(
                 f"{path} has one or more rows with an empty 'source' column; every "
-                "private row must be attributed to a named corpus (e.g. 'Ramses', "
+                "private row must be attributed to a named private corpus (e.g. "
                 "'StAndrews')"
             )
         logger.info("loaded %d private rows from %s", len(frame), path.name)

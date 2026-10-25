@@ -63,7 +63,8 @@ TRISMEGISTOS_CREDIT = f"Trismegistos text ids: ORAEC mapping, {CC0_LINK}."
 STANDREWS_CARD_CREDIT = (
     "St Andrews Corpus of Ancient Egyptian texts, Mark-Jan Nederhof — "
     '<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" '
-    'rel="noopener">CC&nbsp;BY-NC-SA&nbsp;4.0</a>, non-commercial, not redistributed.'
+    'rel="noopener">CC&nbsp;BY-NC-SA&nbsp;4.0</a>, adapted (changes listed in the page '
+    "credit), non-commercial, not redistributed."
 )
 
 

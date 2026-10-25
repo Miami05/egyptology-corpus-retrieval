@@ -6,7 +6,7 @@ import html
 import logging
 import os
 import re
-from html import escape
+from html import escape as _html_escape
 from pathlib import Path
 import sys
 from textwrap import dedent
@@ -14,6 +14,21 @@ import time
 
 import pandas as pd
 import streamlit as st
+
+# Every line break a data field can carry, Unicode ones included.
+_LINE_BREAKS_RE = re.compile(r"[\r\n\v\f\x85\u2028\u2029]+")
+
+
+def escape(text, quote: bool = True) -> str:
+    """HTML-escape one data-derived value for interpolation into an st.markdown block.
+
+    `html.escape` alone is not enough there: the HTML is handed to a Markdown parser,
+    and a blank line inside a value (a review note, a corpus translation) ends the
+    HTML block, after which the rest is parsed as Markdown, so `![x](url)` became an
+    external image (Astra, final audit 2026-10-25). Line breaks are folded to a space
+    first; HTML collapses whitespace anyway, so nothing visible is lost.
+    """
+    return _html_escape(_LINE_BREAKS_RE.sub(" ", str(text)), quote)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -308,8 +323,10 @@ PRIVATE_CORPUS_CREDITS: dict[str, dict[str, str]] = {
         "licence_label": "CC&nbsp;BY-NC-SA&nbsp;4.0",
         "licence_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
         "changes": (
-            "Hannig transliteration conventions preserved as written; provenance "
-            "recorded in grammar_notes; normalised columns added"
+            "Hannig transliteration conventions preserved as written (no z/s distinction, "
+            "no .t dot); suffix pronouns tokenised on the author's own '='; the '^' "
+            "proper-name marker dropped; provenance recorded in grammar_notes; "
+            "normalised columns added"
         ),
         "note": (
             "Displayed here under its own licence for non-commercial use; the "
@@ -401,7 +418,7 @@ def render_attribution_footer(df: pd.DataFrame | None = None) -> None:
 
 
 def corpus_signature(df: pd.DataFrame) -> str:
-    """Content hash of the columns the reading model trains on.
+    """Content hash of the frame (every column but `id`), plus whether it has ids.
 
     The row count used to serve as the cache key, but a re-import with the same
     number of rows then silently kept the stale model. Hashing the sign and reading
@@ -417,13 +434,23 @@ def corpus_signature(df: pd.DataFrame) -> str:
     to the project database") after the database came back. `+noids` also covers a
     frame whose `id` column is all missing (the keyed frame while the database was
     down).
+
+    Every column but `id` is hashed, not just the two the model trains on (final
+    audit, 2026-10-25): the frame-level caches keyed on this signature
+    (`load_corpus_with_ids`, the search and stage resources) also hand out
+    translations, stages and provenance, so a corpus file replaced in a running
+    process with only those corrected kept serving the old frame while the
+    revision-keyed citation index rebuilt from the new one. ~0.6 s on 130k rows,
+    once per frame object.
     """
 
     def compute(frame: pd.DataFrame) -> str:
         hasher = hashlib.blake2b(digest_size=16)
-        for column in ("hieroglyphs_norm", "transliteration_gold"):
+        columns = [column for column in frame.columns if column != "id"]
+        hasher.update("\x1f".join(map(str, columns)).encode("utf-8"))
+        if columns:
             hasher.update(
-                pd.util.hash_pandas_object(frame[column], index=False).values.tobytes()
+                pd.util.hash_pandas_object(frame[columns], index=False).values.tobytes()
             )
         has_ids = "id" in frame.columns and bool(frame["id"].notna().any())
         return hasher.hexdigest() + ("+ids" if has_ids else "+noids")
@@ -597,6 +624,23 @@ def current_private_corpus(directory: str | None = None) -> pd.DataFrame:
     return load_private_corpus(directory, private_corpus_revision(directory))
 
 
+def private_corpus_has_rows() -> bool:
+    """Whether the private corpus loads and holds rows. False, logged, if it fails.
+
+    The sidebar asks this on every keyed rerun, before the Lock button: unguarded, a
+    malformed private CSV (a blank `source`, a half-copied file) raised there on every
+    page although `session_corpus` had already fallen back to the public rows (final
+    audit, 2026-10-25).
+    """
+    try:
+        return not current_private_corpus().empty
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "private corpus failed to load; the sidebar reports no private rows"
+        )
+        return False
+
+
 def private_data_dir_has_files() -> bool:
     """Whether `PRIVATE_DATA_DIR` holds any CSV at all.
 
@@ -624,6 +668,18 @@ def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
     private_df = current_private_corpus()
     if private_df.empty:
         return df
+    # A private row labelled with a public source name would be credited under the
+    # CC BY-SA sentence, escape the private-row checks and could pick up a public
+    # citation by key collision (final audit, 2026-10-25). Refuse the whole private
+    # set: `session_corpus` then serves the public rows and logs why.
+    colliding = sorted(
+        set(private_df["source"].astype(str).str.strip()) & set(CORPUS_CREDITS)
+    )
+    if colliding:
+        raise ValueError(
+            f"private corpus rows use public source name(s) {colliding}; a private "
+            "corpus must carry its own source name"
+        )
     private_df = private_df.copy()
     private_df["id"] = None
     return pd.concat([df, private_df], ignore_index=True, sort=False)
@@ -718,7 +774,51 @@ def clear_session_search_state() -> None:
 PRIVATE_ACCESS_SEEN_KEY = "whyptology_private_access_seen"
 
 
-def enforce_private_session_gate(state=None) -> None:
+def clear_session_query_state(state=None, query_params=None) -> None:
+    """Drop the query box, anything queued for it, and `?q=`.
+
+    A keyed reviewer may have pasted St Andrews glyphs into the box; when private
+    access ends that text must not stay in the box or travel in the URL (Astra,
+    final audit 2026-10-25). The nonce is bumped so the box re-renders empty.
+    """
+    state = st.session_state if state is None else state
+    query_params = st.query_params if query_params is None else query_params
+    for key in (
+        QUERY_TEXT_KEY,
+        PENDING_INSERTS_KEY,
+        PENDING_EXAMPLE_KEY,
+        PENDING_GROUPING_KEY,
+        AUTO_SEARCH_KEY,
+    ):
+        state.pop(key, None)
+    for key in [k for k in list(state.keys()) if str(k).startswith("whyptology_query_")]:
+        if key != QUERY_NONCE_KEY:
+            state.pop(key, None)
+    state[QUERY_NONCE_KEY] = state.get(QUERY_NONCE_KEY, 0) + 1
+    try:
+        if "q" in query_params:
+            del query_params["q"]
+    except Exception:
+        logging.getLogger(__name__).exception("could not clear ?q= from the URL")
+
+
+def publish_query_to_url(query: str, stage_param: str, keyed: bool, query_params=None) -> None:
+    """Make a search shareable as `?q=` — except in a keyed session.
+
+    A keyed search may be private (St Andrews) glyph text; writing it to the URL let
+    it outlive the lock and reach whoever the link was sent to. A keyed session also
+    drops any `?q=` it arrived with, so the URL never shows a stale query.
+    """
+    query_params = st.query_params if query_params is None else query_params
+    if keyed:
+        if "q" in query_params:
+            del query_params["q"]
+    else:
+        query_params["q"] = query
+    query_params["stage"] = stage_param
+
+
+def enforce_private_session_gate(state=None, query_params=None) -> None:
     """Drop this session's results the first render after it loses private access.
 
     "Lock this session" clears them, but access can also end without that button —
@@ -734,6 +834,7 @@ def enforce_private_session_gate(state=None) -> None:
     if state.get(PRIVATE_ACCESS_SEEN_KEY, False) and not unlocked:
         for key in SESSION_SEARCH_STATE_KEYS:
             state.pop(key, None)
+        clear_session_query_state(state, query_params)
     state[PRIVATE_ACCESS_SEEN_KEY] = unlocked
 
 
@@ -1351,7 +1452,15 @@ PRIVATE_CORPUS_SOURCES = frozenset({"StAndrews"})
 
 
 def is_private_example(example) -> bool:
-    return str(getattr(example, "source", "")).strip() in PRIVATE_CORPUS_SOURCES
+    """Private unless its source is a known public (CC BY-SA) corpus.
+
+    Fails closed: the private loader accepts any source name, so a private corpus
+    other than St Andrews must not pass as public just because it is not named
+    here (final audit, 2026-10-25). Public names are refused for private rows in
+    `_append_private_rows`.
+    """
+    source = str(getattr(example, "source", "")).strip()
+    return source in PRIVATE_CORPUS_SOURCES or source not in CORPUS_CREDITS
 
 
 def suggestion_uses_private_rows(suggestion) -> bool:
@@ -1572,7 +1681,7 @@ def render_reviewer_gate() -> None:
         return
     if st.session_state.get(REVIEWER_OK_KEY, False):
         with st.expander("Reviewer access — unlocked"):
-            if private_rows_unlocked() and not current_private_corpus().empty:
+            if private_rows_unlocked() and private_corpus_has_rows():
                 st.caption(
                     "This session also sees the private, non-commercial corpus rows. "
                     "They are licensed to this project and must not be redistributed."
@@ -2456,8 +2565,11 @@ def render_workspace(df: pd.DataFrame) -> None:
                 # Make the URL shareable: an expert can now send "this one is wrong"
                 # as a link instead of describing the query. The stage travels with
                 # it, so re-opening the link searches the same evidence again.
-                st.query_params["q"] = query
-                st.query_params["stage"] = stage_internal_to_param(requested_stage)
+                publish_query_to_url(
+                    query,
+                    stage_internal_to_param(requested_stage),
+                    keyed=private_rows_unlocked(),
+                )
                 # The parse of the query that was actually *searched*, kept so the
                 # empty state can say what was looked for even after the box has
                 # been edited. `parse` above tracks the box, not the search.
