@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess
 import sys
@@ -61,6 +62,61 @@ FLOOR_EPSILON = 1e-9
 EXPECTED_TOKEN_MODES = ("current", "frozen")
 # The legacy pool, exactly as every published floor before audit A4 was measured.
 LEGACY_RUN = {"exclude_twins": 0.0, "expected_tokens": "frozen"}
+# The margins the competitive eval prints; a `margin_floors` key must be one of these.
+MARGIN_KEYS = (
+    "margin_over_overlap_baseline_top3",
+    "margin_over_overlap_baseline_mrr_value",
+    "margin_over_bm25_baseline_top3",
+    "margin_over_bm25_baseline_mrr_value",
+)
+
+
+def _finite_number(value, name: str) -> float:
+    """`value` as a finite float, or ValueError. Strings ("0.9", "NaN") and bools are
+    refused: a floor that is not a real number would make every comparison against it
+    silently pass (NaN) or mean something else than written."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a number, got {value!r}")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be finite, got {value!r}")
+    return number
+
+
+def validate_floors(block: dict, where: str) -> dict:
+    """Validated copies of a floor block's accuracy, MRR and margin floors.
+
+    `top3_useful_floor` and `mrr_floor` must be finite and in (0, 1] (a zero floor gates
+    nothing); every `margin_floors` key must be a margin the eval prints, with a finite
+    floor in [0, 1] (a negative floor would accept the app losing to a fixed baseline).
+    Raises ValueError naming `where` and the bad key.
+    """
+    floors: dict = {}
+    for key in ("top3_useful_floor", "mrr_floor"):
+        if key not in block:
+            raise ValueError(f"{where} has no {key}")
+        number = _finite_number(block[key], f"{where} {key}")
+        if not 0.0 < number <= 1.0:
+            raise ValueError(f"{where} {key} {number} is not in (0, 1]")
+        floors[key] = number
+    margin_floors = block.get("margin_floors")
+    if margin_floors is None:
+        if "margin_floors" in block:
+            raise ValueError(f"{where} margin_floors is null")
+        floors["margin_floors"] = {}
+        return floors
+    if not isinstance(margin_floors, dict):
+        raise ValueError(f"{where} margin_floors must be an object")
+    checked: dict = {}
+    for key, value in margin_floors.items():
+        if key not in MARGIN_KEYS:
+            raise ValueError(f"{where} margin_floors key {key!r} is not a known margin")
+        number = _finite_number(value, f"{where} margin_floors {key}")
+        if not 0.0 <= number <= 1.0:
+            raise ValueError(f"{where} margin_floors {key} {number} is not in [0, 1]")
+        checked[key] = number
+    floors["margin_floors"] = checked
+    return floors
 
 
 def load_baseline(path: Path) -> dict:
@@ -90,6 +146,11 @@ def check_release_floors(
     (passed, total). `baseline` may carry `margin_floors` ({summary key: floor}); each
     is checked against `margins` (the measured margins over the fixed baselines).
     """
+    try:
+        validate_floors(baseline, "baseline")
+    except ValueError as error:
+        # A malformed floor must fail, never compare (NaN < x is always False).
+        return [str(error)]
     failures: list[str] = []
     measured_margins = margins or {}
     for key, floor in (baseline.get("margin_floors") or {}).items():
@@ -156,9 +217,13 @@ def twin_controlled_config(baseline: dict) -> "dict | None":
     (0, 1], an unknown expected-token mode, a missing floor): a typo here must stop
     the gate, not silently fall back to the legacy pool.
     """
-    block = baseline.get("twin_controlled")
-    if block is None:
+    if "twin_controlled" not in baseline:
         return None
+    block = baseline["twin_controlled"]
+    if block is None:
+        # Present-but-null is a broken configuration, not an absent one: treating it as
+        # absent would let the legacy pool decide READY without --allow-legacy-gate.
+        raise ValueError("baseline twin_controlled is null")
     if not isinstance(block, dict):
         raise ValueError("baseline twin_controlled must be an object")
     try:
@@ -170,11 +235,10 @@ def twin_controlled_config(baseline: dict) -> "dict | None":
     mode = str(block.get("expected_tokens", "current"))
     if mode not in EXPECTED_TOKEN_MODES:
         raise ValueError(f"baseline twin_controlled expected_tokens {mode!r} is unknown")
-    for key in ("top3_useful_floor", "mrr_floor"):
-        if key not in block:
-            raise ValueError(f"baseline twin_controlled has no {key}")
+    floors = validate_floors(block, "baseline twin_controlled")
     return {
         **block,
+        **floors,
         "exclude_twins": overlap,
         "expected_tokens": mode,
         "expert_pastes_floor": baseline["expert_pastes_floor"],
@@ -283,7 +347,16 @@ def main(argv: "list[str] | None" = None) -> int:
     except ValueError as error:
         twin_config = None
         failures.append(str(error))
-    if twin_config is None and "twin_controlled" not in baseline and not args.allow_legacy_gate:
+    # The top-level (legacy) floors are validated up front too, so a malformed floor
+    # stops the gate before any evaluation runs.
+    try:
+        validate_floors(baseline, "baseline")
+    except ValueError as error:
+        failures.append(str(error))
+    if failures:
+        print("NOT READY — " + "; ".join(failures))
+        return 1
+    if twin_config is None and not args.allow_legacy_gate:
         failures.append(
             "baseline has no twin_controlled block, so the only number is the legacy "
             "pool's, which includes free edition-twin hits (audit A4); set it after the "

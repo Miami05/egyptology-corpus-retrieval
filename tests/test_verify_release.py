@@ -236,3 +236,76 @@ def test_a_broken_block_stops_the_gate_instead_of_falling_back(monkeypatch, tmp_
     code, _ = _run_main(monkeypatch, tmp_path, baseline, "--allow-legacy-gate")
     assert code == 1
     assert "not in (0, 1]" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Fix round 3 (Astra re-review): malformed configuration must fail closed
+# ---------------------------------------------------------------------------
+
+
+def test_an_explicitly_null_twin_controlled_block_is_not_ready(monkeypatch, tmp_path, capsys):
+    """`"twin_controlled": null` is broken configuration, not absence: it must not let
+    the legacy pool decide READY, with or without --allow-legacy-gate."""
+    baseline = dict(BASELINE, benchmark="v4.csv", twin_controlled=None)
+    for argv in ((), ("--allow-legacy-gate",)):
+        code, commands = _run_main(monkeypatch, tmp_path, baseline, *argv)
+        assert code == 1
+        assert "twin_controlled is null" in capsys.readouterr().out
+        assert not [c for c in commands if "scripts/run_competitive_ambiguity_eval.py" in c]
+
+
+def test_an_absent_block_still_follows_the_legacy_override(monkeypatch, tmp_path, capsys):
+    baseline = dict(BASELINE, benchmark="v4.csv")
+    assert vr.twin_controlled_config(baseline) is None
+    assert _run_main(monkeypatch, tmp_path, baseline)[0] == 1
+    assert _run_main(monkeypatch, tmp_path, baseline, "--allow-legacy-gate")[0] == 0
+
+
+@pytest.mark.parametrize(
+    "block, message",
+    [
+        (dict(TWIN_BLOCK, top3_useful_floor="NaN"), "must be a number"),
+        (dict(TWIN_BLOCK, top3_useful_floor=float("nan")), "must be finite"),
+        (dict(TWIN_BLOCK, mrr_floor=float("inf")), "must be finite"),
+        (dict(TWIN_BLOCK, top3_useful_floor=0), "not in (0, 1]"),
+        (dict(TWIN_BLOCK, mrr_floor=0.0), "not in (0, 1]"),
+        (dict(TWIN_BLOCK, mrr_floor=1.5), "not in (0, 1]"),
+        (dict(TWIN_BLOCK, mrr_floor=True), "must be a number"),
+        (dict(TWIN_BLOCK, margin_floors={"margin_over_bm25_baseline_top3": -0.5}), "not in [0, 1]"),
+        (dict(TWIN_BLOCK, margin_floors={"margin_over_bm25_baseline_top3": float("nan")}), "must be finite"),
+        (dict(TWIN_BLOCK, margin_floors={"margin_over_bm25_baseline_top3": "NaN"}), "must be a number"),
+        (dict(TWIN_BLOCK, margin_floors={"margin_over_bm25": 0.0}), "not a known margin"),
+        (dict(TWIN_BLOCK, margin_floors=[0.0]), "must be an object"),
+        (dict(TWIN_BLOCK, margin_floors=None), "margin_floors is null"),
+    ],
+)
+def test_malformed_floors_are_refused(block, message) -> None:
+    with pytest.raises(ValueError, match=__import__("re").escape(message)):
+        vr.twin_controlled_config(dict(BASELINE, twin_controlled=block))
+
+
+def test_a_nan_floor_stops_the_gate_before_any_evaluation(monkeypatch, tmp_path, capsys):
+    baseline = dict(
+        BASELINE, benchmark="v4.csv",
+        twin_controlled=dict(TWIN_BLOCK, top3_useful_floor=float("nan")),
+    )
+    code, commands = _run_main(monkeypatch, tmp_path, baseline)
+    assert code == 1
+    assert "must be finite" in capsys.readouterr().out
+    assert not [c for c in commands if "scripts/run_competitive_ambiguity_eval.py" in c]
+
+
+def test_a_malformed_top_level_floor_stops_the_legacy_gate(monkeypatch, tmp_path, capsys):
+    baseline = dict(BASELINE, benchmark="v4.csv", top3_useful_floor=float("nan"))
+    code, _ = _run_main(monkeypatch, tmp_path, baseline, "--allow-legacy-gate")
+    assert code == 1
+    assert "baseline top3_useful_floor must be finite" in capsys.readouterr().out
+
+
+def test_the_pure_check_fails_on_a_nan_floor_instead_of_passing() -> None:
+    assert vr.check_release_floors(0.5, 0.5, (8, 8), dict(BASELINE, mrr_floor=float("nan")))
+    assert vr.check_release_floors(
+        0.9, 0.8, (8, 8),
+        dict(BASELINE, margin_floors={"margin_over_bm25_baseline_top3": -0.5}),
+        {"margin_over_bm25_baseline_top3": -0.4},
+    )
