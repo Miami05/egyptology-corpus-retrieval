@@ -1,0 +1,20 @@
+# Template unit: `egyptology-notify@<unit>.service` sends one phone notification that
+# <unit> failed. Wired in through OnFailure= on egyptology.service and
+# egyptology-backup.service (audit A42).
+#
+# The ntfy topic works like a password (anyone who knows it can read and post), and the
+# repo is public, so it is NOT written here: it comes from NTFY_TOPIC in
+# /home/ledio/egyptology.env. Without it the request goes to https://ntfy.sh/ and fails,
+# which shows up in `journalctl --user -u 'egyptology-notify@*'`.
+#
+# GUESSED: the whole command line (ntfy.sh is the planned channel, not a decision), and
+# that curl lives at /usr/bin/curl.
+# Test: systemctl --user start egyptology-notify@test.service
+
+[Unit]
+Description=Notify that %i failed
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/home/ledio/egyptology.env
+ExecStart=/usr/bin/curl -fsS -m 15 -H "Title: Whyptology: %i failed" -H "Priority: high" -d "%i failed on %H" https://ntfy.sh/${NTFY_TOPIC}

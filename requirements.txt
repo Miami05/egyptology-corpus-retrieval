@@ -22,9 +22,3 @@ python-dotenv==1.1.1
 # (crash inside Streamlit's script thread, so it takes the whole app down).
 # 21.0.0 is stable. Do not unpin without re-testing the Corpus explorer twice.
 pyarrow==21.0.0
-
-# Test suite (tests/): pytest tests/ -q
-pytest==9.1.1
-# Only needed to regenerate data/raw from the upstream Hugging Face datasets
-# (scripts/download_all_sources.py); the app itself never imports it.
-datasets>=2.19,<3

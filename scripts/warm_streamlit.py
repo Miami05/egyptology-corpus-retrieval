@@ -16,17 +16,31 @@ The script run this triggers is a *real* one: whatever the app builds eagerly
 during a run (see `WARM_STAGE_RESOURCES` in `app/ui/whyptology_app.py`) is
 built here, into the cache every later session shares.
 
-Usage (exits 0 on success, non-zero on failure; never blocks a service start
-for longer than --timeout):
+The run is also a smoke test (audit A11). When the app's code is broken, Streamlit
+does not fail the run: it renders the traceback as an `exception` element and then
+reports `script_finished` with FINISHED_SUCCESSFULLY, so "the script finished" says
+nothing about the page working. This client therefore watches the elements as they
+arrive and fails on any `exception` element (not a warning), and with
+`--expect-text` it also fails unless some markdown/html/text element contains that
+text, which proves a real search rendered a real result.
+
+Usage (never blocks a service start for longer than --timeout):
 
     python scripts/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 300
+    python scripts/warm_streamlit.py --query "..." --expect-text suggestion-card
+
+Exit codes: 0 the run finished and rendered no exception (and the expected text, if
+asked for, appeared); 1 anything else: timeout, closed connection, compile error,
+an exception element, or the expected text missing.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 import time
+from dataclasses import dataclass, field
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from tornado.httpclient import HTTPRequest
@@ -38,6 +52,40 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 
 HEALTH_PATH = "/_stcore/health"
 STREAM_PATH = "/_stcore/stream"
+
+
+@dataclass
+class RunState:
+    """What one script run has shown so far; see `inspect_forward`."""
+
+    expect_text: str = ""
+    # (exception type or "<redacted>", first 200 chars of the message)
+    exceptions: list[tuple[str, str]] = field(default_factory=list)
+    expect_seen: bool = False
+
+
+def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
+    """Record exception elements, and the expected text, from one ForwardMsg.
+
+    With `[client] showErrorDetails = "none"` the exception element still arrives, with
+    an empty type and a generic message, so detection keys on the element kind only.
+    `is_warning` marks the non-fatal flavour, which is not a failure.
+    """
+    if forward.WhichOneof("type") != "delta":
+        return
+    delta = forward.delta
+    if delta.WhichOneof("type") != "new_element":
+        return
+    element = delta.new_element
+    kind = element.WhichOneof("type")
+    if kind == "exception":
+        if not element.exception.is_warning:
+            state.exceptions.append(
+                (element.exception.type or "<redacted>", element.exception.message[:200])
+            )
+    elif kind in ("markdown", "html", "text") and state.expect_text and not state.expect_seen:
+        if state.expect_text in getattr(element, kind).body:
+            state.expect_seen = True
 
 
 def _query_string(query: str) -> str:
@@ -69,12 +117,12 @@ async def _wait_for_health(base: str, deadline: float) -> None:
 
 
 async def _sleep(seconds: float) -> None:
-    import asyncio
-
     await asyncio.sleep(seconds)
 
 
-async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> int:
+async def _run_once(
+    base: str, deadline: float, query: str, verbose: bool, expect_text: str = ""
+) -> int:
     await _wait_for_health(base, deadline)
     started = time.monotonic()
 
@@ -88,6 +136,7 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
         ping_timeout=20,
     )
 
+    state = RunState(expect_text=expect_text)
     request = BackMsg()
     # `?q=` is the app's shareable-search link: `consume_query_param` fills the
     # box and arms the search, and the same script run performs it. So passing a
@@ -102,7 +151,13 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
             conn.close()
             print("warm-up: timed out waiting for the script to finish", file=sys.stderr)
             return 1
-        message = await conn.read_message()
+        try:
+            # Bounded by the deadline: a hung script run must fail a deploy, not hang it.
+            message = await asyncio.wait_for(conn.read_message(), timeout=remaining)
+        except asyncio.TimeoutError:
+            conn.close()
+            print("warm-up: timed out waiting for the script to finish", file=sys.stderr)
+            return 1
         if message is None:
             print("warm-up: the server closed the connection", file=sys.stderr)
             return 1
@@ -111,17 +166,34 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
         kind = forward.WhichOneof("type")
         if verbose and kind:
             print(f"warm-up: <- {kind}")
+        inspect_forward(forward, state)
         if kind != "script_finished":
             continue
         status = forward.script_finished
+        name = ForwardMsg.ScriptFinishedStatus.Name(status)
+        if expect_text and status == ForwardMsg.FINISHED_EARLY_FOR_RERUN:
+            # The app's own `?q=` handling may rerun the script; what the aborted
+            # run drew does not count, so wait for the run that completes.
+            state = RunState(expect_text=expect_text)
+            continue
         conn.close()
         elapsed = time.monotonic() - started
+        print(f"warm-up: script finished ({name}) in {elapsed:.1f}s")
+        if state.exceptions:
+            error_type, error_message = state.exceptions[0]
+            print(
+                "warm-up: the app raised an exception during the run — "
+                f"{error_type}: {error_message} (details in the service journal)",
+                file=sys.stderr,
+            )
+            return 1
+        if expect_text and not state.expect_seen:
+            print(f'warm-up: the run finished but never rendered "{expect_text}"', file=sys.stderr)
+            return 1
         finished_ok = status in (
             ForwardMsg.FINISHED_SUCCESSFULLY,
             ForwardMsg.FINISHED_EARLY_FOR_RERUN,
         )
-        name = ForwardMsg.ScriptFinishedStatus.Name(status)
-        print(f"warm-up: script finished ({name}) in {elapsed:.1f}s")
         return 0 if finished_ok else 1
 
 
@@ -142,13 +214,21 @@ def main() -> int:
             "which times a real paste; omit to warm without searching"
         ),
     )
+    parser.add_argument(
+        "--expect-text",
+        default="",
+        help=(
+            "fail unless a markdown/html/text element containing this text is "
+            "rendered, for example a CSS class only a real result carries"
+        ),
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
     deadline = time.monotonic() + args.timeout
     try:
         return IOLoop.current().run_sync(
-            lambda: _run_once(args.url, deadline, args.query, args.verbose)
+            lambda: _run_once(args.url, deadline, args.query, args.verbose, args.expect_text)
         )
     except Exception as exc:
         # One line, not a traceback: this runs from a systemd ExecStartPost, where
