@@ -450,18 +450,22 @@ International."
 > [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Changes were made.
 
 Changes made: the Tübingen transcription converted to the TLA convention by an explicit
-table (s→z, ś→s, č→ṯ, ṭ→d, č̣→ḏ, ḳ→q, ⸗→=; `˹ ˺`→`⸢ ⸣`), unwritten suffixes glued to
-their word as TLA writes them, multiword ranges taken as one word, `|` line dividers
-dropped, the `Hiero=` grouping (`:`, `()`) removed to plain signs, and a `citation`
-column (PT spell, Sethe §, witness, edition) added. Every row keeps its UD `sent_id` and
+table (s→z, ś→s, č→ṯ, ṭ→d, č̣→ḏ, ḳ→q, ⸗→=; `˹ ˺`→`⸢ ⸣`), unwritten (supplied)
+suffix pronouns glued to their word as TLA writes them while supplied or restored whole
+words stay separate words, multiword ranges taken as one word, `|` line dividers
+dropped, the `Hiero=` grouping (`:`, `()`) removed to plain signs (rows whose signs
+include an unknown-sign marker such as `UC_No`, or a word without signs, are left
+text-only and flagged in `glyphs_incomplete` / `alignment_issue`), overlap flags against
+the corpus added, and a `citation` column (PT spell, Sethe §, witness, edition) added. Every row keeps its UD `sent_id` and
 TLA sentence ids.
 
 ### ORAEC text metadata (CC BY-SA 4.0, with CC0 Trismegistos mapping)
 
 `data/processed/source_metadata_oraec.csv` (one row per linked text: title, date, find
 place, object type, location, inventory numbers, bibliography, hierarchical path,
-Trismegistos id) and `data/processed/source_metadata_oraec_bbaw_links.csv` (BBAW
-sentence → ORAEC text), built by `scripts/import_oraec_metadata.py` from
+Trismegistos id), `data/processed/source_metadata_oraec_bbaw_links.csv` (accepted BBAW
+sentence → ORAEC text links) and `data/processed/source_metadata_oraec_bbaw_link_candidates.csv`
+(proposed links that were *not* accepted, for review only), built by `scripts/import_oraec_metadata.py` from
 <https://github.com/oraec/corpus_raw_data>. Its README's licence table gives
 `oraec1.json .. oraec13026.json` and `oraec_hierarchical_path.tsv` as **cc-by-sa-4.0**
 and `mapping_oraec_trismegistos.csv` as **cc0 | ORAEC**; each JSON's own `credits`
@@ -481,7 +485,9 @@ list (`mapping_oraec_karnak.tsv`, `mapping_oraec_lemmata_karnak.tsv`) were not u
 
 Changes made: fields flattened to one row per text, labels joined with ` | `, duplicate
 inventory numbers collapsed, joined to our AES rows by AED-TEI text id and to our BBAW
-rows by unique sentence match; every row names the source JSON, its per-text author
+rows by unique sentence match — accepted only when the match key has at least three
+words and the row's translation equals the ORAEC sentence's after whitespace
+normalisation; shorter or disagreeing matches go to the candidates file; every row names the source JSON, its per-text author
 (`text_authors`) and licence, and the Trismegistos columns name their own file and CC0.
 
 ### Sign reference: Unicode Unikemet 18.0 (Unicode License V3) and JSesh (CC BY 4.0)
@@ -546,7 +552,8 @@ under [CC-BY](https://creativecommons.org/licenses/by/4.0/)." Only that XML is u
 > <https://github.com/rosmord/jsesh>, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 > Changes were made.
 
-Changes made: Unikemet's tagged lines pivoted to columns; JSesh's Manuel-de-Codage
+Changes made: Unikemet's tagged lines pivoted to columns, values kept verbatim, plus a
+`unikemet_value_tla` column that writes Unikemet's `ḳ` as TLA's `q`; JSesh's Manuel-de-Codage
 values converted to the corpus's TLA letters (raw values kept in `jsesh_values_mdc`);
 corpus and Nederhof-table membership columns added. Every row names its sources in a
 `source` column.
@@ -577,7 +584,7 @@ CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
 | `data/processed/sign_functions.csv` | sign → function inventory (see "Sign functions" above) | **CC BY 4.0**, Mark-Jan Nederhof — *not* CC BY-SA[^signfunctions] |
 | `data/processed/sign_functions_supplement.csv` | 13 rows for 11 signs Nederhof's Unicode 5.2 list does not cover (see "This project's supplement" above) | CC BY-SA 4.0, this project, after the Gardiner sign list |
 | `data/processed/ud_egyptian_pc_candidates.csv` | candidate Pyramid Texts rows from UD_Egyptian-PC (not in the corpus) | CC BY-SA 4.0, UD_Egyptian-PC |
-| `data/processed/source_metadata_oraec.csv`, `source_metadata_oraec_bbaw_links.csv` | ORAEC text metadata linked to AES/BBAW rows | CC BY-SA 4.0, ORAEC/AED authors; Trismegistos columns CC0 |
+| `data/processed/source_metadata_oraec.csv`, `source_metadata_oraec_bbaw_links.csv`, `source_metadata_oraec_bbaw_link_candidates.csv` | ORAEC text metadata linked to AES/BBAW rows | CC BY-SA 4.0, ORAEC/AED authors; Trismegistos columns CC0 |
 | `data/processed/sign_reference.csv` | Unikemet 18.0 + JSesh sign reference | Unicode License V3 (notice above) + **CC BY 4.0**, JSesh |
 | `data/processed/lemma_glosses_en.csv` | English glosses per TLA lemma id | **CC0**, Wikidata |
 

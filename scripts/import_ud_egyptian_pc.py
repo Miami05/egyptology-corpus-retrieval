@@ -34,12 +34,24 @@ dropped.
 
 Tokens. A UD multiword-token range line (`5-7  Nfr-kꜣ-Rꜥw`) is the surface word and
 carries its own Hiero and lemma id; its component words are skipped, which matches
-TLA's tokenisation of compounds and names. A token with `Hiero=No` (an unwritten
-suffix the editor supplies, written `(⸗ꞽ)`) is glued onto the previous word without a
-space, exactly as TLA writes `kꜣ(=ꞽ)`, so the transliteration keeps one word per sign
-group. A row is *aligned* (hieroglyphs filled) only when every surface word has at
-least one sign in the Unicode hieroglyph ranges; otherwise it is text-only, like the
-BBAW/Ramses text-only rows. `[...]` (an unrestored lacuna) is flagged, not dropped.
+TLA's tokenisation of compounds and names.
+
+`Hiero=No` marks a token with no signs on the monument. Only a *supplied suffix
+pronoun* — a form that is `⸗x` once its editorial brackets `( ) < > [ ]` are set
+aside, e.g. `(⸗ꞽ)`, `<⸗k>`, `[⸗f]` — is glued onto the previous word without a space,
+exactly as TLA writes `kꜣ(=ꞽ)`. Every other `Hiero=No` token is a whole word the editor
+supplies or restores (`<m>`, `[mṭw]`, `Nb.t-ḥw.t`, `[4]`): it stays a separate word,
+and since it has no signs the row's glyph alignment is unavailable.
+
+A row is *aligned* (hieroglyphs filled) only when every surface word has at least one
+sign in the Unicode hieroglyph ranges **and** no token's `Hiero=` value carries a
+marker for an unknown or missing sign (`UC_No`, `Lost`, `...`, an unencoded code point
+written as `139CA` / `UC142E4`, or any other residue once the signs, the grouping and
+editorial notation `: ( ) [ ] { } < > ˹ ˺ * $ §` and the variation-selector notes
+`_FE00`..`_FE0F` are removed). Such rows keep `glyphs_incomplete = True`; the signs are
+never silently stripped into an apparently complete sequence. `alignment_issue` names
+every reason a row is text-only (`unwritten_word`, `unknown_sign`, `no_signs`,
+`lacuna`). `[...]` (an unrestored lacuna) is flagged, not dropped.
 
 Overlap with examples.csv, in order:
     duplicate_tla_id   one of the sentence's TLA ids is an AES row's sentence id
@@ -47,11 +59,20 @@ Overlap with examples.csv, in order:
     duplicate_fold     same reading under the ASCII search fold
     overlap_partial    the UD reading is inside a corpus row, or a corpus row of
                        >= 3 words is inside the UD reading (search fold, word-bounded)
-    net_new            none of the above
+    unmatched_by_current_rules   none of the above (not "new": see the flags below)
+
+Independent flags, set on every row whatever its status:
+    glyph_overlap      the row's signs, all spacing and grouping removed, equal some
+                       corpus row's signs (spacing-insensitive)
+    lemma_overlap      the row's TLA lemma-id sequence equals some corpus row's
+    repeated_in_candidates   the strict reading occurs more than once in this file
+A row is unmatched on every axis only when its status is unmatched_by_current_rules
+and both overlap flags are False; the script prints that count separately.
 
 Output is a candidate CSV with the examples.csv schema plus `citation` (PT spell/§,
-witness, edition), `ud_sent_id`, `tla_sentence_ids`, `overlap_status`, `has_lacuna`
-and `aligned`. It never writes examples.csv; the lead decides what joins.
+witness, edition), `ud_sent_id`, `tla_sentence_ids`, `overlap_status`, `glyph_overlap`,
+`lemma_overlap`, `repeated_in_candidates`, `has_lacuna`, `glyphs_incomplete`,
+`alignment_issue` and `aligned`. It never writes examples.csv; the lead decides what joins.
 
     python -I scripts/import_ud_egyptian_pc.py --raw-dir data/raw/ud_egyptian_pc/repo \
         --output data/processed/ud_egyptian_pc_candidates.csv
@@ -82,7 +103,12 @@ SOURCE = "UD_Egyptian-PC"
 VERSION = "2.18"
 SPLITS = ["train", "dev", "test"]
 
-EXTRA_COLUMNS = ["citation", "ud_sent_id", "tla_sentence_ids", "overlap_status", "has_lacuna", "aligned"]
+EXTRA_COLUMNS = [
+    "citation", "ud_sent_id", "tla_sentence_ids", "overlap_status", "glyph_overlap", "lemma_overlap",
+    "repeated_in_candidates", "has_lacuna", "glyphs_incomplete", "alignment_issue", "aligned",
+]
+UNMATCHED = "unmatched_by_current_rules"
+STATUSES = ["duplicate_tla_id", "duplicate_strict", "duplicate_fold", "overlap_partial", UNMATCHED]
 
 # NFC Tübingen -> TLA. `č` followed by U+0323 is handled in `tuebingen_to_tla`.
 TUEBINGEN_TO_TLA: dict[str, str] = {
@@ -130,9 +156,41 @@ def is_hieroglyph(ch: str) -> bool:
     return 0x13000 <= cp <= 0x1342F or 0x13460 <= cp <= 0x143FF
 
 
+# A MISC field that lost its `|` separator runs straight into the next key
+# (`Hiero=𓆑ID=10050`, `Hiero=𓏤Hierocl=𓏤`); the value ends where that key starts.
+_RUN_ON_KEY_RE = re.compile(r"(?:Hierocl|ID|MWE|LINE)=")
+# Notation that is not a sign and not a gap: RES-like grouping, editorial brackets
+# (restored `[]`, superfluous `{}`, omitted `<>`, damaged `˹˺`), `*`, `$`/`§` notes,
+# and variation-selector notes (`_FE00`, ` FE01`).
+_GLYPH_NOTATION_RE = re.compile(r"[ _]?FE0[0-9A-F]|[:()\[\]{}<>˹˺*$§\s]")
+
+
+def hiero_value(value: str) -> str:
+    """The `Hiero=` value proper: a doubled `Hiero=` prefix and a run-on next key removed."""
+    if value.startswith("Hiero="):
+        value = value[len("Hiero="):]
+    return _RUN_ON_KEY_RE.split(value, maxsplit=1)[0]
+
+
 def hiero_signs(value: str) -> str:
-    """Keep only hieroglyph code points from a `Hiero=` value (drops `:`, `()`, `[]`, UC_No)."""
-    return "".join(ch for ch in value if is_hieroglyph(ch))
+    """Keep only hieroglyph code points from a `Hiero=` value (drops `:`, `()`, `[]`).
+
+    Unknown-sign markers such as `UC_No` are dropped here too, so callers must check
+    `hiero_unknown` first: an empty or shortened result is not a complete reading.
+    """
+    return "".join(ch for ch in hiero_value(value) if is_hieroglyph(ch))
+
+
+def hiero_unknown(value: str) -> str:
+    """What a `Hiero=` value holds besides signs and notation: `UC_No`, `Lost`, `...`,
+    an unencoded code point (`139CA`), stray text. Empty means every sign is encoded."""
+    rest = "".join(ch for ch in hiero_value(value) if not is_hieroglyph(ch))
+    return _GLYPH_NOTATION_RE.sub("", rest)
+
+
+def is_supplied_suffix(form: str) -> bool:
+    """`(⸗ꞽ)`, `<⸗k>`, `[(⸗ꞽ)]`: a suffix pronoun once editorial brackets are set aside."""
+    return form.strip("()<>[]").startswith("⸗")
 
 
 def parse_misc(misc: str) -> dict[str, str]:
@@ -206,28 +264,36 @@ def build_row(sentence: dict, split: str) -> dict:
     glyphs: list[str] = []
     lemmas: list[str] = []
     upos: list[str] = []
-    aligned = True
+    lemma_ids: list[str] = []
+    issues: list[str] = []
     for tok in sentence["surface"]:
         if tok["upos"] == "PUNCT" and tok["misc"].get("LINE") == "Punct":
             continue  # `|`, the treebank's line divider in offering lists: not a word
-        form = tuebingen_to_tla(tok["form"])
+        raw_form = tok["form"]
+        form = tuebingen_to_tla(raw_form)
         hiero = tok["misc"].get("Hiero", "")
-        unwritten = hiero == "No"
-        if unwritten and words:
+        if hiero == "No" and words and is_supplied_suffix(raw_form):
             words[-1] += form  # TLA glues an editorial suffix: kꜣ(=ꞽ)
         else:
             words.append(form)
-            signs = hiero_signs(hiero)
+            if hiero == "No":
+                issues.append("unwritten_word")  # a supplied/restored whole word: no signs
+            elif hiero_unknown(hiero):
+                issues.append("unknown_sign")
+            signs = hiero_signs(hiero) if hiero != "No" else ""
             if not signs:
-                aligned = False
+                issues.append("no_signs")
             glyphs.append(signs)
         lid = lemma_id(tok["misc"])
         lemmas.append(f"{lid}|{form}" if lid else form)
+        lemma_ids.append(lid if lid.isdigit() else "?")
         upos.append(tok["upos"])
     translit = " ".join(words)
     has_lacuna = "[...]" in translit or "..." in translit
     if has_lacuna:
-        aligned = False
+        issues.append("lacuna")
+    issues = list(dict.fromkeys(issues))
+    aligned = not issues
     hieroglyphs = " ".join(glyphs) if aligned else ""
     spell, section, king = meta.get("spell", ""), meta.get("section", ""), meta.get("king", "")
     edition = meta.get("edition", "")
@@ -258,7 +324,12 @@ def build_row(sentence: dict, split: str) -> dict:
             "ud_sent_id": sid,
             "tla_sentence_ids": ";".join(x.strip() for x in meta.get("TLA", "").split(";") if x.strip()),
             "has_lacuna": str(has_lacuna),
+            "glyphs_incomplete": str("unknown_sign" in issues),
+            "alignment_issue": ";".join(issues),
             "aligned": str(aligned),
+            # Overlap keys, not written out (the DataFrame keeps only the named columns).
+            "_glyph_key": "".join(glyphs),
+            "_lemma_key": " ".join(lemma_ids),
         }
     )
     return row
@@ -271,8 +342,22 @@ def build_row(sentence: dict, split: str) -> dict:
 AES_SENTENCE_RE = re.compile(r"sentence=([A-Za-z0-9_-]+)")
 
 
+def glyph_key(value: str) -> str:
+    """Signs only: spacing, layout controls and placeholders removed."""
+    return "".join(ch for ch in value if is_hieroglyph(ch))
+
+
+def lemma_key(value: str) -> str:
+    """The lemma-id sequence of a `lemma_sequence` value (ids before `|`)."""
+    return " ".join(tok.split("|", 1)[0] for tok in value.split())
+
+
 def classify_overlap(rows: list[dict], corpus: pd.DataFrame) -> None:
-    """Fill `overlap_status` on each candidate row in place."""
+    """Fill `overlap_status` and the independent overlap flags on each row in place.
+
+    `corpus` needs `source`, `source_ref` and `transliteration_gold`; the glyph and
+    lemma flags are computed when it also has `hieroglyphs` / `lemma_sequence`.
+    """
     aes_ids = set(
         corpus.loc[corpus["source"] == "AES", "source_ref"].str.extract(AES_SENTENCE_RE)[0].dropna()
     )
@@ -302,7 +387,20 @@ def classify_overlap(rows: list[dict], corpus: pd.DataFrame) -> None:
             contains_corpus_row.add(bisect_right(starts, at) - 1)
             at = joined.find(needle, at + 1)
 
+    corpus_glyphs = (
+        {k for k in corpus["hieroglyphs"].map(glyph_key) if k} if "hieroglyphs" in corpus else set()
+    )
+    corpus_lemmas = (
+        {k for k in corpus["lemma_sequence"].map(lemma_key) if k} if "lemma_sequence" in corpus else set()
+    )
+    strict_counts = collections.Counter(strict_reading_key(r["transliteration_gold"]) for r in rows)
+
     for i, row in enumerate(rows):
+        g = row.get("_glyph_key", "")
+        lk = row.get("_lemma_key", "")
+        row["glyph_overlap"] = str(bool(g) and g in corpus_glyphs)
+        row["lemma_overlap"] = str(bool(lk) and "?" not in lk.split() and lk in corpus_lemmas)
+        row["repeated_in_candidates"] = str(strict_counts[strict_reading_key(row["transliteration_gold"])] > 1)
         tla_ids = [x for x in row["tla_sentence_ids"].split(";") if x]
         f = ud_folds[i]
         if any(t in aes_ids for t in tla_ids):
@@ -314,7 +412,7 @@ def classify_overlap(rows: list[dict], corpus: pd.DataFrame) -> None:
         elif (f and f" {f} " in big) or i in contains_corpus_row:
             status = "overlap_partial"
         else:
-            status = "net_new"
+            status = UNMATCHED
         row["overlap_status"] = status
 
 
@@ -340,7 +438,7 @@ def main() -> None:
     rows = convert(Path(args.raw_dir))
     corpus = pd.read_csv(
         args.examples, dtype=str, keep_default_na=False,
-        usecols=["source", "source_ref", "transliteration_gold"],
+        usecols=["source", "source_ref", "transliteration_gold", "hieroglyphs", "lemma_sequence"],
     )
     classify_overlap(rows, corpus)
     df = pd.DataFrame(rows, columns=REQUIRED_COLUMNS + EXTRA_COLUMNS)
@@ -350,11 +448,23 @@ def main() -> None:
     status = collections.Counter(df["overlap_status"])
     print(f"sentences: {len(df)}")
     print(f"aligned: {(df['aligned'] == 'True').sum()}  text-only: {(df['aligned'] != 'True').sum()}  "
-          f"with lacuna: {(df['has_lacuna'] == 'True').sum()}")
-    for k in ["duplicate_tla_id", "duplicate_strict", "duplicate_fold", "overlap_partial", "net_new"]:
+          f"with lacuna: {(df['has_lacuna'] == 'True').sum()}  "
+          f"glyphs incomplete: {(df['glyphs_incomplete'] == 'True').sum()}")
+    issues = collections.Counter(i for v in df["alignment_issue"] for i in v.split(";") if i)
+    print(f"alignment issues (rows): {dict(issues)}")
+    for k in STATUSES:
         print(f"{k}: {status.get(k, 0)}")
-    nn = df[df["overlap_status"] == "net_new"]
-    print(f"net_new without lacuna: {(nn['has_lacuna'] != 'True').sum()}; net_new aligned: {(nn['aligned'] == 'True').sum()}")
+    nn = df[df["overlap_status"] == UNMATCHED]
+    nl = nn[nn["has_lacuna"] != "True"]
+    print(f"{UNMATCHED} without lacuna: {len(nl)}; aligned: {(nn['aligned'] == 'True').sum()}")
+    print(f"  of those without lacuna: glyph_overlap {(nl['glyph_overlap'] == 'True').sum()}, "
+          f"lemma_overlap {(nl['lemma_overlap'] == 'True').sum()}, "
+          f"repeated_in_candidates {(nl['repeated_in_candidates'] == 'True').sum()}")
+    every = nn[(nn["glyph_overlap"] != "True") & (nn["lemma_overlap"] != "True")]
+    every_nl = every[every["has_lacuna"] != "True"]
+    print(f"unmatched on all of strict, fold, glyph and lemma-id: {len(every)}; without lacuna: {len(every_nl)}; "
+          f"distinct strict readings among those: {every_nl['transliteration_gold'].map(strict_reading_key).nunique()}; "
+          f"aligned: {(every_nl['aligned'] == 'True').sum()}")
     chars = collections.Counter("".join(df["transliteration_gold"]))
     corpus_chars = set("".join(corpus["transliteration_gold"]))
     unseen = {c: n for c, n in chars.items() if c not in corpus_chars}

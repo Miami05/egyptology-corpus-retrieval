@@ -59,3 +59,10 @@ def test_committed_table_carries_attribution() -> None:
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
     assert df["source"].str.contains("Unicode License V3").all()
     assert len(df) == df["codepoint"].nunique()
+
+
+def test_unikemet_qoph_kept_upstream_and_normalised_to_tla_q() -> None:
+    uk = parse_unikemet("U+1320E\tkEH_FVal\tḳꜣb\nU+1320E\tkEH_JSesh\tN29\n")
+    row = build(uk, {}, collections.Counter(), set()).iloc[0]
+    assert row["unikemet_value"] == "ḳꜣb"  # verbatim upstream
+    assert row["unikemet_value_tla"] == "qꜣb"

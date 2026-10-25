@@ -19,6 +19,7 @@ from scripts.import_ud_egyptian_pc import (  # noqa: E402
     build_row,
     classify_overlap,
     hiero_signs,
+    hiero_unknown,
     parse_conllu,
     tuebingen_to_tla,
 )
@@ -114,4 +115,120 @@ def test_overlap_classes() -> None:
         }
     )
     classify_overlap(rows, corpus)
-    assert [r["overlap_status"] for r in rows] == ["duplicate_strict", "net_new", "overlap_partial"]
+    assert [r["overlap_status"] for r in rows] == [
+        "duplicate_strict", "unmatched_by_current_rules", "overlap_partial",
+    ]
+    assert "net_new" not in {r["overlap_status"] for r in rows}
+    assert [r["repeated_in_candidates"] for r in rows] == ["False", "False", "False"]
+
+
+
+# PT 262 §334b (Teti), verbatim from egy_pc-ud-train.conllu: `<m>` is a whole word the
+# editor supplies (Hiero=No, ID=…_Emend), not a suffix.
+PT_262_334B = """# sent_id = PT_Sethe_262_334b_Teti_(1)
+# edition = Sethe
+# spell = 262
+# section = 334b
+# king = Teti
+# TLA = No
+1\tč̣ꜣ.n\tč̣ꜣi̯\tVERB\t_\t_\t0\troot\t_\tHiero=𓍒𓄿(𔀟:𓈖)|Hierocl=𔀟|ID=181780
+2\tTtꞽ\tTtꞽ\tPROPN\t_\t_\t1\tnsubj\t_\tHiero=𓍹(𓏏:𓏏)𓇋𓍺|ID=450656
+3\t<m>\tm\tADP\t_\t_\t4\tcase\t_\tHiero=No|ID=400007_Emend
+4\tmẖn.t\tmẖn.t\tNOUN\t_\t_\t1\tobl\t_\tHiero=𓅓(𓄡:𓈖:𓏏)|ID=74610
+5\twr.t\twr\tADJ\t_\t_\t4\tamod\t_\tHiero=(𓅨:𓂋:𓏏)|ID=47271
+
+"""
+
+# Restored whole word `[mṭw]` and restored / omitted suffixes `[⸗k]`, `<⸗f>` (shapes
+# as in the treebank; Hiero=No on all three).
+RESTORED = """# sent_id = R_1
+# edition = Sethe
+# spell = 1
+# section = 1a
+# king = Unas
+# TLA = No
+1\tč̣ṭ\tč̣ṭ\tVERB\t_\t_\t0\troot\t_\tHiero=𓆓𓂧|ID=185810
+2\t[⸗k]\tk\tPRON\t_\t_\t1\tnsubj\t_\tHiero=No|ID=10110_Rest
+3\t[mṭw]\tmṭw\tNOUN\t_\t_\t1\tobj\t_\tHiero=No|ID=78140_Rest
+4\t<⸗f>\tf\tPRON\t_\t_\t3\tnmod\t_\tHiero=No|ID=10050_Add
+
+"""
+
+# PT 437 §808a (Pepi), the first four tokens verbatim: `wč̣b` has an unknown sign.
+PT_437_808A = """# sent_id = PT_Sethe_437_808a-b_Pepi
+# edition = Sethe
+# spell = 437
+# section = 808a-b
+# king = Pepi
+# TLA = IBUBd1TXFb49Ukgwv3c79WGBqx4
+1\tšmś\tšmś\tVERB\t_\t_\t0\troot\t_\tHiero=𓈙𓌞𓋴|ID=155000
+2\tčw\tčw\tPRON\t_\t_\t1\tobj\t_\tHiero=𓍿𓅱|ID=174900
+3\tꞽꜣm\tꞽꜣm\tNOUN\t_\t_\t1\tnsubj\t_\tHiero=𓇋𓄿𓌳𓅓𓆭|Hierocl=𓆭|ID=24810
+4\twč̣b\twč̣b\tVERB\t_\t_\t1\tconj\t_\tHiero=𓎗𓃀UC_No𓃀|Hierocl=UC_No|ID=52620
+
+"""
+
+
+def test_supplied_whole_word_is_not_glued_and_row_is_not_aligned() -> None:
+    (sentence,) = parse_conllu(PT_262_334B)
+    row = build_row(sentence, "train")
+    assert row["transliteration_gold"] == "ḏꜣ.n Ttꞽ <m> mẖn.t wr.t"  # not "Ttꞽ<m>"
+    assert row["aligned"] == "False" and row["hieroglyphs"] == ""
+    assert row["alignment_issue"] == "unwritten_word;no_signs"
+    assert row["glyphs_incomplete"] == "False"
+
+
+def test_restored_word_separate_and_supplied_suffixes_glued() -> None:
+    (sentence,) = parse_conllu(RESTORED)
+    row = build_row(sentence, "train")
+    assert row["transliteration_gold"] == "ḏd[=k] [mdw]<=f>"
+    assert row["aligned"] == "False" and "unwritten_word" in row["alignment_issue"]
+
+
+def test_supplied_suffixes_alone_keep_the_row_aligned() -> None:
+    (sentence,) = parse_conllu(PT_1_1B)
+    row = build_row(sentence, "train")
+    assert row["alignment_issue"] == "" and row["aligned"] == "True"
+
+
+def test_unknown_sign_marker_is_detected_before_stripping() -> None:
+    assert hiero_unknown("𓎗𓃀UC_No𓃀") == "UC_No"
+    assert hiero_unknown("(𓂋:139CA)") == "139CA"
+    assert hiero_unknown("[...](𓂝:𓂋)") == "..."
+    assert hiero_unknown("Lost") == "Lost"
+    # notation and a run-on next key are not unknown signs
+    assert hiero_unknown("˹𓇋(𓈙:𓏏)˺{𓈖}<𓎡>𓂘_FE02 $𓋳$") == ""
+    assert hiero_unknown("𓆑ID=10050") == ""
+    assert hiero_signs("[(𓂋:𓏤)]Hierocl=𓏤") == "𓂋𓏤"
+
+
+def test_unknown_sign_row_is_flagged_and_not_aligned() -> None:
+    (sentence,) = parse_conllu(PT_437_808A)
+    row = build_row(sentence, "train")
+    assert row["glyphs_incomplete"] == "True"
+    assert row["alignment_issue"] == "unknown_sign"
+    assert row["aligned"] == "False" and row["hieroglyphs"] == ""
+
+
+def test_glyph_lemma_and_repeat_flags() -> None:
+    (sentence,) = parse_conllu(PT_1_1B)
+    rows = [build_row(sentence, "train") for _ in range(2)]
+    rows[1]["transliteration_gold"] = "zzz yyy"
+    corpus = pd.DataFrame(
+        {
+            "source": ["TLA"],
+            "source_ref": ["x"],
+            "transliteration_gold": ["something else entirely"],
+            # same signs, different spacing and a layout control
+            "hieroglyphs": ["𓌸𓇋 𓇋𓊪𓅱 𓊵\U00013430𓏏𓊪𓈖 𓁷𓂋𓆑"],
+            "lemma_sequence": ["400005|mr 10030|=ꞽ 59741|pw 111230|ḥtp 10030|=ꞽ 400092|ḥr 10050|=f"],
+        }
+    )
+    classify_overlap(rows, corpus)
+    assert [r["overlap_status"] for r in rows] == ["unmatched_by_current_rules"] * 2
+    assert [r["glyph_overlap"] for r in rows] == ["True", "True"]
+    assert [r["lemma_overlap"] for r in rows] == ["True", "True"]
+    assert [r["repeated_in_candidates"] for r in rows] == ["False", "False"]
+    rows[1]["transliteration_gold"] = rows[0]["transliteration_gold"]
+    classify_overlap(rows, corpus)
+    assert [r["repeated_in_candidates"] for r in rows] == ["True", "True"]

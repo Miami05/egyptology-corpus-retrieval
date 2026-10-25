@@ -18,8 +18,12 @@ One row per Unikemet code point. Columns:
     gardiner                               kEH_JSesh (the JSesh / extended Gardiner code)
     unikemet_core                          kEH_Core: C core, L legacy, N otherwise
     unikemet_description                   kEH_Desc
-    unikemet_function, unikemet_value      kEH_Func, kEH_FVal (value already in the
-                                           Schenkel/TLA letters: ꞽ ḥ ẖ ...)
+    unikemet_function, unikemet_value      kEH_Func, kEH_FVal, verbatim upstream values.
+                                           FVal is in Schenkel-style letters (ꞽ ḥ ẖ ...)
+                                           that match TLA except `ḳ` (170 rows in 18.0),
+                                           which TLA writes `q`
+    unikemet_value_tla                     unikemet_value with `ḳ`/`Ḳ` -> `q`/`Q`, the only
+                                           letter that differs from the corpus convention
     jsesh_values                           hasTransliteration values, converted from
                                            JSesh's Manuel-de-Codage ASCII (`i`=yod,
                                            `A`=ꜣ, `a`=ꜥ, `H x X S T D`) to the corpus's
@@ -59,7 +63,7 @@ JSESH_SOURCE = "JSesh signs_description.xml (Serge Rosmorduc et al., CC BY 4.0)"
 
 COLUMNS = [
     "sign", "codepoint", "unikemet_catalog", "unikemet_unik", "gardiner", "unikemet_core",
-    "unikemet_description", "unikemet_function", "unikemet_value",
+    "unikemet_description", "unikemet_function", "unikemet_value", "unikemet_value_tla",
     "jsesh_values", "jsesh_values_mdc", "jsesh_value_types", "jsesh_variant_of", "jsesh_tags",
     "in_corpus", "corpus_occurrences", "in_nederhof", "source",
 ]
@@ -73,6 +77,15 @@ TAGS = {
     "kEH_Func": "unikemet_function",
     "kEH_FVal": "unikemet_value",
 }
+
+
+# Unikemet's kEH_FVal letters that the corpus's TLA convention writes differently.
+FVAL_TO_TLA = str.maketrans({"ḳ": "q", "Ḳ": "Q"})
+
+
+def fval_to_tla(value: str) -> str:
+    """A kEH_FVal value in the corpus's letters (`ḳ` -> `q`); everything else unchanged."""
+    return value.translate(FVAL_TO_TLA)
 
 
 def is_hieroglyph(ch: str) -> bool:
@@ -131,6 +144,7 @@ def build(unikemet: dict, jsesh: dict, corpus_counts: collections.Counter, neder
         row = {c: "" for c in COLUMNS}
         row.update(fields)
         row["sign"], row["codepoint"] = sign, cp
+        row["unikemet_value_tla"] = fval_to_tla(row["unikemet_value"])
         sources = [UNIKEMET_SOURCE]
         js = jsesh.get(fields.get("gardiner", ""))
         if js and any(js.values()):

@@ -14,8 +14,12 @@ as provenance and the site credits "Wikidata contributors" as a courtesy.
 Politeness. Two steps, so the network is touched once:
     --fetch      pages through query.wikidata.org/sparql (LIMIT 10000, a few requests,
                  one second apart, descriptive User-Agent) and saves each page's JSON
-                 under --raw-dir
-    (always)     builds --output from the saved pages, offline
+                 under --raw-dir. It first deletes the pages and manifest of any earlier
+                 fetch, and writes `manifest.json` (the page files, their binding
+                 counts, the date) only after the last page arrived.
+    (always)     builds --output from the saved pages, offline — reading only the pages
+                 the manifest lists, so a page left over from an earlier, longer fetch
+                 is never mixed in; without a manifest it refuses to build
 
     python -I scripts/fetch_wikidata_lemma_glosses.py --fetch --raw-dir data/raw/wikidata \
         --output data/processed/lemma_glosses_en.csv
@@ -44,6 +48,7 @@ USER_AGENT = (
 )
 PAGE = 10000
 MAX_PAGES = 10
+MANIFEST = "manifest.json"
 
 QUERY = """SELECT ?lexeme ?tla ?lemma ?sense ?gloss WHERE {{
   ?lexeme wdt:P12188 ?tla ; wikibase:lemma ?lemma .
@@ -58,6 +63,9 @@ COLUMNS = [
 
 def fetch(raw_dir: Path) -> None:
     raw_dir.mkdir(parents=True, exist_ok=True)
+    for stale in [raw_dir / MANIFEST, *raw_dir.glob("page_*.json"), *raw_dir.glob("page_*.sparql")]:
+        stale.unlink(missing_ok=True)
+    pages: list[dict] = []
     for page in range(MAX_PAGES):
         query = QUERY.format(limit=PAGE, offset=page * PAGE)
         url = ENDPOINT + "?" + urllib.parse.urlencode({"query": query, "format": "json"})
@@ -69,11 +77,34 @@ def fetch(raw_dir: Path) -> None:
         n = len(data["results"]["bindings"])
         (raw_dir / f"page_{page:02d}.json").write_bytes(body)
         (raw_dir / f"page_{page:02d}.sparql").write_text(query, encoding="utf-8")
+        pages.append({"file": f"page_{page:02d}.json", "bindings": n})
         print(f"page {page}: {n} bindings")
         if n < PAGE:
             break
         time.sleep(1.0)
-    (raw_dir / "retrieved.txt").write_text(dt.date.today().isoformat(), encoding="utf-8")
+    else:
+        raise SystemExit(f"more than {MAX_PAGES} pages: raise MAX_PAGES; no manifest written")
+    today = dt.date.today().isoformat()
+    (raw_dir / "retrieved.txt").write_text(today, encoding="utf-8")
+    manifest = {"complete": True, "retrieved": today, "page_size": PAGE, "pages": pages}
+    (raw_dir / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def load_bindings(raw_dir: Path) -> tuple[list[dict], str]:
+    """Bindings of the pages a completed fetch's manifest lists, and its date."""
+    path = raw_dir / MANIFEST
+    if not path.exists():
+        raise SystemExit(f"{path} missing: no completed fetch to build from; run with --fetch")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not manifest.get("complete"):
+        raise SystemExit(f"{path} does not record a completed fetch")
+    bindings: list[dict] = []
+    for page in manifest["pages"]:
+        got = json.loads((raw_dir / page["file"]).read_text(encoding="utf-8"))["results"]["bindings"]
+        if len(got) != page["bindings"]:
+            raise SystemExit(f"{page['file']}: {len(got)} bindings, manifest says {page['bindings']}")
+        bindings.extend(got)
+    return bindings, str(manifest.get("retrieved", ""))
 
 
 def _tail(uri: str) -> str:
@@ -133,11 +164,7 @@ def main() -> None:
     raw_dir = Path(args.raw_dir)
     if args.fetch:
         fetch(raw_dir)
-    bindings: list[dict] = []
-    for page in sorted(raw_dir.glob("page_*.json")):
-        bindings.extend(json.loads(page.read_text(encoding="utf-8"))["results"]["bindings"])
-    retrieved_file = raw_dir / "retrieved.txt"
-    retrieved = retrieved_file.read_text().strip() if retrieved_file.exists() else ""
+    bindings, retrieved = load_bindings(raw_dir)
 
     counts = corpus_lemma_counts(Path(args.examples))
     df = build(bindings, counts, retrieved)

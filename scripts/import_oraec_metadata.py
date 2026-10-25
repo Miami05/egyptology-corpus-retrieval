@@ -21,19 +21,34 @@ Linking.
     BBAW  our BBAW rows carry no text id (one dataset-level id), so they are linked by
           sentence: each ORAEC sentence's `written_form` tokens are joined, converted
           with the BBAW importer's own `to_corpus_convention`, and reduced to the
-          BBAW importer's `dedup_key`. A BBAW row links only when its key belongs to
-          exactly one ORAEC text; keys shared by several texts (formulae, short
-          phrases) are counted as ambiguous and not linked. `key_words` is kept on each
-          link: a unique match on a one- or two-word key is weaker evidence than a
-          long one, and the lead may want to threshold it.
+          BBAW importer's `dedup_key`. Keys shared by several texts (formulae, short
+          phrases) are counted as ambiguous and never linked. A key owned by exactly
+          one text is only a *proposed* link; it is **accepted** only when all hold:
+              key_words >= 3          (a one- or two-word key is too weak: `zꜣ.t =f`
+                                       "his daughter" is unique to the wrong text
+                                       because the BBAW row lost the name)
+              unique text ownership
+              translation match       the BBAW row's translation is nonempty and
+                                       equals, after whitespace normalisation, the
+                                       translation of an ORAEC sentence with that key
+                                       in that text
+          Proposed links that fail are kept as candidates, never as links:
+              review_short_key                 key_words < 3
+              quarantine_translation_mismatch  >= 3 words, both translations
+                                               nonempty, and they differ
+              review_no_translation            >= 3 words, a translation is empty
 
-Outputs (`--output` is required; `--bbaw-links` optional):
-    source_metadata_oraec.csv   one row per ORAEC text linked to >= 1 corpus row
-    <bbaw-links>                BBAW source_sentence_id -> oraec_id (unique matches)
+Outputs (`--output` is required; the two link files are optional):
+    source_metadata_oraec.csv   one row per ORAEC text with >= 1 AES row or accepted
+                                BBAW link (`bbaw_rows_linked` counts accepted links only)
+    <bbaw-links>                accepted BBAW source_sentence_id -> oraec_id links
+    <bbaw-link-candidates>      proposed links that were not accepted, with
+                                `link_status`; for review, not for provenance
 
     python -I scripts/import_oraec_metadata.py --raw-dir data/raw/oraec/repo \
         --output data/processed/source_metadata_oraec.csv \
-        --bbaw-links data/processed/source_metadata_oraec_bbaw_links.csv
+        --bbaw-links data/processed/source_metadata_oraec_bbaw_links.csv \
+        --bbaw-link-candidates data/processed/source_metadata_oraec_bbaw_link_candidates.csv
 """
 
 from __future__ import annotations
@@ -128,15 +143,41 @@ def parse_text(oraec_id: str, record: dict) -> dict:
     }
 
 
-def sentence_keys(record: dict) -> set[str]:
-    keys: set[str] = set()
+MIN_KEY_WORDS = 3
+LINK_COLUMNS = ["source", "source_sentence_id", "oraec_id", "match_method", "key_words",
+                "translation_match", "link_status"]
+
+
+def norm_translation(text: object) -> str:
+    """Whitespace-normalised translation; nothing else is folded."""
+    return " ".join(str(text or "").split())
+
+
+def sentence_keys(record: dict) -> dict[str, set[str]]:
+    """dedup_key -> the normalised translations of the sentences that have that key."""
+    keys: dict[str, set[str]] = {}
     for sent in record.get("sentences") or []:
         words = [str(t.get("written_form", "")) for t in sent.get("token") or [] if t.get("written_form")]
         if words:
             key = dedup_key(to_corpus_convention(" ".join(words)))
             if key:
-                keys.add(key)
+                translations = keys.setdefault(key, set())
+                tr = norm_translation(sent.get("translation"))
+                if tr:
+                    translations.add(tr)
     return keys
+
+
+def link_status(key_words: int, corpus_translation: str, oraec_translations: set[str]) -> tuple[bool, str]:
+    """(translation_match, link_status) for a key owned by exactly one text."""
+    match = bool(corpus_translation) and corpus_translation in oraec_translations
+    if key_words < MIN_KEY_WORDS:
+        return match, "review_short_key"
+    if match:
+        return match, "accepted"
+    if corpus_translation and oraec_translations:
+        return match, "quarantine_translation_mismatch"
+    return match, "review_no_translation"
 
 
 def read_tm(path: Path) -> dict[str, str]:
@@ -156,13 +197,17 @@ def read_paths(path: Path) -> dict[str, str]:
     return out
 
 
-def build(raw_dir: Path, corpus: pd.DataFrame, limit: int = 0) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def build(
+    raw_dir: Path, corpus: pd.DataFrame, limit: int = 0,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     aes = corpus[corpus["source"] == "AES"]
     aes_text = aes["source_ref"].str.extract(AES_TEXT_RE)[0]
     aes_counts = collections.Counter(aes_text.dropna())
 
     bbaw = corpus[corpus["source"] == "BBAW"]
     bbaw_keys = bbaw["transliteration_gold"].map(dedup_key)
+    bbaw_tr = (bbaw["translation"] if "translation" in bbaw else pd.Series("", index=bbaw.index)).map(
+        norm_translation)
 
     tm = read_tm(raw_dir / "mapping_oraec_trismegistos.csv")
     paths = read_paths(raw_dir / "oraec_hierarchical_path.tsv")
@@ -172,27 +217,36 @@ def build(raw_dir: Path, corpus: pd.DataFrame, limit: int = 0) -> tuple[pd.DataF
         files = files[:limit]
     texts: dict[str, dict] = {}
     key_owner: dict[str, set[str]] = collections.defaultdict(set)
+    key_translations: dict[tuple[str, str], set[str]] = collections.defaultdict(set)
     wanted_keys = set(bbaw_keys)
     for path in files:
         data = json.loads(path.read_text(encoding="utf-8"))
         for oraec_id, record in data.items():
             texts[oraec_id] = parse_text(oraec_id, record)
-            for k in sentence_keys(record):
+            for k, trs in sentence_keys(record).items():
                 if k in wanted_keys:
                     key_owner[k].add(oraec_id)
+                    key_translations[(k, oraec_id)].update(trs)
 
     by_aed = {t["aed_text_id"]: oid for oid, t in texts.items() if t["aed_text_id"]}
 
-    links = []
+    proposed = []
     ambiguous = 0
-    for sid, key in zip(bbaw["source_sentence_id"], bbaw_keys):
+    for sid, key, tr in zip(bbaw["source_sentence_id"], bbaw_keys, bbaw_tr):
         owners = key_owner.get(key, set())
         if len(owners) == 1:
-            links.append({"source": "BBAW", "source_sentence_id": sid, "oraec_id": next(iter(owners)),
-                          "match_method": "unique sentence dedup_key", "key_words": len(key.split())})
+            oid = next(iter(owners))
+            n_words = len(key.split())
+            match, status = link_status(n_words, tr, key_translations.get((key, oid), set()))
+            proposed.append({"source": "BBAW", "source_sentence_id": sid, "oraec_id": oid,
+                             "match_method": "unique sentence dedup_key + translation", "key_words": n_words,
+                             "translation_match": str(match), "link_status": status})
         elif len(owners) > 1:
             ambiguous += 1
-    link_df = pd.DataFrame(links, columns=["source", "source_sentence_id", "oraec_id", "match_method", "key_words"])
+    proposed_df = pd.DataFrame(proposed, columns=LINK_COLUMNS)
+    accepted = proposed_df["link_status"] == "accepted"
+    link_df = proposed_df[accepted].reset_index(drop=True)
+    candidate_df = proposed_df[~accepted].reset_index(drop=True)
     bbaw_per_text = collections.Counter(link_df["oraec_id"])
 
     today = dt.date.today().isoformat()
@@ -225,8 +279,14 @@ def build(raw_dir: Path, corpus: pd.DataFrame, limit: int = 0) -> tuple[pd.DataF
         "aes_text_ids_linked": sum(1 for aed in aes_counts if aed in by_aed),
         "aes_rows_linked": linked_aes_rows,
         "bbaw_rows": len(bbaw),
-        "bbaw_rows_linked_unique": len(link_df),
-        "bbaw_rows_linked_unique_3plus_words": int((link_df["key_words"] >= 3).sum()),
+        "bbaw_rows_proposed_unique": len(proposed_df),
+        "bbaw_rows_linked_accepted": len(link_df),
+        "bbaw_rows_review_short_key": int((candidate_df["link_status"] == "review_short_key").sum()),
+        "bbaw_rows_review_short_key_translation_match": int(
+            ((candidate_df["link_status"] == "review_short_key") & (candidate_df["translation_match"] == "True")).sum()),
+        "bbaw_rows_quarantine_translation_mismatch": int(
+            (candidate_df["link_status"] == "quarantine_translation_mismatch").sum()),
+        "bbaw_rows_review_no_translation": int((candidate_df["link_status"] == "review_no_translation").sum()),
         "bbaw_rows_ambiguous": ambiguous,
         "metadata_rows": len(meta),
         "metadata_rows_with_tm": int((meta["trismegistos_id"] != "").sum()),
@@ -234,7 +294,7 @@ def build(raw_dir: Path, corpus: pd.DataFrame, limit: int = 0) -> tuple[pd.DataF
         "aes_rows_with_bibliography": int(meta.loc[meta["bibliography"] != "", "aes_rows_linked"].sum()),
         "aes_rows_with_idno": int(meta.loc[meta["idno"] != "", "aes_rows_linked"].sum()),
     }
-    return meta, link_df, stats
+    return meta, link_df, candidate_df, stats
 
 
 def main() -> None:
@@ -242,25 +302,29 @@ def main() -> None:
     parser.add_argument("--raw-dir", required=True, help="Clone of oraec/corpus_raw_data")
     parser.add_argument("--output", required=True)
     parser.add_argument("--bbaw-links", default="")
+    parser.add_argument("--bbaw-link-candidates", default="")
     parser.add_argument("--examples", default=str(EXAMPLES))
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
     out = Path(args.output).resolve()
-    if out == EXAMPLES.resolve() or (args.bbaw_links and Path(args.bbaw_links).resolve() == EXAMPLES.resolve()):
-        sys.exit("refusing to overwrite examples.csv")
+    for target in (args.output, args.bbaw_links, args.bbaw_link_candidates):
+        if target and Path(target).resolve() == EXAMPLES.resolve():
+            sys.exit("refusing to overwrite examples.csv")
     corpus = pd.read_csv(
         args.examples, dtype=str, keep_default_na=False,
-        usecols=["source", "source_sentence_id", "source_ref", "transliteration_gold"],
+        usecols=["source", "source_sentence_id", "source_ref", "transliteration_gold", "translation"],
     )
-    meta, links, stats = build(Path(args.raw_dir), corpus, args.limit)
+    meta, links, candidates, stats = build(Path(args.raw_dir), corpus, args.limit)
     out.parent.mkdir(parents=True, exist_ok=True)
     meta.to_csv(out, index=False)
     if args.bbaw_links:
         links.to_csv(args.bbaw_links, index=False)
+    if args.bbaw_link_candidates:
+        candidates.to_csv(args.bbaw_link_candidates, index=False)
     for k, v in stats.items():
         print(f"{k}: {v}")
     print(f"AES link rate: {stats['aes_rows_linked'] / max(stats['aes_rows'], 1):.4f}")
-    print(f"BBAW link rate: {stats['bbaw_rows_linked_unique'] / max(stats['bbaw_rows'], 1):.4f}")
+    print(f"BBAW accepted link rate: {stats['bbaw_rows_linked_accepted'] / max(stats['bbaw_rows'], 1):.4f}")
     print(f"wrote {out}")
 
 
