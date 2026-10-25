@@ -21,12 +21,8 @@ from app.data.normalizer import (
     normalize_transliteration,
     search_fold,
 )
+from scripts.import_bbaw_egyptian import refuse_unsafe_output
 
-DEFAULT_DATASET_PATH = (
-    "thesaurus-linguae-aegyptiae/tla-Earlier_Egyptian_original-v18-premium"
-)
-DEFAULT_OUTPUT_PATH = "data/raw/real_examples_worklist.csv"
-FALLBACK_WORKLIST_PATH = "data/raw/real_examples_worklist.csv"
 DEFAULT_SCRIPT_TYPE = "hieroglyphic/hieratic"
 DEFAULT_EXISTING_PATH = "data/processed/examples.csv"
 
@@ -120,6 +116,8 @@ PARQUET_ALIASES = {
     "upos": ["UPOS", "upos"],
     "glossing": ["glossing"],
     "source_ref": ["source_ref", "url", "tla_sentence_url", "reference"],
+    # Only the Demotic parquet has it ("Name;Name;AV project"); the others are silent.
+    "authors": ["authors"],
 }
 
 
@@ -137,10 +135,11 @@ PERIOD_RANGES = [
     ("Third Intermediate Period", -1069, -664),
     ("Late Period", -664, -332),
     ("Ptolemaic Period", -332, -30),
-    # 30 BCE (Roman annexation of Egypt) to 395 CE (division of the Roman Empire),
-    # the conventional bounds. Needed once the Demotic corpus is imported: those
-    # rows are dated up to +475, well past the Ptolemaic cutoff above.
-    ("Roman Period", -30, 395),
+    # 30 BCE (Roman annexation of Egypt) to 642 CE (Arab conquest). The Roman Period
+    # proper ends in 395 CE, but the Demotic corpus is dated up to +475 and a label
+    # such as "Undated range (451 to 475)" would hide those rows from a "Roman Period"
+    # filter, so the Byzantine years stay under the same label.
+    ("Roman Period", -30, 642),
 ]
 
 
@@ -159,8 +158,8 @@ def _derive_period(date_not_before: object, date_not_after: object) -> str:
 
     The midpoint of the attested range decides the period, so a text dated
     -1878..-1843 lands in the Middle Kingdom rather than being reported as the
-    generic language stage. Returns "" when the dataset carries no usable dates,
-    so the caller can fall back rather than invent a period.
+    generic language stage. Returns "" when the dataset carries no usable dates;
+    the caller then records "unknown" rather than invent a period.
     """
     start = _parse_year(date_not_before)
     end = _parse_year(date_not_after)
@@ -329,17 +328,6 @@ def _row_from_record(record: dict[str, Any], index: int) -> tuple[dict[str, str]
     return row, generated_text_id, generated_sentence_id
 
 
-def _load_fallback_worklist(limit: int) -> pd.DataFrame:
-    fallback_path = Path(FALLBACK_WORKLIST_PATH)
-    if not fallback_path.exists():
-        return pd.DataFrame(columns=FINAL_COLUMNS)
-    df = pd.read_csv(fallback_path).fillna("")
-    for column in FINAL_COLUMNS:
-        if column not in df.columns:
-            df[column] = ""
-    return df.loc[:, FINAL_COLUMNS].head(limit).copy()
-
-
 def _row_value(row: pd.Series, aliases: list[str]) -> str:
     for alias in aliases:
         if alias in row.index:
@@ -448,9 +436,19 @@ def _row_from_parquet(
     date_note = ""
     if date_not_before or date_not_after:
         date_note = f"dateNotBefore={date_not_before}; dateNotAfter={date_not_after}"
-    # The dataset dates every sentence, so derive a real period instead of stamping
-    # every row with the language stage (which made the period filter useless).
-    period = _derive_period(date_not_before, date_not_after) or language_stage
+    # Derive a real period instead of stamping every row with the language stage
+    # (which made the period filter useless). A row without dates is "unknown", as in
+    # the BBAW and AES rows, not the stage: 710 undated Demotic rows read "Demotic".
+    period = _derive_period(date_not_before, date_not_after) or "unknown"
+    # The date range and the editors survive --append here: notes_internal is not in
+    # REQUIRED_COLUMNS and is lost, grammar_notes is kept (AES does the same).
+    note_bits = []
+    if date_not_before or date_not_after:
+        dates = " to ".join(d for d in (date_not_before, date_not_after) if d)
+        note_bits.append(f"TLA date: {dates} (negative = BCE)")
+    authors = _row_value(row, PARQUET_ALIASES["authors"])
+    if authors:
+        note_bits.append(f"editors: {authors.replace(';', ', ')}")
 
     out = {column: "" for column in FINAL_COLUMNS}
     out.update(
@@ -472,6 +470,7 @@ def _row_from_parquet(
             "lemma_sequence": _row_value(row, PARQUET_ALIASES["lemma_sequence"]),
             "upos": _row_value(row, PARQUET_ALIASES["upos"]),
             "glossing": _row_value(row, PARQUET_ALIASES["glossing"]),
+            "grammar_notes": "; ".join(note_bits),
             "source_ref": source_ref,
             "review_status": "seed",
             "aesthetic_arrangement_flag": "False",
@@ -576,8 +575,24 @@ def main() -> None:
         "--input",
         help="Local dataset file. Parquet inputs are read with pandas.read_parquet().",
     )
-    parser.add_argument("--dataset-path", default=DEFAULT_DATASET_PATH)
-    parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH)
+    parser.add_argument(
+        "--dataset-path",
+        default=None,
+        help="Local folder of JSON/JSONL/CSV/TSV records (an alternative to --input).",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        help=(
+            "CSV to write. Required: the old default was the tracked worklist "
+            "itself, so a bare run replaced it with its first 100 rows."
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow --output to be overwritten by a file with fewer rows than it has.",
+    )
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument(
         "--language-stage",
@@ -624,6 +639,9 @@ def main() -> None:
         help="Append the net-new (deduplicated) rows to --existing.",
     )
     args = parser.parse_args()
+    if not args.input and not args.dataset_path:
+        parser.error("give --input <file.parquet> or --dataset-path <folder>")
+    refuse_unsafe_output(args.output, args.existing)
 
     generated_text_ids = 0
     generated_sentence_ids = 0
@@ -643,31 +661,35 @@ def main() -> None:
         )
     else:
         dataset_path = Path(args.dataset_path)
+        if not dataset_path.exists():
+            raise FileNotFoundError(f"Dataset path not found: {dataset_path}")
         rows: list[dict[str, str]] = []
-        if dataset_path.exists():
-            records = _iter_dataset_records(dataset_path)
-            seen_keys: set[tuple[str, str, str]] = set()
-            for record in records:
-                mapped = _row_from_record(record, len(rows) + 1)
-                if mapped is None:
-                    continue
-                row, generated_text_id, generated_sentence_id = mapped
-                key = (row["source"], row["source_text_id"], row["source_sentence_id"])
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-                rows.append(row)
-                generated_text_ids += int(generated_text_id)
-                generated_sentence_ids += int(generated_sentence_id)
-                if len(rows) >= args.limit:
-                    break
-            out = pd.DataFrame(rows, columns=FINAL_COLUMNS)
-        else:
-            print(f"Dataset path not found: {dataset_path}")
-            print("Keeping the existing real TLA worklist path alive as fallback.")
-            out = _load_fallback_worklist(args.limit)
+        records = _iter_dataset_records(dataset_path)
+        seen_keys: set[tuple[str, str, str]] = set()
+        for record in records:
+            mapped = _row_from_record(record, len(rows) + 1)
+            if mapped is None:
+                continue
+            row, generated_text_id, generated_sentence_id = mapped
+            key = (row["source"], row["source_text_id"], row["source_sentence_id"])
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            rows.append(row)
+            generated_text_ids += int(generated_text_id)
+            generated_sentence_ids += int(generated_sentence_id)
+            if len(rows) >= args.limit:
+                break
+        out = pd.DataFrame(rows, columns=FINAL_COLUMNS)
 
     output_path = Path(args.output)
+    if output_path.exists() and not args.force:
+        held = len(pd.read_csv(output_path, dtype=str, usecols=[0]))
+        if len(out) < held:
+            raise SystemExit(
+                f"refusing to overwrite {output_path} ({held:,} rows) with {len(out):,} "
+                "rows. Pick another --output, raise --limit, or pass --force."
+            )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(output_path, index=False)
 

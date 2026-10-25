@@ -242,5 +242,5 @@ def test_to_schema_carries_the_required_grammar_note() -> None:
     )
     assert row["source"] == "Ramses"
     assert row["language_stage"] == "Late Egyptian"
-    assert row["period"] == "New Kingdom"
+    assert row["period"] == "unknown"  # the archive does not date its sentences
     assert row["source_text_id"].startswith("RAMSES_")

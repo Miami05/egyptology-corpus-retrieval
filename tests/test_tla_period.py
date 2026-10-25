@@ -32,7 +32,13 @@ def test_a_late_period_date_range_is_still_labelled_correctly() -> None:
     assert _derive_period("-664", "-626") == "Late Period"
 
 
+def test_a_late_roman_date_range_is_still_roman_period() -> None:
+    """451..475 CE (an actual Demotic row) is past 395 but before the Arab conquest
+    (642), which is where the Roman Period's upper bound now sits."""
+    assert _derive_period("451", "475") == "Roman Period"
+
+
 def test_a_date_range_past_the_roman_period_falls_back_to_undated_range() -> None:
-    """451..475 CE (an actual Demotic row) is dated but past 395, the Roman upper
-    bound, so it should be reported rather than silently mislabelled."""
-    assert _derive_period("451", "475") == "Undated range (451 to 475)"
+    """Past 642 CE the table has no label, so the range is reported rather than
+    silently mislabelled."""
+    assert _derive_period("700", "720") == "Undated range (700 to 720)"

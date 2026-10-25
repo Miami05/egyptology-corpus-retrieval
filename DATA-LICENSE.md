@@ -93,7 +93,19 @@ only worked via a 307 redirect.)
 
 `data/processed/examples.csv` is **not** verbatim TLA data. The TLA sentences were
 transformed by `scripts/import_tla_dataset.py` and `scripts/build_examples_from_real.py`
-as follows:
+as follows. (`build_examples_from_real.py` only produced the first, TLA-only seed of
+12,772 rows; every later source was added by its own `scripts/import_*.py --append`.
+Re-running it now requires `--output` and refuses to overwrite a corpus that holds
+other sources. Empty genre/period fields are written as `unknown`.)
+
+The downloads are pinned to the Hub commits the corpus was built from, because the
+`TLA_EARLIER_n` / `TLA_LATE_n` ids are positions in the dataset and would silently
+shift if an upstream edit inserted a sentence: Earlier Egyptian
+`a7ba9e9d1a74a9a0f919b024ba84dd6d643b2966`, Late Egyptian
+`8af85941783ba575d5a8985c80c688f948c50040`, Demotic
+`c02baaaddaf0e2b6b9d128874df23c655eedfe7c` (`scripts/download_all_sources.py`); BBAW
+`phiwi/bbaw_egyptian` `f9dde1200348af9b531e8fd09096bd9f9ddfeb34`; Helsinki
+TranslitModels `c612a91407bddf8d546beedaf46edd5190a67eef`.
 
 - Selected a subset of sentences and reshaped them into one row per sentence with the
   column schema in `app/data/schema.py`.
@@ -238,6 +250,12 @@ Ramses — it now applies only to St Andrews.
 grammatical form*, not the attested spelling on the object — record that on import in
 `grammar_notes` and do not treat it as a diplomatic transcription.
 
+**Period not claimed.** The archive does not date its sentences (Saite documents are
+among them), so `scripts/import_ramses.py` now writes `period = unknown`, as the BBAW
+rows do. The 40,064 Ramses rows already in `examples.csv` were imported before that
+change and still read `New Kingdom` until the corpus is relabelled; read that value as
+"not dated", not as a dating.
+
 ## Sign-reading lexicon: the Helsinki "Transliteration Model" word lists (CC BY 4.0)
 
 `data/processed/helsinki_lexicon.csv` is built by `scripts/import_helsinki_lexicon.py`
@@ -273,7 +291,9 @@ attestation of this corpus.
   `<g>CODE</g>` placeholders), then normalised like the corpus.
 - Transliterations converted from Manuel de Codage ASCII to the corpus's Unicode
   convention. The two files write the yod differently and were converted with their
-  own rules: AES `y` → ꞽ (its `i` is the weak radical), Ramses `i`/`j` → ꞽ (its `y` is
+  own rules: AES `y` → ꞽ (its `i`/`i̯` is the weak radical, which the importer now also
+  folds to ꞽ, as the corpus's reading key does; the committed lexicon file predates
+  that fold and is regenerated separately), Ramses `i`/`j` → ꞽ (its `y` is
   the double reed). Capitalised proper names lower-cased after conversion.
 - Counts for the same (group, reading) summed across the two files, with the
   contributing source(s) recorded per row.

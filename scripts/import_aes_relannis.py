@@ -27,6 +27,14 @@ relANNIS layout, as far as this script needs it:
   node_annotation.annis    (node id, namespace, key, value) — written_form,
                            hiero_unicode, lemmaID, pos and friends live here
 
+Repeated readings. AES keeps them: two papyri that carry the same sentence are two
+attestations, and only a reading already present in `--existing` is dropped. BBAW,
+Ramses and the TLA `--append` path collapse repeats instead, so how often a reading
+counts as attested still depends on its source. Which policy the corpus should have is
+undecided; this script only reports how many kept rows repeat an earlier reading and
+how many share their hieroglyphs with an existing row that reads differently (those
+carry disambiguating evidence, so they are not dropped).
+
     python scripts/import_aes_relannis.py --output data/processed/aes_rows.csv
     python scripts/import_aes_relannis.py --corpora bbawamarna --limit 50
 """
@@ -50,7 +58,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.data.loader import REQUIRED_COLUMNS  # noqa: E402
-from scripts.import_tla_dataset import unify_suffix_marker  # noqa: E402
+from app.data.normalizer import normalize_hieroglyphs  # noqa: E402
+from scripts.import_bbaw_egyptian import refuse_unsafe_output  # noqa: E402
+from scripts.import_tla_dataset import dedup_key, unify_suffix_marker  # noqa: E402
 
 RELANNIS_DIR = PROJECT_ROOT / "data" / "raw" / "aes" / "files" / "relANNIS"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "aes_rows.csv"
@@ -199,6 +209,12 @@ def to_schema(row: dict) -> dict[str, object]:
         note_bits.append(f"findspot: {row['findspot']}")
     if row.get("editor"):
         note_bits.append(f"editor: {row['editor']}")
+    # source_text_id is a content hash (annotations and benchmarks hold it, so it
+    # cannot change); the upstream name is the only readable handle on the text.
+    if row.get("text_name"):
+        note_bits.append(f"AES text: {row['text_name']}")
+    if row.get("text_id") and row.get("text_id") != row.get("text_name"):
+        note_bits.append(f"upstream text id: {row['text_id']}")
 
     out = {column: "" for column in REQUIRED_COLUMNS}
     out.update(
@@ -231,6 +247,38 @@ def to_schema(row: dict) -> dict[str, object]:
     return out
 
 
+def duplicate_report(frame: pd.DataFrame, existing: pd.DataFrame | None) -> dict[str, int]:
+    """How the kept AES rows relate to repeats, without changing what is kept.
+
+    `repeated_readings`: kept rows whose reading (yod-insensitive `dedup_key`) already
+    occurred earlier in this import. `glyph_twins_other_reading`: kept rows whose
+    normalised hieroglyphs equal those of an existing row that reads differently.
+    """
+    keys = frame["transliteration_gold"].map(dedup_key)
+    report = {
+        "kept": len(frame),
+        "repeated_readings": int(keys.duplicated().sum()),
+        "glyph_twins_other_reading": 0,
+    }
+    if existing is not None and not existing.empty:
+
+        def norm(value: object) -> str:
+            return normalize_hieroglyphs(value) if value else ""
+
+        by_glyphs: dict[str, set[str]] = collections.defaultdict(set)
+        for glyphs, reading in zip(
+            existing["hieroglyphs"].map(norm), existing["transliteration_gold"].map(dedup_key)
+        ):
+            if glyphs:
+                by_glyphs[glyphs].add(reading)
+        report["glyph_twins_other_reading"] = sum(
+            1
+            for glyphs, key in zip(frame["hieroglyphs"].map(norm), keys)
+            if glyphs in by_glyphs and key not in by_glyphs[glyphs]
+        )
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--relannis", default=str(RELANNIS_DIR))
@@ -248,6 +296,7 @@ def main() -> None:
         help="Corpus to deduplicate against; pass '' to skip.",
     )
     args = parser.parse_args()
+    refuse_unsafe_output(args.output, args.existing)
 
     archives = sorted(Path(args.relannis).glob("*.zip"))
     if args.corpora:
@@ -279,6 +328,7 @@ def main() -> None:
     if before != len(frame):
         print(f"dropped {before - len(frame)} rows with a duplicate content id")
 
+    existing = None
     if args.existing:
         existing_path = Path(args.existing)
         if existing_path.exists():
@@ -295,6 +345,16 @@ def main() -> None:
 
     if args.limit:
         frame = frame.head(args.limit)
+
+    summary = duplicate_report(frame, existing)
+    print(
+        f"kept rows that repeat an earlier reading in this import: "
+        f"{summary['repeated_readings']} (kept: AES counts repeats as attestations)"
+    )
+    print(
+        f"kept rows with the same hieroglyphs as an existing row but another reading: "
+        f"{summary['glyph_twins_other_reading']} (kept)"
+    )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
