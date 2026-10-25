@@ -125,3 +125,43 @@ def test_superfluous_braces_keep_two_suggestions():
     result = _top("ḥtp", "ḥtp {n}", "ḥtp n")
     assert sorted(s.candidate_transliteration for s in result) == ["ḥtp n", "ḥtp {n}"]
     assert all(s.supporting_example_count == 1 for s in result)
+
+
+# Mixed queries against hyphenated compounds (Astra, final audit 2026-10-25): every pair
+# is a real corpus reading. A word-level redesign (f10cf65, not merged) dropped these to
+# 0.26–0.51 because one compound took a single query word's mode; they must stay exact.
+@pytest.mark.parametrize(
+    "query, candidate",
+    [
+        ("htp ḏi nswt", "ḥtp-ḏi̯ nswt"),
+        ("mꜣꜥ khrw", "mꜣꜥ-ḫrw"),
+        ("ꞽr.t hr.w", "ꞽr.t-ḥr.w"),
+        ("ḥm ka", "ḥm-kꜣ"),
+        ("wꜣḥ ib", "wꜣḥ-ꞽb"),
+        ("sṯi̯ hab", "sṯi̯-ḥꜣb"),
+        ("dꜣꞽr ib", "dꜣꞽr-ꞽb"),
+        ("sḥḏ zkha.ww", "sḥḏ-zẖꜣ.ww"),
+        ("ꞽm.ꞽ.w bah", "ꞽm.ꞽ.w-bꜣḥ"),
+        ("zꜣ as.t", "zꜣ-ꜣs.t"),
+        ("ꞽs ib", "ꞽs-ꞽb"),
+        ("ḥr.ꞽ sshta", "ḥr.ꞽ-sštꜣ"),
+        ("ꞽm.ꞽ ib", "ꞽm.ꞽ-ꞽb"),
+        ("psḏ.t aa.t", "psḏ.t-ꜥꜣ.t"),
+        ("nṯr aa", "nṯr-ꜥꜣ"),
+        ("ꞽr.ꞽ a.t", "ꞽr.ꞽ-ꜥ.t"),
+        ("ḥtp hr.s", "ḥtp-ḥr=s"),
+        ("ḥqꜣ hw.t", "ḥqꜣ-ḥw.t"),
+    ],
+)
+def test_mixed_query_matches_a_hyphenated_compound_exactly(query, candidate):
+    (suggestion,) = _top(query, candidate)
+    assert "same simplified query reading" in suggestion.evidence_summary
+    assert suggestion.confidence_score >= 0.9
+
+
+def test_known_limitation_shared_morpheme_after_a_strict_word():
+    # Known limitation, recorded 2026-10-25: in "ḥm.t n.t" the ASCII word's "t" can be
+    # taken by the strict word, so the editorial yod in "n(.ꞽ).t" is kept and the exact
+    # bonus is lost (0.752 instead of 0.904). Pinned so a fix shows up as a test change.
+    (suggestion,) = _top("ḥm.t n.t", "ḥm.t n(.ꞽ).t")
+    assert "same simplified query reading" not in suggestion.evidence_summary
