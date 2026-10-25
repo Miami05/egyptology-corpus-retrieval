@@ -28,8 +28,9 @@ class (`.suggestion-card {`) whether or not a result was drawn. An expectation s
 like an attribute (`class="suggestion-card"`) is stricter: it passes only on a real
 start tag carrying that attribute, in an element that renders HTML (`st.html`, or
 `st.markdown` with unsafe_allow_html), outside any non-rendering element (style,
-script, template, textarea, title, noscript) and, for Markdown, outside any code
-(fenced, indented or inline: see `markdown_without_code`). The same markup shown as
+script, template, textarea, title, noscript) and, for Markdown, only where the Markdown
+parser passes it through as raw HTML: never inside code, fenced, indented or inline, at
+any depth of block quotes and list items (see `markdown_html`). The same markup shown as
 text, quoted in a comment or a code span, or written inside a `<textarea>` is not a
 result.
 
@@ -47,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import html
 import re
 import sys
 import time
@@ -74,58 +76,308 @@ _ATTRIBUTE_EXPECTATION = re.compile(r'^([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"<>]*)"$
 _NON_RENDERING = frozenset({"style", "script", "template", "textarea", "title", "noscript", "xmp"})
 
 
-# A run of backticks that opens or closes an inline code span (CommonMark: the span closes
-# at the next run of exactly the same length).
-_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)", re.DOTALL)
-# A fence line: up to three spaces, then three or more backticks or tildes.
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# --- Markdown: what an st.markdown body draws as HTML --------------------------------
+#
+# Streamlit renders Markdown as CommonMark (react-markdown), so a tag only draws when the
+# Markdown parser passes it through as raw HTML. The code below is a small CommonMark
+# block parser (block quotes, list items, fenced and indented code, HTML blocks,
+# paragraphs, headings, thematic breaks) and an inline scanner that, left to right like
+# CommonMark, takes a backtick run as a code span or a `<` as a raw tag, whichever starts
+# first. Only raw HTML (HTML blocks verbatim, inline tags exactly as written) reaches the
+# HTML parser; every other character goes in escaped. Nothing is ever cut out of a tag,
+# so no attribute can be put together from the pieces around a code span.
+#
+# Where it is simpler than CommonMark it hides more, never less: an unclosed inline
+# comment hides the rest of its paragraph, a paragraph that starts like a link reference
+# definition is hidden whole, and a link destination or title is never read as a tag.
+
+# CommonMark's raw-HTML grammar (spec 0.31, section 6.6).
+_ATTRIBUTE = r"""(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)"""
+_INLINE_TAG = re.compile(
+    rf"<[A-Za-z][A-Za-z0-9-]*{_ATTRIBUTE}*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>"
+)
+_INLINE_COMMENT = re.compile(r"<!-->|<!--->|<!--.*?-->", re.DOTALL)
+# Processing instructions, declarations, CDATA and autolinks: never a start tag.
+_INLINE_OTHER = re.compile(
+    r"<\?.*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[.*?\]\]>"
+    r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|<[^\s<>@]+@[A-Za-z0-9.-]+>",
+    re.DOTALL,
+)
+# `](destination "title")`: a `<...>` destination is a URL, not a tag.
+_LINK_TAIL = re.compile(
+    r"""\]\(\s*(?:<[^<>\n]*>|[^\s<>()]*)(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)"""
+)
+_BACKTICKS = re.compile(r"`+")
+_REFERENCE_DEFINITION = re.compile(r"^\[(?:[^\]\\]|\\.)+\]:")
+_ASCII_PUNCTUATION = frozenset("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+_BLOCK_HTML_TAGS = frozenset(
+    "address article aside base basefont blockquote body caption center col colgroup dd "
+    "details dialog dir div dl dt fieldset figcaption figure footer form frame frameset "
+    "h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav "
+    "noframes ol optgroup option p param search section summary table tbody td tfoot th "
+    "thead title tr track ul".split()
+)
+# HTML block start conditions 1-5, each with the end condition that closes it.
+_HTML_BLOCK_ENDS = (
+    (re.compile(r"<(?:script|pre|style|textarea)(?:\s|>|$)", re.I),
+     re.compile(r"</(?:script|pre|style|textarea)>", re.I)),
+    (re.compile(r"<!--"), re.compile(r"-->")),
+    (re.compile(r"<\?"), re.compile(r"\?>")),
+    (re.compile(r"<![A-Za-z]"), re.compile(r">")),
+    (re.compile(r"<!\[CDATA\["), re.compile(r"\]\]>")),
+)
+_HTML_BLOCK_6 = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)(?:\s|/?>|$)")
+_HTML_BLOCK_7 = re.compile(
+    rf"(?:<[A-Za-z][A-Za-z0-9-]*{_ATTRIBUTE}*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$"
+)
+_ATX_HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
+_FENCE_OPEN = re.compile(r"(`{3,}|~{3,})")
+_SETEXT_EQUALS = re.compile(r"=+[ \t]*$")
+_THEMATIC_BREAK = re.compile(r"(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+_BULLET = re.compile(r"[*+-]")
+_ORDERED = re.compile(r"(\d{1,9})[.)]")
+
+_CONTAINERS = ("document", "quote", "item")
+_TAKES_LINES = ("fence", "indented", "html")
 
 
-def _indent(line: str) -> int:
-    expanded = line.expandtabs(4)
-    return len(expanded) - len(expanded.lstrip(" "))
+@dataclass(eq=False)
+class _Block:
+    kind: str  # document, quote, item, paragraph, heading, rule, fence, indented, html
+    parent: "_Block | None" = None
+    children: list["_Block"] = field(default_factory=list)
+    lines: list[str] = field(default_factory=list)
+    open: bool = True
+    offset: int = 0  # item: columns a continuation line must be indented by
+    fence: str = ""  # fence: the opening run of backticks or tildes
+    html_end: "re.Pattern[str] | None" = None  # html, kinds 1-5: what closes it
 
 
-def markdown_without_code(body: str) -> str:
-    """The Markdown `body` with its code removed: fenced blocks (unclosed ones run to the
-    end), indented blocks (four or more spaces after a blank line or at the start) and
-    inline code spans. Markdown shows code as text, so a tag inside it draws nothing.
+def _nonspace(line: str, pos: int) -> int:
+    while pos < len(line) and line[pos] == " ":
+        pos += 1
+    return pos
 
-    Deliberately simpler than CommonMark and biased one way: where it differs it removes
-    MORE than a renderer would treat as code (a fence inside an HTML block, a backtick in
-    an attribute, an indented list continuation), never less. Removing too much can only
-    make the deploy check miss a real card and roll back; it cannot pass a page whose
-    card is shown as code. The app's cards are written at column 0 with no blank line
-    inside, so none of these rules touch them."""
-    kept: list[str] = []
-    fence: tuple[str, int] | None = None
-    previous_blank = True
-    in_indented = False
-    for line in body.split("\n"):
-        if fence is not None:
-            closing = _FENCE.match(line)
-            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= fence[1] \
-                    and not line[closing.end():].strip():
-                fence = None
-            kept.append("")
-            previous_blank, in_indented = False, False
-            continue
-        opening = _FENCE.match(line)
-        if opening:
-            fence = (opening.group(1)[0], len(opening.group(1)))
-            kept.append("")
-            previous_blank, in_indented = False, False
-            continue
-        blank = not line.strip()
-        if not blank and _indent(line) >= 4 and (previous_blank or in_indented):
-            kept.append("")
-            in_indented = True
+
+class _MarkdownBlocks:
+    """CommonMark's block phase (the two-pass algorithm in the spec's appendix), reduced
+    to the blocks that decide whether a line is code, raw HTML or Markdown text."""
+
+    def __init__(self) -> None:
+        self.document = _Block("document")
+        self.tip = self.document
+
+    def _finalize(self, block: _Block) -> None:
+        block.open = False
+        self.tip = block.parent
+
+    def _add(self, kind: str, **fields) -> _Block:
+        while self.tip.kind not in _CONTAINERS:
+            self._finalize(self.tip)
+        block = _Block(kind, parent=self.tip, **fields)
+        self.tip.children.append(block)
+        self.tip = block
+        return block
+
+    def _close_unmatched(self, last_matched: _Block) -> None:
+        while self.tip is not last_matched:
+            self._finalize(self.tip)
+
+    def _continues(self, block: _Block, line: str, pos: int) -> int | None | bool:
+        """Column after this block's continuation marker; False when the line does not
+        continue it; None when the line closed it (a closing fence)."""
+        nxt = _nonspace(line, pos)
+        indent, blank = nxt - pos, nxt >= len(line)
+        if block.kind == "quote":
+            if not blank and indent <= 3 and line[nxt] == ">":
+                pos = nxt + 1
+                return pos + 1 if line[pos:pos + 1] == " " else pos
+            return False
+        if block.kind == "item":
+            if blank:
+                return nxt if block.children else False
+            return pos + block.offset if indent >= block.offset else False
+        if block.kind == "fence":
+            closing = _FENCE_OPEN.match(line, nxt) if indent <= 3 else None
+            if closing and closing.group(1)[0] == block.fence[0] \
+                    and len(closing.group(1)) >= len(block.fence) and not line[closing.end():].strip():
+                self._finalize(block)
+                return None
+            return pos
+        if block.kind == "indented":
+            return pos + 4 if indent >= 4 else (nxt if blank else False)
+        if block.kind == "html":
+            return False if blank and block.html_end is None else pos
+        if block.kind == "paragraph":
+            return False if blank else pos
+        return False  # heading, rule
+
+    def _html_start(self, line: str, nxt: int, after_paragraph: bool):
+        """(True, end condition or None) when an HTML block starts at `nxt`."""
+        for start, end in _HTML_BLOCK_ENDS:
+            if start.match(line, nxt):
+                return True, end
+        tag = _HTML_BLOCK_6.match(line, nxt)
+        if tag and tag.group(1).lower() in _BLOCK_HTML_TAGS:
+            return True, None
+        if not after_paragraph and _HTML_BLOCK_7.match(line, nxt):
+            return True, None
+        return False, None
+
+    def feed(self, line: str) -> None:
+        line = line.expandtabs(4)
+        container, pos, all_matched = self.document, 0, True
+        while container.children and container.children[-1].open:
+            child = container.children[-1]
+            result = self._continues(child, line, pos)
+            if result is None:
+                return
+            if result is False:
+                all_matched = False
+                break
+            container, pos = child, result
+        last_matched = container
+        old_tip_is_paragraph = self.tip.kind == "paragraph"
+        all_closed = self.tip is last_matched
+
+        def start(kind: str, **fields) -> _Block:
+            nonlocal all_closed
+            if not all_closed:
+                self._close_unmatched(last_matched)
+                all_closed = True
+            return self._add(kind, **fields)
+
+        while container.kind not in _TAKES_LINES:
+            nxt = _nonspace(line, pos)
+            indent, blank = nxt - pos, nxt >= len(line)
+            if blank:
+                break
+            if indent >= 4:
+                if not old_tip_is_paragraph:
+                    container, pos = start("indented"), pos + 4
+                break
+            char = line[nxt]
+            if char == ">":
+                container = start("quote")
+                pos = nxt + 1
+                pos += 1 if line[pos:pos + 1] == " " else 0
+                continue
+            if _ATX_HEADING.match(line, nxt):
+                start("heading", lines=[line[nxt:].lstrip("#")])
+                return
+            fence = _FENCE_OPEN.match(line, nxt)
+            if fence and not (fence.group(1)[0] == "`" and "`" in line[fence.end():]):
+                start("fence", fence=fence.group(1))
+                return
+            if char == "<":
+                lazy = not all_closed and old_tip_is_paragraph
+                found, end = self._html_start(line, nxt, container.kind == "paragraph" or lazy)
+                if found:
+                    container, pos = start("html", html_end=end), nxt
+                    break
+            if container.kind == "paragraph" and _SETEXT_EQUALS.match(line, nxt):
+                container.kind = "heading"
+                self._finalize(container)
+                return
+            if _THEMATIC_BREAK.match(line, nxt):
+                start("rule")
+                self._finalize(self.tip)
+                return
+            marker = _BULLET.match(line, nxt) or _ORDERED.match(line, nxt)
+            if marker:
+                after = marker.end()
+                rest_blank = not line[after:].strip()
+                interrupts = container.kind == "paragraph"
+                if (after == len(line) or line[after] == " ") and not (
+                    interrupts and (rest_blank or (marker.re is _ORDERED and marker.group(1) != "1"))
+                ):
+                    spaces = _nonspace(line, after) - after
+                    width = after - nxt
+                    padding = width + 1 if rest_blank or spaces >= 5 else width + spaces
+                    container = start("item", offset=indent + padding)
+                    pos = min(len(line), nxt + padding)
+                    continue
+            pos = nxt
+            break
+
+        blank = _nonspace(line, pos) >= len(line)
+        if not all_closed and not blank and self.tip.kind == "paragraph":
+            self.tip.lines.append(line[pos:])  # lazy continuation
+            return
+        if not all_closed:
+            self._close_unmatched(last_matched)
+        if self.tip.kind in _TAKES_LINES or self.tip.kind == "paragraph":
+            self.tip.lines.append(line[pos:])
+            if self.tip.kind == "html" and self.tip.html_end is not None \
+                    and self.tip.html_end.search(line[pos:]):
+                self._finalize(self.tip)
+        elif not blank:
+            self._add("paragraph", lines=[line[pos:]])
+
+
+def _inline_html(text: str) -> str:
+    """Paragraph text as HTML: raw tags and comments exactly as written, the rest escaped,
+    code spans and link destinations dropped."""
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if char == "\\" and text[i + 1:i + 2] in _ASCII_PUNCTUATION:
+            out.append(html.escape(text[i + 1]))
+            i += 2
+        elif char == "`":
+            run = _BACKTICKS.match(text, i).end() - i
+            closing = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, i + run)
+            if closing:
+                i = closing.end()  # a code span draws its content as text
+            else:
+                out.append(char * run)
+                i += run
+        elif char == "<":
+            raw = _INLINE_COMMENT.match(text, i) or _INLINE_TAG.match(text, i)
+            other = _INLINE_OTHER.match(text, i)
+            if other:
+                i = other.end()
+            elif raw:
+                out.append(raw.group(0))
+                i = raw.end()
+            elif text.startswith("<!--", i):
+                break  # an unclosed comment: hide the rest rather than guess
+            else:
+                out.append("&lt;")
+                i += 1
+        elif char == "]" and _LINK_TAIL.match(text, i):
+            i = _LINK_TAIL.match(text, i).end()
         else:
-            kept.append(line)
-            if not blank:
-                in_indented = False
-        previous_blank = blank
-    return _CODE_SPAN.sub("", "\n".join(kept))
+            out.append(html.escape(char))
+            i += 1
+    return "".join(out)
+
+
+def markdown_html(body: str) -> str:
+    """The HTML a Markdown `body` draws, as far as tags go: HTML blocks verbatim, raw tags
+    in paragraphs and headings as written, all text escaped, code (fenced, indented, inline)
+    left out. Containers (block quotes, list items) are parsed, so code inside them is code."""
+    blocks = _MarkdownBlocks()
+    for line in re.split(r"\r\n|\r|\n", body):
+        blocks.feed(line)
+    parts: list[str] = []
+
+    def walk(block: _Block) -> None:
+        for child in block.children:
+            if child.kind in _CONTAINERS:
+                walk(child)
+            elif child.kind == "html":
+                parts.append("\n".join(child.lines))
+            elif child.kind in ("paragraph", "heading"):
+                text = "\n".join(line.strip() for line in child.lines)
+                if child.kind == "paragraph" and _REFERENCE_DEFINITION.match(text):
+                    continue  # link reference definitions draw nothing
+                parts.append(_inline_html(text))
+
+    walk(blocks.document)
+    return "\n".join(parts)
 
 
 def rendered_markup(body: str) -> str:
@@ -192,7 +444,7 @@ def element_shows(kind: str, element, expect_text: str) -> bool:
     if kind == "html":
         return renders_start_tag(body, *attribute.groups())
     if kind == "markdown" and element.markdown.allow_html:
-        return renders_start_tag(markdown_without_code(body), *attribute.groups())
+        return renders_start_tag(markdown_html(body), *attribute.groups())
     return False
 
 

@@ -278,13 +278,50 @@ def test_an_attribute_expectation_ignores_markdown_code(body):
 @pytest.mark.parametrize(
     "body",
     [
+        f"> ~~~\n> {_CARD}\n> ~~~",                                       # fence in a block quote
+        f">     {_CARD}",                                                 # indented code in a quote
+        f"> intro\n>\n>     {_CARD}",
+        f"- item\n\n  ```\n  {_CARD}\n  ```",                         # fence in a list item
+        f"- ```\n  {_CARD}",
+        f"- item\n\n      {_CARD}",                                     # indented code in a list item
+        f"> ~~~\n~~~\n{_CARD}",                                         # quote ends, a new fence opens
+        f"# Heading\n    {_CARD}",                                       # indented code after a heading
+        f"Title\n===\n    {_CARD}",
+        '<div class="sug`x`gestion-card">r</div>',                         # attribute around a code span
+        'see <span class="sug`x`gestion-card">r</span>',
+        "a <div class=sug`x`gestion-card>r</div>",
+        '[a](<div class="suggestion-card">)',                              # a link destination
+        '\\<div class="suggestion-card">r',                               # an escaped `<`
+    ],
+    ids=["quote-fence", "quote-indented", "quote-indented-later", "list-fence", "list-item-fence",
+         "list-indented", "quote-then-fence", "heading-indented", "setext-indented",
+         "synth-quoted", "synth-inline", "synth-unquoted", "link-destination", "escaped"],
+)
+def test_an_attribute_expectation_ignores_code_in_containers_and_never_joins_attributes(body):
+    """Regression for Astra's round-3 A11 re-review: code inside block quotes and list items
+    still counted, and cutting code spans out of the raw text put `class="suggestion-card"`
+    together from `class="sug`x`gestion-card"`."""
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(_markdown_msg(body), state)
+    assert not state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
         # what render_suggestion_card sends: dedented, nested lines indented 2 and 4 spaces
         '<article class="suggestion-card">\n  <div class="suggestion-head">\n'
         '    <span class="suggestion-rank">1</span>\n  </div>\n</article>',
         f"`code` first\n\n{_CARD}",
         f"```\ncode\n```\n{_CARD}",
+        f"> {_CARD}",                                                       # Markdown containers render HTML
+        f"- {_CARD}",
+        f"- ~~~\n  x\n  ~~~\n\n{_CARD}",                                  # a closed fence in a list
+        'text `x` <span class="suggestion-card">r</span>',                 # a tag after a code span
+        f"para\n    {_CARD}",                                              # paragraph continuation, not code
     ],
-    ids=["app-card", "after-inline-code", "after-fence"],
+    ids=["app-card", "after-inline-code", "after-fence", "in-quote", "in-list", "after-list-fence",
+         "after-code-span", "continuation"],
 )
 def test_a_card_outside_markdown_code_still_counts(body):
     state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
@@ -773,6 +810,23 @@ def test_a_held_lock_is_never_broken_whatever_pid_it_names(backup_env):
         holder.release()
     assert result.returncode == 5, result.stdout + result.stderr
     assert not list(backup_env.backups.glob("egyptology-*"))
+
+
+def test_an_old_style_lock_directory_stops_the_run_and_is_kept(backup_env):
+    """Regression for Astra's round-3 A13 re-review: the script before the flock one locked
+    with a BACKUP_DIR/.lock directory and took no flock, so a run of it still going when
+    the script was replaced could pick the same revision as a new run. Its directory is
+    refused, not removed, whatever pid (or none) it records."""
+    legacy = backup_env.backups / ".lock"
+    legacy.mkdir(parents=True)
+    (legacy / "pid").write_text(f"{os.getpid()}\n")                        # a live owner
+    result = backup_env.run("2026-01-10", LOCK_WAIT="0")
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "old-style lock" in result.stderr
+    assert (legacy / "pid").is_file(), "the old run's lock must not be deleted"
+    assert not list(backup_env.backups.glob("egyptology-*"))
+    shutil.rmtree(legacy)                                                  # once removed by hand
+    assert backup_env.run("2026-01-10", LOCK_WAIT="0").returncode == 0
 
 
 def test_a_backup_runs_once_the_other_run_releases_the_lock(backup_env):
