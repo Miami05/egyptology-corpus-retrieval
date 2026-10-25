@@ -177,6 +177,12 @@ class ReadingPrediction:
     # borrowed everywhere fallbacks are counted, and the UI says it was read sign by
     # sign from the sign-function list rather than observed.
     is_composed: bool = False
+    # How often the *chosen* reading itself is attested for this group, from the same
+    # source as `attested_count` (corpus) or `lexicon_count` (lexicon). Those two are
+    # totals over every reading of the group; when context picks a minority reading
+    # the total overstates the evidence for it — `y` chosen twice-attested from a
+    # group seen five times is "this reading 2×; this group 5×", not "5×" (Astra #5).
+    reading_count: int = 0
 
     @property
     def is_fallback(self) -> bool:
@@ -664,6 +670,9 @@ class ReadingModel:
                     lexicon_count=sum(counts.values()) if kind == "lexicon" else 0,
                     lexicon_source=self.lexicon_sources.get(sign, "") if kind == "lexicon" else "",
                     is_composed=kind == "composed",
+                    reading_count=(
+                        int(counts.get(reading, 0)) if kind != "composed" else 0
+                    ),
                 )
             )
         return predictions, lattice[-1][best_final][0]

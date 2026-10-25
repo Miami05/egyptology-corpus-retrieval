@@ -37,6 +37,7 @@ from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
 from app.services.reading_model import train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream, segment_paste
 from app.services.signs import (
+    SEARCH_FOLD_LABEL,
     build_sign_index,
     multivalence_summary,
     ranked_multivalent,
@@ -61,7 +62,7 @@ from app.services.stage import (
     build_stage_resources,
     normalize_stage,
 )
-from app.services.suggestions import suggest_top_readings
+from app.services.suggestions import aligned_annotation, suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import IS_SQLITE, DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
@@ -1081,29 +1082,105 @@ def render_home(df: pd.DataFrame) -> None:
 
 
 def token_analysis(row: pd.Series) -> pd.DataFrame:
-    """Word-by-word table from the TLA token-aligned fields of one corpus row."""
+    """Word-by-word table from the TLA token-aligned fields of one corpus row.
+
+    A column is filled only when its tokens line up one-to-one with the readings.
+    553 AES rows do not (the importer joined missing annotations as empty strings,
+    which `.split()` then drops), and zipping them anyway gave a part of speech to
+    the wrong word: `AES_C74508573C9D` labelled `+nfr` "unknown" and left the next
+    word bare (Astra #3). Lemma and part of speech are judged together with the
+    same guard the suggestion layer uses (`aligned_annotation`); signs and glossing
+    each on their own count. The names of the columns left empty for that reason
+    are in `attrs["withheld"]`, so the page can say why they are blank.
+    """
     readings = safe_str(row.get("transliteration_gold")).split()
     glyphs = safe_str(row.get("hieroglyphs")).split()
     lemmas = safe_str(row.get("lemma_sequence")).split()
     upos = safe_str(row.get("upos")).split()
     glossing = safe_str(row.get("glossing")).split()
 
+    withheld: list[str] = []
+    if (lemmas or upos) and not aligned_annotation(
+        row.get("transliteration_gold"), row.get("lemma_sequence"), row.get("upos")
+    ):
+        lemmas, upos = [], []
+        withheld += ["Lemma", "Part of speech"]
+    if glyphs and len(glyphs) != len(readings):
+        glyphs = []
+        withheld.append("Sign")
+    if glossing and len(glossing) != len(readings):
+        glossing = []
+        withheld.append("Glossing")
+
     rows = []
     for index, reading in enumerate(readings):
-        lemma = lemmas[index] if index < len(lemmas) else ""
+        lemma = lemmas[index] if lemmas else ""
         # lemma_sequence stores "id|lemma"; show the lemma and keep the id visible.
         lemma_id, _, lemma_text = lemma.partition("|")
         rows.append(
             {
-                "Sign": glyphs[index] if index < len(glyphs) else "",
+                "Sign": glyphs[index] if glyphs else "",
                 "Reading": reading,
                 "Lemma": lemma_text or lemma_id,
                 "Lemma ID": lemma_id if lemma_text else "",
-                "Part of speech": upos[index] if index < len(upos) else "",
-                "Glossing": glossing[index] if index < len(glossing) else "",
+                "Part of speech": upos[index] if upos else "",
+                "Glossing": glossing[index] if glossing else "",
             }
         )
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+    table.attrs["withheld"] = withheld
+    return table
+
+
+UNREADABLE_MARK = "∅"
+
+
+def assembled_reading(predictions) -> str:
+    """The sign-by-sign reading as one line, one token per sign group.
+
+    An unreadable group keeps its place as `∅` — the mark the runner-up caption
+    already uses — instead of vanishing. Dropping it joined `ḏd`, ``, `=f` into
+    `ḏd =f`, a continuous phrase the evidence does not support, and a copied
+    reading lost where knowledge ends (Astra #8).
+    """
+    return " ".join(p.predicted or UNREADABLE_MARK for p in predictions)
+
+
+def prediction_evidence(prediction, model) -> str:
+    """The "Evidence" cell of the sign-by-sign table for one prediction.
+
+    For an attested or lexicon reading it gives both counts, "this reading N×; this
+    group M×": the group total alone, shown beside the chosen reading, credited a
+    minority reading chosen by context with every competing reading's attestations
+    (Astra #5).
+    """
+    p = prediction
+    if p.is_fallback:
+        return (
+            f"inferred from {display_sign_group(p.fallback_from)} "
+            f"({p.fallback_similarity:.0%} glyph match)"
+        )
+    # Item C2: composed from the sign-function list, not seen anywhere. Said plainly,
+    # because it is the weakest kind of evidence this app ever shows.
+    if p.is_composed:
+        return "read sign by sign from the sign-function list — not attested"
+    if p.was_seen:
+        return f"this reading {p.reading_count}×; this group {p.attested_count}×"
+    # An attested count from another corpus: real evidence, but not a sentence we can
+    # show, and it says so.
+    if p.is_lexicon:
+        return (
+            f"lexicon: this reading {p.reading_count}×; this group "
+            f"{p.lexicon_count}× ({p.lexicon_source}) — no sentence in this corpus"
+        )
+    # Not attested and too different to borrow from: say what the corpus does hold
+    # rather than leaving a dead end.
+    related = model.related_attested_groups(p.sign, limit=2)
+    if related:
+        return "unattested — closest attested groups: " + ", ".join(
+            f"{display_sign_group(g)} = {r} ({n}×)" for g, _, r, n in related
+        )
+    return "unattested — no group in the corpus shares these signs"
 
 
 SUGGESTION_RANKING_CAPTION = (
@@ -1559,6 +1636,9 @@ PENDING_INSERTS_KEY = "whyptology_pending_inserts"
 # searches exactly what the box now shows.
 PENDING_EXAMPLE_KEY = "whyptology_pending_example"
 AUTO_SEARCH_KEY = "whyptology_auto_search"
+# "Apply grouping" in the sign-by-sign tab queues (query, groups) here; the search
+# block then reruns retrieval and suggestions with exactly those groups (Astra #1).
+PENDING_GROUPING_KEY = "whyptology_pending_grouping"
 # ?q= is consumed once per session. Without this guard the parameter — which is
 # deliberately left in the URL so the link stays shareable — would re-run the same
 # search on every rerun and the user could never type anything else.
@@ -1600,6 +1680,31 @@ def queue_example_query(text: str) -> None:
     """Callback for an example button: remember the text, apply it in the body."""
     if text:
         st.session_state[PENDING_EXAMPLE_KEY] = text
+
+
+def validate_edited_grouping(
+    edited: str, groups: list[str]
+) -> tuple[list[str] | None, str]:
+    """The edited sign groups, or None and the reason they cannot be used.
+
+    The grouping editor moves boundaries; it must not change which signs are being
+    read. An edit that adds, drops or reorders a sign is refused rather than
+    searched, so a stray keystroke cannot quietly become a different query.
+    """
+    proposed = normalize_hieroglyphs(edited).split()
+    if not proposed:
+        return None, "Enter the sign groups, separated by spaces."
+    if "".join(proposed) != "".join(groups):
+        return None, (
+            "Only the spaces can be changed here — this edit adds, removes or "
+            "reorders signs. Edit the query itself to search different signs."
+        )
+    return proposed, ""
+
+
+def queue_grouping(query: str, groups: list[str]) -> None:
+    """Callback for "Apply grouping": search `query` again with `groups`."""
+    st.session_state[PENDING_GROUPING_KEY] = (query, list(groups))
 
 
 def set_query_and_search(text: str) -> None:
@@ -2025,9 +2130,19 @@ def render_workspace(df: pd.DataFrame) -> None:
         set_query_and_search(pending_example)
         st.rerun()
 
-    run_search = bool(search) or bool(st.session_state.pop(AUTO_SEARCH_KEY, False))
+    # An applied grouping searches the query it was edited for, on the stage that
+    # query was already resolved to, whatever the box now holds.
+    pending_grouping = st.session_state.pop(PENDING_GROUPING_KEY, None)
+    run_search = (
+        bool(search)
+        or bool(st.session_state.pop(AUTO_SEARCH_KEY, False))
+        or pending_grouping is not None
+    )
     if run_search:
-        st.session_state[QUERY_TEXT_KEY] = query
+        if pending_grouping is not None:
+            query = pending_grouping[0]
+        else:
+            st.session_state[QUERY_TEXT_KEY] = query
         if not query.strip():
             st.warning("Enter a transliteration, MdC string or sign sequence first.")
         else:
@@ -2038,10 +2153,14 @@ def render_workspace(df: pd.DataFrame) -> None:
                 # hieroglyphs, below, must be resegmented with the *resolved*
                 # stage's own segmenter, and retrieve_with_stage has no hook to redo
                 # that resegmentation between its internal first and second pass.
-                requested_stage = st.session_state[STAGE_STATE_KEY]
-                resolved_stage, stage_inferred = resolve_ui_stage(
-                    requested_stage, query, get_resources
-                )
+                previous_outcome = st.session_state.get("whyptology_stage_outcome")
+                if pending_grouping is not None and previous_outcome is not None:
+                    requested_stage, resolved_stage, stage_inferred = previous_outcome
+                else:
+                    requested_stage = st.session_state[STAGE_STATE_KEY]
+                    resolved_stage, stage_inferred = resolve_ui_stage(
+                        requested_stage, query, get_resources
+                    )
                 resources = get_resources(resolved_stage)
                 st.session_state["whyptology_resolved_stage"] = resolved_stage
                 st.session_state["whyptology_stage_outcome"] = (
@@ -2057,11 +2176,19 @@ def render_workspace(df: pd.DataFrame) -> None:
                 # is what rescues most of the Urk. IV pastes a Late-Egyptian-diluted
                 # pooled corpus otherwise mis-segments (ROADMAP.md, "Item A core
                 # landed 2026-09-04").
+                # An applied grouping replaces the lattice's proposal here, so the
+                # parallels, the suggestions and the sign-by-sign reading all follow
+                # the grouping the expert chose. Before, only the reading did: the
+                # evidence kept coming from the grouping she had rejected (Astra #1).
                 regrouped: str | None = None
                 if contains_hieroglyphs(query):
-                    segmentation, _, _, _ = resegment_query(resources, query)
-                    regrouped = " ".join(segmentation.groups)
-                    st.session_state["whyptology_segments"] = segmentation.groups
+                    if pending_grouping is not None:
+                        groups = list(pending_grouping[1])
+                    else:
+                        segmentation, _, _, _ = resegment_query(resources, query)
+                        groups = segmentation.groups
+                    regrouped = " ".join(groups)
+                    st.session_state["whyptology_segments"] = groups
                 else:
                     st.session_state.pop("whyptology_segments", None)
                 # Pool of 50: the evaluation scripts rank within 50, so what ships
@@ -2189,21 +2316,49 @@ def render_workspace(df: pd.DataFrame) -> None:
             segmentation, as_pasted, model, segmenter = resegment_query(
                 decode_resources, last_query
             )
-            suggested = " ".join(segmentation.groups)
+            # The grouping the parallels and suggestions were searched with: the
+            # lattice's proposal, or the expert's applied edit.
+            searched_groups = (
+                st.session_state.get("whyptology_segments") or segmentation.groups
+            )
+            suggested = " ".join(searched_groups)
 
             # --- segmentation editor -------------------------------------------
             # The lattice's grouping is a proposal. An Egyptologist must be able to
             # override it, so the groups are shown as chips and the spacing can be
             # edited directly: a space is a boundary. The widget key includes the
-            # query so a new search starts from the new proposal.
-            edit_key = f"whyptology_segment_edit_{hashlib.blake2b(last_query.encode(), digest_size=8).hexdigest()}"
+            # query and the searched grouping, so a new search (or an applied edit)
+            # starts the box from what was actually searched.
+            edit_key = (
+                "whyptology_segment_edit_"
+                + hashlib.blake2b(
+                    f"{last_query}\n{suggested}".encode(), digest_size=8
+                ).hexdigest()
+            )
             edited = st.text_input(
                 "Sign groups — edit the spaces to split or merge groups",
                 value=suggested,
                 key=edit_key,
-                help="One space = one group boundary. The reading below follows this grouping.",
+                help=(
+                    "One space = one group boundary. Apply the grouping to search "
+                    "the parallels and suggestions again with it."
+                ),
             )
-            signs = normalize_hieroglyphs(edited).split() or segmentation.groups
+            # The reading, the parallels and the suggestions always share one
+            # grouping: an edit is only a proposal until it is applied, which reruns
+            # the search with it.
+            signs = list(searched_groups)
+            proposed, problem = validate_edited_grouping(edited, searched_groups)
+            if problem:
+                st.warning(problem)
+            elif proposed != searched_groups:
+                st.button(
+                    "Apply grouping",
+                    key=f"{edit_key}_apply",
+                    on_click=queue_grouping,
+                    args=(last_query, proposed),
+                    help="Search the parallels, suggestions and reading with this grouping.",
+                )
             chips = "".join(
                 f'<span class="seg-chip{" seg-chip-unattested" if g not in segmenter.group_counts else ""}">'
                 f"{escape(display_sign_group(g))}</span>"
@@ -2244,18 +2399,19 @@ def render_workspace(df: pd.DataFrame) -> None:
                 pasted_score = segmenter.score_segmentation(as_pasted, hints)
                 gap = segmentation.score - pasted_score
                 if gap < 8.0:
-                    pasted_reading = " ".join(
-                        p.predicted or "∅" for p in model.predict_sequence(as_pasted)
-                    )
+                    pasted_reading = assembled_reading(model.predict_sequence(as_pasted))
                     st.caption(
                         f"Runner-up — your spacing as pasted ({gap:.1f} nats behind): "
                         f"*{md_escape(pasted_reading)}*"
                     )
             elif signs != segmentation.groups:
-                st.caption("Using your edited grouping.")
+                st.caption(
+                    "Using your edited grouping for the reading, the parallels and "
+                    "the suggestions."
+                )
 
             predictions = model.predict_sequence(signs)
-            reading = " ".join(p.predicted for p in predictions if p.predicted)
+            reading = assembled_reading(predictions)
             unseen = [p for p in predictions if not p.was_seen]
             # A composed reading (item C2) is counted with the fallbacks: both are
             # leads rather than attestations, and the badge below must not claim more
@@ -2302,35 +2458,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     {
                         "Sign": display_sign_group(p.sign),
                         "Chosen reading": p.predicted or "— unreadable —",
-                        "Evidence": (
-                            f"inferred from {display_sign_group(p.fallback_from)} "
-                            f"({p.fallback_similarity:.0%} glyph match)"
-                            if p.is_fallback
-                            # Item C2: composed from the sign-function list, not seen
-                            # anywhere. Said plainly, because it is the weakest kind
-                            # of evidence this app ever shows.
-                            else "read sign by sign from the sign-function list — "
-                            "not attested"
-                            if p.is_composed
-                            else f"attested {p.attested_count}×"
-                            if p.was_seen
-                            # An attested count from another corpus: real evidence, but
-                            # not a sentence we can show, and it says so.
-                            else f"lexicon {p.lexicon_count}× ({p.lexicon_source}) — "
-                            "no sentence in this corpus"
-                            if p.is_lexicon
-                            # Not attested and too different to borrow from: say what
-                            # the corpus does hold rather than leaving a dead end.
-                            else (
-                                "unattested — closest attested groups: "
-                                + ", ".join(
-                                    f"{display_sign_group(g)} = {r} ({n}×)"
-                                    for g, _, r, n in model.related_attested_groups(p.sign, limit=2)
-                                )
-                                if model.related_attested_groups(p.sign, limit=2)
-                                else "unattested — no group in the corpus shares these signs"
-                            )
-                        ),
+                        "Evidence": prediction_evidence(p, model),
                         "Multivalent": "yes" if p.is_ambiguous else "",
                         "Alternatives": ", ".join(
                             f"{r} {share:.0%}" for r, share in p.candidates[:4]
@@ -2539,6 +2667,13 @@ def render_workspace(df: pd.DataFrame) -> None:
                 st.info("This corpus row has no token-level annotation.")
             else:
                 st.dataframe(analysis, hide_index=True, width="stretch")
+                withheld = analysis.attrs.get("withheld", [])
+                if withheld:
+                    st.caption(
+                        f"{', '.join(withheld)} left blank: this row's annotation "
+                        "does not have one entry per word, so it cannot be placed "
+                        "against the right word."
+                    )
                 st.caption(
                     "Lemma IDs, part of speech and glossing come from the TLA import, "
                     "not from any automatic analysis."
@@ -2970,7 +3105,7 @@ def render_signs(df: pd.DataFrame) -> None:
         [
             "Sign groups",
             "More than one reading",
-            "Not just bracketing",
+            "Distinct in the search form",
             f"Both readings attested {summary['min_support']}+ times",
         ],
         [
@@ -2992,8 +3127,11 @@ def render_signs(df: pd.DataFrame) -> None:
     )
     st.caption(
         "The counts narrow deliberately. “More than one reading” is the raw figure. "
-        "“Not just bracketing” drops editorial variants, so `n.t` and `n(.ꞽ).t` count "
-        "once while `sw` (“he”) and `nswt` (“king”) count twice. The last column is the "
+        "“Distinct in the search form” counts "
+        f"{SEARCH_FOLD_LABEL} once: `n.t` and `n(.ꞽ).t`, but also `stḫ` and `stẖ`, "
+        "because that form ignores brackets and merges ḫ/ẖ, ḥ/h and ꜣ/ꜥ — so not every "
+        "reading merged here is an editorial variant. `sw` (“he”) and `nswt` (“king”) "
+        "count twice. The last column is the "
         "defensible one: it also requires each reading to recur, because a reading used "
         "once against a sign used hundreds of times is usually a one-off spelling or a "
         "slip in the sign/reading alignment, not an alternative a model could learn."
@@ -3026,7 +3164,7 @@ def render_signs(df: pd.DataFrame) -> None:
     )
     st.markdown(
         f"**{entry.total_instances}** instances · **{entry.literal_count}** literal "
-        f"readings · **{entry.distinct_count}** distinct after collapsing editorial marks"
+        f"readings · **{entry.distinct_count}** distinct after merging {SEARCH_FOLD_LABEL}"
     )
 
     for reading, count in entry.literal_readings.most_common():
