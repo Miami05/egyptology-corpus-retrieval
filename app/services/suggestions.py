@@ -12,7 +12,9 @@ import pandas as pd
 
 from app.data.query import parse_query
 from app.data.normalizer import (
+    PARENTHESISED_YOD_RE,
     drop_superfluous_text,
+    fold_strict_aliases,
     fold_letter_variants,
     fold_plural_marker,
     fold_weak_consonant_marker,
@@ -200,7 +202,11 @@ def lemma_ids(value: object) -> set[str]:
     return ids
 
 
-def unfold_shared_tokens(shared: list[str], candidate_transliteration: object) -> list[str]:
+def unfold_shared_tokens(
+    shared: list[str],
+    candidate_transliteration: object,
+    form=None,
+) -> list[str]:
     """Show shared *folded* tokens as the candidate's own Unicode words.
 
     The overlap is computed on the loose ASCII fold (`ꜥḥꜥ.n` → `aha n`), so the raw
@@ -208,11 +214,16 @@ def unfold_shared_tokens(shared: list[str], candidate_transliteration: object) -
     each back to the whitespace-separated word of `candidate_transliteration` whose
     loose fold contains it, keep first-occurrence order, and fall back to the folded
     form for anything that does not map (e.g. a token only the query had).
+
+    `form` is the per-word form the shared tokens were computed on (default the loose
+    fold); the strict comparison passes `unfolded_reading_form`, whose tokens are
+    fragments split at markers (`ḥm.t` → `ḥm`, `t`) just as the loose ones are.
     """
+    form = loose_reading_form if form is None else form
     words = _safe_str(candidate_transliteration).split()
     by_fold: dict[str, str] = {}
     for word in words:
-        for folded in tokenize_query(loose_reading_form(word)):
+        for folded in tokenize_query(form(word)):
             by_fold.setdefault(folded, word)
     shown: list[str] = []
     for token in shared:
@@ -382,10 +393,46 @@ def unfolded_reading_form(value: object) -> str:
     plural, weak-consonant and superfluous-text rules agree with retrieval. Used for
     the query words typed with Egyptological letters (A54), so `n.t` and `n(.t)` still
     share words while `ꜥḥꜥ` and `ꜣḥꜥ` do not.
+
+    The yod's encodings and the variants `ḳ`/`ṱ`, which the search key folds to one
+    letter, are one letter here too (`fold_strict_aliases`): `ḥm.t=j` and `ḥm.t =ꞽ`,
+    `wnḫwꞽ` and `wnḫwı͗` are the same words (final audit, search-ranking-1).
+    """
+    return _unfolded_tokens(_unfolded_notation(value))
+
+
+def _unfolded_notation(value: object) -> str:
+    return fold_strict_aliases(normalize_notation(_safe_str(value).replace("⸗", "=")))
+
+
+def _unfolded_tokens(text: str) -> str:
+    return normalize_whitespace(STRICT_DROP_RE.sub("", LOOSE_MARKER_RE.sub(" ", text)))
+
+
+# Stands in for an editor-supplied yod (`n(.ꞽ).t`) while a reading is split into
+# words; never occurs in a reading.
+_EDITORIAL_YOD = "\x02"
+
+
+def _mixed_candidate_tokens(value: object) -> list[tuple[str, str, bool]]:
+    """(token as written, its loose fold, editorial yod?) for a mixed-mode candidate.
+
+    The tokens are `unfolded_reading_form`'s, but a yod in round brackets — one the
+    editor supplied, which the search key and the loose form drop
+    (`PARENTHESISED_YOD_RE`) — is flagged, found on the notation *before* the brackets
+    are removed, so it can still vanish for a loose query word. Splitting first made
+    it a standalone `ꞽ` that no fold deletes (final audit, search-ranking-3: `n.t ḥtp`
+    against `n(.ꞽ).t ḥtp`).
     """
     text = normalize_notation(_safe_str(value).replace("⸗", "="))
-    text = STRICT_DROP_RE.sub("", LOOSE_MARKER_RE.sub(" ", text))
-    return normalize_whitespace(text)
+    text = PARENTHESISED_YOD_RE.sub(f" {_EDITORIAL_YOD} ", text)
+    tokens: list[tuple[str, str, bool]] = []
+    for token in _unfolded_tokens(fold_strict_aliases(text)).split():
+        if token == _EDITORIAL_YOD:
+            tokens.append(("ꞽ", "", True))
+        else:
+            tokens.append((token, loose_reading_form(token), False))
+    return tokens
 
 
 def _ngram_cosine(left_form: str, right_form: str) -> float:
@@ -488,8 +535,10 @@ class QueryForms:
             return loose_reading_form(value)
         if self.mode == "strict":
             return unfolded_reading_form(value)
-        words = unfolded_reading_form(value).split()
-        folds = [loose_reading_form(word) for word in words]
+        candidate_tokens = _mixed_candidate_tokens(value)
+        words = [word for word, _, _ in candidate_tokens]
+        folds = [folded for _, folded, _ in candidate_tokens]
+        editorial = [flag for _, _, flag in candidate_tokens]
         tokens = self.tokens
 
         def fits(index: int, slot: int) -> bool:
@@ -527,10 +576,13 @@ class QueryForms:
         for slot, index in owner.items():
             chosen[index] = tokens[slot][0]
         # An unmatched word: shown as the token form it duplicates, else as written.
+        # An unmatched editor-supplied yod is dropped, as the loose form drops it.
         for index, (word, folded) in enumerate(zip(words, folds)):
             if chosen[index] is not None:
                 continue
-            if word in self.strict_words:
+            if editorial[index]:
+                chosen[index] = ""
+            elif word in self.strict_words:
                 chosen[index] = word
             elif folded and folded in self.loose_words:
                 chosen[index] = folded
@@ -538,29 +590,40 @@ class QueryForms:
                 chosen[index] = word
         return " ".join(word for word in chosen if word)
 
-    def char_similarity(self, query_key: str, candidate_key: str) -> float:
+    def char_similarity(
+        self, query_key: str, candidate_key: str, candidate_raw: object = None
+    ) -> float:
+        """`candidate_raw` is the candidate as written. Mixed mode compares it with
+        `query_form`, which was built from the query as written: the comparison key
+        has already deleted the morpheme dots, so `ꜥḥꜥ.n` there is one token where
+        the query has two, and an identical reading scored 0.80 (final audit,
+        search-ranking-2). The other modes compare the two keys, symmetrically."""
         if self.mode == "loose":
             return char_ngram_similarity(query_key, candidate_key, fold=True)
         if self.mode == "strict":
             return char_ngram_similarity(query_key, candidate_key, fold=False)
-        return _ngram_cosine(self.query_form, self.candidate(candidate_key))
+        candidate = candidate_key if candidate_raw is None else candidate_raw
+        return _ngram_cosine(self.query_form, self.candidate(candidate))
 
     def shown_shared(self, shared: list[str], candidate_transliteration: str) -> list[str]:
-        """Shared words as the candidate writes them: loose words are mapped back to
-        the candidate's own Unicode word, strict ones are already as written."""
+        """Shared words as the candidate writes them: every shared token, loose or
+        strict, is mapped back to the candidate's own whitespace word (a strict token
+        is a fragment split at a marker, `ḥm.t=ꞽ` → `ḥm`, `t`, `ꞽ`), once per word."""
         if self.mode == "strict":
-            return list(shared)
+            return unfold_shared_tokens(
+                shared, candidate_transliteration, form=unfolded_reading_form
+            )
         if self.mode == "loose":
             return unfold_shared_tokens(shared, candidate_transliteration)
         shown: list[str] = []
         strict_words = self.strict_words
         # Ordered as the loose mode orders them (by ASCII fold), not ASCII-first.
         for token in sorted(shared, key=lambda t: (loose_reading_form(t), t)):
-            word = (
-                token
-                if token in strict_words
-                else unfold_shared_tokens([token], candidate_transliteration)[0]
-            )
+            word = unfold_shared_tokens(
+                [token],
+                candidate_transliteration,
+                form=unfolded_reading_form if token in strict_words else None,
+            )[0]
             if word not in shown:
                 shown.append(word)
         return shown
@@ -636,7 +699,11 @@ def _evidence_summary(
         bits.append("same normalized query reading")
     elif query_loose and candidate_loose == query_loose:
         bits.append("same simplified query reading")
-    elif query_key and forms.char_similarity(query_key, candidate_key) >= 0.72:
+    elif (
+        query_key
+        and forms.char_similarity(query_key, candidate_key, candidate_transliteration)
+        >= 0.72
+    ):
         bits.append("near simplified query reading")
 
     query_reading_norm = normalize_sign_sequence(query_reading_order)
@@ -775,6 +842,11 @@ def suggest_top_readings(
         return []
 
     results["candidate_key"] = results["candidate_transliteration"].map(canonical_reading)
+    # Grouped on the comparison key as well: the grouping key keeps the words inside
+    # `{…}` (only the braces go), so `ḥtp {n}` and `ḥtp n` share it, but they are
+    # compared as `ḥtp` and `ḥtp n` — one group would be scored on whichever edition
+    # sorted first (final audit, search-ranking-5; see `comparison_key`).
+    results["compare_key"] = results["candidate_transliteration"].map(comparison_key)
     rows: list[dict] = []
     debug_start = len(debug_signals) if debug_signals is not None else 0
     max_row_score = max(float(value) for value in results["final_score"].fillna(0.0))
@@ -793,7 +865,9 @@ def suggest_top_readings(
     glyph_live = bool(query_glyph_groups)
     reading_live = bool(query_reading_norm)
 
-    for candidate_key, group in results.groupby("candidate_key", sort=False):
+    for (candidate_key, _), group in results.groupby(
+        ["candidate_key", "compare_key"], sort=False
+    ):
         group = group.sort_values("final_score", ascending=False, kind="mergesort").copy()
         best = group.iloc[0]
         best_score = float(best.get("final_score", 0.0) or 0.0)
@@ -848,7 +922,7 @@ def suggest_top_readings(
                 translit_overlap = float(
                     group["idf_overlap_score"].fillna(0.0).astype(float).max()
                 )
-            char_similarity = forms.char_similarity(query_key, compare_key)
+            char_similarity = forms.char_similarity(query_key, compare_key, best_candidate)
             exact_or_near_bonus = 1.0 if compare_key == query_key else 0.0
             if exact_or_near_bonus == 0.0 and query_loose == candidate_loose:
                 exact_or_near_bonus = 0.85

@@ -159,6 +159,25 @@ def fold_letter_variants(value: str) -> str:
     key (A16/A54)."""
     return value.translate(_LETTER_VARIANTS)
 
+
+# The yod's other encodings and two letter variants that the *search* key folds
+# (`normalize_transliteration`: `ꞽ j ı ı͗ i` → `i`, `ḳ` → `q`, `ṱ` → `t`), mapped to one
+# letter instead of to ASCII. They are one letter in different editions' conventions
+# (Hannig/Leipzig and the St Andrews data write `j`, ASCII typists and Ramses `i`,
+# BBAW `ı͗`; Nederhof accepts merging i/j), so mapping them together merges no two
+# consonants: ꜣ/ꜥ, ḥ/h, ḫ/ẖ, ṯ/t and ḏ/d all stay distinct. Not part of
+# `normalize_notation`: the search key keeps its own order of folds (its bracketed-yod
+# rule matches `(ı)` but not `(ı͗)`), and the grouping key is left as it is.
+_YOD_ALIASES = str.maketrans({"ı": "ꞽ", "j": "ꞽ", "i": "ꞽ", "ḳ": "q", "ṱ": "t"})
+
+
+def fold_strict_aliases(value: str) -> str:
+    """`j ı ı͗ i` → `ꞽ`, `ḳ` → `q`, `ṱ` → `t` on already-normalised (NFC, lower-case)
+    text whose weak-consonant marker `i̯` was folded first. Used by the strict
+    comparison form in app.services.suggestions, so a query letter the search key
+    accepts is never a different letter there (final audit, search-ranking-1)."""
+    return value.replace("ı\u0357", "ꞽ").translate(_YOD_ALIASES)
+
 # ---------------------------------------------------------------------------
 # Hieroglyph character classes
 #
@@ -517,9 +536,10 @@ def normalize_notation(value: str) -> str:
     weak-consonant marker folded (`i̯` → `ꞽ`, `u̯` → `w`), variant letter encodings
     mapped to the canonical letter (`ʿ ȝ ỉ` → `ꜥ ꜣ ꞽ`) and the plural notation folded
     to `.w`. Every consonant stays as written (ꜣ ≠ ꜥ, ḥ ≠ h), so the strict comparison
-    in app.services.suggestions builds on this, and `normalize_transliteration` adds
-    the lossy ASCII fold on top. One helper, so a query letter the search key accepts
-    can never be one the suggestion layer silently treats as a different letter.
+    in app.services.suggestions builds on this (adding `fold_strict_aliases` for the
+    yod encodings and `ḳ`/`ṱ`), and `normalize_transliteration` adds the lossy ASCII
+    fold on top. Together they make sure a query letter the search key accepts can
+    never be one the suggestion layer silently treats as a different letter.
     """
     value = normalize_text(value)
     value = drop_superfluous_text(value)
