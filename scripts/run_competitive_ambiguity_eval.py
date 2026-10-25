@@ -26,6 +26,7 @@ Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such colum
 from __future__ import annotations
 
 import argparse
+import inspect
 import math
 import os
 import sys
@@ -61,6 +62,12 @@ from app.services.suggestions import (
 )
 from scripts.build_competitive_ambiguity_benchmark import STOP_TOKENS
 from scripts.eval_guards import TwinGuard
+
+# The services fix (audit A54, branch fix1-services) adds `query_raw=` to
+# suggest_top_readings: strictness is decided on the query as typed. Passed only when
+# the installed suggestion layer takes it, so this harness runs on either side of that
+# merge; once merged, the app and the harness hand the layer the same two strings.
+SUGGEST_TAKES_QUERY_RAW = "query_raw" in inspect.signature(suggest_top_readings).parameters
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 # Default for `_load_benchmark` callers that pass nothing. The CLI no longer has a
@@ -565,12 +572,14 @@ def twin_threshold_arg(text: str) -> float:
 def key_token_drift(bench_row: pd.Series, guard: TwinGuard) -> tuple[set[str], set[str]]:
     """(tokens only the frozen benchmark records, tokens only today's corpus row has).
 
-    The useful rule compares the benchmark's FROZEN `expected_key_tokens` with
-    candidate tokens computed by TODAY's `loose_reading_form`. When the normaliser
-    changes (e.g. audit A17 dropping `{…}` superfluous text) the two drift apart for
-    some targets and the rule's meaning shifts under a frozen benchmark. The eval
-    reports that drift instead of hiding it; the frozen column is never rewritten.
-    A target that is not in the corpus has no drift to report.
+    The benchmark's FROZEN `expected_key_tokens` were cut by an older normaliser; when
+    it changes (e.g. audit A17 dropping `{…}` superfluous text, or `.pl` markers
+    no longer yielding `pl`) they drift from today's tokens for some targets. The
+    default scoring (`--expected-tokens current`, see `scoring_key_tokens`) no
+    longer reads that column, so the drift only matters to a `--expected-tokens
+    frozen` reproduction; it is reported per query either way, and the frozen
+    column is never rewritten. A target that is not in the corpus has no drift to
+    report.
     """
     positions = guard.target_positions(bench_row)
     if not positions:
@@ -578,6 +587,28 @@ def key_token_drift(bench_row: pd.Series, guard: TwinGuard) -> tuple[set[str], s
     recorded = {token for token in str(bench_row["expected_key_tokens"]).split() if token}
     current = guard.token_sets[positions[0]]
     return recorded - current, current - recorded
+
+
+EXPECTED_TOKEN_MODES = ("current", "frozen")
+
+
+def scoring_key_tokens(bench_row: pd.Series, mode: str = "current") -> set[str]:
+    """The expected tokens the useful rule scores against (audit A55/A17 review).
+
+    'current' (default) runs the benchmark's own `expected_transliteration` through
+    the SAME normaliser the candidates go through (`loose_reading_form`, see
+    `_useful_reason`), so both sides of every token comparison use one rule and a
+    normaliser change can never move a decision by changing only one side. 'frozen'
+    reads the benchmark's recorded `expected_key_tokens` column as it was cut — the
+    historical, mixed-normalisation scoring every result before 2026-10-25 used; it is
+    kept so those numbers stay reproducible and is labelled as such in the summary.
+    The benchmark files are never rewritten either way.
+    """
+    if mode == "frozen":
+        return _tokens(bench_row["expected_key_tokens"])
+    if mode != "current":
+        raise ValueError(f"expected-token mode must be one of {EXPECTED_TOKEN_MODES}, not {mode!r}")
+    return _tokens(loose_reading_form(str(bench_row["expected_transliteration"])))
 
 
 def format_token_drift(only_recorded: set[str], only_current: set[str]) -> str:
@@ -634,6 +665,19 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--expected-tokens",
+        choices=list(EXPECTED_TOKEN_MODES),
+        default="current",
+        help=(
+            "Audit A55/A17. 'current' (default): the expected reading's tokens are "
+            "recomputed with today's normaliser, the same one the candidates go "
+            "through, so both sides of the useful rule agree. 'frozen': the "
+            "benchmark's recorded expected_key_tokens, as every run before 2026-10-25 "
+            "scored (mixed: frozen expected tokens against today's candidate tokens); "
+            "use it only to reproduce a historical number, e.g. v4 0.90."
+        ),
+    )
+    parser.add_argument(
         "--label",
         default="",
         help="Optional run label printed with the summary (e.g. 'corpus=300').",
@@ -650,7 +694,8 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
             "(`searched.reading or query`) rather than the raw string. 'legacy' is what "
             "this harness did before 2026-09-05 — index=None whenever no stage "
             "resolves, and the raw query string into the suggestion layer — and is kept "
-            "so the published v4 numbers (0.90 / MRR 0.79) can be reproduced exactly."
+            "so the published pre-2026-09-05 numbers can be reproduced exactly (with "
+            "--expected-tokens frozen; every published number predates that flag)."
         ),
     )
     parser.add_argument(
@@ -714,6 +759,7 @@ def render_extra_summary(
     near_exact_hits: int,
     strict_top3_hits: int,
     key_token_drift_queries: int = 0,
+    expected_tokens: str = "current",
 ) -> str:
     """The summary lines added by audit A4 and A23, as printable text.
 
@@ -742,6 +788,17 @@ def render_extra_summary(
     extra["top3_strict_useful"] = round(strict_top3_hits / total, 4) if total else 0.0
     extra["key_token_drift_queries"] = key_token_drift_queries
     lines.extend(f"{key}: {value}" for key, value in extra.items())
+    if expected_tokens == "frozen":
+        lines.append(
+            "expected_tokens: frozen (recorded benchmark tokens against today's "
+            f"candidate tokens; {key_token_drift_queries} queries differ, see "
+            "key_token_drift; historical scoring, not consistent normalisation)"
+        )
+    else:
+        lines.append(
+            "expected_tokens: current (expected and candidate tokens both from "
+            "today's loose_reading_form)"
+        )
     return "\n".join(lines)
 
 
@@ -886,15 +943,20 @@ def main(argv: "list[str] | None" = None) -> None:
                 vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
             )
             suggestion_query = searched.reading or query_input
+        # The query as typed goes along too (see SUGGEST_TAKES_QUERY_RAW), exactly as
+        # the app passes `query_raw=query`. Under 'legacy' it equals query_mdc, which
+        # is the layer's own default, so that path is unchanged.
+        raw_kwargs = {"query_raw": query_input} if SUGGEST_TAKES_QUERY_RAW else {}
         suggestions = suggest_top_readings(
             retrieval_results,
             query_mdc=suggestion_query,
             query_reading_order=query_reading_order,
             top_n=3,
+            **raw_kwargs,
         )
         candidates = [suggestion.candidate_transliteration for suggestion in suggestions]
         expected = str(bench_row["expected_transliteration"])
-        expected_key_tokens = _tokens(bench_row["expected_key_tokens"])
+        expected_key_tokens = scoring_key_tokens(bench_row, args.expected_tokens)
         expected_lemma_ids = _tokens(bench_row["expected_lemma_ids"])
         token_threshold = float(bench_row["acceptable_token_overlap_threshold"])
 
@@ -1088,6 +1150,12 @@ def main(argv: "list[str] | None" = None) -> None:
                 # Appended last (fix round 1): frozen expected_key_tokens against the
                 # target row's tokens under today's normaliser, see key_token_drift.
                 "key_token_drift": drift,
+                # Appended after it (fix round 2): the run configuration that decides
+                # the scoring, per row, so compare_twin_scores.py can refuse a pair
+                # that differs in it instead of trusting two printed summaries.
+                "query_path": args.query_path,
+                "useful_rule": args.useful_rule,
+                "expected_tokens": args.expected_tokens,
             }
         )
 
@@ -1159,6 +1227,7 @@ def main(argv: "list[str] | None" = None) -> None:
         near_exact_hits=near_exact_hits,
         strict_top3_hits=strict_top3_hits,
         key_token_drift_queries=key_token_drift_queries,
+        expected_tokens=args.expected_tokens,
     ))
 
     results_path.parent.mkdir(parents=True, exist_ok=True)

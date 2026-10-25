@@ -12,10 +12,11 @@ queries whose useful rank or shown suggestions changed. It only reads CSVs and w
 two NEW files; it never touches a committed result.
 
 Before comparing, each pair is validated (`validate_pair`): both runs must cover exactly
-the same benchmark ids with the same query and target, under the same stage mode,
-the first with twin exclusion off and the second with one threshold above 0. (The
-query path and useful rule are not in the per-query CSV; check them in the two runs'
-printed summaries.) A pair that fails is refused, because the headline
+the same benchmark ids with the same query, target and scoring definition (expected
+key tokens, lemma ids, token threshold), under the same stage mode, query path,
+useful rule and expected-token mode (each recorded per row by the eval since
+2026-10-25 and required in both runs), the first with twin exclusion off and the
+second with one threshold above 0. A pair that fails is refused, because the headline
 numbers are computed per run while the change table only sees ids present in both, so
 a dropped or swapped query could look like an improvement.
 """
@@ -84,16 +85,22 @@ def metrics_from_results(results: pd.DataFrame) -> dict[str, float]:
     return out
 
 
-# Columns that identify a query and its target: they must agree id for id.
+# Columns that identify a query, its target and how it is scored: they must agree id
+# for id. The last three are the useful rule's inputs; two benchmark files with the
+# same queries but different expected tokens (v4 vs v4_driftcorrected) are not a pair.
 IDENTITY_COLUMNS = (
     "query_input",
     "query_type",
     "expected_transliteration",
     "expected_source_text_id",
     "expected_source_sentence_id",
+    "expected_key_tokens",
+    "expected_lemma_ids",
+    "acceptable_token_overlap_threshold",
 )
-# Run configuration that must be the same in both runs, when the results record it.
-SHARED_CONFIG_COLUMNS = ("stage_mode",)
+# Run configuration that must be recorded in, and the same across, both runs. A run
+# that lacks one of these columns is refused: an unrecorded setting cannot be checked.
+SHARED_CONFIG_COLUMNS = ("stage_mode", "query_path", "useful_rule", "expected_tokens")
 
 
 def _single_value(results: pd.DataFrame, column: str, label: str) -> str:
@@ -107,9 +114,11 @@ def validate_pair(twins_in: pd.DataFrame, twins_out: pd.DataFrame, name: str = "
     """Refuse to compare two runs that are not the same benchmark under two twin settings.
 
     Raises ValueError, naming the problem, when: a benchmark id repeats in either run;
-    the id sets differ; any identity column (query, query type, expected reading and
-    target ids) differs for an id; the stage mode differs; the first run did not have
-    twin exclusion off or the second did not have one threshold above 0.
+    the id sets differ; any identity column (query, query type, expected reading,
+    target ids, expected key tokens, lemma ids, token threshold) differs for an id; a
+    run configuration column (stage mode, query path, useful rule, expected-token
+    mode) is missing from either run, not constant, or differs; the first run did not
+    have twin exclusion off or the second did not have one threshold above 0.
     """
     label = name or "pair"
     for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
@@ -136,11 +145,16 @@ def validate_pair(twins_in: pd.DataFrame, twins_out: pd.DataFrame, name: str = "
         if mismatched:
             raise ValueError(f"{label}: {column} differs for {mismatched}")
     for column in SHARED_CONFIG_COLUMNS:
-        if column in twins_in.columns and column in twins_out.columns:
-            value_in = _single_value(twins_in, column, f"{label} twins-in")
-            value_out = _single_value(twins_out, column, f"{label} twins-out")
-            if value_in != value_out:
-                raise ValueError(f"{label}: {column} differs ({value_in} vs {value_out})")
+        for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
+            if column not in frame.columns:
+                raise ValueError(
+                    f"{label}: {side} run does not record {column}; re-run it with the "
+                    "current scripts/run_competitive_ambiguity_eval.py"
+                )
+        value_in = _single_value(twins_in, column, f"{label} twins-in")
+        value_out = _single_value(twins_out, column, f"{label} twins-out")
+        if value_in != value_out:
+            raise ValueError(f"{label}: {column} differs ({value_in} vs {value_out})")
     for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
         if "twin_exclusion" not in frame.columns:
             raise ValueError(f"{label}: {side} run has no twin_exclusion column")

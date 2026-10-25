@@ -158,6 +158,18 @@ def select_test_rows(
     return SplitResult(train, test, exact, near, excluded)
 
 
+def test_mix(test: pd.DataFrame) -> str:
+    """`AES 1948, BBAW 1074, ...`: how many test sentences each source contributes.
+
+    The pooled accuracies are a mix weighted by these counts, and the mix depends on
+    --split (Ramses falls from about a fifth of the test set to its official 997-row
+    test split under 'text'), so it is printed and recorded with every run (audit A56
+    review).
+    """
+    counts = test["source"].astype(str).value_counts()
+    return ", ".join(f"{source} {counts[source]}" for source in sorted(counts.index))
+
+
 def by_source_records(size: int, per_source: "dict[str, Counter]") -> list[dict]:
     """One row per source: the pooled counters split by where the test sentence came from."""
     rows = []
@@ -274,6 +286,11 @@ def main(argv: "list[str] | None" = None) -> None:
 
     full = aligned_rows(load_examples_csv(args.examples))
     print(f"aligned sentences available: {len(full)}")
+    print(
+        f"split mode: {args.split}. Pooled accuracies are NOT comparable across --split "
+        "modes: the test set's source mix differs (see 'test sentences by source'), "
+        "so compare the per-source rows instead."
+    )
     if args.split == "text":
         print(
             "split: whole texts (AES text id, Ramses official test split); "
@@ -311,6 +328,8 @@ def main(argv: "list[str] | None" = None) -> None:
         train, test = split.train, split.test
         if train.empty or test.empty:
             continue
+        mix = test_mix(test)
+        print(f"  {size:>6} sentences | test sentences by source ({args.split} split): {mix}")
         leaked_count = split.exact_duplicates
         if lexicon_on:
             tainted = sorted(
@@ -537,6 +556,7 @@ def main(argv: "list[str] | None" = None) -> None:
         row_out["lexicon_test_sources_excluded"] = ",".join(sorted(lexicon_exclude))
         row_out["test_sentences_excluded_for_lexicon"] = split.excluded_for_lexicon
         row_out["split"] = args.split
+        row_out["test_sentences_by_source"] = mix
         by_source_rows.extend(by_source_records(size, per_source))
         summary_rows.append(row_out)
         print(

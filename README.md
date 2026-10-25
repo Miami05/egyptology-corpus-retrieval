@@ -144,11 +144,19 @@ python scripts/run_expert_paste_eval.py          # real hieroglyph pastes, exits
 python scripts/run_competitive_ambiguity_eval.py \
   --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
 python scripts/verify_release.py   # tests + both evaluations, one summary, non-zero on failure
+# NOT READY until release_baseline.json has a twin_controlled block (audit A4); until the
+# pre-registered re-measure sets it, --allow-legacy-gate gates on the legacy pool, labelled
 ```
 
-The competitive benchmark is the reportable one: its rows are guaranteed to have no
-near-identical twin anywhere in the corpus, so excluding the target does not hand the
-answer back. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
+The competitive benchmark is the reportable one, but its targets are *not* free of
+near-identical twins: on the 130,472-row corpus, 7 of v4's 20 targets have another row
+at word overlap ≥ 0.7 (Jaccard on loose-form tokens) or with the same notation-folded
+reading, 2 of them at ≥ 0.9 (inventory: `data/benchmarks/known_twins_2026-10-12.csv`).
+Excluding only the target can therefore hand the answer back through such an edition
+twin. `--exclude-twins 0.7` also removes every such row from each query's pool and gives
+the twin-controlled number; the default (`0`) keeps the legacy pool, and every run's
+summary says which pool it measured (`pool: legacy` or `pool: twin-controlled`). The
+v4 figures below are legacy-pool numbers. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
 folds to `i`) and the searchable corpus changed twice the same day — so their numbers
 no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 was
 cut on the 78,412-row corpus, where it scores 0.95 top-3 useful. Since Ramses and Demotic

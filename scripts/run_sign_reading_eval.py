@@ -11,7 +11,9 @@ whose exact sign string recurs (as it always did) and now also removes from each
 target's retrieval pool every row whose sign-group Jaccard with the target is at least
 `--near-duplicate-overlap` (0.8) and every row with the same reading, so a near-copy
 cannot be "predicted" by copying it. `--no-exclude-duplicates` restores the old default
-and `--exclude-duplicates --near-duplicate-overlap 0` the old exact-only rule. It also
+and `--exclude-duplicates --near-duplicate-overlap 0 --no-exclude-same-text` the old
+exact-only rule (without `--no-exclude-same-text` the target's sibling AES sentences
+are still removed). It also
 removes every other sentence of the target's own text (`--exclude-same-text`, on by
 default; audit A56's text-level requirement). Only AES rows carry a text identity in
 this corpus (the text id in source_ref); TLA, BBAW and Ramses rows are their own text,
@@ -198,7 +200,8 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
         help=(
             "With duplicate exclusion on: remove from each target's pool every row whose "
             "sign-group Jaccard with the target is at least this, and every row with the "
-            "same reading. 0 = off (the old exact-only rule)."
+            "same reading. 0 = off; the old exact-only rule also needs "
+            "--no-exclude-same-text."
         ),
     )
     parser.add_argument(

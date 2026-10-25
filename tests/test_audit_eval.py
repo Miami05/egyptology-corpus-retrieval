@@ -256,16 +256,19 @@ GATED_OR_QUOTED = [
     "competitive_ambiguity_eval_queries_v4_driftcorrected.csv",
 ]
 # (targets with a twin at >= 0.7 or folded-identical, targets with a twin at >= 0.9),
-# as measured on 2026-10-12 on the 130,472-row corpus. A regenerated twin list that
-# changes these shows up here and in review, not only in a CSV diff.
+# as measured on 2026-10-12 on the 130,472-row corpus and re-measured 2026-10-25 after
+# audit A17 (`{…}` superfluous text leaves the loose key): only the retired sets moved,
+# v1 0.9 10 -> 11 (COMP_001's BBAW edition B083910 at 1.0) and v2 0.9 0 -> 1 (COMP_003,
+# the same BBAW row). A regenerated twin list that changes these shows up here and in
+# review, not only in a CSV diff.
 EXPECTED_COUNTS = {
     "competitive_ambiguity_eval_queries_v4.csv": (7, 2),
     "competitive_ambiguity_eval_queries_holdout_2026-09-05.csv": (4, 0),
     "competitive_ambiguity_eval_queries_le_v1.csv": (5, 0),
     "competitive_ambiguity_eval_queries_name_v1.csv": (5, 0),
     "competitive_ambiguity_eval_queries_v4_driftcorrected.csv": (7, 2),
-    "competitive_ambiguity_eval_queries.csv": (17, 10),
-    "competitive_ambiguity_eval_queries_v2.csv": (18, 0),
+    "competitive_ambiguity_eval_queries.csv": (17, 11),
+    "competitive_ambiguity_eval_queries_v2.csv": (18, 1),
     "competitive_ambiguity_eval_queries_v3.csv": (20, 3),
 }
 
@@ -1050,12 +1053,26 @@ def test_a_default_competitive_run_writes_nothing_under_data(tmp_path, capsys, m
             written.append(Path(path_or_buf).resolve())
         return original(self, path_or_buf, *args, **kwargs)
 
+    data_dir = (PROJECT_ROOT / "data").resolve()
+    tree_before = _data_tree_state(data_dir)
     monkeypatch.setattr(pd.DataFrame, "to_csv", recording_to_csv)
     ce.main(["--examples", str(corpus), "--benchmark", str(bench), "--stage", "none"])
     assert len(written) == 2, written  # results and failures, nothing else
-    data_dir = (PROJECT_ROOT / "data").resolve()
     assert all(not path.is_relative_to(data_dir) for path in written), written
     assert {name: _fingerprint(name) for name in before} == before
+    # Writes that bypass DataFrame.to_csv (open(), Path.write_text) would not be
+    # recorded above; every file under data/ keeping its size and mtime catches them.
+    assert _data_tree_state(data_dir) == tree_before
+
+
+def _data_tree_state(root: Path) -> dict[str, tuple[int, int]]:
+    """relative path -> (size, mtime_ns) for every file under `root`."""
+    state = {}
+    for path in root.rglob("*"):
+        if path.is_file():
+            info = path.stat()
+            state[str(path.relative_to(root))] = (info.st_size, info.st_mtime_ns)
+    return state
 
 
 @pytest.mark.parametrize("bad", ["70", "-0.1", "1.5", "nan", "x"])
@@ -1109,7 +1126,8 @@ def test_key_token_drift_is_reported_per_query_and_in_the_summary(tmp_path, caps
     assert "-pl" in want.split()
     assert results.loc[0, "key_token_drift"] == want
     assert "key_token_drift_queries: 1" in out
-    assert list(results.columns)[-1] == "key_token_drift"
+    # Appended after every earlier column; only fix round 2's three follow it.
+    assert list(results.columns)[-4] == "key_token_drift"
 
 
 def test_key_token_drift_is_empty_for_an_absent_target():
@@ -1179,7 +1197,13 @@ def _compare_frame(ids, threshold, **overrides) -> pd.DataFrame:
             "expected_transliteration": [f"e{i}" for i in ids],
             "expected_source_text_id": [f"T{i}" for i in ids],
             "expected_source_sentence_id": [f"S{i}" for i in ids],
+            "expected_key_tokens": [f"k{i} x" for i in ids],
+            "expected_lemma_ids": [f"L{i}" for i in ids],
+            "acceptable_token_overlap_threshold": [0.26] * len(ids),
             "stage_mode": ["auto"] * len(ids),
+            "query_path": ["app"] * len(ids),
+            "useful_rule": ["v4"] * len(ids),
+            "expected_tokens": ["current"] * len(ids),
             "twin_exclusion": [threshold] * len(ids),
             "useful_family_rank": [1] * len(ids),
             "exact_rank": [""] * len(ids),
@@ -1345,3 +1369,179 @@ def test_test_set_proposal_records_the_decisions_and_keeps_a25_open():
     # load_private_examples globs data/private/*.csv, so the doc must forbid a top-level file.
     assert "never as a top-level CSV" in text
     assert "until after the first report" in text
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 (2026-10-25): Opus + Astra reviews of fix round 1
+# ---------------------------------------------------------------------------
+
+
+def test_scoring_tokens_come_from_the_same_normaliser_as_the_candidates():
+    """A55/A17 (Astra blocker): the default scoring runs the expected reading through
+    the exact token rule `_useful_reason` applies to a candidate, so a normaliser
+    change moves both sides together. 'frozen' is the recorded column, unchanged."""
+    for reading in ["n{t}n.t =f", "wḫꜣ{ḫ} ḥr", "ḥtp ḏi̯ nsw.t", "pr.pl ꜥꜣ"]:
+        row = pd.Series({"expected_transliteration": reading, "expected_key_tokens": "stale pl"})
+        assert ce.scoring_key_tokens(row) == ce._tokens(loose_reading_form(reading))
+        assert ce.scoring_key_tokens(row, "frozen") == {"stale", "pl"}
+    with pytest.raises(ValueError):
+        ce.scoring_key_tokens(row, "nope")
+
+
+def test_a_stale_frozen_token_column_no_longer_decides_the_default_score(tmp_path, capsys):
+    """Astra's counterexample in miniature: the frozen tokens disagree with today's
+    normaliser. The default run scores with today's tokens on both sides (the twin is
+    a useful lead); --expected-tokens frozen reproduces the old mixed scoring (it is
+    not), and each run says which scoring it used, per row and in the summary."""
+    corpus = _write_corpus(tmp_path, TWIN_CORPUS)
+    bench_path = _write_benchmark(tmp_path)
+    bench = pd.read_csv(bench_path)
+    bench.loc[0, "expected_key_tokens"] = "qq1 qq2 qq3 qq4"
+    bench.to_csv(bench_path, index=False)
+
+    def run(*extra: str) -> tuple[pd.DataFrame, str]:
+        tag = extra[-1] if extra else "default"
+        capsys.readouterr()
+        ce.main(
+            ["--examples", str(corpus), "--benchmark", str(bench_path),
+             "--results", str(tmp_path / f"{tag}_r.csv"), "--failures", str(tmp_path / f"{tag}_f.csv"),
+             "--stage", "none", *extra]
+        )
+        return pd.read_csv(tmp_path / f"{tag}_r.csv").fillna(""), capsys.readouterr().out
+
+    current, current_out = run()
+    frozen, frozen_out = run("--expected-tokens", "frozen")
+    assert current.loc[0, "suggestions"] == frozen.loc[0, "suggestions"]
+    assert current.loc[0, "useful_family_rank"] != "" and frozen.loc[0, "useful_family_rank"] == ""
+    assert current.loc[0, "expected_tokens"] == "current" and frozen.loc[0, "expected_tokens"] == "frozen"
+    assert "expected_tokens: current" in current_out
+    assert "expected_tokens: frozen" in frozen_out
+    for out in (current_out, frozen_out):
+        for key, pattern in VERIFY_RELEASE_PATTERNS.items():
+            own = re.search(rf"^{key}: ([\d.]+)$", out, flags=re.MULTILINE)
+            assert re.search(pattern, out).group(1) == own.group(1), key
+
+
+def test_expected_tokens_defaults_to_current():
+    assert ce._parse_args(["--benchmark", "x.csv"]).expected_tokens == "current"
+    assert ce._parse_args(["--benchmark", "x.csv", "--expected-tokens", "frozen"]).expected_tokens == "frozen"
+
+
+def test_the_typed_query_reaches_the_suggestion_layer_when_it_takes_query_raw(tmp_path, capsys, monkeypatch):
+    """The services fix (A54) adds `query_raw=` to suggest_top_readings; the harness
+    passes the query as typed, exactly as the app does, and omits it on a layer that
+    does not take it yet."""
+    import inspect
+
+    assert ce.SUGGEST_TAKES_QUERY_RAW == (
+        "query_raw" in inspect.signature(ce.suggest_top_readings).parameters
+    )
+    original = ce.suggest_top_readings
+    seen: list[dict] = []
+
+    def recording(*args, **kwargs):
+        seen.append(dict(kwargs))
+        kwargs.pop("query_raw", None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ce, "suggest_top_readings", recording)
+    monkeypatch.setattr(ce, "SUGGEST_TAKES_QUERY_RAW", True)
+    _run_eval(tmp_path, capsys, tag="raw")
+    assert seen and seen[-1]["query_raw"] == "htp di nsw wsir nb"
+    monkeypatch.setattr(ce, "SUGGEST_TAKES_QUERY_RAW", False)
+    _run_eval(tmp_path, capsys, tag="noraw")
+    assert "query_raw" not in seen[-1]
+
+
+@pytest.mark.parametrize(
+    "column, other",
+    [
+        ("expected_key_tokens", ["k1 y"]),
+        ("expected_lemma_ids", ["L9"]),
+        ("acceptable_token_overlap_threshold", [0.34]),
+    ],
+)
+def test_compare_refuses_a_pair_whose_scoring_definition_differs(column, other):
+    """Astra (should_fix): v4 and v4_driftcorrected have the same queries and targets
+    but different expected tokens on 12 rows; such a pair used to be accepted."""
+    with pytest.raises(ValueError, match=re.escape(f"{column} differs")):
+        compare_twin_scores.validate_pair(
+            _compare_frame(["1"], 0.0), _compare_frame(["1"], 0.7, **{column: other})
+        )
+
+
+@pytest.mark.parametrize("column", ["stage_mode", "query_path", "useful_rule", "expected_tokens"])
+def test_compare_refuses_a_run_that_does_not_record_its_configuration(column):
+    with pytest.raises(ValueError, match=re.escape(f"does not record {column}")):
+        compare_twin_scores.validate_pair(
+            _compare_frame(["B1"], 0.0), _compare_frame(["B1"], 0.7).drop(columns=[column])
+        )
+    with pytest.raises(ValueError, match=re.escape(f"does not record {column}")):
+        compare_twin_scores.validate_pair(
+            _compare_frame(["B1"], 0.0).drop(columns=[column]),
+            _compare_frame(["B1"], 0.7).drop(columns=[column]),
+        )
+
+
+@pytest.mark.parametrize(
+    "column, value",
+    [("query_path", "legacy"), ("useful_rule", "v5"), ("expected_tokens", "frozen")],
+)
+def test_compare_refuses_a_pair_run_under_different_settings(column, value):
+    with pytest.raises(ValueError, match=re.escape(f"{column} differs")):
+        compare_twin_scores.validate_pair(
+            _compare_frame(["B1"], 0.0), _compare_frame(["B1"], 0.7, **{column: [value]})
+        )
+
+
+def test_two_real_runs_make_a_valid_pair(tmp_path, capsys):
+    """The eval records every column validate_pair requires."""
+    off, _ = _run_eval(tmp_path, capsys, tag="off")
+    on, _ = _run_eval(tmp_path, capsys, "--exclude-twins", "0.7", tag="on")
+    off = pd.read_csv(tmp_path / "off_results.csv").fillna("")
+    on = pd.read_csv(tmp_path / "on_results.csv").fillna("")
+    compare_twin_scores.validate_pair(off, on, "synthetic")
+    assert list(on.columns)[-3:] == ["query_path", "useful_rule", "expected_tokens"]
+
+
+@pytest.mark.parametrize("split", ["text", "sentence"])
+def test_reading_eval_reports_the_test_mix_per_source(tmp_path, capsys, split):
+    """A56 (Opus should_fix): the pooled number is a source mix that depends on
+    --split, so every run prints and records the mix and says the pooled numbers are
+    not comparable across split modes."""
+    corpus = _end_to_end_corpus(tmp_path)
+    results, by_source = tmp_path / "r.csv", tmp_path / "s.csv"
+    capsys.readouterr()
+    rm.main(
+        ["--examples", str(corpus), "--sizes", "0", "--no-exclude-duplicates", "--no-lexicon",
+         "--split", split, "--results", str(results), "--errors", str(tmp_path / "e.csv"),
+         "--by-source-results", str(by_source)]
+    )
+    out = capsys.readouterr().out
+    assert "NOT comparable across --split" in out
+    per_source = pd.read_csv(by_source)
+    want = ", ".join(
+        f"{row.source} {row.test_sentences}" for row in per_source.sort_values("source").itertuples()
+    )
+    assert f"test sentences by source ({split} split): {want}" in out
+    summary = pd.read_csv(results)
+    assert summary.loc[0, "test_sentences_by_source"] == want
+    assert list(summary.columns)[-1] == "test_sentences_by_source"
+
+
+def test_sign_eval_documents_how_to_get_the_old_exact_only_rule(capsys):
+    """A56 nit: same-text exclusion is on by default, so the old rule needs its switch."""
+    assert "--near-duplicate-overlap 0 --no-exclude-same-text" in " ".join(se.__doc__.split())
+    with pytest.raises(SystemExit):
+        se._parse_args(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "the old exact-only rule also needs --no-exclude-same-text" in help_text
+
+
+def test_readme_states_the_measured_twin_inventory_not_a_guarantee():
+    """README (Opus should_fix, Astra nit): v4 has twins at 0.7; the README says so."""
+    text = " ".join((PROJECT_ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert "guaranteed to have no near-identical twin" not in text
+    at_07, at_09 = EXPECTED_COUNTS["competitive_ambiguity_eval_queries_v4.csv"]
+    assert f"{at_07} of v4's 20 targets" in text and f"{at_09} of them at ≥ 0.9" in text
+    assert "--exclude-twins 0.7" in text
