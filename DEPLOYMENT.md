@@ -135,7 +135,7 @@ first, then the environment. Set per host, never in code.
 |---|---|---|
 | `ANNOTATIONS_DURABLE` | `1` (in the unit) | SQLite on a real disk persists; turns off the "not stored durably" warning and the read-only gating |
 | `PRIVATE_DATA_DIR` | `/home/ledio/egyptology-private` (in the unit) | where NC rows are read from; empty dir = none. Since 2026-09-05 the files there are served **only to sessions that presented `REVIEWER_KEY`** — see the next section |
-| `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving **and the private NC rows**; unset = anyone may save and *nobody* gets the private rows |
+| `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving **and the private NC rows**; unset = annotation saving off for everyone and *nobody* gets the private rows (`ALLOW_OPEN_ANNOTATIONS=1` reopens saving, for local development only) |
 | `DATABASE_URL` | unset today; `sqlite:////home/ledio/egyptology-data/egyptology.db` after the move below | unset = `egyptology.db` in the project root (a relative SQLite path is anchored at the project root, not the current folder, since 2026-10); a `postgres://` URL switches engines with no code change. Every process prints `database: <path> (from ...)` to stderr at start, so the journal says which file the app opened. The backup script reads this variable too |
 | `NTFY_TOPIC` | set by Ledio in the env file | the ntfy.sh topic the failure notifications go to. It works like a password and the repo is public, so it is only ever in `egyptology.env` |
 | `HEALTHCHECK_URL` | set by Ledio in the env file | healthchecks.io ping URL; `backup_db.sh` pings it on success and `<url>/fail` on failure, so a night with no ping raises an alert |
@@ -144,7 +144,7 @@ first, then the environment. Set per host, never in code.
 | `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` | deploy script, not the service | `INSTALL_UNITS=1 ~/egyptology-deploy.sh` copies `deploy/systemd/*` into `~/.config/systemd/user`; `STOP_BEFORE_UPDATE=0` keeps the service running during the file swap |
 | `STREAMLIT_SERVER_FILE_WATCHER_TYPE` | `none` (in the unit) | stops the running app reloading modules when a deploy rewrites the tree |
 | `DEFAULT_STAGE` | unset (= `auto`) | `auto` / `all` / a stage name; Auto builds one extra resource set per stage it uses |
-| `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated `source` values to drop at load — how a 1 GB host would stay on the 78k subset |
+| `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated values to drop at load; each token matches a row's `source` **or** its `language_stage` (so `Demotic` drops the TLA Demotic rows, and `Late Egyptian` would drop Ramses too) — how a 1 GB host would stay on the 78k subset |
 | `MOVED_TO_URL` | unset | renders the "this app has moved" banner on a superseded deployment |
 | `WARM_STAGE_RESOURCES` | `1` (in the unit) | build every stage's resources on the first script run instead of leaving them to the first visitor. Holds all of `STAGES` resident — measured peak RSS 3.0 GB — so only a host with the memory sets it |
 
@@ -214,18 +214,31 @@ CSV stays where it is.
 **Choosing the key, and what guards it (audit 2026-10-11, A18/A19/A20/A58).** Generate it,
 do not invent it: `python3 -c 'import secrets; print(secrets.token_urlsafe(24))'` (32
 characters; anything under 20 random characters is too short for a public URL). Any
-Unicode is accepted; the comparison is on UTF-8 bytes. After 5 wrong keys inside 15
-minutes the gate refuses *every* unlock, the correct key included, for 30 s, doubling with
-each further failure up to 15 min. The counter is process-wide (a guesser gets a fresh
-session per connection), lives in memory, and a restart clears it; the flip side is that
-someone guessing can keep real reviewers waiting until the cooldown ends. Each failure is
-logged as `reviewer-key: failed unlock attempt (N recent failures)` — never the typed
-value — so `journalctl --user -u egyptology.service | grep reviewer-key` shows guessing.
-**An empty `REVIEWER_KEY` now switches annotation saving off for everyone** (it used to
-leave saving open to any visitor): the sidebar says so, and the log warns once per process
-when `ANNOTATIONS_DURABLE` is on. Only local development opts back in, with
-`ALLOW_OPEN_ANNOTATIONS=1`; never set that on a public host. (The settings table above
-still says "unset = anyone may save"; this paragraph supersedes it.)
+Unicode is accepted; the comparison is on UTF-8 bytes. The guard (`KeyAttemptGuard` in
+`app/ui/review_common.py`) has two layers, both in memory, cleared by a restart:
+
+- **Per session, exponential backoff.** After 5 wrong keys inside 15 minutes *that
+  session* must wait 30 s, doubling with each further failure up to 15 min; while it
+  waits its key is not even compared. Other sessions, including real reviewers, are
+  not affected.
+- **Process-wide, slow-down only.** A guesser gets a fresh session per connection, so
+  above 20 failures from all sessions inside 15 minutes every attempt (right or wrong,
+  from any session) is delayed 0.25 s per excess failure, capped at 5 s. It never
+  refuses: a real reviewer is at most 5 s slower.
+
+Neither layer caps how many attempts run at once — N parallel connections still get
+roughly N / 5 guesses a second — so **the key's length is the real protection**: use
+the generated 32-character key above, never a short or memorable one.
+
+Logging is counts only, never the typed value: a success is `reviewer-key: unlock ok`,
+a failure `reviewer-key: failed unlock attempt (S recent failures in this session, G in
+all sessions; slowed D s)`, so `journalctl --user -u egyptology.service | grep
+reviewer-key` shows guessing. An empty submission is not counted.
+
+**Saving fails closed.** An empty `REVIEWER_KEY` switches annotation saving off for
+everyone (it used to leave saving open to any visitor): the sidebar says so, and the log
+warns once per process when `ANNOTATIONS_DURABLE` is on. Only local development opts back
+in, with `ALLOW_OPEN_ANNOTATIONS=1`; never set that on a public host.
 
 **What it costs, measured on the developer's Mac 2026-09-05** (130,472 public rows +
 the real 7,659-row `standrews.csv`): the keyed resource set is **+1,033 MB (1.01 GB)**

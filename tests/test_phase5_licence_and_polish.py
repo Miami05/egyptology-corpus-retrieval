@@ -66,7 +66,10 @@ def test_both_export_paths_use_the_same_notice():
     """The app download and the standalone script must not drift apart."""
     script = (PROJECT_ROOT / "scripts" / "export_reviewed.py").read_text()
     common = (PROJECT_ROOT / "app" / "ui" / "review_common.py").read_text()
-    assert "with_licence_notice" in script
+    # The script calls the shared serializer itself (fix round 1, 2026-10-25), so
+    # it cannot keep a hand-built row dict that lacks language_stage.
+    assert "build_reviewed_export_csv()" in script
+    assert "export_rows.append" not in script
     assert "def build_reviewed_export_csv" in common
     assert "with_licence_notice" in common.split("def build_reviewed_export_csv")[1]
 

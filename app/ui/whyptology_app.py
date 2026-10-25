@@ -69,8 +69,8 @@ from app.ui import review_common
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
     attach_db_ids,
+    aes_text_name,
     build_row_key,
-    check_reviewer_key,
     coerce_bool,
     annotated_example_count,
     annotated_example_ids,
@@ -78,6 +78,7 @@ from app.ui.review_common import (
     load_annotation_state,
     load_annotation_states,
     md_code,
+    text_label,
     md_escape,
     reviewed_annotation_rows,
     safe_str,
@@ -1291,15 +1292,17 @@ def render_reviewer_gate() -> None:
         )
         if st.button("Unlock", key="whyptology_reviewer_unlock"):
             log = logging.getLogger(__name__)
-            # The counter lives in review_common (this script re-runs from the top
+            # The guard lives in review_common (this script re-runs from the top
             # on every interaction, so a module-level counter here would reset).
-            guard = review_common.REVIEWER_KEY_GUARD
-            wait = guard.seconds_locked()
-            if wait:
-                # Locked: the key is not evaluated, so guesses make no progress.
-                st.error(f"Too many failed attempts. Try again in {wait} s.")
-            elif check_reviewer_key(entered, expected):
-                guard.reset()
+            # Per-session backoff plus a process-wide slow-down that never refuses
+            # (see KeyAttemptGuard); check, compare and count are one transaction.
+            result = review_common.REVIEWER_KEY_GUARD.attempt(
+                st.session_state, entered, expected
+            )
+            if result.wait:
+                # This session is cooling down: the key was not evaluated.
+                st.error(f"Too many failed attempts. Try again in {result.wait} s.")
+            elif result.ok:
                 log.info("reviewer-key: unlock ok")
                 st.session_state[REVIEWER_OK_KEY] = True
                 st.rerun()
@@ -1307,10 +1310,13 @@ def render_reviewer_gate() -> None:
                 # Never log or store the typed value. An empty submission is not a
                 # guess, so it is not counted.
                 if entered:
-                    count = guard.record_failure()
                     log.warning(
-                        "reviewer-key: failed unlock attempt (%d recent failures)",
-                        count,
+                        "reviewer-key: failed unlock attempt "
+                        "(%d recent failures in this session, %d in all sessions; "
+                        "slowed %.2f s)",
+                        result.session_failures,
+                        result.global_failures,
+                        result.delayed,
                     )
                 st.error("That key was not recognised.")
 
@@ -1762,6 +1768,56 @@ def evidence_stage_label(raw_stage: object) -> str:
     return normalized if normalized is not None else "stage not recorded"
 
 
+def evidence_table(results: pd.DataFrame) -> pd.DataFrame:
+    """The workspace's ranked-evidence table, display-ready (escaped later by html_table)."""
+    show = [
+        col
+        for col in [
+            "source",
+            "language_stage",
+            "source_text_id",
+            "period",
+            "transliteration_gold",
+            "translation",
+            "final_score",
+        ]
+        if col in results.columns
+    ]
+    table = results.loc[:, show].copy()
+    if "source_text_id" in table.columns:
+        # The readable AES text name (audit A32), read from the full row — the name
+        # lives in grammar_notes / source_ref, which the table does not show. The
+        # hash id stays in brackets so it still matches annotations and benchmarks.
+        table["source_text_id"] = [
+            text_label(row, "—") for _, row in results.iterrows()
+        ]
+    if "language_stage" in table.columns:
+        # Next to Source, in the same quiet style — normalised so an
+        # unspecified row reads "stage not recorded", not the raw
+        # per-import placeholder text.
+        table["language_stage"] = table["language_stage"].map(evidence_stage_label)
+    table = table.rename(
+        columns={
+            "source": "Source",
+            "language_stage": "Stage",
+            "source_text_id": "Text",
+            "period": "Period",
+            "transliteration_gold": "Reading",
+            "translation": "Translation (German, from the corpus)",
+            "final_score": "Match",
+        }
+    )
+    # An HTML table, not st.dataframe: the canvas grid cannot use the
+    # Egyptological font, so the readings (the answer to the query) drew ꞽ as
+    # an empty box (audit A60). The Match bar becomes the plain number.
+    if "Match" in table.columns:
+        table["Match"] = table["Match"].map(
+            lambda score: f"{float(score):.2f}" if pd.notna(score) else "—"
+        )
+    table = table.fillna("—")
+    return table
+
+
 def render_workspace(df: pd.DataFrame) -> None:
     saved_notice = st.session_state.pop("whyptology_saved_notice", None)
     if saved_notice:
@@ -1784,7 +1840,7 @@ def render_workspace(df: pd.DataFrame) -> None:
         if current_top_row is None:
             heading, meta = "Reading workspace", "Enter a reading to search the corpus"
         else:
-            heading = value(current_top_row, "source_text_id", "Reading workspace")
+            heading = text_label(current_top_row, "Reading workspace")
             meta = " · ".join(
                 part
                 for part in [
@@ -2378,44 +2434,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 '<div class="panel-title">Evidence · Ranked corpus matches</div>',
                 unsafe_allow_html=True,
             )
-            show = [
-                col
-                for col in [
-                    "source",
-                    "language_stage",
-                    "source_text_id",
-                    "period",
-                    "transliteration_gold",
-                    "translation",
-                    "final_score",
-                ]
-                if col in results.columns
-            ]
-            table = results.loc[:, show].copy()
-            if "language_stage" in table.columns:
-                # Next to Source, in the same quiet style — normalised so an
-                # unspecified row reads "stage not recorded", not the raw
-                # per-import placeholder text.
-                table["language_stage"] = table["language_stage"].map(evidence_stage_label)
-            table = table.rename(
-                columns={
-                    "source": "Source",
-                    "language_stage": "Stage",
-                    "source_text_id": "Text",
-                    "period": "Period",
-                    "transliteration_gold": "Reading",
-                    "translation": "Translation (German, from the corpus)",
-                    "final_score": "Match",
-                }
-            )
-            # An HTML table, not st.dataframe: the canvas grid cannot use the
-            # Egyptological font, so the readings (the answer to the query) drew ꞽ as
-            # an empty box (audit A60). The Match bar becomes the plain number.
-            if "Match" in table.columns:
-                table["Match"] = table["Match"].map(
-                    lambda score: f"{float(score):.2f}" if pd.notna(score) else "—"
-                )
-            table = table.fillna("—")
+            table = evidence_table(results)
             st.markdown(html_table(table, {"Reading"}), unsafe_allow_html=True)
 
     with parallels_tab:
@@ -2448,7 +2467,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 score = row.get("final_score")
                 score_text = f" · match {float(score):.2f}" if pd.notna(score) else ""
                 with st.expander(
-                    f"{md_escape(value(row, 'source_text_id', '—'))}{score_text} — {label}",
+                    f"{md_escape(text_label(row, '—'))}{score_text} — {label}",
                     expanded=position == 0,
                 ):
                     meta_cols = st.columns(4)
@@ -2512,7 +2531,7 @@ def render_workspace(df: pd.DataFrame) -> None:
         else:
             st.markdown(
                 '<div class="panel-title">Word-by-word · '
-                f'{escape(value(top_row, "source_text_id", "best match"))}</div>',
+                f'{escape(text_label(top_row, "best match"))}</div>',
                 unsafe_allow_html=True,
             )
             analysis = token_analysis(top_row)
@@ -2568,13 +2587,21 @@ def render_workspace(df: pd.DataFrame) -> None:
                 for caption, field in [
                     ("Source", "source"),
                     ("Text ID", "source_text_id"),
+                    ("Text name", None),
                     ("Sentence ID", "source_sentence_id"),
                     ("Genre", "genre"),
                     ("Period", "period"),
                     ("Reference", "source_ref"),
                 ]:
+                    if field is None:
+                        # AES only: the upstream name behind the hash id (A32).
+                        shown = aes_text_name(top_row)
+                        if not shown:
+                            continue
+                    else:
+                        shown = value(top_row, field)
                     st.caption(caption)
-                    st.markdown(f"**{md_escape(value(top_row, field))}**")
+                    st.markdown(f"**{md_escape(shown)}**")
 
 
 def html_table(
@@ -2600,6 +2627,29 @@ def html_table(
         '<div class="corpus-table-wrap"><table class="corpus-table">'
         f"<thead><tr>{header}</tr></thead>"
         f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+    )
+
+
+def corpus_display_frame(window: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """One page of the corpus explorer as display-ready cells (escaped by html_table)."""
+
+    def cell(row: pd.Series, col: str) -> str:
+        if col == "language_stage":
+            # Normalised wording for the stage column, matching the workspace's
+            # evidence rows — see evidence_stage_label.
+            return evidence_stage_label(row.get("language_stage"))
+        if col == "source_text_id":
+            # The readable AES text name, id kept in brackets (audit A32).
+            return text_label(row, "—")
+        return value(row, col, "—")
+
+    return pd.DataFrame(
+        {
+            CORPUS_COLUMN_LABELS.get(col, col): [
+                cell(row, col) for _, row in window.iterrows()
+            ]
+            for col in columns
+        }
     )
 
 
@@ -2732,19 +2782,7 @@ def render_corpus(df: pd.DataFrame) -> None:
         window = filtered.iloc[start : start + CORPUS_PAGE_SIZE]
         st.session_state["whyptology_corpus_page_rows"] = window
 
-        display = pd.DataFrame(
-            {
-                CORPUS_COLUMN_LABELS.get(col, col): [
-                    # Normalised wording for the stage column, matching the
-                    # workspace's evidence rows — see evidence_stage_label.
-                    evidence_stage_label(row.get("language_stage"))
-                    if col == "language_stage"
-                    else value(row, col, "—")
-                    for _, row in window.iterrows()
-                ]
-                for col in columns
-            }
-        )
+        display = corpus_display_frame(window, columns)
         # Only the reading column gets the transliteration font; everything else
         # stays in the interface font.
         st.markdown(
@@ -2772,7 +2810,7 @@ def render_corpus(df: pd.DataFrame) -> None:
         )
         for _, row in page_rows.iterrows():
             source_label = escape(value(row, "source", "Unknown source"))
-            text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
+            text_label_html = escape(text_label(row, "Uncatalogued text"))
             period_label = escape(value(row, "period", "Period unknown"))
             # Same normalised wording as the workspace's evidence rows — see
             # evidence_stage_label — rather than this card's own former "unknown"
@@ -2787,7 +2825,7 @@ def render_corpus(df: pd.DataFrame) -> None:
                     <span class="corpus-source">{source_label}</span>
                     <span class="corpus-period">{period_label}</span>
                   </div>
-                  <h3>{text_label}</h3>
+                  <h3>{text_label_html}</h3>
                   <div class="corpus-language">{language_label}</div>
                   <div class="corpus-reading">{reading}</div>
                   <p>{translation}</p>
@@ -3218,7 +3256,7 @@ def render_similar_parallel_card(
     translation = value(row, "translation", "")
     glyphs = value(row, "hieroglyphs", "")
     source_label = escape(value(row, "source", "Unknown source"))
-    text_label = escape(value(row, "source_text_id", "Uncatalogued text"))
+    text_label_html = escape(text_label(row, "Uncatalogued text"))
     sentence_label = escape(value(row, "source_sentence_id", "—"))
     stage_label = escape(evidence_stage_label(row.get("language_stage")))
     glyph_block = (
@@ -3234,7 +3272,7 @@ def render_similar_parallel_card(
             f"""
             <article class="corpus-card parallel-card">
               <div class="corpus-card-top">
-                <span>{rank}. {source_label} · {text_label} · {sentence_label}</span>
+                <span>{rank}. {source_label} · {text_label_html} · {sentence_label}</span>
                 <span>{stage_label}</span>
               </div>
               <div class="corpus-reading">{reading}</div>
@@ -3424,7 +3462,7 @@ def render_reviews() -> None:
                     f"""
                     <div class="review-card">
                       <div class="review-meta">{escape(str(row["source"]))} \u00b7
-                        {escape(str(row["source_text_id"]))} \u00b7
+                        {escape(text_label(row))} \u00b7
                         {escape(str(row["latest_status"]))} \u00b7
                         {escape(str(row["latest_annotation_created_at"]))}</div>
                       <div class="review-title">{escape(str(row["latest_transliteration"]))}</div>

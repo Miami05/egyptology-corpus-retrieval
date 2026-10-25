@@ -36,7 +36,7 @@ from app.ui.review_common import (  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _fresh_key_guard(monkeypatch):
-    """A lockout must never leak between tests: every test gets its own counter."""
+    """Guard state must never leak between tests: every test gets its own guard."""
     monkeypatch.setattr(review_common, "REVIEWER_KEY_GUARD", KeyAttemptGuard())
 
 
@@ -177,7 +177,11 @@ def test_an_operator_key_with_an_umlaut_still_unlocks(monkeypatch):
     assert app.session_state["whyptology_reviewer_ok"] is True
 
 
-# ---------- A18 / A58: attempts are counted, locked out and logged ----------
+# ---------- A18 / A58: per-session backoff, global slow-down, logged ----------
+#
+# Decision 2026-10-25 (fix round 1): the first version's process-wide lockout let
+# one guesser lock every reviewer out. Now each session backs off on its own and
+# the process-wide layer only slows attempts down; it never refuses.
 
 
 class _Clock:
@@ -188,50 +192,165 @@ class _Clock:
         return self.now
 
 
-def test_guard_locks_after_the_free_attempts_and_unlocks_after_the_cooldown():
-    clock = _Clock()
-    guard = KeyAttemptGuard(clock=clock)
-    for _ in range(4):
-        guard.record_failure()
-        assert guard.seconds_locked() == 0
-    assert guard.record_failure() == 5
-    assert guard.seconds_locked() == 30
-    clock.now += 29
-    assert guard.seconds_locked() == 1
-    clock.now += 2
-    assert guard.seconds_locked() == 0
+class _Sleeps:
+    def __init__(self, clock: _Clock | None = None, during=None) -> None:
+        self.calls: list[float] = []
+        self.clock = clock
+        self.during = during
+
+    def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        if self.clock is not None:
+            self.clock.now += seconds
+        if self.during is not None:
+            during, self.during = self.during, None
+            during()
 
 
-def test_guard_cooldown_grows_and_is_capped():
+def test_session_backs_off_after_the_free_attempts_and_recovers_after_the_cooldown():
     clock = _Clock()
-    guard = KeyAttemptGuard(window=10**9, clock=clock)
+    guard = KeyAttemptGuard(clock=clock, sleep=_Sleeps())
+    session: dict = {}
+    for n in range(1, 5):
+        assert guard.attempt(session, f"wrong-{n}", "key").session_failures == n
+        assert guard.seconds_locked(session) == 0
+    assert guard.attempt(session, "wrong-5", "key").session_failures == 5
+    assert guard.seconds_locked(session) == 30
+    refused = guard.attempt(session, "key", "key")
+    assert not refused.ok and refused.wait == 30, "a cooling session is not compared"
+    clock.now += 31
+    assert guard.attempt(session, "key", "key").ok
+
+
+def test_session_cooldown_doubles_and_is_capped():
+    clock = _Clock()
+    guard = KeyAttemptGuard(window=10**9, global_free=10**9, clock=clock)
+    session: dict = {}
     waits = []
-    for _ in range(40):
-        guard.record_failure()
-        waits.append(guard.seconds_locked())
+    for n in range(40):
+        guard.attempt(session, f"wrong-{n}", "key")
+        waits.append(guard.seconds_locked(session))
         clock.now += waits[-1] + 1
     nonzero = [w for w in waits if w]
     assert nonzero[:3] == [30, 60, 120]
     assert max(nonzero) == 15 * 60
 
 
-def test_guard_forgets_failures_outside_the_window_and_reset_clears():
+def test_one_sessions_lockout_never_locks_out_another_session():
+    """The owner's decision: a guesser must not be able to lock real reviewers out."""
     clock = _Clock()
-    guard = KeyAttemptGuard(clock=clock)
-    for _ in range(4):
-        guard.record_failure()
+    guard = KeyAttemptGuard(free_attempts=1, global_free=10**9, clock=clock)
+    attacker: dict = {}
+    for n in range(50):
+        guard.attempt(attacker, f"wrong-{n}", "key")
+        clock.now += guard.seconds_locked(attacker) + 1
+    guard.attempt(attacker, "wrong-again", "key")
+    assert guard.seconds_locked(attacker) > 0
+    reviewer: dict = {}
+    assert guard.seconds_locked(reviewer) == 0
+    assert guard.attempt(reviewer, "key", "key").ok
+
+
+def test_global_rate_slows_every_attempt_but_never_refuses():
+    clock = _Clock()
+    sleeps = _Sleeps()
+    guard = KeyAttemptGuard(
+        global_free=3, global_step=0.5, global_max_delay=2.0, clock=clock, sleep=sleeps
+    )
+    # Fresh session per guess: the per-session counter alone would never trigger.
+    for n in range(10):
+        result = guard.attempt({}, f"wrong-{n}", "key")
+        assert result.session_failures == 1 and result.global_failures == n + 1
+    assert sleeps.calls == [0.5, 1.0, 1.5, 2.0, 2.0, 2.0], "grows, then capped"
+    assert guard.global_delay() == 2.0
+    reviewer = guard.attempt({}, "key", "key")
+    assert reviewer.ok and reviewer.delayed == 2.0, "slowed, not locked out"
     clock.now += 16 * 60
-    assert guard.record_failure() == 1, "old failures are forgotten"
-    assert guard.seconds_locked() == 0
-    for _ in range(4):
-        guard.record_failure()
-    assert guard.seconds_locked() > 0
-    guard.reset()
-    assert guard.seconds_locked() == 0
-    assert guard.record_failure() == 1
+    assert guard.global_delay() == 0.0, "old failures are forgotten"
 
 
-def test_failed_unlock_is_logged_with_a_count_and_never_the_typed_key(monkeypatch, caplog):
+def test_a_correct_key_clears_only_its_own_sessions_counter():
+    guard = KeyAttemptGuard(free_attempts=2, global_free=10**9)
+    attacker: dict = {}
+    guard.attempt(attacker, "a", "key")
+    guard.attempt(attacker, "b", "key")
+    assert guard.seconds_locked(attacker) > 0
+    reviewer: dict = {}
+    guard.attempt(reviewer, "typo", "key")
+    result = guard.attempt(reviewer, "key", "key")
+    assert result.ok and result.global_failures == 3
+    assert reviewer[review_common.SESSION_ATTEMPTS_KEY]["failures"] == []
+    assert guard.seconds_locked(attacker) > 0, "someone else's success is no reset"
+
+
+def test_a_failure_during_the_slow_down_is_seen_by_the_waiting_attempt():
+    """Check, compare and count are one transaction (Astra review of -7).
+
+    The first version checked the lock, compared and recorded in three separate
+    calls, so an attempt already past the check could compare (and reset the
+    counter) after a concurrent failure had started a cooldown. Here a wrong guess
+    from the same session lands while the correct-key attempt sleeps through the
+    global slow-down; the waiting attempt must then be refused uncompared.
+    """
+    clock = _Clock()
+    session: dict = {}
+    guard: KeyAttemptGuard
+
+    def concurrent_wrong_guess() -> None:
+        assert not guard.attempt(session, "wrong", "key").ok
+
+    sleeps = _Sleeps(clock=clock, during=concurrent_wrong_guess)
+    guard = KeyAttemptGuard(
+        free_attempts=1, global_free=0, global_step=0.1, clock=clock, sleep=sleeps
+    )
+    guard.attempt({}, "warm-up", "key")  # one global failure → attempts are slowed
+    result = guard.attempt(session, "key", "key")
+    assert sleeps.calls, "the attempt was slowed, so the interleaving happened"
+    assert not result.ok and result.wait > 0
+    assert guard.seconds_locked(session) > 0
+
+
+def test_concurrent_threads_never_lose_a_failure():
+    import threading
+
+    guard = KeyAttemptGuard(global_free=10**9, free_attempts=10**9)
+    session: dict = {}
+    barrier = threading.Barrier(8)
+
+    def worker(n: int) -> None:
+        barrier.wait()
+        for i in range(25):
+            guard.attempt(session, f"w{n}-{i}", "key")
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(session[review_common.SESSION_ATTEMPTS_KEY]["failures"]) == 200
+    assert guard.attempt({}, "x", "key").global_failures == 201
+
+
+def test_empty_submission_is_neither_compared_nor_counted_nor_slowed():
+    sleeps = _Sleeps()
+    guard = KeyAttemptGuard(global_free=0, sleep=sleeps)
+    guard.attempt({}, "wrong", "key")
+    session: dict = {}
+    result = guard.attempt(session, "", "key")
+    assert not result.ok and result.session_failures == 0
+    assert result.global_failures == 1
+    assert sleeps.calls == []
+
+
+def test_the_typed_value_is_never_kept_in_the_session_record():
+    guard = KeyAttemptGuard()
+    session: dict = {}
+    guard.attempt(session, "hunter2", "key")
+    assert "hunter2" not in repr(session)
+    assert "hunter2" not in repr(vars(guard))
+
+
+def test_failed_unlock_is_logged_with_counts_and_never_the_typed_key(monkeypatch, caplog):
     app = _gate_app(monkeypatch, "ASCIIkey")
     app.run()
     with caplog.at_level(logging.INFO):
@@ -241,7 +360,7 @@ def test_failed_unlock_is_logged_with_a_count_and_never_the_typed_key(monkeypatc
     warnings = [r for r in caplog.records if "failed unlock attempt" in r.getMessage()]
     assert len(warnings) == 1
     assert warnings[0].levelno == logging.WARNING
-    assert "(1 recent failures)" in warnings[0].getMessage()
+    assert "1 recent failures in this session, 1 in all sessions" in warnings[0].getMessage()
     assert "hunter2" not in caplog.text
     assert "ASCIIkey" not in caplog.text
 
@@ -251,10 +370,10 @@ def test_an_empty_submission_is_not_counted_as_a_guess(monkeypatch):
     app.run()
     app.button(key="whyptology_reviewer_unlock").click().run()
     assert not app.exception, app.exception
-    assert review_common.REVIEWER_KEY_GUARD.record_failure() == 1
+    assert review_common.REVIEWER_KEY_GUARD.attempt({}, "x", "y").global_failures == 1
 
 
-def test_a_locked_gate_refuses_even_the_correct_key(monkeypatch):
+def test_a_cooling_session_refuses_even_the_correct_key(monkeypatch):
     monkeypatch.setattr(review_common, "REVIEWER_KEY_GUARD", KeyAttemptGuard(free_attempts=1))
     app = _gate_app(monkeypatch, "ASCIIkey")
     app.run()
@@ -264,21 +383,36 @@ def test_a_locked_gate_refuses_even_the_correct_key(monkeypatch):
         assert not app.exception, app.exception
     assert any("Too many failed attempts" in e.value for e in app.error)
     assert "whyptology_reviewer_ok" not in app.session_state, (
-        "a correct key must not unlock while the counter is in cooldown"
+        "a correct key must not unlock while this session is cooling down"
     )
 
 
-def test_a_correct_key_resets_the_counter(monkeypatch):
-    guard = KeyAttemptGuard()
-    monkeypatch.setattr(review_common, "REVIEWER_KEY_GUARD", guard)
+def test_a_guessing_session_does_not_lock_out_a_new_reviewer_session(monkeypatch):
+    monkeypatch.setattr(review_common, "REVIEWER_KEY_GUARD", KeyAttemptGuard(free_attempts=1))
+    attacker = _gate_app(monkeypatch, "ASCIIkey")
+    attacker.run()
+    for typed in ("wrong-1", "wrong-2"):
+        attacker.text_input(key="whyptology_reviewer_key_input").set_value(typed)
+        attacker.button(key="whyptology_reviewer_unlock").click().run()
+    assert any("Too many failed attempts" in e.value for e in attacker.error)
+    reviewer = _gate_app(monkeypatch, "ASCIIkey")
+    reviewer.run()
+    reviewer.text_input(key="whyptology_reviewer_key_input").set_value("ASCIIkey")
+    reviewer.button(key="whyptology_reviewer_unlock").click().run()
+    assert not reviewer.exception, reviewer.exception
+    assert reviewer.session_state["whyptology_reviewer_ok"] is True
+
+
+def test_a_correct_key_resets_the_sessions_counter(monkeypatch):
     app = _gate_app(monkeypatch, "ASCIIkey")
     app.run()
     app.text_input(key="whyptology_reviewer_key_input").set_value("nope")
     app.button(key="whyptology_reviewer_unlock").click().run()
+    assert app.session_state[review_common.SESSION_ATTEMPTS_KEY]["failures"]
     app.text_input(key="whyptology_reviewer_key_input").set_value("ASCIIkey")
     app.button(key="whyptology_reviewer_unlock").click().run()
     assert app.session_state["whyptology_reviewer_ok"] is True
-    assert guard.record_failure() == 1
+    assert app.session_state[review_common.SESSION_ATTEMPTS_KEY]["failures"] == []
 
 
 # ---------- A20: annotation writes fail closed ----------
@@ -880,3 +1014,171 @@ def test_api_limits_the_query_length():
     params = api_app.openapi()["paths"]["/examples/search"]["get"]["parameters"]
     query = next(p for p in params if p["name"] == "query_mdc")
     assert query["schema"]["maxLength"] == 500
+
+
+# ---------- A32: the AES text name reaches the UI ----------
+
+_AES_ROW = {
+    "source": "AES",
+    "source_text_id": "AES_2DF6EC0096C3",
+    "source_sentence_id": "S2DF6EC0096C3",
+    "grammar_notes": "AES date: NK; editor: X; AES text: pBerlin 3022 (Sinuhe B); "
+    "upstream text id: 2AHTNWTT45GKJNFNAQOT24OQGY",
+    "source_ref": "AES/bbawamarna#text=2AHTNWTT45GKJNFNAQOT24OQGY&sentence=IBUBd",
+    "transliteration_gold": "ḏd.n=f",
+    "language_stage": "Unspecified (AES)",
+}
+
+
+def test_text_label_names_the_aes_text_and_keeps_the_id():
+    from app.ui.review_common import aes_text_name, text_label
+
+    row = pd.Series(_AES_ROW)
+    assert aes_text_name(row) == "pBerlin 3022 (Sinuhe B)"
+    assert text_label(row) == "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"
+
+
+def test_aes_text_name_keeps_a_semicolon_inside_the_name():
+    """The importer joins note bits with '; ' and writes 'AES text:' after the
+    others, so a name with its own ';' must not be cut there (Opus nit, round 1)."""
+    from app.ui.review_common import aes_text_name
+
+    notes = "AES date: NK; editor: X; AES text: oDeM 1234; recto; upstream text id: ABC"
+    assert aes_text_name(pd.Series({**_AES_ROW, "grammar_notes": notes})) == "oDeM 1234; recto"
+    notes = "AES date: NK; AES text: oDeM 1234; recto"
+    assert aes_text_name(pd.Series({**_AES_ROW, "grammar_notes": notes})) == "oDeM 1234; recto"
+
+
+def test_text_label_falls_back_to_the_upstream_id_for_rows_imported_before_a32():
+    from app.ui.review_common import text_label
+
+    row = pd.Series({**_AES_ROW, "grammar_notes": "AES date: NK; editor: X"})
+    # Same upstream id for every sentence of one text, so they can be grouped.
+    assert text_label(row) == "AES text 2AHTNWTT45GKJNFNAQOT24OQGY (AES_2DF6EC0096C3)"
+
+
+def test_text_label_leaves_other_sources_and_empty_rows_alone():
+    from app.ui.review_common import aes_text_name, text_label
+
+    tla = pd.Series({"source": "TLA", "source_text_id": "T1", "grammar_notes": "AES text: no"})
+    assert aes_text_name(tla) == "" and text_label(tla) == "T1"
+    assert text_label(pd.Series({"source": "AES"}), "Uncatalogued text") == "Uncatalogued text"
+    assert text_label(pd.Series({"source_text_id": float("nan")}), "x") == "x"
+
+
+def test_parallel_card_shows_the_aes_text_name_escaped(monkeypatch):
+    import app.ui.whyptology_app as app_module
+
+    shown: list[str] = []
+    monkeypatch.setattr(app_module.st, "markdown", lambda body, **_: shown.append(body))
+    row = pd.Series({**_AES_ROW, "grammar_notes": "AES text: <b>pX</b>"})
+    app_module.render_similar_parallel_card(
+        1, row, app_module.TIER_TRANSLITERATION, "k", 0.5, 0.5
+    )
+    html_out = "\n".join(shown)
+    assert "&lt;b&gt;pX&lt;/b&gt; (AES_2DF6EC0096C3)" in html_out
+    assert "<b>pX</b>" not in html_out
+
+
+# ---------- fix round 2: the A32 name also reaches the two tables and Reviews ----------
+
+
+def test_workspace_evidence_table_names_the_aes_text_and_keeps_the_id():
+    import app.ui.whyptology_app as app_module
+
+    results = pd.DataFrame([{**_AES_ROW, "period": "NK", "final_score": 0.5}])
+    table = app_module.evidence_table(results)
+    assert list(table["Text"]) == ["pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"]
+    assert "grammar_notes" not in table.columns and list(table["Match"]) == ["0.50"]
+    # The full rows are not changed: annotations and benchmarks key on the hash.
+    assert results.loc[0, "source_text_id"] == "AES_2DF6EC0096C3"
+    html_out = app_module.html_table(
+        app_module.evidence_table(
+            pd.DataFrame([{**_AES_ROW, "grammar_notes": "AES text: <b>pX</b>"}])
+        )
+    )
+    assert "&lt;b&gt;pX&lt;/b&gt;" in html_out and "<b>pX</b>" not in html_out
+
+
+def test_corpus_table_names_the_aes_text_and_keeps_the_id():
+    import app.ui.whyptology_app as app_module
+
+    window = pd.DataFrame(
+        [_AES_ROW, {"source": "TLA", "source_text_id": "T1", "language_stage": "Demotic"}]
+    )
+    display = app_module.corpus_display_frame(
+        window, ["source", "source_text_id", "language_stage"]
+    )
+    text_col = app_module.CORPUS_COLUMN_LABELS["source_text_id"]
+    assert list(display[text_col]) == [
+        "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)",
+        "T1",
+    ]
+
+
+def test_reviewed_rows_carry_grammar_notes_so_reviews_can_name_the_aes_text(monkeypatch):
+    from types import SimpleNamespace
+
+    class _Attrs(SimpleNamespace):
+        def __getattr__(self, name):  # any column the test does not set
+            return ""
+
+    example = _Attrs(id=7, **{k: v for k, v in _AES_ROW.items()})
+    latest = _Attrs(example_id=7, transliteration="ḏd.n=f", status="accepted")
+
+    class _Session:
+        def close(self):
+            pass
+
+    class _Examples:
+        def __init__(self, _session):
+            pass
+
+        def list_examples_by_ids(self, ids):
+            return [example] if 7 in ids else []
+
+    class _Annotations:
+        def __init__(self, _session):
+            pass
+
+        def list_latest_annotations_only(self):
+            return [latest]
+
+    monkeypatch.setattr(review_common, "SessionLocal", _Session)
+    monkeypatch.setattr(review_common, "ExampleRepo", _Examples)
+    monkeypatch.setattr(review_common, "AnnotationRepo", _Annotations)
+    rows = review_common.reviewed_annotation_rows()
+    assert len(rows) == 1
+    assert review_common.text_label(rows[0]) == "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"
+
+
+# ---------- review of A30: the CLI export credits each row's own TLA corpus ----------
+
+
+def test_export_reviewed_script_gives_tla_rows_their_own_corpus_credit(
+    monkeypatch, tmp_path
+):
+    import importlib
+
+    demotic = {
+        **_REVIEW_ROW,
+        "example_id": 2,
+        "source_text_id": "TLA_DEMOTIC_y",
+        "language_stage": "Demotic",
+    }
+    monkeypatch.setattr(
+        review_common, "reviewed_annotation_rows", lambda: [dict(_REVIEW_ROW), demotic]
+    )
+    export_reviewed = importlib.import_module("scripts.export_reviewed")
+    out = tmp_path / "nested" / "reviewed.csv"
+    monkeypatch.setattr(export_reviewed, "OUTPUT_PATH", str(out))
+    export_reviewed.main()
+    frame = pd.read_csv(out, dtype=str, keep_default_na=False)
+    assert list(frame["language_stage"]) == ["Earlier Egyptian", "Demotic"]
+    assert list(frame["licence"]) == [
+        licence_notice_for("TLA", "Earlier Egyptian"),
+        licence_notice_for("TLA", "Demotic"),
+    ]
+    assert LICENCE_NOTICE not in set(frame["licence"])
+    # Same serializer as the in-app download, byte for byte.
+    assert out.read_text(encoding="utf-8") == review_common.build_reviewed_export_csv()

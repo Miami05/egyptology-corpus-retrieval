@@ -1,6 +1,17 @@
+"""Write every reviewed example (base corpus fields + latest annotation) to a CSV.
+
+The rows and the per-row licence column come from the same serializer the in-app
+"Download reviewed annotations CSV" button uses (`app.ui.review_common`), so the two
+exports cannot drift apart. That serializer carries `language_stage`, which is what
+lets a TLA row get the credit of its own TLA corpus (Earlier Egyptian, Late Egyptian
+or Demotic) rather than the generic all-corpora notice; the hand-built row dict this
+script used to keep had no stage column (review of the 2026-10-11 audit fixes).
+"""
+
 from __future__ import annotations
 
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -9,84 +20,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.ui.review_common import with_licence_notice
-from app.storage.db import SessionLocal
-from app.storage.repo import AnnotationRepo, ExampleRepo
+from app.ui import review_common  # noqa: E402
 
 OUTPUT_PATH = "data/processed/reviewed_annotations_export.csv"
 
 
 def main() -> None:
-    session = SessionLocal()
+    # CC BY-SA 4.0: this file redistributes adapted corpus text, so the attribution
+    # (one licence cell per row, via with_licence_notice) has to travel with it.
+    csv_text = review_common.build_reviewed_export_csv()
+    out = Path(OUTPUT_PATH)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(csv_text, encoding="utf-8")
     try:
-        example_repo = ExampleRepo(session)
-        annotation_repo = AnnotationRepo(session)
-
-        latest_annotations = {
-            row.example_id: row
-            for row in annotation_repo.list_latest_annotations_only()
-        }
-        examples = example_repo.list_examples_by_ids(list(latest_annotations))
-
-        export_rows: list[dict] = []
-        for example in examples:
-            latest = latest_annotations.get(example.id)
-            if latest is None:
-                continue
-
-            export_rows.append(
-                {
-                    "example_id": example.id,
-                    "source": example.source,
-                    "source_text_id": example.source_text_id,
-                    "source_sentence_id": example.source_sentence_id,
-                    "genre": example.genre,
-                    "period": example.period,
-                    "mdc": example.mdc,
-                    "sign_sequence": example.sign_sequence,
-                    "transliteration_gold": example.transliteration_gold,
-                    "translation": example.translation,
-                    "formula_type": example.formula_type,
-                    "deity": example.deity,
-                    "recipient": example.recipient,
-                    "offering_items": example.offering_items,
-                    "formula_slot": example.formula_slot,
-                    "base_display_sequence": example.display_sequence,
-                    "base_normalized_reading_order": example.normalized_reading_order,
-                    "base_alt_transliterations": example.alt_transliterations,
-                    "base_variant_writing_note": example.variant_writing_note,
-                    "base_morphology_note": example.morphology_note,
-                    "base_syntax_note": example.syntax_note,
-                    "base_aesthetic_arrangement_flag": bool(
-                        example.aesthetic_arrangement_flag
-                    ),
-                    "latest_transliteration": latest.transliteration,
-                    "latest_status": latest.status,
-                    "latest_uncertainty_note": latest.uncertainty_note or "",
-                    "latest_grammar_note": latest.grammar_note or "",
-                    "latest_display_sequence": latest.display_sequence or "",
-                    "latest_normalized_reading_order": latest.normalized_reading_order
-                    or "",
-                    "latest_alt_transliterations": latest.alt_transliterations or "",
-                    "latest_variant_writing_note": latest.variant_writing_note or "",
-                    "latest_morphology_note": latest.morphology_note or "",
-                    "latest_syntax_note": latest.syntax_note or "",
-                    "latest_aesthetic_arrangement_flag": bool(
-                        latest.aesthetic_arrangement_flag
-                    ),
-                    "source_ref": example.source_ref,
-                    "latest_annotation_created_at": latest.created_at,
-                }
-            )
-
-        # Same CC BY-SA notice the in-app export carries: this file redistributes
-        # adapted TLA text, so the attribution has to travel with it.
-        df = with_licence_notice(pd.DataFrame(export_rows))
-        Path("data/processed").mkdir(parents=True, exist_ok=True)
-        df.to_csv(OUTPUT_PATH, index=False)
-        print(f"Exported {len(df)} reviewed rows to {OUTPUT_PATH}")
-    finally:
-        session.close()
+        rows = len(pd.read_csv(StringIO(csv_text)))
+    except pd.errors.EmptyDataError:
+        rows = 0
+    print(f"Exported {rows} reviewed rows to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

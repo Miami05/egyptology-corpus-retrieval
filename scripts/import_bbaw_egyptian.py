@@ -166,10 +166,16 @@ OPERATOR_PREFIX_RE = re.compile(r"^[-:*]+")
 OPENER_RE = re.compile(r"^(\[+\(?\??|\(|<[a-z]?\d*)$")
 CLOSER_RE = re.compile(r"^(\??\)?\]+|\)|\d*>)$")
 LACUNA_RE = re.compile(r"^/{2,}$")
-# A lacuna written in the transcription: `//` anywhere in a word (`ꞽmn-m-//`), or an
-# empty / dotted bracket (`[...]`, `[]`). A fraction (`1/2`) and a bracket that holds
-# letters (`nb.[t]`, a restoration) do not match.
-TRANSLIT_LACUNA_RE = re.compile(r"/{2,}|\[\s*\.*\s*\]")
+# A lacuna written in the transcription: `//` anywhere in a word (`ꞽmn-m-//`), or a
+# bracket holding only gap filler — nothing, dots, dashes or an ellipsis (`[]`,
+# `[...]`, `[. . .]`, `[---]`, `[…]`; BBAW writes some gaps as `[---]`). A fraction
+# (`1/2`) and a bracket that holds letters (`nb.[t]`, a restoration) do not match.
+# An underscore is a lost sign too (fix round 2): BBAW writes `[_]`, `[___]`,
+# `[⸮_?]`, `ꜥ[__]` and bare `_` (`nꜣ _ n`), and checked against the raw export,
+# 827 of the 867 `[_]` rows that have hieroglyphs carry `//` there and the German
+# translation shows `...` at that point. No reading uses `_` as a letter; the Ramses
+# importer splits its `_` word boundaries off before this test runs.
+TRANSLIT_LACUNA_RE = re.compile(r"/{2,}|\[[\s.…\-–—]*\]|_")
 SHADING_RE = re.compile(r"^[hv]?/$")  # partial-sign shading, no sign of its own
 UNREADABLE_RE = re.compile(r'^"?(\?|⸮)"?$')
 # Quoted lower-case words are editorial annotations, not signs: "lb" marks a line

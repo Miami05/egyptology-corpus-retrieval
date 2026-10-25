@@ -39,3 +39,36 @@ def test_corpus_sources_exclude_drops_only_named_sources(monkeypatch):
     out = w.exclude_corpus_sources(df)
     assert list(out["source"]) == ["TLA", "BBAW", "TLA"]
     assert list(out.index) == [0, 1, 2]
+
+
+def test_deployment_md_describes_the_current_reviewer_key_guard():
+    """The operator guide must match KeyAttemptGuard and the fail-closed settings
+    (Astra re-review of fix round 2: it still described a process-wide lockout)."""
+    import inspect
+    from pathlib import Path
+
+    from app.ui import review_common
+
+    doc = (Path(__file__).resolve().parents[1] / "DEPLOYMENT.md").read_text(encoding="utf-8")
+    # Obsolete descriptions are gone.
+    assert "refuses *every* unlock" not in doc
+    assert "anyone may save" not in doc
+    assert "(N recent failures)" not in doc
+    assert "comma-separated `source` values to drop" not in doc
+    # The current guard, with numbers taken from the code's defaults.
+    defaults = {
+        k: v.default
+        for k, v in inspect.signature(review_common.KeyAttemptGuard.__init__).parameters.items()
+    }
+    assert "Per session, exponential backoff" in doc
+    assert f"After {defaults['free_attempts']} wrong keys" in doc
+    assert f"above {defaults['global_free']} failures" in doc
+    assert f"capped at {defaults['global_max_delay']:g} s" in doc
+    assert "the key's length is the real protection" in doc
+    # The log line documented is the one the app emits.
+    app_src = (Path(w.__file__)).read_text(encoding="utf-8")
+    assert "recent failures in this session" in app_src
+    assert "recent failures in this session" in doc
+    # Fail-closed saving and the source-or-stage exclusion are in the settings table.
+    assert "unset = annotation saving off for everyone" in doc
+    assert "`source` **or** its `language_stage`" in doc
