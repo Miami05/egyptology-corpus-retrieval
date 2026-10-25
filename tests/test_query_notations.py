@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from app.data.loader import load_examples_csv
-from app.data.normalizer import normalize_mdc, search_fold
+from app.data.normalizer import drop_superfluous_text, normalize_mdc, search_fold
 from app.data.query import mdc_to_transliteration, parse_query
 from app.services.retrieval import build_search_index, retrieve_top_k
 
@@ -107,10 +107,23 @@ def test_every_corpus_row_is_reachable_by_transliteration(corpus: pd.DataFrame) 
     All 9,823 AES rows did: their `mdc` column ships empty and the index was built
     from that column, so 37% of the corpus could not be found by any transliteration
     query at all.
+
+    The one exemption is a reading that is superfluous `{…}` text from end to end
+    (A17): it has nothing to search by design. Exactly three BBAW rows are, and they
+    are pinned by id, so a new one has to be looked at rather than silently exempted.
     """
+    transliteration = corpus["transliteration_gold"].astype(str)
     empty = corpus["mdc_norm"].astype(str).str.strip() == ""
-    has_reading = corpus["transliteration_gold"].astype(str).str.strip() != ""
-    assert not (empty & has_reading).any()
+    has_reading = transliteration.str.strip() != ""
+    wholly_superfluous = transliteration.map(
+        lambda text: drop_superfluous_text(text).strip(" =") == ""
+    )
+    assert set(corpus.loc[has_reading & wholly_superfluous, "source_sentence_id"]) == {
+        "B012806",
+        "B064265",
+        "B079485",
+    }
+    assert not (empty & has_reading & ~wholly_superfluous).any()
 
 
 @pytest.mark.parametrize("source", ["TLA", "AES"])

@@ -76,6 +76,37 @@ def drop_superfluous_text(value: str) -> str:
         value = dropped
 
 
+# Stands in for a deleted character in `superfluous_kept_words`; never in a reading.
+_DELETED = "\x00"
+
+
+def _blank(text: str) -> str:
+    return "".join(char if char.isspace() else _DELETED for char in text)
+
+
+def superfluous_kept_words(value: str) -> list[str]:
+    """`drop_superfluous_text` per whitespace word: one entry per word of `value`,
+    holding what survives of it (`''` when the whole word was superfluous).
+
+    A caller that treats words one at a time (the suggestion layer decides loose or
+    strict matching per typed word, A54) cannot run `drop_superfluous_text` on each
+    word: `{n nswt}` split at the space is `{n` and `nswt}`, two unbalanced braces
+    that delete nothing. This runs the same rules over the whole text with the
+    deleted characters blanked in place, so the word boundaries, and with them the
+    alignment to another word list, survive. `''.join` of the kept words, spaced,
+    equals `drop_superfluous_text(value)` up to whitespace.
+    """
+    while True:
+        masked = DOUBLE_BRACED_RE.sub(
+            lambda m: _blank("{{") + m.group(1) + _blank("}}"), value
+        )
+        masked = SUPERFLUOUS_RE.sub(lambda m: _blank(m.group(0)), masked)
+        if masked == value:
+            break
+        value = masked
+    return [word.replace(_DELETED, "") for word in value.split()]
+
+
 # TLA's weak-consonant marker, the combining inverted breve below (U+032F): `i̯` and
 # `u̯` write the *same* weak radical as the plain yod `ꞽ` and the plain `w`, in an
 # edition that marks it. It sits on 36,547 corpus tokens (3.4%: TLA 5,960, AES 4,079,

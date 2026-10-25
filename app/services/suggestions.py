@@ -12,6 +12,7 @@ import pandas as pd
 
 from app.data.query import parse_query
 from app.data.normalizer import (
+    drop_superfluous_text,
     fold_letter_variants,
     fold_plural_marker,
     fold_weak_consonant_marker,
@@ -21,6 +22,7 @@ from app.data.normalizer import (
     normalize_sign_sequence,
     normalize_transliteration,
     normalize_whitespace,
+    superfluous_kept_words,
 )
 from app.retrieval.scorer import (
     effective_surplus_penalty,
@@ -238,6 +240,19 @@ def canonical_reading(value: object) -> str:
     return strict_reading_key(value)
 
 
+def comparison_key(value: object) -> str:
+    """`canonical_reading` with superfluous `{…}` text deleted: the key a query and a
+    candidate are *compared* by (exactness, token overlap, character similarity).
+
+    The grouping key keeps the braced words (only the braces go), so two editions
+    that differ only in what they mark superfluous stay two suggestions. But the
+    search key deletes that text (A17), so comparing on the grouping key let deleted
+    text back in: the query `ḥtp {n nswt}` was "the same normalized query reading"
+    as the candidate `ḥtp n nswt` at 0.92, and `ḥtp` got 0.30 (Astra review).
+    """
+    return strict_reading_key(drop_superfluous_text(nfc(_safe_str(value))))
+
+
 def aligned_annotation(
     transliteration: object, lemma_sequence: object, upos: object
 ) -> list[tuple[str, str, str]]:
@@ -366,15 +381,27 @@ class QueryForms:
       byte for byte (`loose_reading_form` on both sides).
     - `strict`: every word carries an Egyptological letter → letters compared as
       written (`unfolded_reading_form` on both sides).
-    - `mixed`: e.g. `htp ḏi nswt` typed with one palette letter. Each ASCII word is
-      compared loosely and each Unicode word strictly: a candidate word is shown in
-      its loose form only when that equals one of the query's loose words, otherwise
-      as written, so `ḥtp` matches the typed `htp` while `ḏi` must be `ḏi`.
+    - `mixed`: e.g. `htp ḏi nswt` typed with one palette letter. Each query token
+      keeps its own constraint (`tokens`: the token and whether it may match
+      loosely), so an ASCII token is compared through the fold and a Unicode one as
+      written, and neither can stand in for the other (see `candidate`).
+
+    Superfluous `{…}` text is deleted over the whole reading before it is split into
+    words (`superfluous_kept_words`), so a brace spanning a space (`ḥtp {n nswt}`)
+    deletes what it encloses here exactly as it does in the search key.
     """
 
     mode: str
     query_form: str
-    loose_words: frozenset[str] = frozenset()
+    tokens: tuple[tuple[str, bool], ...] = ()
+
+    @property
+    def loose_words(self) -> frozenset[str]:
+        return frozenset(token for token, loose in self.tokens if loose)
+
+    @property
+    def strict_words(self) -> frozenset[str]:
+        return frozenset(token for token, loose in self.tokens if not loose)
 
     @classmethod
     def build(cls, reading: str, query_raw: str) -> QueryForms:
@@ -391,33 +418,62 @@ class QueryForms:
             return cls("loose", loose_reading_form(reading))
         if not any(flags):
             return cls("strict", unfolded_reading_form(reading))
-        parts: list[str] = []
-        loose_words: set[str] = set()
-        for word, loose in zip(reading_words, flags):
-            if loose:
-                form = loose_reading_form(word)
-                loose_words.update(form.split())
-            else:
-                form = unfolded_reading_form(word)
-            if form:
-                parts.append(form)
-        return cls("mixed", " ".join(parts), frozenset(loose_words))
+        tokens: list[tuple[str, bool]] = []
+        kept_words = superfluous_kept_words(nfc(_safe_str(reading)))
+        for word, loose in zip(kept_words, flags):
+            form = loose_reading_form(word) if loose else unfolded_reading_form(word)
+            tokens.extend((token, loose) for token in form.split())
+        return cls("mixed", " ".join(token for token, _ in tokens), tuple(tokens))
 
     @property
     def loose(self) -> bool:
         return self.mode == "loose"
 
     def candidate(self, value: object) -> str:
-        """The candidate reading in the form comparable with `query_form`."""
+        """The candidate reading in the form comparable with `query_form`.
+
+        In mixed mode each candidate word is shown as the query token it can stand
+        for: as written when it equals a strict (Unicode) query token, folded when its
+        fold equals a loose (ASCII) one. A word that could serve either is matched to
+        the token at its own position first, then to whichever query token is still
+        unclaimed, so `ꜥḥꜥ ꜥḥꜥ` meets both words of the query `aha ꜥḥꜥ`, while
+        `ꜣḥꜥ ꜣḥꜥ` only ever meets `aha` (Astra review: a single global loose set
+        made the two candidates identical).
+        """
         if self.mode == "loose":
             return loose_reading_form(value)
         if self.mode == "strict":
             return unfolded_reading_form(value)
-        words: list[str] = []
-        for word in unfolded_reading_form(value).split():
-            folded = loose_reading_form(word)
-            words.append(folded if folded and folded in self.loose_words else word)
-        return " ".join(words)
+        words = unfolded_reading_form(value).split()
+        folds = [loose_reading_form(word) for word in words]
+        remaining = Counter(self.tokens)
+        chosen: list[str | None] = [None] * len(words)
+        # Pass 1: the query token at the same position.
+        for index, (word, folded) in enumerate(zip(words, folds)):
+            if index >= len(self.tokens):
+                break
+            token, loose = self.tokens[index]
+            if (folded if loose else word) == token and remaining[(token, loose)] > 0:
+                chosen[index] = token
+                remaining[(token, loose)] -= 1
+        # Pass 2: an unclaimed query token anywhere (strict first: it names its
+        # letters); then any query token; otherwise the word as written.
+        for index, (word, folded) in enumerate(zip(words, folds)):
+            if chosen[index] is not None:
+                continue
+            for key in ((word, False), (folded, True)):
+                if remaining[key] > 0:
+                    chosen[index] = key[0]
+                    remaining[key] -= 1
+                    break
+            else:
+                if word in self.strict_words:
+                    chosen[index] = word
+                elif folded and folded in self.loose_words:
+                    chosen[index] = folded
+                else:
+                    chosen[index] = word
+        return " ".join(word for word in chosen if word)
 
     def char_similarity(self, query_key: str, candidate_key: str) -> float:
         if self.mode == "loose":
@@ -434,12 +490,13 @@ class QueryForms:
         if self.mode == "loose":
             return unfold_shared_tokens(shared, candidate_transliteration)
         shown: list[str] = []
+        strict_words = self.strict_words
         # Ordered as the loose mode orders them (by ASCII fold), not ASCII-first.
         for token in sorted(shared, key=lambda t: (loose_reading_form(t), t)):
             word = (
-                unfold_shared_tokens([token], candidate_transliteration)[0]
-                if token in self.loose_words
-                else token
+                token
+                if token in strict_words
+                else unfold_shared_tokens([token], candidate_transliteration)[0]
             )
             if word not in shown:
                 shown.append(word)
@@ -503,8 +560,8 @@ def _evidence_summary(
             bits.append("same sign groups as the query")
         elif best_coverage > 0.0:
             bits.append(f"sign groups cover {best_coverage:.0%} of the query, in order")
-    candidate_key = canonical_reading(candidate_transliteration)
-    query_key = canonical_reading(query_mdc)
+    candidate_key = comparison_key(candidate_transliteration)
+    query_key = comparison_key(query_mdc)
     # Words the user typed with Egyptological letters keep every letter here (see
     # QueryForms), so a different consonant is never "shared" (A54).
     if forms is None:
@@ -655,7 +712,7 @@ def suggest_top_readings(
     rows: list[dict] = []
     debug_start = len(debug_signals) if debug_signals is not None else 0
     max_row_score = max(float(value) for value in results["final_score"].fillna(0.0))
-    query_key = canonical_reading(query_mdc) if not query_hieroglyphs else ""
+    query_key = comparison_key(query_mdc) if not query_hieroglyphs else ""
     query_loose = forms.query_form if not query_hieroglyphs else ""
     query_reading_norm = normalize_sign_sequence(query_reading_order)
     query_glyph_groups = query_hieroglyphs.split()
@@ -706,8 +763,9 @@ def suggest_top_readings(
 
         if text_live:
             candidate_loose = forms.candidate(best_candidate)
+            compare_key = comparison_key(best_candidate)
             translit_overlap = max(
-                token_overlap_score(query_key, candidate_key, surplus_penalty),
+                token_overlap_score(query_key, compare_key, surplus_penalty),
                 token_overlap_score(query_loose, candidate_loose, surplus_penalty),
             )
             if (
@@ -724,8 +782,8 @@ def suggest_top_readings(
                 translit_overlap = float(
                     group["idf_overlap_score"].fillna(0.0).astype(float).max()
                 )
-            char_similarity = forms.char_similarity(query_key, candidate_key)
-            exact_or_near_bonus = 1.0 if candidate_key == query_key else 0.0
+            char_similarity = forms.char_similarity(query_key, compare_key)
+            exact_or_near_bonus = 1.0 if compare_key == query_key else 0.0
             if exact_or_near_bonus == 0.0 and query_loose == candidate_loose:
                 exact_or_near_bonus = 0.85
             elif exact_or_near_bonus == 0.0 and char_similarity >= 0.82:

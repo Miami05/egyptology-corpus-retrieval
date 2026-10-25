@@ -440,6 +440,7 @@ def build_stage_resources(
 def choose_stage_by_likelihood(
     paste_hieroglyphs_norm: str,
     resources_by_stage: Callable[[str | None], StageResources],
+    coverage: dict[str, int] | None = None,
 ) -> tuple[str | None, dict[str, float]]:
     """Language identification for a hieroglyph paste, by per-sign log-likelihood.
 
@@ -490,14 +491,21 @@ def choose_stage_by_likelihood(
     ties fall back to `None`, so the caller uses the pooled/label-based path
     instead of a coin flip.
 
-    Readable coverage comes first (A53, fix round 1). A stage whose model cannot read
-    a group at all (`predicted == ''`) has less evidence about this paste than one
-    that can, however its per-sign number compares: an unreadable group's charge is
-    a constant (`reading_model.UNREADABLE_EMISSION`), and a well-attested but
-    ambiguous group can always cost more than any constant. So only the stages that
-    read the most groups compete on the per-sign likelihood; the others stay in the
-    returned dict for auditing but cannot win. Among equally covering stages the
-    constant charge is identical and cancels.
+    Attested coverage comes first (A53, fix rounds 1 and 2). A stage whose model has
+    never seen a group has less evidence about this paste than one that has, however
+    its per-sign number compares: an unreadable group's charge is a constant
+    (`reading_model.UNREADABLE_EMISSION`), and a well-attested but ambiguous group
+    can always cost more than any constant. So only the stages that attest the most
+    groups compete on the per-sign likelihood; the others stay in the returned dict
+    for auditing but cannot win. Only *attested* readings count: a reading borrowed
+    from a similar-looking group (`ReadingPrediction.is_borrowed`) is right about a
+    quarter of the time, and counting it let a large model win on guesses alone
+    (Opus review, round 2). Not yet measured: the held-out stage-routing re-measure
+    below must cover this rule too.
+
+    Pass a dict as `coverage` to receive each scored stage's attested-group count,
+    the number the choice is ranked on first; the returned scores alone no longer
+    explain the decision (the winner need not have the highest score).
 
     TODO(A3 margin): the 1e-9 tie guard is not a real abstention margin (audit A3
     asks for one). Ledio decided 2026-10-25 not to pick a number without a
@@ -538,7 +546,12 @@ def choose_stage_by_likelihood(
             groups, use_lexicon=False
         )
         scores[candidate] = reading_score / n_groups
-        readable[candidate] = sum(1 for p in predictions if p.predicted != "")
+        readable[candidate] = sum(
+            1 for p in predictions if p.predicted != "" and not p.is_borrowed
+        )
+
+    if coverage is not None:
+        coverage.update(readable)
 
     if not scores:
         return None, scores

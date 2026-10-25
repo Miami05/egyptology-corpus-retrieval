@@ -138,9 +138,13 @@ def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
     # value were folded by a slightly different rule (ẖ → h there, ẖ → kh here),
     # so the same word indexed differently depending on which corpus it came from.
     # The column is still displayed and still used where no transliteration exists.
+    # Only there: a transliteration whose fold is empty (wholly superfluous `{…}`
+    # text, A17) has a reading with nothing to search, and the stored column would
+    # bring the deleted text back (`{m} ={tn}` with mdc `m tn` was indexed `m tn`).
     folded = df["transliteration_gold"].astype(str).map(search_fold)
     stored = df["mdc"].astype(str).map(normalize_mdc)
-    df["mdc_norm"] = folded.where(folded.str.strip() != "", stored)
+    has_reading = df["transliteration_gold"].astype(str).str.strip() != ""
+    df["mdc_norm"] = folded.where(has_reading, stored)
     df["sign_sequence_norm"] = (
         df["sign_sequence"].astype(str).map(normalize_sign_sequence)
     )

@@ -321,8 +321,9 @@ class ReadingModel:
         smaller model that knows less charge *less* for not knowing (fix round 1).
         A shared constant is not enough on its own either — any fixed number can be
         undercut by a well-attested but ambiguous group — so stage choice also ranks
-        on readable coverage first (`app.services.stage.choose_stage_by_likelihood`);
-        with equal coverage this constant then cancels between stages.
+        on attested coverage first (`app.services.stage.choose_stage_by_likelihood`);
+        among stages that attest equally many groups this constant cancels except
+        where one stage borrows a reading for a group the other leaves unread.
         """
         return UNREADABLE_EMISSION
 
