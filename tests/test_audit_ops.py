@@ -292,10 +292,25 @@ def test_an_attribute_expectation_ignores_markdown_code(body):
         "a <div class=sug`x`gestion-card>r</div>",
         '[a](<div class="suggestion-card">)',                              # a link destination
         '\\<div class="suggestion-card">r',                               # an escaped `<`
+        # Astra's 0f8a052 review: dash setext underlines, balanced link destinations, images
+        f"Title\n--\n    {_CARD}",                                        # dash setext heading
+        f"Title\n-\n    {_CARD}",
+        f"> Title\n> --\n>     {_CARD}",
+        f"- Title\n  --\n      {_CARD}",
+        '[x](url(foo) "<span class=\'suggestion-card\'>r</span>")',       # a link title
+        "[x](a(b(c)) '<span class=\"suggestion-card\">r</span>')",
+        '![<span class="suggestion-card">r</span>](image.png)',            # an image description
+        '![a <b title="]"> <span class="suggestion-card">r</span>](i.png)',
+        '![<span class="suggestion-card">r</span>][ref]\n\n[ref]: i.png',
+        '[a]: <x class="suggestion-card">\n---',                          # a definition, not a heading
+        '[a]: <x class="suggestion-card">\n===',
     ],
     ids=["quote-fence", "quote-indented", "quote-indented-later", "list-fence", "list-item-fence",
          "list-indented", "quote-then-fence", "heading-indented", "setext-indented",
-         "synth-quoted", "synth-inline", "synth-unquoted", "link-destination", "escaped"],
+         "synth-quoted", "synth-inline", "synth-unquoted", "link-destination", "escaped",
+         "setext-dash", "setext-one-dash", "setext-dash-quote", "setext-dash-list",
+         "link-title-parens", "link-title-nested-parens", "image-alt", "image-alt-bracket-in-tag",
+         "image-alt-reference", "definition-then-dashes", "definition-then-equals"],
 )
 def test_an_attribute_expectation_ignores_code_in_containers_and_never_joins_attributes(body):
     """Regression for Astra's round-3 A11 re-review: code inside block quotes and list items
@@ -319,9 +334,14 @@ def test_an_attribute_expectation_ignores_code_in_containers_and_never_joins_att
         f"- ~~~\n  x\n  ~~~\n\n{_CARD}",                                  # a closed fence in a list
         'text `x` <span class="suggestion-card">r</span>',                 # a tag after a code span
         f"para\n    {_CARD}",                                              # paragraph continuation, not code
+        f'[x](url(foo) "t") {_CARD}',                                      # after a balanced link
+        f"![alt](i.png) {_CARD}",                                          # after an image
+        f"[{_CARD}](url(foo))",                                            # link text renders HTML
+        f"Title\n--\n\n{_CARD}",                                         # after a dash setext heading
     ],
     ids=["app-card", "after-inline-code", "after-fence", "in-quote", "in-list", "after-list-fence",
-         "after-code-span", "continuation"],
+         "after-code-span", "continuation", "after-link", "after-image", "in-link-text",
+         "after-setext-dash"],
 )
 def test_a_card_outside_markdown_code_still_counts(body):
     state = warm_streamlit.RunState(expect_text='class="suggestion-card"')

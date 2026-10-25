@@ -89,7 +89,8 @@ _NON_RENDERING = frozenset({"style", "script", "template", "textarea", "title", 
 #
 # Where it is simpler than CommonMark it hides more, never less: an unclosed inline
 # comment hides the rest of its paragraph, a paragraph that starts like a link reference
-# definition is hidden whole, and a link destination or title is never read as a tag.
+# definition is hidden whole, a link destination or title is never read as a tag, and an
+# image description (`![...]`) is hidden even when nothing makes it an image.
 
 # CommonMark's raw-HTML grammar (spec 0.31, section 6.6).
 _ATTRIBUTE = r"""(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)"""
@@ -102,10 +103,6 @@ _INLINE_OTHER = re.compile(
     r"<\?.*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[.*?\]\]>"
     r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|<[^\s<>@]+@[A-Za-z0-9.-]+>",
     re.DOTALL,
-)
-# `](destination "title")`: a `<...>` destination is a URL, not a tag.
-_LINK_TAIL = re.compile(
-    r"""\]\(\s*(?:<[^<>\n]*>|[^\s<>()]*)(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)"""
 )
 _BACKTICKS = re.compile(r"`+")
 _REFERENCE_DEFINITION = re.compile(r"^\[(?:[^\]\\]|\\.)+\]:")
@@ -133,7 +130,7 @@ _HTML_BLOCK_7 = re.compile(
 )
 _ATX_HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
 _FENCE_OPEN = re.compile(r"(`{3,}|~{3,})")
-_SETEXT_EQUALS = re.compile(r"=+[ \t]*$")
+_SETEXT_UNDERLINE = re.compile(r"(?:=+|-+)[ \t]*$")
 _THEMATIC_BREAK = re.compile(r"(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
 _BULLET = re.compile(r"[*+-]")
 _ORDERED = re.compile(r"(\d{1,9})[.)]")
@@ -276,7 +273,10 @@ class _MarkdownBlocks:
                 if found:
                     container, pos = start("html", html_end=end), nxt
                     break
-            if container.kind == "paragraph" and _SETEXT_EQUALS.match(line, nxt):
+            # Before thematic breaks and list items: `Title\n--` is a heading, not a rule.
+            # A paragraph that is a link reference definition never becomes a heading.
+            if container.kind == "paragraph" and _SETEXT_UNDERLINE.match(line, nxt) \
+                    and not _REFERENCE_DEFINITION.match(container.lines[0].strip()):
                 container.kind = "heading"
                 self._finalize(container)
                 return
@@ -316,6 +316,87 @@ class _MarkdownBlocks:
             self._add("paragraph", lines=[line[pos:]])
 
 
+def _link_tail_end(text: str, i: int) -> int | None:
+    """End of `(destination "title")` starting at `text[i] == "("`, or None. Destinations
+    may hold balanced parentheses; a `<...>` destination and any title are never tags."""
+    n = len(text)
+    i += 1
+    while i < n and text[i] in " \t\n":
+        i += 1
+    if i < n and text[i] == "<":
+        i += 1
+        while i < n and text[i] not in "<>\n":
+            i += 2 if text[i] == "\\" else 1
+        if i >= n or text[i] != ">":
+            return None
+        i += 1
+    else:
+        depth = 0
+        while i < n and not text[i].isspace() and ord(text[i]) >= 0x20:
+            char = text[i]
+            if char == "\\" and text[i + 1:i + 2] in _ASCII_PUNCTUATION:
+                i += 2
+                continue
+            if char == "<":
+                return None
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            i += 1
+        if depth:
+            return None
+    gap = i
+    while i < n and text[i] in " \t\n":
+        i += 1
+    if i < n and text[i] in "\"'(" and i > gap:
+        close = ")" if text[i] == "(" else text[i]
+        i += 1
+        while i < n and text[i] != close:
+            if text[i] == "(" and close == ")":
+                return None
+            i += 2 if text[i] == "\\" else 1
+        if i >= n:
+            return None
+        i += 1
+        while i < n and text[i] in " \t\n":
+            i += 1
+    return i + 1 if i < n and text[i] == ")" else None
+
+
+def _bracket_end(text: str, i: int) -> int | None:
+    """Index of the `]` matching the `[` at `text[i]`, or None. Escapes, code spans and raw
+    tags are skipped whole, so a `]` inside them does not count (as in CommonMark)."""
+    depth = 0
+    n = len(text)
+    while i < n:
+        char = text[i]
+        if char == "\\":
+            i += 2
+            continue
+        if char == "`":
+            run = _BACKTICKS.match(text, i).end() - i
+            closing = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, i + run)
+            i = closing.end() if closing else i + run
+            continue
+        if char == "<":
+            atom = _INLINE_COMMENT.match(text, i) or _INLINE_OTHER.match(text, i) \
+                or _INLINE_TAG.match(text, i)
+            if atom:
+                i = atom.end()
+                continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
 def _inline_html(text: str) -> str:
     """Paragraph text as HTML: raw tags and comments exactly as written, the rest escaped,
     code spans and link destinations dropped."""
@@ -347,8 +428,17 @@ def _inline_html(text: str) -> str:
             else:
                 out.append("&lt;")
                 i += 1
-        elif char == "]" and _LINK_TAIL.match(text, i):
-            i = _LINK_TAIL.match(text, i).end()
+        elif char == "!" and text.startswith("![", i) and _bracket_end(text, i + 1) is not None:
+            # An image description is alt text, never markup. Hidden even when no link or
+            # reference follows (CommonMark would then show it as text): hides more, not less.
+            i = _bracket_end(text, i + 1) + 1
+            if text.startswith("(", i):
+                i = _link_tail_end(text, i) or i
+            elif text.startswith("[", i):
+                end = _bracket_end(text, i)
+                i = end + 1 if end is not None else i
+        elif char == "]" and text.startswith("(", i + 1) and _link_tail_end(text, i + 1):
+            i = _link_tail_end(text, i + 1)
         else:
             out.append(html.escape(char))
             i += 1
