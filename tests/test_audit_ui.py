@@ -843,10 +843,10 @@ def test_signature_is_hashed_once_per_frame_object(monkeypatch):
     first = app_module.corpus_signature(frame)
     assert app_module.corpus_signature(frame) == first
     assert app_module.corpus_signature(frame) == first
-    assert len(calls) == 2, "two columns hashed once, not once per call"
+    assert len(calls) == 1, "the frame is hashed once, not once per call"
     other = _signature_frame()
     assert app_module.corpus_signature(other) == first
-    assert len(calls) == 4, "a different frame object is hashed again"
+    assert len(calls) == 2, "a different frame object is hashed again"
 
     key = id(frame)
     assert key in review_common._SIGNATURE_MEMO

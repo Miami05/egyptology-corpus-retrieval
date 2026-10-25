@@ -168,9 +168,11 @@ and one whose useful parallels are Late Egyptian formula rows that are now retri
 temporary path when run through
 `verify_release.py` or the test suite, so a release check never dirties `data/benchmarks`.
 
-Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
-secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is
-fully open, which is the default for local use. The same key also gates the private,
+Annotation saving is limited to reviewers who present the key set as `reviewer_key` in
+Streamlit secrets (or the `REVIEWER_KEY` environment variable). With no key set, saving
+fails closed: it is switched off for everyone, so an empty key can never turn the shared
+database into a public form. For local development only, `ALLOW_OPEN_ANNOTATIONS=1`
+reopens saving without a key. Reading, searching and browsing never need the key. The same key also gates the private,
 non-commercial corpus rows (the St Andrews texts, kept out of this repository): a
 session sees them only after unlocking, and with no key configured they are never
 loaded for anyone — see the "reviewer-key gate" section of [DEPLOYMENT.md](DEPLOYMENT.md). If the database is unreachable the
