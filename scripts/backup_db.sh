@@ -51,6 +51,8 @@
 # seconds, then gives up with exit 5 and touches nothing. The kernel drops the lock when
 # its holder dies, so there is no stale lock to take over, and the lock file itself is
 # never deleted (deleting it is what let two runs both believe they held the old one).
+# A BACKUP_DIR/.lock directory (the lock of the script before this one) stops the run with
+# exit 5 and is left in place: its run may still be going. Remove it by hand once it is not.
 #
 # Exit codes: 0 all good; 1 no database, or a DATABASE_URL this script cannot back up;
 # 2 the copy is corrupt; 3 the copy is readable but holds fewer annotations than the
@@ -58,7 +60,8 @@
 # touched, not on this machine and not off-site); 4 the newest accepted snapshot cannot
 # be read, or every earlier snapshot has gone missing, so nothing can be compared (the
 # copy is kept as <name>.db.gz.unverified; same "touch nothing" rule); 5 another backup
-# run held the lock for longer than LOCK_WAIT (nothing was written). Any non-zero exit
+# run held the lock for longer than LOCK_WAIT, or an old-style .lock directory is present
+# (nothing was written). Any non-zero exit
 # means no good backup was published, and the systemd unit will show `failed`.
 
 set -euo pipefail
@@ -95,6 +98,9 @@ MONTHLY_FILE="${MONTHLY_DIR}/egyptology-${MONTH}.db.gz"
 # found, the folder was emptied: that must fail, not pass as "first backup".
 SEEN_MARKER="${BACKUP_DIR}/.has-snapshots"
 LOCK_FILE="${BACKUP_DIR}/.backup.lock"
+# The lock of the backup script before the flock one: a directory its runs created with
+# mkdir and removed on exit. See take_lock.
+LEGACY_LOCK_DIR="${BACKUP_DIR}/.lock"
 WORK_DIR=""
 
 # Runs on every exit: cleans the scratch folder and reports the outcome to the
@@ -173,6 +179,14 @@ PY
     exit 5
   elif [[ $rc -ne 0 ]]; then
     echo "backup: could not lock ${LOCK_FILE} (exit ${rc}) — nothing written" >&2
+    exit 5
+  fi
+  # Checked with the new lock held, so every new-style run sees the same answer. An old-style
+  # run does not take the flock, so while its directory exists it may be snapshotting right
+  # now and would pick the same revision name as this run; it is never removed here.
+  if [[ -e "$LEGACY_LOCK_DIR" ]]; then
+    echo "backup: ${LEGACY_LOCK_DIR} is an old-style lock — a backup from the previous version of this script may be running." >&2
+    echo "backup:   If none is, remove it (rm -r ${LEGACY_LOCK_DIR}) and run again. Nothing written." >&2
     exit 5
   fi
 }
