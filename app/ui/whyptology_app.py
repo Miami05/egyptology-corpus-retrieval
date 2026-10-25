@@ -628,6 +628,7 @@ SESSION_SEARCH_STATE_KEYS = (
     "whyptology_results",
     "whyptology_suggestions",
     "whyptology_last_query",
+    "whyptology_last_reading_order",
     "whyptology_last_parse",
     "whyptology_segments",
     "whyptology_resolved_stage",
@@ -2141,6 +2142,12 @@ def render_workspace(df: pd.DataFrame) -> None:
     if run_search:
         if pending_grouping is not None:
             query = pending_grouping[0]
+            # ...and with the reading order that search used, not whatever the
+            # reading-order box was edited to since: otherwise the rerun would
+            # mix the old query with a new reading order.
+            reading_order = st.session_state.get(
+                "whyptology_last_reading_order", ""
+            )
         else:
             st.session_state[QUERY_TEXT_KEY] = query
         if not query.strip():
@@ -2210,6 +2217,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     max(settings.top_k, 5)
                 ).copy()
                 st.session_state["whyptology_last_query"] = query
+                st.session_state["whyptology_last_reading_order"] = reading_order
                 # Make the URL shareable: an expert can now send "this one is wrong"
                 # as a link instead of describing the query. The stage travels with
                 # it, so re-opening the link searches the same evidence again.

@@ -251,8 +251,13 @@ def test_applied_grouping_reruns_the_search_with_those_groups(monkeypatch):
     app.query_params["stage"] = "all"
     app.run()
     app.text_area[0].set_value("𓆓𓂧𓆑").run()
+    reading_order_box = lambda: [  # noqa: E731
+        t for t in app.text_input if t.label == "Normalized reading order"
+    ][0]
+    reading_order_box().set_value("ḏd =f").run()
     [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
     assert not app.exception, app.exception
+    assert app.session_state["whyptology_last_reading_order"] == "ḏd =f"
     proposal = list(app.session_state["whyptology_segments"])
     edited = ["𓆓𓂧", "𓆑"] if proposal != ["𓆓𓂧", "𓆑"] else ["𓆓𓂧𓆑"]
 
@@ -261,6 +266,9 @@ def test_applied_grouping_reruns_the_search_with_those_groups(monkeypatch):
     assert not [b for b in app.button if b.label == "Apply grouping"]
     assert any("Only the spaces" in w.value for w in app.warning)
 
+    # The reading-order box edited after the search must not leak into the rerun
+    # (Opus nit): the applied grouping re-searches the inputs it was edited for.
+    reading_order_box().set_value("something else").run()
     _grouping_input(app).set_value(" ".join(edited)).run()
     [b for b in app.button if b.label == "Apply grouping"][0].click().run()
     assert not app.exception, app.exception
@@ -269,5 +277,6 @@ def test_applied_grouping_reruns_the_search_with_those_groups(monkeypatch):
     assert list(app.session_state["whyptology_segments"]) == edited
     assert app.session_state["whyptology_last_parse"].hieroglyphs_norm == " ".join(edited)
     assert app.session_state["whyptology_last_query"] == "𓆓𓂧𓆑"
+    assert app.session_state["whyptology_last_reading_order"] == "ḏd =f"
     assert _grouping_input(app).value == " ".join(edited)
     assert not [b for b in app.button if b.label == "Apply grouping"]
