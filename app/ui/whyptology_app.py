@@ -1105,6 +1105,12 @@ def token_analysis(row: pd.Series) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+SUGGESTION_RANKING_CAPTION = (
+    "Ranked by how well the corpus retrieved each reading; the bar is that "
+    "reading's own match strength, so a lower-ranked reading can show a higher bar."
+)
+
+
 def render_suggestion_card(rank: int, suggestion) -> None:
     """One ranked reading candidate with its confidence and corpus evidence."""
     score = float(suggestion.confidence_score)
@@ -2042,6 +2048,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                     # sounds — is given the transliteration the query was
                     # understood as, falling back to the text as typed.
                     query_mdc=searched.reading or query,
+                    # ...but which words may match loosely is decided on what
+                    # was typed, not on that conversion (A54).
+                    query_raw=query,
                     query_reading_order=reading_order,
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",
@@ -2337,6 +2346,9 @@ def render_workspace(df: pd.DataFrame) -> None:
             unsafe_allow_html=True,
         )
         if suggestions:
+            # The bar is each reading's own match strength, applied after ranking
+            # (A21), so it need not fall down the list; say so.
+            st.caption(SUGGESTION_RANKING_CAPTION)
             for rank, suggestion in enumerate(suggestions, start=1):
                 render_suggestion_card(rank, suggestion)
         elif results is not None:

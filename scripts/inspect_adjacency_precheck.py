@@ -177,6 +177,7 @@ def main() -> None:
             suggestions = suggest_top_readings(
                 retrieval_results,
                 query_mdc=suggestion_query,
+                query_raw=query_input,
                 query_reading_order=query_reading_order,
                 top_n=args.top_n,
                 debug_signals=debug,

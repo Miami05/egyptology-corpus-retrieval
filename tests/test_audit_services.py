@@ -51,12 +51,9 @@ def _per_sign(model: ReadingModel, signs: list[str]) -> float:
     return score / len(signs)
 
 
-def test_a53_model_that_attests_the_signs_outscores_one_that_cannot_read_them():
-    paste = ["𓀀", "𓁐"]
-    knows = _model_attesting(["𓀀", "𓁐"])
-    # Has data, just never for these signs: its groups are all unreadable here.
-    ignorant = _model_attesting(["𓀁", "𓀂"])
-    assert _per_sign(knows, paste) > _per_sign(ignorant, paste)
+# Fix round 1: "a model that attests the signs wins" is now a property of the stage
+# choice (readable coverage first), not of the per-sign number alone — see
+# tests/test_fix_round1_services.py::test_a53_a_small_model_that_reads_nothing_loses_to_a_large_ambiguous_one.
 
 
 def test_a53_old_free_emission_let_the_ignorant_model_win(monkeypatch):
@@ -108,14 +105,11 @@ def test_a53_a_model_with_no_attested_groups_scores_finite():
     assert model.unreadable_emission < 0.0
 
 
-def test_a53_penalty_is_the_models_own_scale_and_refreshes_on_fit():
+def test_a53_penalty_is_shared_by_every_model_size():
+    # Fix round 1: a per-model scale let a smaller model charge less for not knowing.
     model = _model_attesting(["𓀀"], readings_each=30)
-    scale30 = model.unreadable_emission
-    assert scale30 < _model_attesting(["𓀀"], readings_each=3).unreadable_emission
-    model.fit(
-        pd.DataFrame({"hieroglyphs_norm": ["𓁐"], "transliteration_gold": ["z"]})
-    )
-    assert model.unreadable_emission != scale30
+    assert model.unreadable_emission == _model_attesting(["𓀀"], readings_each=3).unreadable_emission
+    assert model.unreadable_emission == reading_model_module.UNREADABLE_EMISSION
 
 
 # --------------------------------------------------------------------------- #
@@ -448,7 +442,7 @@ def _random_pool(rng: random.Random) -> tuple[pd.DataFrame, dict]:
 
 
 def test_a21_ranking_is_exactly_the_relative_ranking():
-    # The absolute-evidence factor is one number for the pool, so the order must be
+    # The absolute-evidence factor is applied after sorting, so the order must be
     # the one the relative confidence alone gives, ties included.
     rng = random.Random(21)
     for _ in range(150):
@@ -482,7 +476,7 @@ def test_a21_top_one_is_the_same_with_and_without_the_factor(monkeypatch):
         for f, kw in pools
     ]
     # Old behaviour: the factor forced to 1.0.
-    monkeypatch.setattr(suggestions_module, "pool_absolute_evidence", lambda evidence: 1.0)
+    monkeypatch.setattr(suggestions_module, "absolute_evidence", lambda evidence: 1.0)
     without_factor = [
         [s.candidate_transliteration for s in suggest_top_readings(f, top_n=5, **kw)]
         for f, kw in pools
@@ -496,6 +490,6 @@ def test_a21_debug_entries_carry_both_the_relative_and_final_confidence():
     shown = suggest_top_readings(frame, "ḥtp ḏi nswt", debug_signals=debug)
     for entry in debug:
         assert entry["confidence_score"] == round(
-            min(0.99, entry["relative_confidence"] * entry["pool_evidence"]), 3
+            min(0.99, entry["relative_confidence"] * entry["evidence"]), 3
         )
     assert {s.confidence_score for s in shown} == {e["confidence_score"] for e in debug}

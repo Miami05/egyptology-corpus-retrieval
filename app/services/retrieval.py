@@ -196,9 +196,10 @@ def resolve_auto_stage(
     A hieroglyph paste has no reading of its own to match a stage's rows against,
     so it is resolved by language-identification likelihood instead
     (`app.services.stage.choose_stage_by_likelihood`: segment once with the
-    pooled segmenter, then take the stage whose own reading model finds that
-    segmentation most likely, per sign — see that function for why segmentation
-    is pooled and reading is not). A text (transliteration) query keeps item A
+    pooled segmenter, then, among the stages whose own reading models attest the
+    most of its groups, take the one that finds that segmentation most likely, per
+    sign — see that function for why segmentation is pooled and reading is not,
+    and why attested coverage outranks likelihood). A text (transliteration) query keeps item A
     core's original rule: a first retrieval pass over the pooled resources, then
     `infer_stage` given the pooled frame's own stage base rates (the
     lift-over-base-rate guard documented on `infer_stage`).
@@ -206,6 +207,8 @@ def resolve_auto_stage(
     Returns `(stage, inferred, likelihood_scores)`. `likelihood_scores` is
     `choose_stage_by_likelihood`'s per-stage per-sign audit dict for a hieroglyph
     paste, and empty for a text query (no per-stage likelihoods computed there).
+    The winner need not have the highest of those scores: attested coverage is
+    compared first, and `choose_stage_by_likelihood(..., coverage={})` reports it.
     """
     if contains_hieroglyphs(query):
         paste_norm = normalize_hieroglyphs(query)

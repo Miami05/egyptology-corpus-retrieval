@@ -586,7 +586,8 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
             "mirrors app/ui/whyptology_app.py: retrieval always gets a SearchIndex, so "
             "parse_query can use the corpus vocabulary to choose a notation, and "
             "suggest_top_readings is handed the *interpreted reading* "
-            "(`searched.reading or query`) rather than the raw string. 'legacy' is what "
+            "(`searched.reading or query`, with the typed query as `query_raw`) rather "
+            "than the raw string. 'legacy' is what "
             "this harness did before 2026-09-05 — index=None whenever no stage "
             "resolves, and the raw query string into the suggestion layer — and is kept "
             "so the published v4 numbers (0.90 / MRR 0.79) can be reproduced exactly."
@@ -816,6 +817,9 @@ def main(argv: "list[str] | None" = None) -> None:
         suggestions = suggest_top_readings(
             retrieval_results,
             query_mdc=suggestion_query,
+            # The query as typed decides which words may match through the ASCII
+            # fold, exactly as the app passes it (whyptology_app.py; A54).
+            query_raw=query_input,
             query_reading_order=query_reading_order,
             top_n=3,
         )
