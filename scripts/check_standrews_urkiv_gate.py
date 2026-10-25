@@ -24,6 +24,12 @@ reads), else `data/private` next to this script — a worktree has no private ro
 its own. The resolved directory and its row count are printed, and the script exits
 non-zero before any evaluation when no private row was loaded: a gate run without the
 St Andrews rows is "not run", never "passed" (pre-registration 2026-10-25, A2.2).
+
+The gate is measured on one pinned row (`GATE_SENTENCE_ID`), not on any row of the text:
+the text marker `urkIV-001` matches all 159 sentences of Urk. IV 1 (final eval, 2026-10-25).
+The script ends with `GATE: PASS` or `GATE: FAIL (...)` and exits 0 only on PASS — every
+paste check passes and the pinned row ranks 1 among the St Andrews rows; a missing or
+changed pinned row also exits non-zero.
 """
 
 from __future__ import annotations
@@ -59,8 +65,42 @@ QUERIES_PATH = PROJECT_ROOT / "data" / "benchmarks" / "expert_paste_queries.csv"
 GATE_BENCHMARK = "PASTE_001"
 # His division of Urk. IV 1: `<2> Dd=f` and `<@6>Dd=j n=Tn rmT nbt` are two body
 # blocks, so no single St Andrews row carries the whole of the expert's line. The
-# second block is the row the gate is measured on.
-GATE_MARKER = "urkIV-001"
+# second block is the row the gate is measured on, pinned by its sentence id: the text
+# marker `urkIV-001` alone matches every one of the text's 159 sentences.
+GATE_SOURCE = "StAndrews"
+GATE_SENTENCE_ID = "S_urkIV-001_urkIV-001Tr_0003"
+# The pinned row's reading, compared after `search_fold`, so a re-import that renumbers
+# the sentences fails loudly instead of measuring a different line.
+GATE_READING = "ḏd =ꞽ n =ṯn rmṯ nbt"
+
+
+def is_gate_row(frame: pd.DataFrame) -> pd.Series:
+    """Mask of the pinned St Andrews row for Camilla's line."""
+    return (frame["source"].astype(str) == GATE_SOURCE) & (
+        frame["source_sentence_id"].astype(str) == GATE_SENTENCE_ID
+    )
+
+
+def check_gate_row(df: pd.DataFrame) -> str | None:
+    """None when exactly one pinned row exists with the expected reading, else why not."""
+    rows = df.loc[is_gate_row(df)]
+    if len(rows) != 1:
+        return f"{len(rows)} rows with source_sentence_id {GATE_SENTENCE_ID} (expected 1)"
+    if search_fold(str(rows.iloc[0]["transliteration_gold"])) != search_fold(GATE_READING):
+        return f"{GATE_SENTENCE_ID} no longer carries the expected reading"
+    return None
+
+
+def gate_verdict(passed: int, total: int, standrews_rank: int | None) -> list[str]:
+    """The reasons the gate fails (empty = PASS)."""
+    reasons = []
+    if total == 0 or passed != total:
+        reasons.append(f"paste checks {passed}/{total}")
+    if standrews_rank is None:
+        reasons.append(f"{GATE_SENTENCE_ID} not retrieved")
+    elif standrews_rank != 1:
+        reasons.append(f"St Andrews rank {standrews_rank}, not 1")
+    return reasons
 
 
 def load_corpus(
@@ -99,6 +139,10 @@ def main(argv: "list[str] | None" = None) -> int:
         return 1
     counts = df["source"].value_counts().to_dict()
     print(f"corpus {len(df):,} rows: {counts}")
+    problem = check_gate_row(df)
+    if problem is not None:
+        print(f"GATE: FAIL ({problem})")
+        return 1
 
     lexicon = load_lexicon()
     cache: dict[str | None, StageResources] = {}
@@ -160,8 +204,9 @@ def main(argv: "list[str] | None" = None) -> int:
     )
     pool = pool.reset_index(drop=True)
     standrews = pool[pool["source"] == "StAndrews"]
-    urk = standrews[standrews["source_ref"].astype(str).str.contains(GATE_MARKER)]
+    urk = standrews[is_gate_row(standrews)]
     print(f"  St Andrews rows in the pool: {len(standrews):,}")
+    standrews_rank: int | None = None
     for label, frame in (("all rows", pool), ("St Andrews rows only", standrews)):
         if urk.empty:
             print(f"  rank among {label}: not retrieved in the top {rank_k:,}")
@@ -169,6 +214,8 @@ def main(argv: "list[str] | None" = None) -> int:
         best = urk.index[0]
         rank = int(frame.index.get_indexer([best])[0]) + 1
         print(f"  rank among {label}: {rank}")
+        if frame is standrews:
+            standrews_rank = rank
     if not urk.empty:
         top = urk.iloc[0]
         print(f"  row: {top['transliteration_gold']}")
@@ -191,8 +238,10 @@ def main(argv: "list[str] | None" = None) -> int:
             f"({suggestion.confidence_score:.4f})"
         )
 
-    print(f"\ndone in {time.time() - started:.1f}s")
-    return 0
+    reasons = gate_verdict(passed, len(results), standrews_rank)
+    print("\nGATE: " + ("PASS" if not reasons else f"FAIL ({'; '.join(reasons)})"))
+    print(f"done in {time.time() - started:.1f}s")
+    return 0 if not reasons else 1
 
 
 if __name__ == "__main__":

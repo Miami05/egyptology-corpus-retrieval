@@ -154,3 +154,39 @@ def test_too_few_eligible_rows_stops(tmp_path, capsys):
     ])
     assert code == 2
     assert "STOP" in capsys.readouterr().out
+
+
+def test_own_coverage_leaves_out_unlabelled_rows(tmp_path):
+    """Final eval 2026-10-25 (Astra eval-3): A2.4 counts groups attested in the stage's
+    *own* aligned rows; the app's model also learns from unlabelled rows. When only an
+    unlabelled row attests the paste's group, the app's coverage says Earlier 1 and its
+    reference agrees with the app, but A2.4 as written has coverage 0 and abstains, and
+    the report must show that disagreement instead of certifying agreement."""
+    rows = [
+        _row("TLA", "E1", "1", E, f"{GLYPHS[0]} {GLYPHS[1]}", "e0a e0b"),
+        _row("AES", "A1", "1", "", GLYPHS[40], "u"),
+    ]
+    path = tmp_path / "pool.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    pool = load_examples_csv(str(path))
+    attested = routing.own_attested_groups(pool)
+    assert attested[E] == {GLYPHS[0], GLYPHS[1]}
+    assert attested[L] == set() and attested[D] == set()
+
+    sample = pd.DataFrame([_row("TLA", "E9", "1", E, GLYPHS[40], "u")])
+    sample = load_examples_csv_frame(tmp_path, sample).assign(true_stage=E)
+    get_resources = routing.make_resource_cache(pool, None)
+    results = routing.route_sample(sample, get_resources, attested)
+    row = results.iloc[0]
+    assert row[f"coverage_{E}"] == 1 and row[f"own_coverage_{E}"] == 0
+    assert row["reference_stage"] == E and row["own_reference_stage"] == "None"
+    assert bool(row["coverage_differs"]) and not bool(row["matches_own_reference"])
+    report, _passed = routing.summarize(results)
+    assert "app choice differs from A2.4 as written (own aligned rows' coverage): 1/1" in report
+    assert "pastes whose app coverage differs from own-aligned-row coverage: 1/1" in report
+
+
+def load_examples_csv_frame(tmp_path, frame: pd.DataFrame) -> pd.DataFrame:
+    path = tmp_path / "sample.csv"
+    frame.to_csv(path, index=False)
+    return load_examples_csv(str(path))

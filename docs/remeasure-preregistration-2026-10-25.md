@@ -5,6 +5,14 @@ full test suite was run to write it, and no per-query result was opened. Rev. 1 
 was rated not ready by an independent review (Codex gpt-6-astra); this revision replaces it.
 A rule changed after the first run of (A) is a dated addendum, never an edit of this file.
 
+**Rev. 2.1 (2026-10-25, final eval, before any run of (A); no number measured).** Corrections
+so (A) runs as written, no rule loosened: the competitive block now sets `S`/`F` itself (it
+used them unassigned); the release check is compared with L-auto and T-auto, the runs
+`verify_release.py` actually makes, not the C-auto the old wording could pick; rule 8 clamps floors to
+[0.01, 1] because `verify_release.py` rejects a floor of 0; the Urk. IV gate is measured on
+one pinned row and exits non-zero unless it passes; the routing script also reports A2.4's
+own-aligned-row coverage beside the app's (A2.4's "any difference is written down").
+
 The document has two parts with different purposes:
 
 * **(A) Post-fix regression run — tonight.** Shows that nothing broke and explains every
@@ -72,19 +80,24 @@ CE="$PY scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule
 ```
 
 **Competitive sets** — `--benchmark` always explicit (the harness default is the
-contaminated v1). For `S`/`F` in v4 = `$B/competitive_ambiguity_eval_queries_v4.csv`,
-holdout = `$B/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv`,
-le_v1 = `$B/competitive_ambiguity_eval_queries_le_v1.csv`:
+contaminated v1). `S` names the set and `F` its query file:
 
 ```bash
-for M in auto declared none; do                       # T: twin-controlled at 0.7
-  $CE --benchmark $F --stage $M --exclude-twins 0.7 --expected-tokens current \
-      --results $R/${S}_T_$M.csv --failures $R/${S}_T_${M}_fail.csv > $R/${S}_T_$M.txt 2>&1
+for S in v4 holdout le_v1; do
+  case $S in
+    v4)      F=$B/competitive_ambiguity_eval_queries_v4.csv ;;
+    holdout) F=$B/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv ;;
+    le_v1)   F=$B/competitive_ambiguity_eval_queries_le_v1.csv ;;
+  esac
+  for M in auto declared none; do                     # T: twin-controlled at 0.7
+    $CE --benchmark $F --stage $M --exclude-twins 0.7 --expected-tokens current \
+        --results $R/${S}_T_$M.csv --failures $R/${S}_T_${M}_fail.csv > $R/${S}_T_$M.txt 2>&1
+  done
+  $CE --benchmark $F --stage auto --exclude-twins 0 --expected-tokens current \
+      --results $R/${S}_C_auto.csv --failures $R/${S}_C_auto_fail.csv > $R/${S}_C_auto.txt 2>&1
+  $CE --benchmark $F --stage auto --exclude-twins 0 --expected-tokens frozen \
+      --results $R/${S}_L_auto.csv --failures $R/${S}_L_auto_fail.csv > $R/${S}_L_auto.txt 2>&1
 done
-$CE --benchmark $F --stage auto --exclude-twins 0 --expected-tokens current \
-    --results $R/${S}_C_auto.csv --failures $R/${S}_C_auto_fail.csv > $R/${S}_C_auto.txt 2>&1
-$CE --benchmark $F --stage auto --exclude-twins 0 --expected-tokens frozen \
-    --results $R/${S}_L_auto.csv --failures $R/${S}_L_auto_fail.csv > $R/${S}_L_auto.txt 2>&1
 ```
 
 L = legacy pool, frozen tokens (only run comparable with the committed history);
@@ -119,8 +132,12 @@ $PY scripts/check_standrews_urkiv_gate.py --private-dir "$PRIV" --stage auto \
 --results $R/routing.csv > $R/routing_summary.txt 2>&1`.
 
 **Release check:** `$PY scripts/verify_release.py --skip-tests > $R/verify_release.txt 2>&1`
-(pytest already ran in step 1; its competitive and paste runs duplicate v4 C-auto or L-auto
-(whichever matches the merged `--expected-tokens` default) and paste-auto, and must reproduce them exactly — a difference is a determinism bug and stops).
+(pytest already ran in step 1). Its legacy competitive run is always v4 **L-auto** (it
+passes `expected_tokens` frozen, `LEGACY_RUN`, whatever the harness default); once the
+rule-8 `twin_controlled` block exists it also runs v4 **T-auto**; its paste run is
+paste-auto. Each must reproduce the matching step-5/step-3 run exactly on the printed
+top-3 useful, MRR and failure count (its per-query CSVs are temporary, so the comparison is
+on the printed aggregates) — a difference is a determinism bug and stops.
 
 ## A2. Rules (decided now)
 
@@ -174,7 +191,8 @@ $PY scripts/check_standrews_urkiv_gate.py --private-dir "$PRIV" --stage auto \
    is written, one commit changing only `release_baseline.json` adds a `twin_controlled`
    block (`exclude_twins` 0.7, `expected_tokens` current) with `top3_useful_floor` =
    measured v4 T-auto − 0.05 (one query in 20) and a separate `mrr_floor` = measured MRR −
-   0.05 (a tolerance, not a query count), both clamped to [0, 1], plus
+   0.05 (a tolerance, not a query count), both clamped to [0.01, 1] (`verify_release.py`
+rejects a floor of 0), plus
    `expected_corpus_sha256`. Code is byte-identical to the pinned commit, so the numbers
    stand; `verify_release.py` is then re-run once on that commit.
 9. **On any failure:** stop, record it, fix on a new commit, write a dated addendum, and

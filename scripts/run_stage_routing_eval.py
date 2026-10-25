@@ -30,6 +30,13 @@ does), and the number of pastes where the app's choice differs from the A2.4 dec
 function recomputed from the per-stage coverage and score (a difference is written
 down in the results note, not fixed).
 
+Two coverages are recorded per paste (final eval, 2026-10-25). `coverage_<stage>` is the
+app's own count, from a reading model that is also fitted on every unlabelled row
+(`compatible_frame`); `own_coverage_<stage>` is A2.4's as written, counting only the
+groups attested in that stage's own labelled, aligned rows. The A2.4 decision is
+recomputed with each (`reference_stage`, `own_reference_stage`), and the report prints
+how often the two coverages, and the app and the A2.4-as-written decision, differ.
+
 Only aggregates are printed. Per-paste rows (ids, true stage, choice, per-stage
 coverage and per-sign score) go to `--results`.
 
@@ -55,7 +62,10 @@ from app.data.loader import load_examples_csv  # noqa: E402
 from app.data.normalizer import normalize_hieroglyphs, search_fold  # noqa: E402
 from app.services.lexicon import load_lexicon  # noqa: E402
 from app.services.retrieval import resolve_auto_stage  # noqa: E402
-from app.services.segmentation import DEFAULT_SEGMENTATION_WEIGHTS  # noqa: E402
+from app.services.segmentation import (  # noqa: E402
+    DEFAULT_SEGMENTATION_WEIGHTS,
+    segment_paste,
+)
 from app.services.stage import (  # noqa: E402
     STAGES,
     StageResources,
@@ -135,6 +145,31 @@ def reference_decision(coverage: dict[str, int], scores: dict[str, float]) -> st
     return None if scores[first] - scores[second] <= MARGIN else first
 
 
+def own_attested_groups(df: pd.DataFrame) -> dict[str, set[str]]:
+    """Per stage, the sign groups attested in its own labelled rows whose groups and
+    readings align one to one (the rows `ReadingModel.fit` learns from) - A2.4's
+    "that stage's own aligned rows", without the unlabelled rows the app adds."""
+    stage = df["language_stage"].map(normalize_stage)
+    signs = df["hieroglyphs_norm"].fillna("").astype(str).str.split()
+    readings = df["transliteration_gold"].fillna("").astype(str).str.split()
+    aligned = (signs.str.len() > 0) & (signs.str.len() == readings.str.len())
+    groups: dict[str, set[str]] = {}
+    for target in STAGES:
+        mask = aligned & (stage == target)
+        groups[target] = {group for row in signs[mask] for group in row}
+    return groups
+
+
+def own_coverage(
+    groups: list[str], scored: dict[str, float], attested: dict[str, set[str]]
+) -> dict[str, int]:
+    """A2.4's `c` for every scored stage: segmented groups attested in its own rows."""
+    return {
+        stage: sum(1 for group in groups if group in attested.get(stage, set()))
+        for stage in scored
+    }
+
+
 def reading_hits(model, groups: list[str], gold: list[str]) -> tuple[int, int]:
     """(tokens read right, tokens) on aligned groups; (0, 0) when not aligned."""
     if not groups or len(groups) != len(gold):
@@ -148,8 +183,13 @@ def reading_hits(model, groups: list[str], gold: list[str]) -> tuple[int, int]:
     return right, len(gold)
 
 
-def route_sample(sample: pd.DataFrame, get_resources) -> pd.DataFrame:
-    """One row per paste: the app's choice, the A2.4 recomputation and the numbers."""
+def route_sample(
+    sample: pd.DataFrame, get_resources, attested: dict[str, set[str]]
+) -> pd.DataFrame:
+    """One row per paste: the app's choice, the A2.4 recomputation and the numbers.
+
+    `attested` is `own_attested_groups` of the pool the resources were built from.
+    """
     rows = []
     for _, row in sample.iterrows():
         query = str(row["hieroglyphs"])
@@ -165,6 +205,12 @@ def route_sample(sample: pd.DataFrame, get_resources) -> pd.DataFrame:
             get_resources(row["true_stage"]).reading_model, groups, gold
         )
         reference = reference_decision(coverage, audit_scores)
+        # The groups the router scored: the pooled segmenter on the same string.
+        segmentation, _as_pasted = segment_paste(
+            normalize_hieroglyphs(query), get_resources(None).segmenter
+        )
+        own = own_coverage(list(segmentation.groups), audit_scores, attested)
+        own_reference = reference_decision(own, audit_scores)
         record = {
             "source": row["source"],
             "source_text_id": row["source_text_id"],
@@ -173,12 +219,18 @@ def route_sample(sample: pd.DataFrame, get_resources) -> pd.DataFrame:
             "chosen_stage": chosen or NONE_LABEL,
             "reference_stage": reference or NONE_LABEL,
             "matches_reference": (chosen or None) == reference,
+            "own_reference_stage": own_reference or NONE_LABEL,
+            "matches_own_reference": (chosen or None) == own_reference,
+            "coverage_differs": any(
+                coverage.get(stage) != own.get(stage) for stage in audit_scores
+            ),
             "aligned_tokens": tokens,
             "chosen_model_right": chosen_right,
             "true_model_right": true_right,
         }
         for stage in STAGES:
             record[f"coverage_{stage}"] = coverage.get(stage, "")
+            record[f"own_coverage_{stage}"] = own.get(stage, "")
             record[f"score_{stage}"] = (scores or {}).get(stage, "")
         rows.append(record)
     return pd.DataFrame(rows)
@@ -205,7 +257,21 @@ def summarize(results: pd.DataFrame) -> tuple[str, bool]:
         share = f"{right / tokens:.4f}" if tokens else "n/a"
         lines.append(f"reading accuracy, {label}'s model: {share} ({right}/{tokens} aligned tokens)")
     differ = int((~results["matches_reference"].astype(bool)).sum())
-    lines.append(f"app choice differs from the A2.4 decision function: {differ}/{len(results)}")
+    lines.append(
+        "app choice differs from the A2.4 decision function (app's coverage): "
+        f"{differ}/{len(results)}"
+    )
+    if "matches_own_reference" in results.columns:
+        own_differ = int((~results["matches_own_reference"].astype(bool)).sum())
+        coverage_differ = int(results["coverage_differs"].astype(bool).sum())
+        lines.append(
+            "app choice differs from A2.4 as written (own aligned rows' coverage): "
+            f"{own_differ}/{len(results)}"
+        )
+        lines.append(
+            "pastes whose app coverage differs from own-aligned-row coverage: "
+            f"{coverage_differ}/{len(results)}"
+        )
     lines.append(
         "pass rule (A2.3, Earlier -> Demotic = Late -> Demotic = 0): "
         + ("PASS" if passed else "FAIL")
@@ -270,7 +336,7 @@ def main(argv: "list[str] | None" = None) -> int:
           "(Earlier first, then Late, one generator) - A2.3 read per stage")
 
     get_resources = make_resource_cache(pool, load_lexicon(args.lexicon))
-    results = route_sample(sample, get_resources)
+    results = route_sample(sample, get_resources, own_attested_groups(pool))
     results_path = Path(args.results).expanduser()
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_path, index=False)
