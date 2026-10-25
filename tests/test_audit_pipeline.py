@@ -282,12 +282,19 @@ def test_ramses_rows_do_not_claim_a_period():
     assert row["source_text_id"] == "RAMSES_4C2862257FB4"
 
 
-@pytest.mark.parametrize("text", ["ꞽmn-m-//", "bw-///-k-///", "ḥr-[...]", "x-[]", "[..]-ꞽr", "a [ ] b"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ꞽmn-m-//", "bw-///-k-///", "ḥr-[...]", "x-[]", "[..]-ꞽr", "a [ ] b",
+        # Fix round 1 (review of -8): BBAW also writes gaps as dashes or an ellipsis.
+        "ḥtp-[---]", "[…] =f", "nb [. . .]", "[–]",
+    ],
+)
 def test_translit_lacuna_regex_matches_partial_gaps(text):
     assert TRANSLIT_LACUNA_RE.search(text)
 
 
-@pytest.mark.parametrize("text", ["1/2", "nb.[t]", "[sšr]", "ꞽmn-m", "ꜥnḫ =f"])
+@pytest.mark.parametrize("text", ["1/2", "nb.[t]", "[sšr]", "ꞽmn-m", "ꜥnḫ =f", "ḥr-[-t]", "[n].t"])
 def test_translit_lacuna_regex_leaves_real_readings_alone(text):
     assert not TRANSLIT_LACUNA_RE.search(text)
 
@@ -575,7 +582,109 @@ def test_download_main_force_flag(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+# Fix round 1 (review of -8): a pin does not show which snapshot a local file holds,
+# so both existing files and downloads are checked against a content checksum.
+
+
+def test_every_dataset_records_an_expected_content_checksum(monkeypatch):
+    module = _download_module(monkeypatch, [])
+    for item in module.DATASETS:
+        assert re.fullmatch(r"\d+:[0-9a-f]{64}", item["content_sha256"])
+        assert re.fullmatch(r"[0-9a-f]{64}", item["upstream_sha256"])
+
+
+def test_content_fingerprint_depends_on_rows_and_order_not_on_parquet_bytes(monkeypatch):
+    module = _download_module(monkeypatch, [])
+    df = pd.DataFrame({"b": ["x", None], "a": ["1", "2"]})
+    same = pd.DataFrame({"a": ["1", "2"], "b": ["x", None]})
+    assert module.content_fingerprint(df) == module.content_fingerprint(same)
+    assert module.content_fingerprint(df).startswith("2:")
+    swapped = df.iloc[::-1].reset_index(drop=True)
+    assert module.content_fingerprint(swapped) != module.content_fingerprint(df)
+    inserted = pd.concat([pd.DataFrame({"b": ["new"], "a": ["0"]}), df], ignore_index=True)
+    assert module.content_fingerprint(inserted) != module.content_fingerprint(df)
+
+
+def test_an_existing_file_from_another_snapshot_is_refused(tmp_path, monkeypatch):
+    calls: list = []
+    module = _download_module(monkeypatch, calls)
+    out = tmp_path / "a.parquet"
+    pinned = module.content_fingerprint(pd.DataFrame({"a": [1, 2]}))
+    pd.DataFrame({"a": [0, 1, 2]}).to_parquet(out, index=False)  # one row inserted
+    before = sha(out)
+    with pytest.raises(module.SnapshotMismatch):
+        module.save_dataset("org/n", str(out), "a" * 40, expected=pinned)
+    assert calls == [] and sha(out) == before
+    out.write_bytes(b"not parquet")
+    with pytest.raises(module.SnapshotMismatch):
+        module.save_dataset("org/n", str(out), "a" * 40, expected=pinned)
+    pd.DataFrame({"a": [1, 2]}).to_parquet(out, index=False)
+    module.save_dataset("org/n", str(out), "a" * 40, expected=pinned)  # verified: kept
+    assert calls == []
+
+
+def test_a_download_that_differs_from_the_pin_is_not_written(tmp_path, monkeypatch):
+    calls: list = []
+    module = _download_module(monkeypatch, calls)
+    out = tmp_path / "a.parquet"
+    with pytest.raises(module.SnapshotMismatch):
+        module.save_dataset("org/n", str(out), "a" * 40, expected="2:" + "0" * 64)
+    assert len(calls) == 1 and not out.exists()
+    assert not list(tmp_path.iterdir())
+    good = module.content_fingerprint(pd.DataFrame({"a": [1, 2]}))
+    module.save_dataset("org/n", str(out), "a" * 40, expected=good)
+    assert module.content_fingerprint(pd.read_parquet(out)) == good
+
+
+def test_download_main_checks_existing_files_and_exits_nonzero(tmp_path, monkeypatch, capsys):
+    calls: list = []
+    module = _download_module(monkeypatch, calls)
+    out = tmp_path / "a.parquet"
+    pd.DataFrame({"a": [9]}).to_parquet(out, index=False)
+    good = module.content_fingerprint(pd.DataFrame({"a": [1, 2]}))
+    monkeypatch.setattr(
+        module,
+        "DATASETS",
+        [{"name": "org/n", "revision": "b" * 40, "out": str(out), "content_sha256": good}],
+    )
+    monkeypatch.setattr(sys, "argv", ["x"])
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+    assert exit_info.value.code == 1
+    assert "does not match the pinned snapshot" in capsys.readouterr().err
+    assert calls == []
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_local_tla_parquets_match_the_recorded_checksum(monkeypatch, index):
+    """Only where the gitignored raw files exist (Ledio's machine); no network."""
+    module = _download_module(monkeypatch, [])
+    item = module.DATASETS[index]
+    path = PROJECT_ROOT / item["out"]
+    if not path.exists():
+        pytest.skip(f"{item['out']} is not present locally")
+    assert module.content_fingerprint(pd.read_parquet(path)) == item["content_sha256"]
+
+
 def test_bbaw_and_helsinki_urls_are_pinned_to_a_commit():
     for url in (import_bbaw_egyptian.PARQUET_URL, import_helsinki_lexicon.BASE_URL):
         assert re.search(r"[0-9a-f]{40}", url)
         assert "/main" not in url
+
+
+# --- fix round 1: DATA-LICENSE.md states what the importers really do ------------------
+
+
+def test_data_licence_does_not_claim_aes_was_appended_with_a_flag_it_lacks():
+    text = (PROJECT_ROOT / "DATA-LICENSE.md").read_text(encoding="utf-8")
+    aes_flags = set(re.findall(r'"(--[a-z-]+)"', (PROJECT_ROOT / "scripts" / "import_aes_relannis.py").read_text()))
+    assert "--append" not in aes_flags
+    assert "every later source was added by its own `scripts/import_*.py --append`" not in text
+    assert "`import_aes_relannis.py` has no `--append`" in text
+
+
+def test_data_licence_records_the_partial_and_deferred_findings():
+    text = (PROJECT_ROOT / "DATA-LICENSE.md").read_text(encoding="utf-8")
+    assert "audit A36" in text and "audit A38, deferred" in text
+    assert "Lacunae in the transliteration (partly fixed)" in text
+    assert "content* checksum" in text

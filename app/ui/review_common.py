@@ -20,7 +20,8 @@ import secrets
 import threading
 import time
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
+from dataclasses import dataclass
 from io import StringIO
 
 import pandas as pd
@@ -179,6 +180,44 @@ def with_licence_notice(frame: pd.DataFrame) -> pd.DataFrame:
     return neutralise_spreadsheet_formulas(out)
 
 
+# ---------- readable text names ----------
+
+# AES rows keep a content hash in source_text_id (annotations and benchmarks hold it,
+# so it cannot change without scripts/migrate_example_ids.py). The readable handles
+# are elsewhere: the importer writes the upstream name into grammar_notes as
+# 'AES text: <name>' (audit A32), and every AES row's source_ref carries the
+# upstream text id ('AES/<corpus>#text=<id>&sentence=...'), which is the same for
+# all sentences of one papyrus. Rows imported before A32 have only the latter.
+_AES_TEXT_NAME_RE = re.compile(r"(?:^|;\s*)AES text:\s*([^;]+)")
+_AES_UPSTREAM_TEXT_RE = re.compile(r"#text=([^&]+)")
+
+
+def aes_text_name(row) -> str:
+    """The upstream AES text name of a row, or its upstream text id, else ''."""
+    if safe_str(row.get("source")).strip() != "AES":
+        return ""
+    match = _AES_TEXT_NAME_RE.search(safe_str(row.get("grammar_notes")))
+    if match and match.group(1).strip():
+        return match.group(1).strip()
+    match = _AES_UPSTREAM_TEXT_RE.search(safe_str(row.get("source_ref")))
+    if match and match.group(1).strip():
+        return f"AES text {match.group(1).strip()}"
+    return ""
+
+
+def text_label(row, fallback: str = "—") -> str:
+    """What the UI calls a row's text: the AES name when there is one, else the id.
+
+    For AES the hash id stays in brackets so a reviewer can still match it to an
+    annotation or a benchmark row. Plain text; callers escape for their sink.
+    """
+    text_id = safe_str(row.get("source_text_id")).strip()
+    name = aes_text_name(row)
+    if name:
+        return f"{name} ({text_id})" if text_id else name
+    return text_id or fallback
+
+
 # ---------- reviewer key ----------
 
 
@@ -194,16 +233,47 @@ def check_reviewer_key(entered: str, expected: str) -> bool:
     return secrets.compare_digest(entered.encode("utf-8"), expected.encode("utf-8"))
 
 
-class KeyAttemptGuard:
-    """Process-wide brake on reviewer-key guessing.
+@dataclass(frozen=True)
+class KeyAttemptResult:
+    """Outcome of one reviewer-key attempt (see KeyAttemptGuard.attempt)."""
 
-    Once `free_attempts` failures sit inside `window` seconds, every unlock is refused
-    for a cooldown that starts at `base_cooldown` and doubles with each further
-    failure, capped at `max_cooldown`. While locked the key is not even compared, so
-    guesses make no progress. The lock is process-wide because Streamlit hands an
-    attacker a fresh session per connection; the cost is that an attacker can keep
-    real reviewers waiting (a trade-off for the owner to confirm). State is in memory,
-    so a restart clears it. The typed value is never stored or logged.
+    ok: bool
+    # Seconds this session must still wait before the key is compared again; > 0
+    # only when the attempt was refused without a comparison.
+    wait: int = 0
+    # Failures inside the window for this session / for the whole process, after
+    # this attempt. Logged as counts; the typed value is never stored or logged.
+    session_failures: int = 0
+    global_failures: int = 0
+    # Seconds this attempt was slowed by the process-wide rate brake.
+    delayed: float = 0.0
+
+
+SESSION_ATTEMPTS_KEY = "_reviewer_key_attempts"
+
+
+class KeyAttemptGuard:
+    """Brake on reviewer-key guessing: per-session backoff plus a global slowdown.
+
+    Two layers, decided by the owner on 2026-10-25 after review of the first
+    version (a process-wide lockout, which let one guesser lock every real reviewer
+    out for as long as it kept guessing):
+
+    * **Per session, exponential backoff.** After `free_attempts` failures inside
+      `window` seconds a session must wait `base_cooldown`, doubling with each
+      further failure up to `max_cooldown`. While waiting, that session's key is not
+      even compared, so its guesses make no progress. Other sessions are unaffected.
+    * **Process-wide, slow-down only.** Streamlit hands an attacker a fresh session
+      per connection, so the per-session counter alone can be sidestepped. When
+      more than `global_free` failures from all sessions sit inside `window`, every
+      attempt (right or wrong, from any session) is delayed by `global_step`
+      seconds per excess failure, capped at `global_max_delay`. It never refuses:
+      a real reviewer is at most `global_max_delay` seconds slower.
+
+    `attempt` does the cooldown check, the comparison and the counter update as one
+    transaction under a lock (only the slow-down sleep happens outside it), so two
+    concurrent attempts cannot interleave the way the first version's separate
+    calls could. State is in memory, so a restart clears it.
     """
 
     def __init__(
@@ -212,41 +282,122 @@ class KeyAttemptGuard:
         window: float = 15 * 60,
         base_cooldown: float = 30.0,
         max_cooldown: float = 15 * 60,
+        global_free: int = 20,
+        global_step: float = 0.25,
+        global_max_delay: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.free_attempts = free_attempts
         self.window = window
         self.base_cooldown = base_cooldown
         self.max_cooldown = max_cooldown
+        self.global_free = global_free
+        self.global_step = global_step
+        self.global_max_delay = global_max_delay
         self._clock = clock
+        self._sleep = sleep
         self._lock = threading.Lock()
-        self._failures: list[float] = []
-        self._locked_until = 0.0
+        self._global_failures: list[float] = []
 
-    def seconds_locked(self) -> int:
-        """Whole seconds until unlocking is allowed again; 0 when it is allowed."""
+    # -- helpers; callers hold self._lock --
+
+    def _session_record(self, session: MutableMapping) -> dict:
+        record = session.get(SESSION_ATTEMPTS_KEY)
+        if not isinstance(record, dict):
+            record = {"failures": [], "locked_until": 0.0}
+            session[SESSION_ATTEMPTS_KEY] = record
+        return record
+
+    def _prune(self, stamps: list[float], now: float) -> list[float]:
+        return [t for t in stamps if now - t < self.window]
+
+    def _session_wait(self, record: dict, now: float) -> int:
+        return max(0, math.ceil(record["locked_until"] - now))
+
+    def _global_delay(self, now: float) -> float:
+        self._global_failures = self._prune(self._global_failures, now)
+        excess = len(self._global_failures) - self.global_free
+        if excess <= 0:
+            return 0.0
+        return min(self.global_max_delay, self.global_step * excess)
+
+    # -- public API --
+
+    def seconds_locked(self, session: MutableMapping) -> int:
+        """Whole seconds until this session may try again; 0 when it may."""
         with self._lock:
-            return max(0, math.ceil(self._locked_until - self._clock()))
+            return self._session_wait(self._session_record(session), self._clock())
 
-    def record_failure(self) -> int:
-        """Count one wrong key; returns how many failures are inside the window."""
+    def global_delay(self) -> float:
+        """Seconds every attempt is currently slowed by; 0 below the global rate."""
+        with self._lock:
+            return self._global_delay(self._clock())
+
+    def attempt(
+        self, session: MutableMapping, entered: str, expected: str
+    ) -> KeyAttemptResult:
+        """Check one typed key for one session; never raises on any text.
+
+        An empty submission is not a guess: it is neither compared nor counted.
+        """
         with self._lock:
             now = self._clock()
-            self._failures = [t for t in self._failures if now - t < self.window]
-            self._failures.append(now)
-            count = len(self._failures)
+            record = self._session_record(session)
+            wait = self._session_wait(record, now)
+            if wait:
+                return KeyAttemptResult(
+                    ok=False,
+                    wait=wait,
+                    session_failures=len(record["failures"]),
+                    global_failures=len(self._global_failures),
+                )
+            delay = self._global_delay(now) if entered else 0.0
+        if delay:
+            self._sleep(delay)
+        with self._lock:
+            now = self._clock()
+            record = self._session_record(session)
+            # Another rerun of this same session may have failed meanwhile.
+            wait = self._session_wait(record, now)
+            if wait:
+                return KeyAttemptResult(
+                    ok=False,
+                    wait=wait,
+                    session_failures=len(record["failures"]),
+                    global_failures=len(self._global_failures),
+                    delayed=delay,
+                )
+            if check_reviewer_key(entered, expected):
+                # Only this session's counter is cleared: a correct key elsewhere
+                # must not wipe the evidence of someone else's guessing.
+                record["failures"] = []
+                record["locked_until"] = 0.0
+                return KeyAttemptResult(
+                    ok=True,
+                    global_failures=len(self._global_failures),
+                    delayed=delay,
+                )
+            if not entered:
+                return KeyAttemptResult(
+                    ok=False,
+                    session_failures=len(record["failures"]),
+                    global_failures=len(self._global_failures),
+                )
+            record["failures"] = self._prune(record["failures"], now) + [now]
+            count = len(record["failures"])
             if count >= self.free_attempts:
-                cooldown = min(
+                record["locked_until"] = now + min(
                     self.max_cooldown,
                     self.base_cooldown * 2 ** (count - self.free_attempts),
                 )
-                self._locked_until = now + cooldown
-            return count
-
-    def reset(self) -> None:
-        with self._lock:
-            self._failures = []
-            self._locked_until = 0.0
+            self._global_failures = self._prune(self._global_failures, now) + [now]
+            return KeyAttemptResult(
+                ok=False,
+                session_failures=count,
+                global_failures=len(self._global_failures),
+                delayed=delay,
+            )
 
 
 REVIEWER_KEY_GUARD = KeyAttemptGuard()

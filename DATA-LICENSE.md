@@ -117,9 +117,13 @@ Citation text and BibTeX copied from the dataset card, checked 2026-10-12.
 `data/processed/examples.csv` is **not** verbatim TLA data. The TLA sentences were
 transformed by `scripts/import_tla_dataset.py` and `scripts/build_examples_from_real.py`
 as follows. (`build_examples_from_real.py` only produced the first, TLA-only seed of
-12,772 rows; every later source was added by its own `scripts/import_*.py --append`.
-Re-running it now requires `--output` and refuses to overwrite a corpus that holds
-other sources. Empty genre/period fields are written as `unknown`.)
+12,772 rows. The later TLA corpora, BBAW and Ramses were added by their own importer's
+`--append` (`import_tla_dataset.py`, `import_bbaw_egyptian.py`, `import_ramses.py`);
+`import_aes_relannis.py` has no `--append`; it writes the AES rows to a separate file
+(default `data/processed/aes_rows.csv`), from which they were added to the corpus.
+Re-running `build_examples_from_real.py` now requires `--output` and refuses to
+overwrite a corpus that holds other sources. Empty genre/period fields are written as
+`unknown`.)
 
 The downloads are pinned to the Hub commits the corpus was built from, because the
 `TLA_EARLIER_n` / `TLA_LATE_n` ids are positions in the dataset and would silently
@@ -129,6 +133,16 @@ shift if an upstream edit inserted a sentence: Earlier Egyptian
 `c02baaaddaf0e2b6b9d128874df23c655eedfe7c` (`scripts/download_all_sources.py`); BBAW
 `phiwi/bbaw_egyptian` `f9dde1200348af9b531e8fd09096bd9f9ddfeb34`; Helsinki
 TranslitModels `c612a91407bddf8d546beedaf46edd5190a67eef`.
+
+A pin does not show which snapshot a file already on disk holds, so
+`download_all_sources.py` also records each TLA dataset's expected *content* checksum
+(row count plus a sha256 over its rows in order; the parquet bytes themselves differ
+between pandas/pyarrow versions) and checks it for files that already exist as well as
+for fresh downloads. A mismatch stops the script and nothing is written. The recorded
+values were computed on 2026-10-25 from the local `data/raw` parquets and agreed with
+the pinned snapshots' `train.jsonl` in the Hugging Face cache: Earlier Egyptian
+12,773 rows, Late Egyptian 3,606, Demotic 13,383. Moving the TLA Earlier/Late ids to
+content-based `--stable-ids` (with `scripts/migrate_example_ids.py`) is still open.
 
 - Selected a subset of sentences and reshaped them into one row per sentence with the
   column schema in `app/data/schema.py`.
@@ -200,6 +214,13 @@ findspot in `grammar_notes`, and its AES text and sentence identifiers in `sourc
 - **Language stage left unclaimed** (`Unspecified (AES)`): AES does not state one per
   sentence and deriving it from a coarse era label would be a guess.
 - Sentences already present from a TLA corpus were dropped (5,001 of them).
+- **Repeats kept.** A sentence that recurs in several AES (or TLA) texts stays one row
+  per occurrence, while the Ramses importer collapses repeats to one row, so how often
+  a reading is attested still depends partly on its source (audit A36). This is
+  deferred on purpose: choosing one policy changes the attestation counts and the
+  ranking for every source at once, so it needs the owner's decision and a full
+  benchmark rerun, not an importer tweak. The AES importer now reports its repeats
+  and glyph twins so the size of the effect is visible.
 
 ## Fourth corpus: the BBAW 2018 snapshot (`phiwi/bbaw_egyptian`)
 
@@ -245,6 +266,13 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
   evidence.
 - **Metadata not claimed.** The export states no period, genre or language stage per
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
+- **Lacunae in the transliteration (partly fixed).** The BBAW and Ramses importers now
+  drop a row whose transliteration has a gap anywhere: `//` inside a word (`ꞽmn-m-//`)
+  or a bracket holding only gap filler (`[]`, `[...]`, `[---]`, `[…]`), text-only rows
+  included. The rows already in `examples.csv` were imported before that rule: 24 BBAW
+  and 133 Ramses rows still carry such a marker and can be offered as an attested
+  reading. They are removed in a separate, reviewed data clean-up, not by re-running
+  `--append` (which skips rows that are already present).
 
 ## Fifth corpus: the Ramses Transliteration Corpus (`source = Ramses`)
 
@@ -328,11 +356,15 @@ attestation of this corpus.
 - Transliterations converted from Manuel de Codage ASCII to the corpus's Unicode
   convention. The two files write the yod differently and were converted with their
   own rules: AES `y` → ꞽ (its `i`/`i̯` is the weak radical, which the importer now also
-  folds to ꞽ, as the corpus's reading key does; the committed lexicon file predates
-  that fold and is regenerated separately), Ramses `i`/`j` → ꞽ (its `y` is
+  folds to ꞽ, as the corpus's reading key does), Ramses `i`/`j` → ꞽ (its `y` is
   the double reed). Capitalised proper names lower-cased after conversion.
 - Counts for the same (group, reading) summed across the two files, with the
   contributing source(s) recorded per row.
+- **Committed file not yet regenerated (audit A38, deferred).** `helsinki_lexicon.csv`
+  predates the weak-radical fold above, so a few AES readings still appear as both
+  `…i` and `…ꞽ` with split counts. Regenerating it is deferred because the lexicon
+  weight was tuned on the current file (0.2; 0.39 broke the Urk. IV gate) and the
+  unseen-group accuracy has to be re-measured on the new one before it ships.
 
 ## Non-commercial corpora kept out of this repository
 
