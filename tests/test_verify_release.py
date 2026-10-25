@@ -33,6 +33,7 @@ BASELINE = {
     "mrr_floor": 0.7917,
     "expert_pastes_floor": "8/8",
     "expected_corpus_rows": 130472,
+    "expected_queries": 20,
 }
 
 
@@ -344,6 +345,8 @@ def test_ready_inputs_pass_and_the_eval_is_pointed_at_the_hashed_corpus(monkeypa
     assert code == 0, capsys.readouterr().out
     evals = [c for c in commands if "scripts/run_competitive_ambiguity_eval.py" in c]
     assert {_flag(c, "--examples") for c in evals} == {str(tmp_path / "examples.csv")}
+    pastes = [c for c in commands if "scripts/run_expert_paste_eval.py" in c]
+    assert len(pastes) == 1 and _flag(pastes[0], "--examples") == str(tmp_path / "examples.csv")
     assert "not pinned" in capsys.readouterr().out
 
 
@@ -368,13 +371,56 @@ def test_a_query_count_that_differs_from_the_benchmark_fails(monkeypatch, tmp_pa
     assert "query count (legacy pool) 20 != 21 rows in the benchmark" in capsys.readouterr().out
 
 
-def test_expected_queries_is_enforced_when_present(monkeypatch, tmp_path, capsys):
+def test_expected_queries_is_enforced(monkeypatch, tmp_path, capsys):
     """Hard rows deleted from the benchmark itself: file and eval agree (18), the
     baseline's pinned count (20) does not."""
-    baseline = dict(READY_BASELINE, expected_queries=20)
-    code, _ = _run_main(monkeypatch, tmp_path, baseline, benchmark_rows=18, queries=18)
+    code, _ = _run_main(monkeypatch, tmp_path, READY_BASELINE, benchmark_rows=18, queries=18)
     assert code == 1
     assert "benchmark has 18 queries, baseline expects 20" in capsys.readouterr().out
+
+
+def test_a_baseline_without_expected_queries_fails(monkeypatch, tmp_path, capsys):
+    """Astra review: an optional pin let a shortened benchmark pass, because the file
+    and the eval agreed with each other. The key is required."""
+    baseline = {k: v for k, v in READY_BASELINE.items() if k != "expected_queries"}
+    code, _ = _run_main(monkeypatch, tmp_path, baseline, benchmark_rows=18, queries=18)
+    assert code == 1
+    assert "expected_queries must be a positive integer" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "20", 20.0])
+def test_expected_queries_must_be_a_positive_integer(bad):
+    failures = vr.check_input_identity(
+        dict(BASELINE, expected_queries=bad), {}, None, 20
+    )
+    assert any("expected_queries must be a positive integer" in f for f in failures)
+
+
+def test_the_committed_baseline_catches_a_shortened_benchmark():
+    """Astra's probe, against the committed baseline file: 18 benchmark rows and 18
+    reported queries must fail, and the full 20 must not fail on the query count."""
+    baseline = __import__("json").loads(vr.DEFAULT_BASELINE.read_text(encoding="utf-8"))
+    assert baseline["expected_queries"] == 20
+    assert "expected_corpus_sha256" not in baseline  # set by the measurement step
+    run = {"legacy pool": {"corpus_rows": "130472", "queries": "18"}}
+    failures = vr.check_input_identity(baseline, run, "0" * 64, 18)
+    assert "benchmark has 18 queries, baseline expects 20" in failures
+    full = {"legacy pool": {"corpus_rows": "130472", "queries": "20"}}
+    assert vr.check_input_identity(baseline, full, "0" * 64, 20) == []
+
+
+def test_the_committed_benchmark_matches_the_committed_baseline():
+    baseline = __import__("json").loads(vr.DEFAULT_BASELINE.read_text(encoding="utf-8"))
+    rows = vr.count_benchmark_rows(vr.BENCHMARK_DIR / baseline["benchmark"])
+    assert rows == baseline["expected_queries"]
+
+
+def test_blank_lines_are_not_counted_as_benchmark_rows(tmp_path):
+    """Opus nit: pandas.read_csv skips blank lines, so the count must too, or a
+    blank line would read as a query-count mismatch."""
+    path = tmp_path / "b.csv"
+    path.write_text('query_id,query\nQ1,"a\nb"\n\nQ2,c\n\n', encoding="utf-8")
+    assert vr.count_benchmark_rows(path) == 2
 
 
 def test_a_pinned_corpus_sha256_is_enforced(monkeypatch, tmp_path, capsys):

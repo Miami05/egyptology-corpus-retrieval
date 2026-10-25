@@ -137,6 +137,7 @@ def test_end_to_end_on_synthetic_input(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code in (0, 1)
     assert "pass rule (A2.3" in out
+    assert "each stage's own eligible pool" in out
     written = pd.read_csv(results)
     assert len(written) == 4
     assert sorted(written["true_stage"]) == [E, E, L, L]

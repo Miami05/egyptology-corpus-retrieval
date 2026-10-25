@@ -263,6 +263,11 @@ def main(argv: "list[str] | None" = None) -> int:
     pool = held_out_pool(df, sample)
     print(f"seed {args.seed}, {args.per_stage} per stage; pool {len(pool):,} rows "
           f"({len(df) - len(pool):,} held out)")
+    # Review nit (Opus): A2.3 writes `rng.choice(len(eligible), ...)`; the only reading
+    # that yields per_stage rows of each stage is a draw from each stage's own pool.
+    # Printed so the interpretation is on record in the run's output.
+    print("sampling: rng.choice over each stage's own eligible pool "
+          "(Earlier first, then Late, one generator) - A2.3 read per stage")
 
     get_resources = make_resource_cache(pool, load_lexicon(args.lexicon))
     results = route_sample(sample, get_resources)

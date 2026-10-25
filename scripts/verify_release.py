@@ -42,8 +42,11 @@ floor if it was measured on the same inputs, so these fail the gate, not just pr
   measurement step, not by hand; while it is absent the hash is printed and the gate
   does not fail on it, unless `--require-corpus-sha256` is passed (fail closed);
 * `total_queries` from any competitive run differs from the number of rows in the
-  benchmark CSV, or from `expected_queries` when the baseline names one — dropping hard
-  rows from the benchmark must not quietly raise the averages.
+  benchmark CSV, or the benchmark CSV's row count differs from the baseline's
+  `expected_queries` (a baseline without that key is NOT READY) — dropping hard rows
+  from the benchmark must not quietly raise the averages, and a check that only
+  compared the file with itself would never see the deletion. Blank lines are not
+  counted as rows, matching `pandas.read_csv`, which the eval uses.
 
 Why the summary quotes top-3 *useful-family* accuracy and not exact match: the tool's
 job is to surface the right reading family with its evidence, not to reproduce an
@@ -215,10 +218,11 @@ def file_sha256(path: Path) -> str:
 
 
 def count_benchmark_rows(path: Path) -> int | None:
-    """Data rows in a benchmark CSV (quoted newlines respected); None if unreadable."""
+    """Data rows in a benchmark CSV (quoted newlines respected, blank lines skipped
+    as `pandas.read_csv` skips them); None if unreadable."""
     try:
         with path.open(encoding="utf-8", newline="") as handle:
-            return max(sum(1 for _ in csv.reader(handle)) - 1, 0)
+            return max(sum(1 for row in csv.reader(handle) if row) - 1, 0)
     except OSError:
         return None
 
@@ -238,10 +242,14 @@ def check_input_identity(
     if isinstance(expected_rows, bool) or not isinstance(expected_rows, int):
         failures.append(f"baseline expected_corpus_rows must be an integer, got {expected_rows!r}")
     expected_queries = baseline.get("expected_queries")
-    if expected_queries is not None and (
-        isinstance(expected_queries, bool) or not isinstance(expected_queries, int)
+    if (
+        isinstance(expected_queries, bool)
+        or not isinstance(expected_queries, int)
+        or expected_queries <= 0
     ):
-        failures.append(f"baseline expected_queries must be an integer, got {expected_queries!r}")
+        failures.append(
+            f"baseline expected_queries must be a positive integer, got {expected_queries!r}"
+        )
         expected_queries = None
     if benchmark_rows is None:
         failures.append("benchmark CSV could not be read to count its queries")
@@ -517,6 +525,8 @@ def main(argv: "list[str] | None" = None) -> int:
             [
                 python,
                 "scripts/run_expert_paste_eval.py",
+                "--examples",
+                str(CORPUS_PATH),
                 "--results",
                 str(tmp_dir / "expert_paste_results.csv"),
             ],
