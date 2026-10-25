@@ -502,7 +502,9 @@ def test_card_citations_check_the_reviewer_gate_on_every_call(tmp_path, monkeypa
         unkeyed = w.suggestion_card_html(1, suggestion, public, private, allowed)
         for tracer in ("urkGATE", "GateWitness", "Gate Edition", "by-nc-sa"):
             assert tracer not in unkeyed, tracer
-        assert NOT_RECORDED in unkeyed
+        # The row the reading came from is private: a denied render shows no
+        # evidence row at all rather than its glyphs or a stand-in row.
+        assert "suggestion-example" not in unkeyed
     finally:
         w.load_private_citations.clear()
 
@@ -526,3 +528,100 @@ def test_the_citation_cache_identity_names_the_metadata_files_and_exclusions(app
     assert "source_metadata_oraec_bbaw_links.csv:" in before
     monkeypatch.setenv("CORPUS_SOURCES_EXCLUDE", "BBAW")
     assert w.source_citations_revision() != before
+
+
+# ---------- review follow-up: denied renders, stale caches ----------
+
+
+PRIVATE_GLYPHS = "𓀀𓁷<g>GATEX9</g>"
+
+
+def _private_example(n: int = 0) -> SupportingExample:
+    return SupportingExample(
+        "StAndrews", f"STANDREWS_GATE{n}", f"S_urkGATE-001_GateWitnessTr_{n:04d}", PRIVATE_GLYPHS
+    )
+
+
+def test_a_denied_render_shows_no_private_glyphs_and_no_private_backed_card(app_module):
+    w = app_module
+    public = SupportingExample("Ramses", "RAMSES_1", "S_train_1", "𓂋𓈖")
+    mixed = ReadingSuggestion("ꞽw", 0.5, 2, ["a", "b"], "e", (public, _private_example(1)))
+    private_backed = ReadingSuggestion("zzqqwx nfr", 0.5, 1, ["x"], "e", (_private_example(),))
+    public_only = ReadingSuggestion("nfr", 0.4, 1, ["p"], "e", (public,))
+    # Even when a card is rendered directly, no private glyph reaches it...
+    card = w.suggestion_card_html(1, mixed, SourceCitations({}), None, False)
+    assert "GATEX9" not in card and "𓀀𓁷" not in card
+    assert "𓂋𓈖" in card and "more attestation" not in card
+    best_private = w.suggestion_card_html(1, private_backed, SourceCitations({}), None, False)
+    assert "GATEX9" not in best_private and "𓀀𓁷" not in best_private
+    # ...and a denied render drops every card a private row stands behind.
+    cards = [private_backed, mixed, public_only]
+    assert w.visible_suggestions(cards, False) == [public_only]
+    keyed = w.suggestion_card_html(1, mixed, SourceCitations({}), None, True)
+    assert "GATEX9" in keyed
+    assert w.visible_suggestions(cards, True) == cards
+
+
+def test_losing_private_access_any_way_drops_the_keyed_results(app_module, monkeypatch):
+    w = app_module
+    state = {}
+    monkeypatch.setattr(w, "private_rows_unlocked", lambda: True)
+    w.enforce_private_session_gate(state)
+    # A keyed search stores suggestions built on private rows...
+    state["whyptology_suggestions"] = [
+        ReadingSuggestion("zzqqwx nfr", 0.5, 1, ["x"], "e", (_private_example(),))
+    ]
+    state["whyptology_results"] = pd.DataFrame({"hieroglyphs": [PRIVATE_GLYPHS]})
+    w.enforce_private_session_gate(state)
+    assert "whyptology_suggestions" in state
+    # ...then access goes away without the Lock button (key removed from the host).
+    monkeypatch.setattr(w, "private_rows_unlocked", lambda: False)
+    w.enforce_private_session_gate(state)
+    assert "whyptology_suggestions" not in state and "whyptology_results" not in state
+    # An unkeyed session's own results are never touched.
+    state["whyptology_suggestions"] = ["public"]
+    w.enforce_private_session_gate(state)
+    assert state["whyptology_suggestions"] == ["public"]
+
+
+def test_a_changed_private_file_is_reread_not_served_from_the_old_cache(tmp_path, monkeypatch, app_module):
+    import os
+
+    w = app_module
+    directory = _standrews_dir(tmp_path)
+    monkeypatch.setattr(w, "PRIVATE_DATA_DIR", directory)
+    monkeypatch.setattr(w, "private_rows_unlocked", lambda: True)
+    w.load_private_corpus.clear()
+    w.load_private_citations.clear()
+    example = SupportingExample("StAndrews", "STANDREWS_GATE0", "S_urkGATE-001_GateWitnessTr_0000")
+    try:
+        _, private, _ = w.card_citation_indexes()
+        assert private[example.key].line == "line 7"
+        path = directory / "standrews.csv"
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+        frame.loc[0, "source_ref"] = frame.loc[0, "source_ref"].replace("line 7", "line 77")
+        frame.to_csv(path, index=False)
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+        _, private, _ = w.card_citation_indexes()
+        assert private[example.key].line == "line 77"
+        assert w.current_private_corpus()["source_ref"].str.contains("line 77").any()
+    finally:
+        w.load_private_corpus.clear()
+        w.load_private_citations.clear()
+
+
+def test_source_exclusions_reach_the_cached_public_frame(app_module, monkeypatch):
+    w = app_module
+    monkeypatch.delenv("CORPUS_SOURCES_EXCLUDE", raising=False)
+    assert "BBAW" in set(w.load_corpus_csv()["source"])
+    monkeypatch.setenv("CORPUS_SOURCES_EXCLUDE", "BBAW")
+    assert "BBAW" not in set(w.load_corpus_csv()["source"])
+    public, _, _ = w.card_citation_indexes()
+    assert not any(key[0] == "BBAW" for key in public.by_key)
+
+
+def test_the_word_table_shows_a_sign_code_as_a_plain_label_not_markup(app_module):
+    row = pd.Series({"transliteration_gold": "ꞽw nfr", "hieroglyphs": "𓇋𓅱 <g>Ff1</g>𓄤"})
+    signs = list(app_module.token_analysis(row)["Sign"])
+    assert signs == ["𓇋𓅱", "[code Ff1]𓄤"]
