@@ -240,10 +240,13 @@ class ReadingModel:
     # Demotic). This is an expected state, not a defect, so it is counted apart
     # from `sentences_skipped` (see app.data.loader.AlignmentReport.text_only_rows).
     sentences_text_only: int = 0
+    # (cache key, value) for `unreadable_emission`; see there.
+    _unreadable_cache: tuple[tuple[int, int], float] | None = field(default=None, repr=False)
 
     # ---------- training ----------
 
     def fit(self, df: pd.DataFrame) -> ReadingModel:
+        self._unreadable_cache = None
         for _, row in df.iterrows():
             signs = str(row.get("hieroglyphs_norm") or "").split()
             readings = str(row.get("transliteration_gold") or "").split()
@@ -275,6 +278,7 @@ class ReadingModel:
         """Make an external lexicon available for groups the corpus does not attest."""
         self.lexicon = dict(readings)
         self.lexicon_sources = dict(sources or {})
+        self._unreadable_cache = None
         return self
 
     # ---------- inspection ----------
@@ -303,6 +307,27 @@ class ReadingModel:
         vocabulary = max(len(counts), 1)
         numerator = counts.get(reading, 0) + SMOOTHING
         return log(numerator / (total + SMOOTHING * vocabulary))
+
+    @property
+    def unreadable_emission(self) -> float:
+        """Log-probability this model charges for a group it cannot read at all.
+
+        A group with no corpus, lexicon, composed or fallback reading used to cost
+        `_emission('', '')` = log(SMOOTHING / SMOOTHING) = 0, i.e. nothing, so a model
+        that had never seen a paste's signs out-scored one that attested them (A53).
+        The charge is the model's own smoothed mass for a reading of a typical group
+        it has never seen: SMOOTHING / (SMOOTHING + the mean number of attestations
+        per attested group, at least 1). It scales with the model, like `_emission`.
+        """
+        key = (self.sentences_seen, len(self.sign_reading))
+        if self._unreadable_cache is None or self._unreadable_cache[0] != key:
+            groups = len(self.sign_reading)
+            mean_total = (
+                sum(sum(c.values()) for c in self.sign_reading.values()) / groups if groups else 0.0
+            )
+            value = log(SMOOTHING / (SMOOTHING + max(mean_total, 1.0)))
+            self._unreadable_cache = (key, value)
+        return self._unreadable_cache[1]
 
     def _lexicon_emission(self, sign: str, reading: str) -> float:
         """Same estimate as `_emission`, over the external lexicon's counts."""
@@ -562,6 +587,10 @@ class ReadingModel:
                     emission = log(max(composed[position].get(reading, 0.0), 1e-12))
                 elif kind == "lexicon":
                     emission = self._lexicon_emission(source_group, reading)
+                elif kind == "none":
+                    # One option (''), so this constant cannot change the Viterbi
+                    # path or any prediction, only the returned score (A53).
+                    emission = self.unreadable_emission
                 else:
                     emission = self._emission(source_group, reading)
                 local = (

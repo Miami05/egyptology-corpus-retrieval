@@ -40,6 +40,7 @@ from app.services.segmentation import (
     glyph_stream,
     segment_paste,
 )
+from tests.test_audit_services import has_long_known_span
 
 PASTES_PATH = Path("data/benchmarks/expert_paste_queries.csv")
 STANDREWS_LINES = Path("data/raw/standrews/standrews_lines.csv")
@@ -257,6 +258,10 @@ def test_empty_no_cut_is_byte_identical_to_the_old_objective(segmenter):
         if len(gold) < 2:
             continue
         pasted = scramble(gold, rng)
+        # A22 deliberately changes rows with a known group longer than the window;
+        # this test pins the *old* objective, so it only covers the other rows.
+        if has_long_known_span(segmenter, pasted):
+            continue
         result = segmenter.segment(pasted)
         assert result.groups == reference_segment(segmenter, pasted)
         assert result.crossed_quadrats == []
