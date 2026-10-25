@@ -399,6 +399,7 @@ def build_stage_resources(
         stats.mdc_frequencies,
         stats.glyph_frequencies,
         reuse=pooled_index.tables if pooled_index is not None else None,
+        corpus_size=stats.n_rows,
     )
     index = SearchIndex(stats=stats, text_index=text_index, tables=tables)
 
