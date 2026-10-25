@@ -68,3 +68,81 @@ def test_no_private_rows_is_not_run_and_exits_non_zero(monkeypatch, tmp_path, ca
     out = capsys.readouterr().out
     assert f"private dir {empty.resolve()}: 0 private rows" in out
     assert "NOT RUN" in out
+
+
+# --- final eval 2026-10-25: the gate is one pinned row, and its exit code is the verdict ---
+
+def _urk_private(directory: Path, *, with_target: bool = True) -> None:
+    """Two sentences of Urk. IV 1 under the text marker: a different line, and (unless
+    `with_target` is False) the pinned row for Camilla's line. Synthetic readings."""
+    directory.mkdir(parents=True, exist_ok=True)
+    rows = [("S_urkIV-001_urkIV-001Tr_0039", "line 39", "xyz")]
+    if with_target:
+        rows.append((gate.GATE_SENTENCE_ID, "line 2", gate.GATE_READING))
+    frame = pd.DataFrame({column: [""] * len(rows) for column in REQUIRED_COLUMNS})
+    frame["source"] = "StAndrews"
+    frame["source_text_id"] = "synthetic"
+    frame["source_sentence_id"] = [sid for sid, _, _ in rows]
+    frame["source_ref"] = [f"urkIV-001 (urkIV-001Tr) {ref}" for _, ref, _ in rows]
+    frame["transliteration_gold"] = [reading for _, _, reading in rows]
+    frame["hieroglyphs"] = "𓀀"
+    frame.to_csv(directory / "standrews.csv", index=False)
+
+
+def _run_gate(monkeypatch, tmp_path, *, pastes_pass: bool, target_first: bool,
+              with_target: bool = True) -> int:
+    """`main()` with every heavy step stubbed: the pool is the private rows in a fixed
+    order, and every paste check passes or fails as asked."""
+    from types import SimpleNamespace
+
+    _public_stub(monkeypatch)
+    private = tmp_path / "priv"
+    _urk_private(private, with_target=with_target)
+    monkeypatch.setattr(gate, "load_lexicon", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gate, "build_stage_resources",
+        lambda *a, **k: SimpleNamespace(frame=None, index=None, segmenter=None,
+                                        reading_model=None),
+    )
+    monkeypatch.setattr(gate, "resolve_stage", lambda mode, row, get: (None, False, {}))
+    monkeypatch.setattr(
+        gate, "evaluate_row",
+        lambda row, *a, **k: {"benchmark_id": row["benchmark_id"], "passed": pastes_pass,
+                              "actual_reading": "", "expected_reading": ""},
+    )
+    monkeypatch.setattr(gate, "contains_hieroglyphs", lambda query: False)
+    monkeypatch.setattr(gate, "suggest_top_readings", lambda *a, **k: [])
+
+    def pool(*_args, **_kwargs):
+        frame = gate.load_private_examples(private)
+        return frame.iloc[::-1] if target_first else frame
+
+    monkeypatch.setattr(gate, "retrieve_top_k", pool)
+    return gate.main(["--private-dir", str(private)])
+
+
+def test_gate_passes_only_with_all_pastes_and_the_pinned_row_first(monkeypatch, tmp_path, capsys):
+    assert _run_gate(monkeypatch, tmp_path, pastes_pass=True, target_first=True) == 0
+    out = capsys.readouterr().out
+    assert "rank among St Andrews rows only: 1" in out
+    assert "GATE: PASS" in out
+
+
+def test_failed_paste_checks_exit_non_zero(monkeypatch, tmp_path, capsys):
+    assert _run_gate(monkeypatch, tmp_path, pastes_pass=False, target_first=True) == 1
+    assert "GATE: FAIL (paste checks 0/" in capsys.readouterr().out
+
+
+def test_another_line_of_the_same_text_is_not_the_gate_row(monkeypatch, tmp_path, capsys):
+    """Line 39 of Urk. IV 1 ranking first must not count as Camilla's line at rank 1."""
+    assert _run_gate(monkeypatch, tmp_path, pastes_pass=True, target_first=False) == 1
+    out = capsys.readouterr().out
+    assert "rank among St Andrews rows only: 2" in out
+    assert "GATE: FAIL (St Andrews rank 2, not 1)" in out
+
+
+def test_missing_pinned_row_fails_before_evaluation(monkeypatch, tmp_path, capsys):
+    assert _run_gate(
+        monkeypatch, tmp_path, pastes_pass=True, target_first=True, with_target=False
+    ) == 1
+    assert "GATE: FAIL (0 rows with source_sentence_id" in capsys.readouterr().out

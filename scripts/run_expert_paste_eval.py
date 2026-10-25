@@ -248,11 +248,12 @@ def main() -> None:
         choices=["none", "auto", "declared"],
         default="auto",
         help=(
-            "Language-stage handling (item A). 'none' (default) reproduces today's "
-            "pooled reading/segmentation/retrieval exactly. 'declared' reads each "
-            "row's own language_stage column. 'auto' resolves a hieroglyph paste by "
-            "per-stage reading likelihood and a text query by a first retrieval pass "
-            "over the pooled resources (app.services.retrieval.resolve_auto_stage)."
+            "Language-stage handling (item A). 'auto' (default) resolves a hieroglyph "
+            "paste by per-stage reading likelihood and a text query by a first "
+            "retrieval pass over the pooled resources "
+            "(app.services.retrieval.resolve_auto_stage). 'none' reproduces the "
+            "pooled reading/segmentation/retrieval. 'declared' reads each row's own "
+            "language_stage column."
         ),
     )
     args = parser.parse_args()
