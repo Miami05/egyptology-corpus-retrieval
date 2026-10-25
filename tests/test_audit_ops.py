@@ -11,6 +11,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import textwrap
 import threading
 import time
@@ -1058,7 +1059,15 @@ class DeployBox:
         _stub(self.stubs / "base-python", 'echo "base-python $*" >> "$CALL_LOG"\n'
               '[ -n "$FAIL_VENV" ] && exit 1\n'
               f'mkdir -p "$3/bin" && cp "{self.stubs}/venv-pip" "$3/bin/pip" && cp "{self.stubs}/venv-python" "$3/bin/python"\n')
+        # `show -p MainPID` (a read, not logged) names a fake process whose environment
+        # lives under $PROC_DIR; by default it was started with the file watcher off.
+        self.proc = tmp / "proc"
+        self.set_running_environment("STREAMLIT_SERVER_FILE_WATCHER_TYPE=none")
         _stub(self.stubs / "systemctl",
+              'if [ "$2" = show ]; then echo "${MAIN_PID-4242}"; exit 0; fi\n'
+              '[ "$2" = start ] && [ -n "$SIGNAL_ON_START" ] && [ ! -e "$CALL_LOG.signalled" ] '
+              '&& { touch "$CALL_LOG.signalled"; echo "systemctl $* (signalled)" >> "$CALL_LOG"; '
+              'kill -"$SIGNAL_ON_START" "$PPID"; sleep 0.2; exit 1; }\n'
               f'echo "systemctl $* (head $(git -C "{self.repo}" rev-parse --short HEAD), '
               f'venv $(readlink "{self.venv}" || echo original))" >> "$CALL_LOG"\n'
               'case "$2" in\n'
@@ -1067,6 +1076,10 @@ class DeployBox:
               'esac\nexit 0\n')
         _stub(self.stubs / "journalctl", 'echo "(journal)"\n')
         _stub(self.stubs / "curl", 'exit 0\n')
+
+    def set_running_environment(self, *lines: str, pid: str = "4242") -> None:
+        (self.proc / pid).mkdir(parents=True, exist_ok=True)
+        (self.proc / pid / "environ").write_bytes(b"".join(line.encode() + b"\0" for line in ("HOME=/x", *lines)))
 
     def write(self, rel: str, text: str) -> None:
         path = self.work / rel
@@ -1102,6 +1115,7 @@ class DeployBox:
             _GIT_ENV, PATH=f"{self.stubs}:{os.environ['PATH']}", DEPLOY_HOME=str(self.home),
             CALL_LOG=str(self.calls), HEALTH_TRIES="2", HEALTH_INTERVAL="0", GIT_TERMINAL_PROMPT="0",
             BASE_PYTHON=str(self.stubs / "base-python"), LOCK_PYTHON=sys.executable,
+            PROC_DIR=str(self.proc),
         )
         environment.update(extra)
         return environment
@@ -1679,7 +1693,9 @@ def test_the_notify_unit_reads_its_topic_from_the_env_file_and_no_topic_is_commi
     for path in UNIT_DIR.iterdir():
         for topic in re.findall(r"ntfy\.sh/(\S+)", path.read_text()):
             assert topic == "${NTFY_TOPIC}", f"{path.name} names a literal ntfy topic"
-    assert "NTFY_TOPIC=CHANGE_ME" in (UNIT_DIR / "egyptology.env.example").read_text()
+    # Final ops audit: a placeholder topic copied as-is is a public topic anyone can guess.
+    example = (UNIT_DIR / "egyptology.env.example").read_text()
+    assert re.findall(r"^NTFY_TOPIC=(.*)$", example, re.M) == [""]
 
 
 def test_every_script_a_unit_runs_from_bin_exists_in_the_repo():
@@ -1743,3 +1759,138 @@ def test_deployment_doc_states_the_reviewed_settings_and_monitors():
     assert "default `0`" in stop_row
     for name in ("egyptology-last-good-venv", "egyptology-last-good-units", "requirements.lock", "restic"):
         assert name in doc, name
+
+
+# ---------------------------------------------------------------------------
+# Final ops audit (2026-10-25)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("signal_name", ["HUP", "INT", "TERM"])
+def test_an_interrupted_deploy_rolls_back_and_leaves_no_marker(deploy_box, signal_name):
+    """ops-1: the only trap was `cleanup EXIT`, so a dropped ssh session mid-deploy left
+    the new tree on a stopped service, and the rerun recorded that as "last good"."""
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    deploy_box.publish("v2")
+    result = deploy_box.run(SIGNAL_ON_START=signal_name)
+    output = result.stdout + result.stderr
+    if signal_name == "HUP":
+        output += (deploy_box.home / "egyptology-deploy.interrupted.log").read_text()
+    assert result.returncode == 1, output
+    assert f"interrupted by SIG{signal_name}" in output and "ROLLED BACK" in output
+    assert deploy_box.head() == before
+    assert (deploy_box.repo / "app.py").read_text() == "v1\n"
+    (original,) = deploy_box.release_dirs()
+    assert deploy_box.live_venv() == str(deploy_box.releases / original)
+    assert _calls_matching(deploy_box, "systemctl --user start egyptology.service (head")
+    assert not (deploy_box.home / "egyptology-deploy.INPROGRESS").exists()
+    assert not (deploy_box.home / "egyptology-deploy.FAILED").exists()
+    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == before
+
+
+def test_a_deploy_killed_outright_blocks_the_next_run_and_keeps_the_records(deploy_box):
+    """ops-1: SIGKILL or power loss gives no trap a chance; the marker stops the rerun from
+    overwriting the records of what ran before the cut-off deploy."""
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    deploy_box.run(SIGNAL_ON_START="KILL")
+    marker = deploy_box.home / "egyptology-deploy.INPROGRESS"
+    assert marker.exists()
+    assert f"reset --hard {before}" in marker.read_text() and f"rm {marker}" in marker.read_text()
+    last_good = deploy_box.home / "egyptology-last-good"
+    records = last_good.read_text()
+
+    rerun = deploy_box.run()
+
+    assert rerun.returncode == 1, rerun.stdout + rerun.stderr
+    assert "cut off" in rerun.stderr
+    assert last_good.read_text() == records and records.strip() == before
+    assert deploy_box.log() == []
+    marker.unlink()
+    assert deploy_box.run().returncode == 0
+
+
+def test_a_successful_deploy_leaves_no_in_progress_marker(deploy_box):
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    assert deploy_box.run().returncode == 0
+    assert not (deploy_box.home / "egyptology-deploy.INPROGRESS").exists()
+
+
+def test_a_service_started_with_the_file_watcher_on_is_stopped_before_the_merge(deploy_box):
+    """Astra ops-3: STREAMLIT_SERVER_FILE_WATCHER_TYPE=none only protects a process started
+    with it; installing the unit does not change the running one."""
+    before = deploy_box.head()
+    deploy_box.set_running_environment("PRIVATE_DATA_DIR=/x")
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    result = deploy_box.run()
+    assert result.returncode == 0, result.stdout + result.stderr
+    stops = _calls_matching(deploy_box, "systemctl --user stop")
+    assert len(stops) == 2 and f"(head {before[:7]}," in stops[0], "the tree changed under a watching process"
+    assert "STREAMLIT_SERVER_FILE_WATCHER_TYPE=none" in result.stdout
+
+
+def test_an_unreadable_running_environment_also_stops_before_the_merge(deploy_box):
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    assert deploy_box.run(MAIN_PID="0").returncode == 0
+    stops = _calls_matching(deploy_box, "systemctl --user stop")
+    assert f"(head {before[:7]}," in stops[0]
+
+
+def test_inspect_forward_records_a_rejected_text_in_an_alert():
+    """Astra ops-4: the app's database-outage notice is an st.warning (an alert element),
+    and the app still draws result cards then."""
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"', reject_texts=("Read-only mode.",))
+    warm_streamlit.inspect_forward(_element_msg("alert", "**Read-only mode.** The project database ..."), state)
+    warm_streamlit.inspect_forward(_markdown_msg('<div class="suggestion-card">x</div>'), state)
+    assert state.expect_seen and state.rejected == ["Read-only mode."]
+    clean = warm_streamlit.RunState(reject_texts=("Read-only mode.",))
+    warm_streamlit.inspect_forward(_element_msg("alert", "Some other notice"), clean)
+    assert clean.rejected == []
+
+
+def test_the_deploy_check_rejects_the_apps_read_only_notice(deploy_box):
+    reject = re.search(r"^REJECT_TEXT='(.+)'$", DEPLOY_SCRIPT.read_text(), re.M).group(1)
+    app = (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
+    notice = app[app.index('if database_status != "ok":\n    st.warning('):]
+    assert reject in notice[:400]
+    assert deploy_box.run().returncode == 0
+    (check,) = _calls_matching(deploy_box, "warm_streamlit.py")
+    assert f"--reject-text {reject}" in check
+
+
+def test_the_docs_name_the_deploy_checks_real_arguments():
+    """Opus ops-3: the doc said `--expect-text suggestion-card`, the bare form that the same
+    document explains is not what the deploy uses."""
+    doc = (PROJECT_ROOT / "DEPLOYMENT.md").read_text()
+    assert "--expect-text suggestion-card" not in doc
+    assert "--expect-text 'class=\"suggestion-card\"'" in doc and "--reject-text 'Read-only mode.'" in doc
+    assert "egyptology-deploy.INPROGRESS" in doc and "tmux" in doc
+
+
+def test_the_restore_steps_use_the_database_the_service_really_opens():
+    """Astra ops-2: after the move out of the clone, the restore still replaced
+    ~/egyptology/egyptology.db, which the service no longer opens."""
+    doc = (PROJECT_ROOT / "DEPLOYMENT.md").read_text()
+    restore = doc[doc.index("### Restore"):doc.index("## Alerts")]
+    assert "~/egyptology/egyptology.db" not in restore
+    assert 'cp "$TMP/restored.db" "$LIVE_DB"' in restore and 'for DB in "$LIVE_DB"' in restore
+    script = restore[restore.index("LIVE_DB=$("):restore.index('echo "live database')]
+    for env_line, expected in (
+        ("DATABASE_URL=sqlite:////home/ledio/egyptology-data/egyptology.db\n", "/home/ledio/egyptology-data/egyptology.db"),
+        ("# DATABASE_URL=sqlite:////elsewhere.db\n", "HOME/egyptology/egyptology.db"),
+        ("DATABASE_URL=sqlite:///other.db\n", "HOME/egyptology/other.db"),
+    ):
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, "egyptology.env").write_text(env_line)
+            out = subprocess.run(
+                ["bash", "-c", script + 'printf %s "$LIVE_DB"'], env={**os.environ, "HOME": home},
+                capture_output=True, text=True, check=True,
+            ).stdout
+        assert out == expected.replace("HOME", home), (env_line, out)

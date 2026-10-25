@@ -36,12 +36,22 @@ git push origin main
 ssh ledio@vela-optiplex-3070 ./egyptology-deploy.sh
 ```
 
+Better inside `tmux` (`ssh -t ledio@vela-optiplex-3070 tmux new -A -s deploy`, then
+`./egyptology-deploy.sh`), so a dropped connection does not interrupt the deploy at all. If
+the session does drop, or Ctrl-C or a TERM reaches the script while step 4 is changing
+things, it rolls back exactly as on a failure (after a hang-up its output goes to
+`~/egyptology-deploy.interrupted.log`). A run killed without that chance (SIGKILL, power
+loss) leaves `~/egyptology-deploy.INPROGRESS` behind, holding the manual recovery steps;
+**no deploy runs while that file exists**, because a rerun would record the half-deployed
+state as "last good". Follow the steps in it, check the app, then delete it.
+
 In order, the script:
 
 1. refuses to run (touching nothing) if another deploy holds the lock on
    `~/.egyptology-deploy.lock` (a kernel `flock`, taken through the system `python3`: it is
    released when its run exits or dies, and the file is never deleted), then, under that
-   lock, if `~/egyptology-deploy.FAILED` exists (an earlier rollback failed; see Rollback), if
+   lock, if `~/egyptology-deploy.FAILED` exists (an earlier rollback failed; see Rollback) or
+   `~/egyptology-deploy.INPROGRESS` does (an earlier run was killed mid-deploy; above), if
    tracked files in the clone are modified, or if `origin` is not a fast-forward of what is
    running. It warns if `DATABASE_URL` is not under `~/egyptology-data`;
 2. records what is running now in `~/egyptology-last-good*` (above), before anything changes;
@@ -59,15 +69,22 @@ In order, the script:
    `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` stops the running process reloading what it has
    already loaded, audit A40, but a module or page it has not imported yet is read from the
    new tree if a visitor reaches it between the merge and the stop, corpus import included
-   — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first instead), refreshes
+   — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first instead). The setting only
+   protects a process **started** with it: unless the running service's own environment
+   (`/proc/<MainPID>/environ`) shows `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none`, the script
+   stops the service before the merge, whatever `STOP_BEFORE_UPDATE` says. Installing the
+   unit (`INSTALL_UNITS=1`) and `daemon-reload` do not change a process already running, so
+   the first deploy after the unit gains the line always has the longer downtime. Then it refreshes
    `/home/ledio/bin` from `scripts/`, installs the unit files **only when `INSTALL_UNITS=1`**
    (otherwise it says when they differ from `deploy/systemd/`), imports the corpus with the
    **new** venv if the commit changed `data/processed/examples.csv` (see below), then stops the
    service, points `~/venvs/egyptology` at the new venv, starts it, waits for
    `/_stcore/health`, and **runs a real paste**
-   (`warm_streamlit.py --expect-text 'class="suggestion-card"'`). "Healthy" only proves
-   Streamlit answers; a crashing app answers too. The deploy fails unless the paste rendered a
-   result card and no exception element;
+   (`warm_streamlit.py --expect-text 'class="suggestion-card"' --reject-text 'Read-only mode.'`).
+   "Healthy" only proves Streamlit answers; a crashing app answers too. The deploy fails
+   unless the paste rendered a result card, no exception element, and not the app's
+   "Read-only mode." notice (the database is unreachable: the app still searches and draws
+   cards then, but annotations can be neither loaded nor saved);
 5. on any failure in step 4 it rolls back automatically (below). On success it removes
    release venvs other than the serving one and the one it replaced, and refreshes
    `~/egyptology-deploy.sh` from the repo copy (the new copy takes effect on the next run).
@@ -414,7 +431,9 @@ does not fail the run: it draws the traceback as an `exception` element and then
 app that raised on every visit. `warm_streamlit.py` now fails (exit 1) when an exception
 element arrives (warning-style ones are ignored), and with `--expect-text TEXT` also when no
 markdown/html/text element contains that text; the deploy script uses
-`--expect-text suggestion-card`. `[client] showErrorDetails = "none"` in
+`--expect-text 'class="suggestion-card"'` (the attribute form; see "Deploying a change") and
+`--reject-text 'Read-only mode.'`, which fails the run when an alert or text element shows
+the app's database-unreachable notice. `[client] showErrorDetails = "none"` in
 `.streamlit/config.toml` hides tracebacks from the public (the browser shows a generic
 message; the real traceback is in `journalctl --user -u egyptology.service`, and in the
 terminal when developing locally), and the exception element is still sent, so detection
@@ -572,10 +591,16 @@ ssh ledio@vela-optiplex-3070
 TMP=$(mktemp -d)
 gzip -dc ~/egyptology-backups/egyptology-2026-09-05.db.gz > "$TMP/restored.db"
 
+# The file the service really opens: DATABASE_URL from the env file (set by the move
+# below), else the default inside the clone. A relative path is relative to the clone.
+LIVE_DB=$(sed -n 's|^DATABASE_URL=sqlite:///||p' ~/egyptology.env | tail -n 1)
+LIVE_DB=${LIVE_DB:-egyptology.db}
+case "$LIVE_DB" in /*) ;; *) LIVE_DB=~/egyptology/$LIVE_DB ;; esac
+echo "live database: $LIVE_DB"    # must match the 'database:' line in the service journal
+
 # Does it open, and does it hold what the live database holds?
-# (After the move below, the live file is ~/egyptology-data/egyptology.db.)
 cd ~/egyptology
-for DB in ~/egyptology/egyptology.db "$TMP/restored.db"; do
+for DB in "$LIVE_DB" "$TMP/restored.db"; do
   DATABASE_URL="sqlite:///$DB" ~/venvs/egyptology/bin/python - "$DB" <<'PY'
 import sys
 from sqlalchemy import func, select
@@ -590,8 +615,8 @@ done
 
 # To actually put it back: stop, keep the old file, move the copy in, start.
 systemctl --user stop egyptology.service
-mv ~/egyptology/egyptology.db ~/egyptology/egyptology.db.replaced-$(date +%F)
-cp "$TMP/restored.db" ~/egyptology/egyptology.db
+mv "$LIVE_DB" "$LIVE_DB.replaced-$(date +%F)"
+cp "$TMP/restored.db" "$LIVE_DB"
 systemctl --user start egyptology.service
 ```
 

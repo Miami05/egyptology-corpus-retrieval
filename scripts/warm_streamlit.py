@@ -34,14 +34,21 @@ any depth of block quotes and list items (see `markdown_html`). The same markup 
 text, quoted in a comment or a code span, or written inside a `<textarea>` is not a
 result.
 
+`--reject-text` (repeatable) is the opposite: the run fails if any alert (st.warning,
+st.error, st.info), markdown, html or text element contains that text. The deploy uses it
+for the app's "Read-only mode." notice: when the database cannot be reached the app still
+searches and draws result cards, so without it a deploy that broke annotation storage
+would pass (final ops audit).
+
 Usage (never blocks a service start for longer than --timeout):
 
     python scripts/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 300
     python scripts/warm_streamlit.py --query "..." --expect-text 'class="suggestion-card"'
 
 Exit codes: 0 the run finished and rendered no exception (and the expected text, if
-asked for, appeared); 1 anything else: timeout, closed connection, compile error,
-an exception element, or the expected text missing.
+asked for, appeared, and no rejected text did); 1 anything else: timeout, closed
+connection, compile error, an exception element, the expected text missing, or a
+rejected text shown.
 """
 
 from __future__ import annotations
@@ -546,6 +553,9 @@ class RunState:
     # (exception type or "<redacted>", first 200 chars of the message)
     exceptions: list[tuple[str, str]] = field(default_factory=list)
     expect_seen: bool = False
+    # Texts that fail the run wherever an alert/markdown/html/text element shows them.
+    reject_texts: tuple[str, ...] = ()
+    rejected: list[str] = field(default_factory=list)
 
 
 def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
@@ -562,6 +572,11 @@ def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
         return
     element = delta.new_element
     kind = element.WhichOneof("type")
+    if kind in ("alert", "markdown", "html", "text"):
+        body = getattr(element, kind).body
+        for text in state.reject_texts:
+            if text and text in body and text not in state.rejected:
+                state.rejected.append(text)
     if kind == "exception":
         if not element.exception.is_warning:
             state.exceptions.append(
@@ -605,7 +620,12 @@ async def _sleep(seconds: float) -> None:
 
 
 async def _run_once(
-    base: str, deadline: float, query: str, verbose: bool, expect_text: str = ""
+    base: str,
+    deadline: float,
+    query: str,
+    verbose: bool,
+    expect_text: str = "",
+    reject_texts: tuple[str, ...] = (),
 ) -> int:
     await _wait_for_health(base, deadline)
     started = time.monotonic()
@@ -620,7 +640,7 @@ async def _run_once(
         ping_timeout=20,
     )
 
-    state = RunState(expect_text=expect_text)
+    state = RunState(expect_text=expect_text, reject_texts=reject_texts)
     request = BackMsg()
     # `?q=` is the app's shareable-search link: `consume_query_param` fills the
     # box and arms the search, and the same script run performs it. So passing a
@@ -658,7 +678,7 @@ async def _run_once(
         if expect_text and status == ForwardMsg.FINISHED_EARLY_FOR_RERUN:
             # The app's own `?q=` handling may rerun the script; what the aborted
             # run drew does not count, so wait for the run that completes.
-            state = RunState(expect_text=expect_text)
+            state = RunState(expect_text=expect_text, reject_texts=reject_texts)
             continue
         conn.close()
         elapsed = time.monotonic() - started
@@ -670,6 +690,9 @@ async def _run_once(
                 f"{error_type}: {error_message} (details in the service journal)",
                 file=sys.stderr,
             )
+            return 1
+        if state.rejected:
+            print(f'warm-up: the run rendered "{state.rejected[0]}"', file=sys.stderr)
             return 1
         if expect_text and not state.expect_seen:
             print(f'warm-up: the run finished but never rendered "{expect_text}"', file=sys.stderr)
@@ -707,13 +730,29 @@ def main() -> int:
             "real start tag in an element that renders HTML"
         ),
     )
+    parser.add_argument(
+        "--reject-text",
+        action="append",
+        default=[],
+        help=(
+            "fail if an alert, markdown, html or text element shows this text "
+            "(repeatable); the deploy rejects the app's 'Read-only mode.' notice"
+        ),
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
     deadline = time.monotonic() + args.timeout
     try:
         return IOLoop.current().run_sync(
-            lambda: _run_once(args.url, deadline, args.query, args.verbose, args.expect_text)
+            lambda: _run_once(
+                args.url,
+                deadline,
+                args.query,
+                args.verbose,
+                args.expect_text,
+                tuple(args.reject_text),
+            )
         )
     except Exception as exc:
         # One line, not a traceback: this runs from a systemd ExecStartPost, where
