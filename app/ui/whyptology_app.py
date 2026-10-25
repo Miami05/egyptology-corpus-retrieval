@@ -5,6 +5,7 @@ import hashlib
 import html
 import logging
 import os
+import re
 from html import escape
 from pathlib import Path
 import sys
@@ -20,6 +21,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.config import settings
 from app.data.loader import load_examples_csv, load_private_examples
+from app.data.source_metadata import (
+    EMPTY_CITATIONS,
+    build_private_citations,
+    build_source_citations,
+    citation_for,
+    metadata_revision,
+)
 from app.data.query import parse_query
 from app.data.normalizer import (
     contains_hieroglyphs,
@@ -62,11 +70,23 @@ from app.services.stage import (
     build_stage_resources,
     normalize_stage,
 )
-from app.services.suggestions import aligned_annotation, suggest_top_readings
+from app.services.suggestions import (
+    SupportingExample,
+    aligned_annotation,
+    suggest_top_readings,
+)
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import IS_SQLITE, DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
 from app.ui import review_common
+from app.ui.source_display import (
+    ORAEC_CREDIT,
+    TRISMEGISTOS_CREDIT,
+    citation_html,
+    examples_html,
+    glyph_markup,
+    sign_reference,
+)
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
     attach_db_ids,
@@ -357,6 +377,11 @@ def corpus_credit_html(df: pd.DataFrame) -> str:
         # when its file shipped with this deployment.
         if len(load_sign_lexicon()):
             credit += " " + LEXICON_CREDIT
+        # The suggestion cards cite AES and BBAW rows from the ORAEC text metadata
+        # (CC BY-SA, Trismegistos ids CC0), so its credit goes wherever those rows
+        # can be shown. Not a CORPUS_CREDITS entry: that dict is keyed by `source`.
+        if {"AES", "BBAW"} & set(public_sources):
+            credit += " " + ORAEC_CREDIT + " " + TRISMEGISTOS_CREDIT
         parts.append(credit)
     parts.extend(_private_source_credit_html(source) for source in private_sources)
     return " ".join(parts)
@@ -453,9 +478,31 @@ def resegment_query(resources: StageResources, query: str):
     return segmentation, as_pasted, model, segmenter
 
 
-@st.cache_resource(show_spinner="Preparing the corpus…")
+def corpus_file_revision() -> str:
+    """Cache identity for the public corpus frame: the corpus file and the exclusions.
+
+    Without it `load_corpus_csv` had one slot per process, so changing
+    `CORPUS_SOURCES_EXCLUDE` (or the file) kept serving the old frame while the
+    citation index — which is keyed on the exclusions — rebuilt from it.
+    """
+    try:
+        stat = DATA_PATH.stat()
+        corpus = f"{stat.st_size}:{stat.st_mtime_ns}"
+    except OSError:
+        corpus = "missing"
+    return corpus + "|" + ",".join(sorted(excluded_corpus_sources()))
+
+
 def load_corpus_csv() -> pd.DataFrame:
+    """The corpus frame for the current file and source exclusions (see below)."""
+    return _load_corpus_csv(corpus_file_revision())
+
+
+@st.cache_resource(show_spinner="Preparing the corpus…")
+def _load_corpus_csv(revision: str) -> pd.DataFrame:
     """The corpus frame, independent of any database.
+
+    `revision` is the cache key only (`corpus_file_revision`).
 
     `cache_resource`, not `cache_data`: cache_data pickles a fresh 11 MB copy for
     every session that touches it (~28 MB resident each), which is the largest
@@ -516,7 +563,7 @@ def load_corpus_with_ids(_df: pd.DataFrame, signature: str) -> pd.DataFrame:
 
 
 @st.cache_resource(show_spinner=False)
-def load_private_corpus(directory: str | None = None) -> pd.DataFrame:
+def load_private_corpus(directory: str | None = None, revision: str = "") -> pd.DataFrame:
     """The private, non-redistributed corpus (the St Andrews texts), if present.
 
     Reads only `PRIVATE_DATA_DIR`; never touches `examples.csv`, the database, the
@@ -527,9 +574,27 @@ def load_private_corpus(directory: str | None = None) -> pd.DataFrame:
     one slot for whatever directory the module happened to point at, so a test (or a
     reconfigured process) that changed `PRIVATE_DATA_DIR` silently got the previous
     directory's rows back. Callers pass `str(PRIVATE_DATA_DIR)`; the default keeps
-    the old signature working.
+    the old signature working. `revision` (`private_corpus_revision`) is a cache key
+    too, so a replaced CSV is re-read instead of served from the old slot; callers
+    go through `current_private_corpus`.
     """
     return load_private_examples(Path(directory) if directory else PRIVATE_DATA_DIR)
+
+
+def private_corpus_revision(directory: str) -> str:
+    try:
+        return "|".join(
+            f"{p.name}:{p.stat().st_size}:{p.stat().st_mtime_ns}"
+            for p in sorted(Path(directory).glob("*.csv"))
+        )
+    except OSError:
+        return "unreadable"
+
+
+def current_private_corpus(directory: str | None = None) -> pd.DataFrame:
+    """The private corpus as the directory holds it now (cached per revision)."""
+    directory = directory or str(PRIVATE_DATA_DIR)
+    return load_private_corpus(directory, private_corpus_revision(directory))
 
 
 def private_data_dir_has_files() -> bool:
@@ -556,7 +621,7 @@ def _append_private_rows(df: pd.DataFrame) -> pd.DataFrame:
     database has no matching key for (see `attach_db_ids` / the "not linked to the
     project database" message in the annotation form).
     """
-    private_df = load_private_corpus(str(PRIVATE_DATA_DIR))
+    private_df = current_private_corpus()
     if private_df.empty:
         return df
     private_df = private_df.copy()
@@ -581,12 +646,14 @@ def load_public_corpus() -> tuple[pd.DataFrame, str]:
 
 
 @st.cache_resource(show_spinner="Preparing the reviewer corpus…")
-def load_keyed_corpus(_public: pd.DataFrame, signature: str, private_dir: str) -> pd.DataFrame:
+def load_keyed_corpus(
+    _public: pd.DataFrame, signature: str, private_dir: str, private_revision: str = ""
+) -> pd.DataFrame:
     """public + private, built lazily the first time a keyed session asks for it.
 
-    Cached on the *public* signature plus the private directory, so the concat runs
-    once per process rather than on every rerun of every reviewer session, and so a
-    changed private directory cannot be served from a stale slot.
+    Cached on the *public* signature plus the private directory and its file revision,
+    so the concat runs once per process rather than on every rerun of every reviewer
+    session, and a changed private directory or file cannot be served from a stale slot.
 
     The frame this returns has its own `corpus_signature` (it has extra rows), which
     is what makes every downstream `st.cache_resource` — `load_search_index`,
@@ -648,12 +715,37 @@ def clear_session_search_state() -> None:
         st.session_state.pop(key, None)
 
 
+PRIVATE_ACCESS_SEEN_KEY = "whyptology_private_access_seen"
+
+
+def enforce_private_session_gate(state=None) -> None:
+    """Drop this session's results the first render after it loses private access.
+
+    "Lock this session" clears them, but access can also end without that button —
+    the host's `REVIEWER_KEY` removed or emptied, or the session check erroring —
+    and the workspace paints stored suggestions and results straight from session
+    state, so St Andrews glyphs and readings would outlive the key (Astra review,
+    2026-10-25). Called once per run, before anything reads those results: it
+    remembers whether the previous run was keyed and clears on the keyed → unkeyed
+    edge. An unkeyed session's own results are never touched.
+    """
+    state = st.session_state if state is None else state
+    unlocked = private_rows_unlocked()
+    if state.get(PRIVATE_ACCESS_SEEN_KEY, False) and not unlocked:
+        for key in SESSION_SEARCH_STATE_KEYS:
+            state.pop(key, None)
+    state[PRIVATE_ACCESS_SEEN_KEY] = unlocked
+
+
 def session_corpus(public: pd.DataFrame) -> pd.DataFrame:
     """The frame this session searches: public, or public + private if it is keyed."""
     if not private_rows_unlocked():
         return public
     try:
-        return load_keyed_corpus(public, corpus_signature(public), str(PRIVATE_DATA_DIR))
+        directory = str(PRIVATE_DATA_DIR)
+        return load_keyed_corpus(
+            public, corpus_signature(public), directory, private_corpus_revision(directory)
+        )
     except Exception:
         # A malformed private CSV must cost the reviewer the private rows, never the
         # app — and must never fall through to serving them.
@@ -671,6 +763,60 @@ def load_corpus() -> tuple[pd.DataFrame, str]:
     """
     public, status = load_public_corpus()
     return session_corpus(public), status
+
+
+def source_citations_revision() -> str:
+    """Cache identity for the public citation index.
+
+    The corpus file, the metadata files and the deployment's source exclusions
+    together decide what the index holds; `corpus_signature` alone does not see a
+    citation-only change (it hashes glyphs and readings).
+    """
+    return corpus_file_revision() + "|" + metadata_revision()
+
+
+@st.cache_resource(show_spinner=False)
+def load_source_citations(_public: pd.DataFrame, revision: str):
+    """Row identity → ORAEC text citation, built once per process from public rows.
+
+    Never merged into the corpus frame: that would change `corpus_signature` and
+    carry the metadata into the database step. `_public` is the public frame only.
+    """
+    try:
+        return build_source_citations(_public)
+    except Exception:
+        # Broken metadata costs the citations, never the page.
+        logging.getLogger(__name__).exception("source citations: failed to load")
+        return EMPTY_CITATIONS
+
+
+@st.cache_resource(show_spinner=False)
+def load_private_citations(private_dir: str, revision: str):
+    """The St Andrews citations, in their own cache slot, keyed by directory and revision.
+
+    Holds no public data and is never read unless the session's reviewer check
+    passes (see `card_citation_indexes`); the check itself is never cached.
+    """
+    return build_private_citations(load_private_corpus(private_dir, revision))
+
+
+def card_citation_indexes():
+    """(public citations, private citations or None, private_allowed) for this render.
+
+    The reviewer check runs on every call, outside any cache, so a locked session
+    stops getting private citations on its next rerun.
+    """
+    public = load_source_citations(load_corpus_csv(), source_citations_revision())
+    if not private_rows_unlocked():
+        return public, None, False
+    try:
+        directory = str(PRIVATE_DATA_DIR)
+        return public, load_private_citations(directory, private_corpus_revision(directory)), True
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "private citations failed to load; citing public rows only"
+        )
+        return public, None, False
 
 
 @st.cache_resource(show_spinner=False)
@@ -1082,6 +1228,15 @@ def render_home(df: pd.DataFrame) -> None:
             )
 
 
+_SIGN_CODE_MARKUP = re.compile(r"<g>(.*?)</g>")
+
+
+def plain_sign_label(glyphs: str) -> str:
+    """`<g>X</g>` as `[code X]`: the word table is an `st.dataframe` canvas, which can
+    neither draw the cards' sign-code box nor should show raw markup."""
+    return _SIGN_CODE_MARKUP.sub(lambda m: f"[code {m.group(1)}]", glyphs)
+
+
 def token_analysis(row: pd.Series) -> pd.DataFrame:
     """Word-by-word table from the TLA token-aligned fields of one corpus row.
 
@@ -1120,7 +1275,7 @@ def token_analysis(row: pd.Series) -> pd.DataFrame:
         lemma_id, _, lemma_text = lemma.partition("|")
         rows.append(
             {
-                "Sign": glyphs[index] if glyphs else "",
+                "Sign": plain_sign_label(glyphs[index]) if glyphs else "",
                 "Reading": reading,
                 "Lemma": lemma_text or lemma_id,
                 "Lemma ID": lemma_id if lemma_text else "",
@@ -1190,31 +1345,113 @@ SUGGESTION_RANKING_CAPTION = (
 )
 
 
-def render_suggestion_card(rank: int, suggestion) -> None:
-    """One ranked reading candidate with its confidence and corpus evidence."""
-    score = float(suggestion.confidence_score)
-    sources = "".join(
-        f"<li>{escape(str(label))}</li>" for label in suggestion.supporting_sources
+# Sources whose rows are licensed to this project alone (CC BY-NC-SA): served only
+# to a keyed session, never shown — glyphs included — on a render that fails the check.
+PRIVATE_CORPUS_SOURCES = frozenset({"StAndrews"})
+
+
+def is_private_example(example) -> bool:
+    return str(getattr(example, "source", "")).strip() in PRIVATE_CORPUS_SOURCES
+
+
+def suggestion_uses_private_rows(suggestion) -> bool:
+    return any(
+        is_private_example(e) for e in getattr(suggestion, "supporting_examples", ()) or ()
     )
+
+
+def visible_suggestions(suggestions, private_allowed: bool) -> list:
+    """The suggestions this render may show: no private-backed card without the key.
+
+    Belt and braces behind `enforce_private_session_gate`: a reading with any private
+    row behind it (its count and score included) is private-derived, so a denied
+    render drops the whole card.
+    """
+    suggestions = list(suggestions or ())
+    if private_allowed:
+        return suggestions
+    return [s for s in suggestions if not suggestion_uses_private_rows(s)]
+
+
+def suggestion_card_examples_html(suggestion, citations=None, private_citations=None,
+                                  private_allowed: bool = False) -> str:
+    """The card's supporting rows: glyphs and a real source for each.
+
+    `private_allowed` is the caller's reviewer check, made fresh for this render;
+    `private_citations` is only ever passed in by a keyed session. A render that
+    fails the check shows no private row at all — not its citation and not its
+    glyphs; if the row the reading came from is private, no evidence row is shown
+    rather than a different one standing in for it.
+    """
+    examples = tuple(getattr(suggestion, "supporting_examples", ()) or ())
+    if not private_allowed:
+        if examples and is_private_example(examples[0]):
+            return ""
+        examples = tuple(e for e in examples if not is_private_example(e))
+    resolved = [
+        citation_for(
+            example,
+            citations if citations is not None else EMPTY_CITATIONS,
+            private_citations,
+            private_allowed,
+        )
+        for example in examples
+    ]
+    return examples_html(examples, resolved, sign_reference())
+
+
+def suggestion_card_html(
+    rank: int,
+    suggestion,
+    citations=None,
+    private_citations=None,
+    private_allowed: bool = False,
+) -> str:
+    """One ranked reading candidate with its confidence and corpus evidence.
+
+    Below the evidence line: the exact row the reading came from, with its own
+    hieroglyphs (or "no hieroglyphs recorded in this source") and its source as a
+    citation, then the other supporting rows folded away. The internal
+    `source/text_id/sentence_id` labels are no longer shown: they are identifiers,
+    not references.
+
+    No line of the result is blank: a blank line ends an `st.markdown` HTML block and
+    Streamlit shows everything after it as text.
+    """
+    score = float(suggestion.confidence_score)
+    examples = suggestion_card_examples_html(
+        suggestion, citations, private_citations, private_allowed
+    )
+    card = dedent(
+        f"""
+        <article class="suggestion-card">
+          <div class="suggestion-head">
+            <span class="suggestion-rank">{rank}</span>
+            <span class="suggestion-reading">{escape(suggestion.candidate_transliteration)}</span>
+          </div>
+          <div class="confidence">
+            <div class="confidence-track"><div class="confidence-fill" style="width:{min(score * 100, 100):.0f}%"></div></div>
+            <div class="confidence-score">{score:.3f}</div>
+          </div>
+          <div class="suggestion-evidence">{escape(suggestion.evidence_summary)}</div>
+          <div class="suggestion-support">Supported by {suggestion.supporting_example_count}
+            corpus example{"s" if suggestion.supporting_example_count != 1 else ""}</div>
+          {examples}
+        </article>
+        """
+    ).strip()
+    return "\n".join(line for line in card.splitlines() if line.strip())
+
+
+def render_suggestion_card(
+    rank: int,
+    suggestion,
+    citations=None,
+    private_citations=None,
+    private_allowed: bool = False,
+) -> None:
     st.markdown(
-        dedent(
-            f"""
-            <article class="suggestion-card">
-              <div class="suggestion-head">
-                <span class="suggestion-rank">{rank}</span>
-                <span class="suggestion-reading">{escape(suggestion.candidate_transliteration)}</span>
-              </div>
-              <div class="confidence">
-                <div class="confidence-track"><div class="confidence-fill" style="width:{min(score * 100, 100):.0f}%"></div></div>
-                <div class="confidence-score">{score:.3f}</div>
-              </div>
-              <div class="suggestion-evidence">{escape(suggestion.evidence_summary)}</div>
-              <div class="suggestion-support">Supported by {suggestion.supporting_example_count}
-                corpus example{"s" if suggestion.supporting_example_count != 1 else ""}</div>
-              <ul class="suggestion-sources">{sources}</ul>
-            </article>
-            """
-        ).strip(),
+        suggestion_card_html(rank, suggestion, citations, private_citations, private_allowed),
         unsafe_allow_html=True,
     )
 
@@ -1335,9 +1572,7 @@ def render_reviewer_gate() -> None:
         return
     if st.session_state.get(REVIEWER_OK_KEY, False):
         with st.expander("Reviewer access — unlocked"):
-            if private_rows_unlocked() and not load_private_corpus(
-                str(PRIVATE_DATA_DIR)
-            ).empty:
+            if private_rows_unlocked() and not current_private_corpus().empty:
                 st.caption(
                     "This session also sees the private, non-commercial corpus rows. "
                     "They are licensed to this project and must not be redistributed."
@@ -2541,8 +2776,12 @@ def render_workspace(df: pd.DataFrame) -> None:
             # The bar is each reading's own match strength, applied after ranking
             # (A21), so it need not fall down the list; say so.
             st.caption(SUGGESTION_RANKING_CAPTION)
-            for rank, suggestion in enumerate(suggestions, start=1):
-                render_suggestion_card(rank, suggestion)
+            citations, private_citations, private_allowed = card_citation_indexes()
+            shown = visible_suggestions(suggestions, private_allowed)
+            for rank, suggestion in enumerate(shown, start=1):
+                render_suggestion_card(
+                    rank, suggestion, citations, private_citations, private_allowed
+                )
         elif results is not None:
             # "Nothing found" has two very different meanings and the user cannot
             # tell them apart from a blank panel: the reading may be unattested, or
@@ -2636,7 +2875,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     if value(row, "hieroglyphs") != "—":
                         st.markdown(
                             '<div class="hieroglyph-panel"><div class="glyph-line">'
-                            f'<span class="glyphs">{escape(value(row, "hieroglyphs"))}</span>'
+                            f'<span class="glyphs">{glyph_markup(value(row, "hieroglyphs"), sign_reference())}</span>'
                             "</div></div>",
                             unsafe_allow_html=True,
                         )
@@ -2701,7 +2940,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 if glyphs and glyphs != "—":
                     st.markdown(
                         '<div class="hieroglyph-panel"><div class="glyph-line">'
-                        f'<span class="line-no">1</span><span class="glyphs">{escape(glyphs)}</span>'
+                        f'<span class="line-no">1</span><span class="glyphs">{glyph_markup(glyphs, sign_reference())}</span>'
                         "</div></div>",
                         unsafe_allow_html=True,
                     )
@@ -2734,7 +2973,6 @@ def render_workspace(df: pd.DataFrame) -> None:
                     ("Sentence ID", "source_sentence_id"),
                     ("Genre", "genre"),
                     ("Period", "period"),
-                    ("Reference", "source_ref"),
                 ]:
                     if field is None:
                         # AES only: the upstream name behind the hash id (A32).
@@ -2745,6 +2983,22 @@ def render_workspace(df: pd.DataFrame) -> None:
                         shown = value(top_row, field)
                     st.caption(caption)
                     st.markdown(f"**{md_escape(shown)}**")
+                # The same citation the suggestion cards show — never the row's
+                # internal `source_ref` (`parquet#row=`, `train line N`).
+                citations, private_citations, private_allowed = card_citation_indexes()
+                st.caption("Reference")
+                st.markdown(
+                    citation_html(
+                        citation_for(
+                            SupportingExample.from_row(top_row),
+                            citations,
+                            private_citations,
+                            private_allowed,
+                        ),
+                        value(top_row, "source", ""),
+                    ),
+                    unsafe_allow_html=True,
+                )
 
 
 def html_table(
@@ -3406,7 +3660,7 @@ def render_similar_parallel_card(
     sentence_label = escape(value(row, "source_sentence_id", "—"))
     stage_label = escape(evidence_stage_label(row.get("language_stage")))
     glyph_block = (
-        f'<div class="glyphs parallel-glyphs">{escape(glyphs)}</div>'
+        f'<div class="glyphs parallel-glyphs">{glyph_markup(glyphs, sign_reference())}</div>'
         if glyphs and glyphs != "—"
         else ""
     )
@@ -3690,6 +3944,9 @@ def render_reviews() -> None:
 inject_theme()
 # One notice per page per run, not one per annotation form.
 st.session_state["_storage_warning_shown"] = set()
+# Before anything reads stored results: a session that has just lost private access
+# (by any route, not only the Lock button) must not keep its keyed results.
+enforce_private_session_gate()
 public_corpus, database_status = load_public_corpus()
 # The frame THIS session searches: the public one, unless it has presented the
 # reviewer key, in which case it is public + the private CC BY-NC-SA rows and carries
