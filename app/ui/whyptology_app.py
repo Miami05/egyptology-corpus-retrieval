@@ -20,6 +20,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.config import settings
 from app.data.loader import load_examples_csv, load_private_examples
+from app.data.source_metadata import (
+    EMPTY_CITATIONS,
+    build_private_citations,
+    build_source_citations,
+    citation_for,
+    metadata_revision,
+)
 from app.data.query import parse_query
 from app.data.normalizer import (
     contains_hieroglyphs,
@@ -62,11 +69,23 @@ from app.services.stage import (
     build_stage_resources,
     normalize_stage,
 )
-from app.services.suggestions import aligned_annotation, suggest_top_readings
+from app.services.suggestions import (
+    SupportingExample,
+    aligned_annotation,
+    suggest_top_readings,
+)
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import IS_SQLITE, DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
 from app.ui import review_common
+from app.ui.source_display import (
+    ORAEC_CREDIT,
+    TRISMEGISTOS_CREDIT,
+    citation_html,
+    examples_html,
+    glyph_markup,
+    sign_reference,
+)
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
     attach_db_ids,
@@ -357,6 +376,11 @@ def corpus_credit_html(df: pd.DataFrame) -> str:
         # when its file shipped with this deployment.
         if len(load_sign_lexicon()):
             credit += " " + LEXICON_CREDIT
+        # The suggestion cards cite AES and BBAW rows from the ORAEC text metadata
+        # (CC BY-SA, Trismegistos ids CC0), so its credit goes wherever those rows
+        # can be shown. Not a CORPUS_CREDITS entry: that dict is keyed by `source`.
+        if {"AES", "BBAW"} & set(public_sources):
+            credit += " " + ORAEC_CREDIT + " " + TRISMEGISTOS_CREDIT
         parts.append(credit)
     parts.extend(_private_source_credit_html(source) for source in private_sources)
     return " ".join(parts)
@@ -671,6 +695,77 @@ def load_corpus() -> tuple[pd.DataFrame, str]:
     """
     public, status = load_public_corpus()
     return session_corpus(public), status
+
+
+def source_citations_revision() -> str:
+    """Cache identity for the public citation index.
+
+    The corpus file, the metadata files and the deployment's source exclusions
+    together decide what the index holds; `corpus_signature` alone does not see a
+    citation-only change (it hashes glyphs and readings).
+    """
+    try:
+        stat = DATA_PATH.stat()
+        corpus = f"{stat.st_size}:{stat.st_mtime_ns}"
+    except OSError:
+        corpus = "missing"
+    return "|".join(
+        [corpus, metadata_revision(), ",".join(sorted(excluded_corpus_sources()))]
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def load_source_citations(_public: pd.DataFrame, revision: str):
+    """Row identity → ORAEC text citation, built once per process from public rows.
+
+    Never merged into the corpus frame: that would change `corpus_signature` and
+    carry the metadata into the database step. `_public` is the public frame only.
+    """
+    try:
+        return build_source_citations(_public)
+    except Exception:
+        # Broken metadata costs the citations, never the page.
+        logging.getLogger(__name__).exception("source citations: failed to load")
+        return EMPTY_CITATIONS
+
+
+def private_corpus_revision(directory: str) -> str:
+    try:
+        return "|".join(
+            f"{p.name}:{p.stat().st_size}:{p.stat().st_mtime_ns}"
+            for p in sorted(Path(directory).glob("*.csv"))
+        )
+    except OSError:
+        return "unreadable"
+
+
+@st.cache_resource(show_spinner=False)
+def load_private_citations(private_dir: str, revision: str):
+    """The St Andrews citations, in their own cache slot, keyed by directory and revision.
+
+    Holds no public data and is never read unless the session's reviewer check
+    passes (see `card_citation_indexes`); the check itself is never cached.
+    """
+    return build_private_citations(load_private_corpus(private_dir))
+
+
+def card_citation_indexes():
+    """(public citations, private citations or None, private_allowed) for this render.
+
+    The reviewer check runs on every call, outside any cache, so a locked session
+    stops getting private citations on its next rerun.
+    """
+    public = load_source_citations(load_corpus_csv(), source_citations_revision())
+    if not private_rows_unlocked():
+        return public, None, False
+    try:
+        directory = str(PRIVATE_DATA_DIR)
+        return public, load_private_citations(directory, private_corpus_revision(directory)), True
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "private citations failed to load; citing public rows only"
+        )
+        return public, None, False
 
 
 @st.cache_resource(show_spinner=False)
@@ -1190,31 +1285,78 @@ SUGGESTION_RANKING_CAPTION = (
 )
 
 
-def render_suggestion_card(rank: int, suggestion) -> None:
-    """One ranked reading candidate with its confidence and corpus evidence."""
+def suggestion_card_examples_html(suggestion, citations=None, private_citations=None,
+                                  private_allowed: bool = False) -> str:
+    """The card's supporting rows: glyphs and a real source for each.
+
+    `private_allowed` is the caller's reviewer check, made fresh for this render;
+    `private_citations` is only ever passed in by a keyed session.
+    """
+    examples = tuple(getattr(suggestion, "supporting_examples", ()) or ())
+    resolved = [
+        citation_for(
+            example,
+            citations if citations is not None else EMPTY_CITATIONS,
+            private_citations,
+            private_allowed,
+        )
+        for example in examples
+    ]
+    return examples_html(examples, resolved, sign_reference())
+
+
+def suggestion_card_html(
+    rank: int,
+    suggestion,
+    citations=None,
+    private_citations=None,
+    private_allowed: bool = False,
+) -> str:
+    """One ranked reading candidate with its confidence and corpus evidence.
+
+    Below the evidence line: the exact row the reading came from, with its own
+    hieroglyphs (or "no hieroglyphs recorded in this source") and its source as a
+    citation, then the other supporting rows folded away. The internal
+    `source/text_id/sentence_id` labels are no longer shown: they are identifiers,
+    not references.
+
+    No line of the result is blank: a blank line ends an `st.markdown` HTML block and
+    Streamlit shows everything after it as text.
+    """
     score = float(suggestion.confidence_score)
-    sources = "".join(
-        f"<li>{escape(str(label))}</li>" for label in suggestion.supporting_sources
+    examples = suggestion_card_examples_html(
+        suggestion, citations, private_citations, private_allowed
     )
+    card = dedent(
+        f"""
+        <article class="suggestion-card">
+          <div class="suggestion-head">
+            <span class="suggestion-rank">{rank}</span>
+            <span class="suggestion-reading">{escape(suggestion.candidate_transliteration)}</span>
+          </div>
+          <div class="confidence">
+            <div class="confidence-track"><div class="confidence-fill" style="width:{min(score * 100, 100):.0f}%"></div></div>
+            <div class="confidence-score">{score:.3f}</div>
+          </div>
+          <div class="suggestion-evidence">{escape(suggestion.evidence_summary)}</div>
+          <div class="suggestion-support">Supported by {suggestion.supporting_example_count}
+            corpus example{"s" if suggestion.supporting_example_count != 1 else ""}</div>
+          {examples}
+        </article>
+        """
+    ).strip()
+    return "\n".join(line for line in card.splitlines() if line.strip())
+
+
+def render_suggestion_card(
+    rank: int,
+    suggestion,
+    citations=None,
+    private_citations=None,
+    private_allowed: bool = False,
+) -> None:
     st.markdown(
-        dedent(
-            f"""
-            <article class="suggestion-card">
-              <div class="suggestion-head">
-                <span class="suggestion-rank">{rank}</span>
-                <span class="suggestion-reading">{escape(suggestion.candidate_transliteration)}</span>
-              </div>
-              <div class="confidence">
-                <div class="confidence-track"><div class="confidence-fill" style="width:{min(score * 100, 100):.0f}%"></div></div>
-                <div class="confidence-score">{score:.3f}</div>
-              </div>
-              <div class="suggestion-evidence">{escape(suggestion.evidence_summary)}</div>
-              <div class="suggestion-support">Supported by {suggestion.supporting_example_count}
-                corpus example{"s" if suggestion.supporting_example_count != 1 else ""}</div>
-              <ul class="suggestion-sources">{sources}</ul>
-            </article>
-            """
-        ).strip(),
+        suggestion_card_html(rank, suggestion, citations, private_citations, private_allowed),
         unsafe_allow_html=True,
     )
 
@@ -2541,8 +2683,11 @@ def render_workspace(df: pd.DataFrame) -> None:
             # The bar is each reading's own match strength, applied after ranking
             # (A21), so it need not fall down the list; say so.
             st.caption(SUGGESTION_RANKING_CAPTION)
+            citations, private_citations, private_allowed = card_citation_indexes()
             for rank, suggestion in enumerate(suggestions, start=1):
-                render_suggestion_card(rank, suggestion)
+                render_suggestion_card(
+                    rank, suggestion, citations, private_citations, private_allowed
+                )
         elif results is not None:
             # "Nothing found" has two very different meanings and the user cannot
             # tell them apart from a blank panel: the reading may be unattested, or
@@ -2636,7 +2781,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     if value(row, "hieroglyphs") != "—":
                         st.markdown(
                             '<div class="hieroglyph-panel"><div class="glyph-line">'
-                            f'<span class="glyphs">{escape(value(row, "hieroglyphs"))}</span>'
+                            f'<span class="glyphs">{glyph_markup(value(row, "hieroglyphs"), sign_reference())}</span>'
                             "</div></div>",
                             unsafe_allow_html=True,
                         )
@@ -2701,7 +2846,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 if glyphs and glyphs != "—":
                     st.markdown(
                         '<div class="hieroglyph-panel"><div class="glyph-line">'
-                        f'<span class="line-no">1</span><span class="glyphs">{escape(glyphs)}</span>'
+                        f'<span class="line-no">1</span><span class="glyphs">{glyph_markup(glyphs, sign_reference())}</span>'
                         "</div></div>",
                         unsafe_allow_html=True,
                     )
@@ -2734,7 +2879,6 @@ def render_workspace(df: pd.DataFrame) -> None:
                     ("Sentence ID", "source_sentence_id"),
                     ("Genre", "genre"),
                     ("Period", "period"),
-                    ("Reference", "source_ref"),
                 ]:
                     if field is None:
                         # AES only: the upstream name behind the hash id (A32).
@@ -2745,6 +2889,22 @@ def render_workspace(df: pd.DataFrame) -> None:
                         shown = value(top_row, field)
                     st.caption(caption)
                     st.markdown(f"**{md_escape(shown)}**")
+                # The same citation the suggestion cards show — never the row's
+                # internal `source_ref` (`parquet#row=`, `train line N`).
+                citations, private_citations, private_allowed = card_citation_indexes()
+                st.caption("Reference")
+                st.markdown(
+                    citation_html(
+                        citation_for(
+                            SupportingExample.from_row(top_row),
+                            citations,
+                            private_citations,
+                            private_allowed,
+                        ),
+                        value(top_row, "source", ""),
+                    ),
+                    unsafe_allow_html=True,
+                )
 
 
 def html_table(
@@ -3406,7 +3566,7 @@ def render_similar_parallel_card(
     sentence_label = escape(value(row, "source_sentence_id", "—"))
     stage_label = escape(evidence_stage_label(row.get("language_stage")))
     glyph_block = (
-        f'<div class="glyphs parallel-glyphs">{escape(glyphs)}</div>'
+        f'<div class="glyphs parallel-glyphs">{glyph_markup(glyphs, sign_reference())}</div>'
         if glyphs and glyphs != "—"
         else ""
     )

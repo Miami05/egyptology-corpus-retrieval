@@ -1236,12 +1236,104 @@ div[data-testid="stDataFrame"] {
   text-transform: uppercase;
 }
 
-.suggestion-sources {
-  margin: .4rem 0 0;
-  padding-left: 1.1rem;
-  color: #7d8984;
-  font-size: .74rem;
+/* The supporting row behind a suggestion: its own glyphs, then its source. */
+.suggestion-example-label {
+  margin-top: .75rem;
+  color: #8b7650;
+  font-size: .68rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.suggestion-example {
+  margin-top: .35rem;
+  padding: .55rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.suggestion-glyphs {
+  font-family: "EgyptologicalLatin", "Noto Sans Egyptian Hieroglyphs", "Segoe UI Historic", serif;
+  font-size: 1.35rem;
   line-height: 1.5;
+  letter-spacing: .05em;
+  overflow-wrap: anywhere;
+}
+
+/* A <g>…</g> sign code with no Unicode sign: a neutral box, the code in its tooltip.
+   Drawn here rather than left to a font's missing-glyph box, which looks like a bug. */
+.glyph-missing {
+  display: inline-block;
+  width: .8em;
+  height: 1em;
+  margin: 0 .05em;
+  border: 1px dashed var(--ink-soft);
+  border-radius: 2px;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.glyph-missing:focus {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.no-glyphs {
+  color: #7d8984;
+  font-size: .78rem;
+  font-style: italic;
+}
+
+.suggestion-citation {
+  margin-top: .4rem;
+  color: #53605b;
+  font-size: .76rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.suggestion-citation .citation-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.suggestion-citation a {
+  color: var(--forest);
+}
+
+.suggestion-citation-none {
+  font-style: italic;
+}
+
+.suggestion-credit {
+  margin-top: .25rem;
+  color: #8a948f;
+  font-size: .66rem;
+}
+
+.suggestion-credit a {
+  color: inherit;
+}
+
+.suggestion-more {
+  margin-top: .5rem;
+  font-size: .76rem;
+}
+
+.suggestion-more summary {
+  color: #8b7650;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .suggestion-glyphs {
+    font-size: 1.15rem;
+  }
+
+  .suggestion-example {
+    padding: .5rem;
+  }
 }
 
 /* Segmentation editor: one chip per sign group proposed by the lattice. */

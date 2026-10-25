@@ -351,6 +351,14 @@ PRIVATE_SIGNS = ("\U0001302e", "\U00013042")  # absent from examples.csv AND hel
 PRIVATE_TEXT_ID = "pGateTest"
 PRIVATE_TRANSLATION = "Ein privater Gutachter-Testsatz."
 PRIVATE_ROW_COUNT = 3
+# The citation a keyed suggestion card shows (text, witness, line), also absent from
+# every public row: a card that cites the private text in an unkeyed session leaks.
+PRIVATE_CITED_TEXT = "urkGATE-001"
+PRIVATE_WITNESS = "GateWitnessTr"
+PRIVATE_SOURCE_REF = (
+    f"https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/ {PRIVATE_CITED_TEXT} "
+    f"({PRIVATE_WITNESS}) line 7"
+)
 
 
 @pytest.fixture(scope="module")
@@ -379,6 +387,8 @@ def gate_private_dir(tmp_path_factory) -> Path:
                 f"{PRIVATE_READING} nfr" if n < 2 else f"{PRIVATE_READING_ALT} nfr"
             ),
             translation=PRIVATE_TRANSLATION,
+            source_ref=PRIVATE_SOURCE_REF,
+            grammar_notes="St Andrews corpus. Witness: Gatewitness. Follows Gate Edition 1.",
         )
         rows.append(row)
     pd.DataFrame(rows).to_csv(directory / "standrews.csv", index=False)
@@ -467,6 +477,8 @@ def _assert_no_private_row(app: AppTest, where: str) -> None:
     assert PRIVATE_TRANSLATION not in rendered, f"{where}: a private translation was shown"
     for sign in PRIVATE_SIGNS:
         assert sign not in rendered, f"{where}: a private sign reached the page"
+    for tracer in (PRIVATE_CITED_TEXT, PRIVATE_WITNESS, "Gatewitness", "Gate Edition"):
+        assert tracer not in rendered, f"{where}: a private citation reached the page"
     # The NC attribution is rendered exactly when NC rows are present, so its absence
     # is a second, independent reading of the same fact.
     assert "by-nc-sa" not in rendered, f"{where}: the NC credit line reached the page"
@@ -543,6 +555,23 @@ def test_keyed_workspace_search_finds_the_private_row(monkeypatch, gate_private_
     # The row, not the echoed query: its source and its text id.
     assert "StAndrews" in rendered, "a keyed session must actually get the private row"
     assert PRIVATE_TEXT_ID in rendered
+
+
+def test_suggestion_cards_cite_the_private_text_only_in_a_keyed_session(
+    monkeypatch, gate_private_dir
+):
+    """The card's source line is the newest surface a private row could reach. The
+    keyed run goes first, so the private citation cache is warm when the unkeyed
+    session searches the same reading in the same process."""
+    with _host(monkeypatch, gate_private_dir, GATE_KEY):
+        keyed = _run(page="workspace", query=PRIVATE_READING, keyed=True)
+        unkeyed = _run(page="workspace", query=PRIVATE_READING)
+    cards = "\n".join(
+        str(m.value) for m in keyed.markdown if "suggestion-card" in str(m.value)
+    )
+    assert f"text {PRIVATE_CITED_TEXT}, witness {PRIVATE_WITNESS} (Gatewitness), line 7" in cards
+    assert "by-nc-sa" in cards
+    _assert_no_private_row(unkeyed, "unkeyed suggestion cards after a keyed search")
 
 
 def test_locking_drops_the_keyed_search_results_from_the_workspace(monkeypatch, gate_private_dir):

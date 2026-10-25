@@ -122,12 +122,54 @@ DEFAULT_SUGGESTION_WEIGHTS = resolve_suggestion_preset(os.environ.get(SUGGESTION
 
 
 @dataclass(frozen=True)
+class SupportingExample:
+    """The display fields of one corpus row behind a suggestion.
+
+    Small on purpose: the card needs the row's own glyphs and enough to resolve a
+    citation (see app.data.source_metadata), never the whole row. `hieroglyphs` is
+    the raw column, `<g>…</g>` codes included, because the card renders those codes
+    as marked boxes rather than through the search key's private-use placeholders.
+    (source, source_text_id, source_sentence_id) is the row's identity: unique over
+    the whole public corpus, and available when the database is down or the row is
+    private (private rows have no database id).
+    """
+
+    source: str
+    source_text_id: str
+    source_sentence_id: str
+    hieroglyphs: str = ""
+    source_ref: str = ""
+    grammar_notes: str = ""
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return (self.source, self.source_text_id, self.source_sentence_id)
+
+    @classmethod
+    def from_row(cls, row) -> "SupportingExample":
+        return cls(
+            source=_safe_str(row.get("source")),
+            source_text_id=_safe_str(row.get("source_text_id")),
+            source_sentence_id=_safe_str(row.get("source_sentence_id")),
+            hieroglyphs=_safe_str(row.get("hieroglyphs")),
+            source_ref=_safe_str(row.get("source_ref")),
+            grammar_notes=_safe_str(row.get("grammar_notes")),
+        )
+
+
+@dataclass(frozen=True)
 class ReadingSuggestion:
     candidate_transliteration: str
     confidence_score: float
     supporting_example_count: int
     supporting_sources: list[str]
     evidence_summary: str
+    # The same rows as `supporting_sources`, in the same order, as display fields.
+    # The first is `best` — the exact row the candidate reading was taken from — so
+    # the card shows that row and never re-picks one for looks. Defaulted, so every
+    # existing constructor keeps working, and `supporting_sources` is unchanged, so
+    # the evaluation CSVs that print it stay byte-identical.
+    supporting_examples: tuple[SupportingExample, ...] = ()
 
 
 def _safe_str(value: object) -> str:
@@ -895,6 +937,11 @@ def suggest_top_readings(
                 "supporting_sources": [
                     _source_label(row) for _, row in distinct.head(5).iterrows()
                 ],
+                # drop_duplicates keeps the first of each duplicate set, so
+                # distinct's first row is `best` itself.
+                "supporting_examples": tuple(
+                    SupportingExample.from_row(row) for _, row in distinct.head(5).iterrows()
+                ),
                 "evidence_summary": _evidence_summary(
                     group,
                     query_mdc=query_mdc,

@@ -583,6 +583,14 @@ words and the row's translation equals the ORAEC sentence's after whitespace
 normalisation; shorter or disagreeing matches go to the candidates file; every row names the source JSON, its per-text author
 (`text_authors`) and licence, and the Trismegistos columns name their own file and CC0.
 
+Displayed on the suggestion cards and the Source tab (`app/data/source_metadata.py`,
+`app/ui/source_display.py`): HTML entities decoded, whitespace collapsed, `N = …`
+thesaurus placeholders dropped, the first bibliography entry shown (at most 160
+characters), the Trismegistos link built from the numeric id, and the text's author
+named per card (the generic "AED authors" where the stored author string is a broken
+join). Unencoded `<g>…</g>` sign codes in the corpus rows are shown as marked boxes with
+the code in a tooltip, never replaced by a Unicode sign.
+
 ### Sign reference: Unicode Unikemet 18.0 (Unicode License V3) and JSesh (CC BY 4.0)
 
 `data/processed/sign_reference.csv`, built by `scripts/build_sign_reference.py` — one
