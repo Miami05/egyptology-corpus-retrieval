@@ -414,30 +414,73 @@ def _unfolded_tokens(text: str) -> str:
 _EDITORIAL_YOD = "\x02"
 
 
-def _mixed_candidate_tokens(value: object) -> list[tuple[str, str, bool, int]]:
-    """(token as written, its loose fold, editorial yod?, whitespace word index) for
-    a mixed-mode candidate.
+def _mixed_candidate_words(value: object) -> list[list[tuple[str, str, bool]]]:
+    """A mixed-mode candidate as written words, each a list of (token as written,
+    its loose fold, editorial yod?).
 
     The tokens are `unfolded_reading_form`'s, but a yod in round brackets — one the
     editor supplied, which the search key and the loose form drop
     (`PARENTHESISED_YOD_RE`) — is flagged, found on the notation *before* the brackets
-    are removed, so it can still vanish for a loose query word. Splitting first made
-    it a standalone `ꞽ` that no fold deletes (final audit, search-ranking-3: `n.t ḥtp`
-    against `n(.ꞽ).t ḥtp`). The word index records which written word each token came
-    from, so the yod is dropped only from a word compared loosely (follow-up: `ḥm.t n`
-    against `ḥm(.ꞽ).t n` became identical when every unmatched yod was dropped).
+    are removed, so it can still vanish when its word is compared loosely. Splitting
+    first made it a standalone `ꞽ` that no fold deletes (final audit,
+    search-ranking-3: `n.t ḥtp` against `n(.ꞽ).t ḥtp`). Keeping the written words
+    lets `QueryForms.candidate` decide strict or loose per word, never per token.
     """
     text = normalize_notation(_safe_str(value).replace("⸗", "="))
     text = PARENTHESISED_YOD_RE.sub(_EDITORIAL_YOD, text)
-    tokens: list[tuple[str, str, bool, int]] = []
-    for word_index, word in enumerate(text.split()):
+    words: list[list[tuple[str, str, bool]]] = []
+    for word in text.split():
         word = word.replace(_EDITORIAL_YOD, f" {_EDITORIAL_YOD} ")
+        tokens: list[tuple[str, str, bool]] = []
         for token in _unfolded_tokens(fold_strict_aliases(word)).split():
             if token == _EDITORIAL_YOD:
-                tokens.append(("ꞽ", "", True, word_index))
+                tokens.append(("ꞽ", "", True))
             else:
-                tokens.append((token, loose_reading_form(token), False, word_index))
-    return tokens
+                tokens.append((token, loose_reading_form(token), False))
+        if tokens:
+            words.append(tokens)
+    return words
+
+
+def _candidate_word_form(word: list[tuple[str, str, bool]], loose: bool) -> list[str]:
+    """A candidate word's tokens as compared with a query word: folded, without the
+    editorial yod, when the query word was typed in ASCII/MdC; as written (the yod a
+    letter, as the strict form keeps it) when it was typed with Egyptological
+    letters."""
+    if loose:
+        return [part for _, folded, editorial in word if not editorial for part in folded.split()]
+    return [written for written, _, _ in word]
+
+
+def _word_pair_weight(query_tokens: tuple[str, ...], candidate_form: list[str]) -> int:
+    """Two per token the words share (as a multiset), one more when they are the
+    same word; 0 when they share nothing, so the pair is never aligned."""
+    shared = sum((Counter(query_tokens) & Counter(candidate_form)).values())
+    if not shared:
+        return 0
+    return 2 * shared + (tuple(candidate_form) == query_tokens)
+
+
+def _align_words(weights: list[list[int]]) -> dict[int, int]:
+    """Candidate word → query word, a maximum-weight matching of the pairs with a
+    positive weight; among equally good matchings, the one whose pairs sit closest
+    to their own positions. Not monotonic: a word can be reassigned across another
+    (`aha ꜥḥꜥ n` against `ꜥḥꜥ n ꜣḥꜥ` pairs `ꜥḥꜥ`↔`ꜥḥꜥ` and `aha`↔`ꜣḥꜥ`)."""
+    n_query = len(weights)
+    n_candidate = len(weights[0]) if weights else 0
+    if not n_query or not n_candidate:
+        return {}
+    from scipy.optimize import linear_sum_assignment
+
+    # Every distance sum is below n_query * n_candidate, so no positional preference
+    # can outweigh one unit of match weight.
+    scale = n_query * n_candidate + 1
+    cost = [
+        [-weight * scale + abs(q - c) if weight > 0 else 0 for c, weight in enumerate(row)]
+        for q, row in enumerate(weights)
+    ]
+    rows, cols = linear_sum_assignment(cost)
+    return {int(c): int(q) for q, c in zip(rows, cols) if weights[q][c] > 0}
 
 
 def _ngram_cosine(left_form: str, right_form: str) -> float:
@@ -489,6 +532,8 @@ class QueryForms:
     mode: str
     query_form: str
     tokens: tuple[tuple[str, bool], ...] = ()
+    # Mixed mode: each query written word's tokens and whether it was typed in ASCII.
+    words: tuple[tuple[tuple[str, ...], bool], ...] = ()
 
     @property
     def loose_words(self) -> frozenset[str]:
@@ -513,12 +558,16 @@ class QueryForms:
             return cls("loose", loose_reading_form(reading))
         if not any(flags):
             return cls("strict", unfolded_reading_form(reading))
-        tokens: list[tuple[str, bool]] = []
+        words: list[tuple[tuple[str, ...], bool]] = []
         kept_words = superfluous_kept_words(nfc(_safe_str(reading)))
         for word, loose in zip(kept_words, flags):
             form = loose_reading_form(word) if loose else unfolded_reading_form(word)
-            tokens.extend((token, loose) for token in form.split())
-        return cls("mixed", " ".join(token for token, _ in tokens), tuple(tokens))
+            if form.split():
+                words.append((tuple(form.split()), loose))
+        tokens = tuple((token, loose) for word_tokens, loose in words for token in word_tokens)
+        return cls(
+            "mixed", " ".join(token for token, _ in tokens), tokens, tuple(words)
+        )
 
     @property
     def loose(self) -> bool:
@@ -527,82 +576,47 @@ class QueryForms:
     def candidate(self, value: object) -> str:
         """The candidate reading in the form comparable with `query_form`.
 
-        In mixed mode each candidate word is shown as the query token it can stand
-        for: as written when it equals a strict (Unicode) query token, folded when its
-        fold equals a loose (ASCII) one. Words and query tokens are paired by a
-        maximum matching (preferring the token at the word's own position), so a word
-        that could serve either is reassigned when that lets another word meet its
-        token, and `ꜥḥꜥ ꜥḥꜥ` meets both words of the query `aha ꜥḥꜥ`, while
-        `ꜣḥꜥ ꜣḥꜥ` only ever meets `aha` (Astra review: a single global loose set
-        made the two candidates identical).
+        In mixed mode the written words are aligned first (`_align_words`): a query
+        word and a candidate word are weighed by the tokens they share when compared
+        the query word's way, folded if it was typed in ASCII/MdC and as written
+        otherwise, so `ꜥḥꜥ` typed in Unicode never pairs with `ꜣḥꜥ`, while `aha` may.
+        Each aligned candidate word is then shown in its query word's form, and only
+        there does an editorial `(.ꞽ)` vanish, when that query word is loose. Matching
+        single tokens across the whole reading let a repeated morpheme (`t`) of one
+        word stand in for another's, so `ḥm.t n.t` against `ḥm.t n(.ꞽ).t` lost the
+        simplified-exact bonus (Astra, 0.904 → 0.752). An unaligned word is shown as
+        the query token form it duplicates, else as written.
         """
         if self.mode == "loose":
             return loose_reading_form(value)
         if self.mode == "strict":
             return unfolded_reading_form(value)
-        candidate_tokens = _mixed_candidate_tokens(value)
-        words = [word for word, _, _, _ in candidate_tokens]
-        folds = [folded for _, folded, _, _ in candidate_tokens]
-        editorial = [flag for _, _, flag, _ in candidate_tokens]
-        word_of = [word_index for _, _, _, word_index in candidate_tokens]
-        tokens = self.tokens
-
-        def fits(index: int, slot: int) -> bool:
-            token, loose = tokens[slot]
-            return (folds[index] if loose else words[index]) == token
-
-        # Each word's compatible query-token slots, tried in this order: the token at
-        # its own position, then strict tokens (they name their letters), then loose.
-        options = [
-            sorted(
-                (slot for slot in range(len(tokens)) if fits(index, slot)),
-                key=lambda slot, i=index: (slot != i, tokens[slot][1], slot),
-            )
-            for index in range(len(words))
+        candidate_words = _mixed_candidate_words(value)
+        query_words = self.words
+        pair_forms = [
+            [_candidate_word_form(word, loose) for word in candidate_words]
+            for _, loose in query_words
         ]
-        # Maximum matching (augmenting paths), so a word that could serve either a
-        # strict or a loose token never takes the loose one when that leaves the
-        # strict one unmet (Astra re-review: `aha ꜥḥꜥ n` against `ꜥḥꜥ n ꜣḥꜥ`, where
-        # the first word took `aha` positionally and the strict `ꜥḥꜥ` went unmatched).
-        owner: dict[int, int] = {}
-
-        def assign(index: int, seen: set[int]) -> bool:
-            for slot in options[index]:
-                if slot in seen:
-                    continue
-                seen.add(slot)
-                if slot not in owner or assign(owner[slot], seen):
-                    owner[slot] = index
-                    return True
-            return False
-
-        for index in range(len(words)):
-            assign(index, set())
-        chosen: list[str | None] = [None] * len(words)
-        for slot, index in owner.items():
-            chosen[index] = tokens[slot][0]
-        # How each written word was compared: the looseness of the query tokens its
-        # other tokens met (a word can meet both only if the query mixes them).
-        met: dict[int, set[bool]] = {}
-        for slot, index in owner.items():
-            met.setdefault(word_of[index], set()).add(tokens[slot][1])
-        # An unmatched word: shown as the token form it duplicates, else as written.
-        # An unmatched editor-supplied yod is dropped, as the loose form drops it, but
-        # only from a word compared loosely (its siblings met only ASCII query
-        # tokens); in a word compared as written it stays a letter, as the strict
-        # form keeps it.
-        for index, (word, folded) in enumerate(zip(words, folds)):
-            if chosen[index] is not None:
+        weights = [
+            [_word_pair_weight(query_tokens, form) for form in pair_forms[q]]
+            for q, (query_tokens, _) in enumerate(query_words)
+        ]
+        aligned = _align_words(weights)
+        strict_words = self.strict_words
+        loose_words = self.loose_words
+        shown: list[str] = []
+        for c, word in enumerate(candidate_words):
+            if c in aligned:
+                shown.extend(pair_forms[aligned[c]][c])
                 continue
-            if editorial[index]:
-                chosen[index] = "" if met.get(word_of[index]) == {True} else word
-            elif word in self.strict_words:
-                chosen[index] = word
-            elif folded and folded in self.loose_words:
-                chosen[index] = folded
-            else:
-                chosen[index] = word
-        return " ".join(word for word in chosen if word)
+            for written, folded, editorial in word:
+                if editorial or written in strict_words:
+                    shown.append(written)
+                elif folded and folded in loose_words:
+                    shown.append(folded)
+                else:
+                    shown.append(written)
+        return " ".join(shown)
 
     def char_similarity(
         self, query_key: str, candidate_key: str, candidate_raw: object = None

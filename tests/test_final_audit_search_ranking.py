@@ -125,3 +125,65 @@ def test_superfluous_braces_keep_two_suggestions():
     result = _top("ḥtp", "ḥtp {n}", "ḥtp n")
     assert sorted(s.candidate_transliteration for s in result) == ["ḥtp n", "ḥtp {n}"]
     assert all(s.supporting_example_count == 1 for s in result)
+
+
+# Follow-up 2 (Astra): mixed mode aligns written words before it compares tokens, so a
+# repeated morpheme (`t`) in one word can no longer stand in for another word's, and
+# the editorial yod vanishes only inside a word paired with an ASCII query word.
+@pytest.mark.parametrize(
+    "query, candidate",
+    [
+        ("ḥm.t n.t", "ḥm.t n(.ꞽ).t"),  # ASCII word after a strict word (the regression)
+        ("n.t ḥm.t", "n(.ꞽ).t ḥm.t"),  # ASCII word before a strict word
+        ("n.t ḥm.t n.t", "n(.ꞽ).t ḥm.t n(.ꞽ).t"),  # before and after
+        ("n.t ḥtp", "n(.ꞽ).t ḥtp"),
+    ],
+)
+def test_mixed_word_provenance_drops_yod_in_loose_words(query, candidate):
+    forms = QueryForms.build(query, query)
+    assert forms.mode == "mixed"
+    assert forms.candidate(candidate) == forms.query_form
+    (suggestion,) = _top(query, candidate)
+    assert "same simplified query reading" in suggestion.evidence_summary
+    assert suggestion.confidence_score >= 0.9
+
+
+@pytest.mark.parametrize(
+    "query, candidate",
+    [
+        ("ḥm.t n", "ḥm(.ꞽ).t n"),  # the strict word keeps the yod
+        ("ḥm.t n.t", "ḥm(.ꞽ).t n.t"),  # a shared `t` in the ASCII word changes nothing
+        ("n.t ḥm.t n.t", "n(.ꞽ).t ḥm(.ꞽ).t n(.ꞽ).t"),
+    ],
+)
+def test_mixed_word_provenance_keeps_yod_in_strict_words(query, candidate):
+    forms = QueryForms.build(query, query)
+    assert forms.mode == "mixed"
+    assert forms.candidate(candidate) != forms.query_form
+    (suggestion,) = _top(query, candidate)
+    assert "same simplified query reading" not in suggestion.evidence_summary
+    assert suggestion.confidence_score < 0.9
+
+
+@pytest.mark.parametrize(
+    "query, better, worse",
+    [
+        ("aha ꜥḥꜥ n", "ꜥḥꜥ n ꜣḥꜥ", "ꜣḥꜥ n ꜣḥꜥ"),
+        ("htp ḏi nswt", "ḥtp ḏi nswt", "ḫtp ḏi nswt"),
+    ],
+)
+def test_mixed_word_alignment_ranking(query, better, worse):
+    result = _top(query, worse, better)
+    assert result[0].candidate_transliteration == better
+
+
+@pytest.mark.parametrize(
+    "query, candidate",
+    [("ꜣḥꜥ n", "ꜥḥꜥ n"), ("ḥtp n", "htp n"), ("ḫt n", "ẖt n")],
+)
+def test_mixed_strict_words_keep_consonants_apart(query, candidate):
+    forms = QueryForms.build(query, query)
+    assert forms.mode == "mixed"
+    assert forms.candidate(candidate) != forms.query_form
+    (suggestion,) = _top(query, candidate)
+    assert suggestion.confidence_score < 0.5
