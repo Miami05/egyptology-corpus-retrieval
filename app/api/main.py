@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 from app.core.config import settings
 from app.data.loader import load_examples_csv
 from app.services.retrieval import SearchIndex, build_search_index, retrieve_top_k
+from app.ui.review_common import CC_BY_SA_URL, licence_notice_for
 
 app = FastAPI(title=settings.app_name)
 
@@ -41,6 +42,7 @@ def search_examples(
         str,
         Query(
             min_length=1,
+            max_length=500,
             description="MdC, transliteration, or sign sequence to search for.",
         ),
     ],
@@ -68,8 +70,20 @@ def search_examples(
         "final_score",
         "evidence",
     ]
+    # CC BY-SA 4.0 §3(a): the corpus text leaves the app here, so the attribution of
+    # each corpus that appears in the results goes with it (the same wording as the
+    # reviewed export's `licence` column).
+    stages = results["language_stage"] if "language_stage" in results.columns else None
+    pairs = sorted(
+        {
+            (str(source), str(stages.iloc[i]) if stages is not None else "")
+            for i, source in enumerate(results["source"])
+        }
+    )
     result_df = cast(pd.DataFrame, results.loc[:, columns])
     return {
         "query": query_mdc,
+        "licence": {"name": "CC BY-SA 4.0", "url": CC_BY_SA_URL},
+        "attribution": [licence_notice_for(source, stage) for source, stage in pairs],
         "results": result_df.to_dict(orient="records"),
     }

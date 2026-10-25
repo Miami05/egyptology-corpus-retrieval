@@ -190,10 +190,21 @@ def test_annotation_fields_are_clipped():
     assert clip("short") == "short"
 
 
-def test_reviewer_gate_is_open_when_no_key_is_configured(monkeypatch):
+def test_reviewer_gate_is_closed_when_no_key_is_configured(monkeypatch):
+    # Audit A20: this used to assert the fail-open behaviour (no key = anyone may
+    # write). Writes now fail closed unless ALLOW_OPEN_ANNOTATIONS=1 says otherwise.
     import app.ui.whyptology_app as app_module
 
     monkeypatch.setattr(app_module, "configured_reviewer_key", lambda: "")
+    monkeypatch.delenv("ALLOW_OPEN_ANNOTATIONS", raising=False)
+    assert app_module.annotations_unlocked() is False
+
+
+def test_reviewer_gate_is_open_with_no_key_only_when_explicitly_allowed(monkeypatch):
+    import app.ui.whyptology_app as app_module
+
+    monkeypatch.setattr(app_module, "configured_reviewer_key", lambda: "")
+    monkeypatch.setenv("ALLOW_OPEN_ANNOTATIONS", "1")
     assert app_module.annotations_unlocked() is True
 
 

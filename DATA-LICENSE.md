@@ -30,8 +30,8 @@ Unicode 5.2 hieroglyphs" below.
 The corpus is derived from raw-data publications of the Thesaurus Linguae Aegyptiae
 (TLA) project, each released under
 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) and listed at
-<https://aaew.bbaw.de/daten-veroeffentlichungen> — the two actually imported are cited
-below. **The TLA *website*, `thesaurus-linguae-aegyptiae.de`, is not itself under a CC
+<https://aaew.bbaw.de/daten-veroeffentlichungen> — the three actually imported
+(Earlier Egyptian, Late Egyptian and Demotic) are cited below. **The TLA *website*, `thesaurus-linguae-aegyptiae.de`, is not itself under a CC
 licence.** Its licences page states: "You can copy and quote individual data sets of
 this website for academic research purposes, but not entire sub-corpora or larger sets
 (> 10 website pages)"
@@ -89,6 +89,29 @@ only worked via a 307 redirect.)
 }
 ```
 
+The corpus also contains the **Demotic** TLA corpus (11,996 rows, `language_stage =
+Demotic`), whose official citation is:
+
+> Thesaurus Linguae Aegyptiae, Demotic sentences, corpus v18, premium,
+> <https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/tla-demotic-v18-premium>,
+> v1.1, 2/16/2024, ed. by Tonio Sebastian Richter & Daniel A. Werning on behalf of the
+> Berlin-Brandenburgische Akademie der Wissenschaften and Hans-Werner Fischer-Elfert &
+> Peter Dils on behalf of the Sächsische Akademie der Wissenschaften zu Leipzig.
+
+Licensed under CC BY-SA 4.0 (the dataset card's licence field reads `cc-by-sa-4.0`).
+Citation text and BibTeX copied from the dataset card, checked 2026-10-12.
+
+```bibtex
+@misc{tlaDemoticV18premium,
+ editor = {{Berlin-Brandenburgische Akademie der Wissenschaften} and {Sächsische Akademie der Wissenschaften zu Leipzig} and Richter, Tonio Sebastian and Werning, Daniel A. and Hans-Werner Fischer-Elfert and Peter Dils},
+ year = {2024},
+ title = {Thesaurus Linguae Aegyptiae, Demotic sentences, corpus v18, premium},
+ url = {https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/tla-demotic-v18-premium},
+ location = {Berlin},
+ organization = {{Berlin-Brandenburgische Akademie der Wissenschaften} and {Sächsische Akademie der Wissenschaften zu Leipzig}},
+}
+```
+
 ## Indication of changes (required by CC BY-SA 4.0 §3(a)(1)(B))
 
 `data/processed/examples.csv` is **not** verbatim TLA data. The TLA sentences were
@@ -111,6 +134,15 @@ as follows:
   and the Late Egyptian corpus (3,601 rows, after dropping 5 sentences already
   present verbatim), giving 16,373 rows. Rows carry their originating corpus in
   `language_stage` and an id prefix (`TLA_EARLIER_*` / `TLA_LATE_*`).
+- **Added the Demotic corpus** (2026-09-04, commit 651ee91): 11,996 rows, imported
+  with `import_tla_dataset.py --script-type Demotic --language-stage Demotic
+  --id-prefix TLA_DEMOTIC` (id prefix `TLA_DEMOTIC_*`), appended to the existing corpus
+  with duplicates dropped (the source has 13,383 sentences). The Demotic dataset has no
+  hieroglyphs column, so these rows carry none and take no part in the sign
+  statistics; `script_type` reads `Demotic`. Its dates are mapped to a Roman Period
+  range (−30..395), and rows dated beyond it read `Undated range (a to b)` rather than
+  a guess. The suffix-pronoun marker is unified as described below. With this the TLA
+  part of `examples.csv` is 28,369 rows (Earlier 12,772, Late 3,601, Demotic 11,996).
 - **Unified the suffix-pronoun marker.** The Earlier corpus writes it `=` (11,671
   occurrences), the Late corpus `⸗` (4,390). They denote the same morpheme. All
   imported rows now use `=`. Without this the same sentence read `n =tn` or `n ⸗tn`
@@ -159,8 +191,9 @@ findspot in `grammar_notes`, and its AES text and sentence identifiers in `sourc
 
 ## Fourth corpus: the BBAW 2018 snapshot (`phiwi/bbaw_egyptian`)
 
-`data/processed/examples.csv` also contains 5,369 sentences imported by
-`scripts/import_bbaw_egyptian.py` from the Hugging Face dataset `phiwi/bbaw_egyptian`
+`data/processed/examples.csv` also contains 52,216 sentences imported by
+`scripts/import_bbaw_egyptian.py` (5,369 with aligned hieroglyphs, plus 46,847
+text-only rows added with `--include-text-only` in commit e031452) from the Hugging Face dataset `phiwi/bbaw_egyptian`
 (<https://huggingface.co/datasets/phiwi/bbaw_egyptian>), licensed CC BY-SA 4.0:
 > Teilauszug der Datenbank des Vorhabens *"Strukturen und Transformationen des
 > Wortschatzes der ägyptischen Sprache"*, Berlin-Brandenburgische Akademie der
@@ -193,17 +226,20 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
   row of the export and 13,646 were already present in this corpus (matched on a
   yod- and case-insensitive reading, or on identical signs), and one sentence whose
   whole reading is the interjection `ꞽ` was dropped because no transliteration query
-  can reach it. The 65,226 rows without hieroglyphs
-  are not imported by default (`--include-text-only` exists for them).
+  can reach it. The 65,226 rows without hieroglyphs are not imported by default; the
+  46,847 of them that were not already in the corpus were added in a second pass with
+  `--include-text-only`. Those rows carry a transliteration and a translation but no
+  hieroglyphs, so they take part in the transliteration search and contribute no sign
+  evidence.
 - **Metadata not claimed.** The export states no period, genre or language stage per
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
 
 ## Fifth corpus: the Ramses Transliteration Corpus (`source = Ramses`)
 
-`data/processed/examples.csv` does not yet contain Ramses rows — they are withheld for
-a modelling reason unrelated to licensing (see the roadmap notes) — but the licence
-position for them is settled and recorded here so the import can proceed without a
-further licence review.
+`data/processed/examples.csv` contains **40,064 Ramses rows** (`source = Ramses`,
+`language_stage = Late Egyptian`), added in commit 651ee91 on 2026-09-04 under the
+CC BY-SA 4.0 grant described below: 27,937 of them aligned with hieroglyphs, 12,127
+text-only (a transliteration and translation, no hieroglyphs).
 
 > the Ramses transliteration corpus V. 2019-09-01, University of Liège/Projet Ramses
 
@@ -229,8 +265,8 @@ under CC BY-SA 4.0 for this project's use, they answered: **"Yes, no problem for
 us!"** They separately confirmed the pre-existing private, non-commercial arrangement
 with: "Perfect. Green light from our side."
 
-**Ramses rows may therefore enter `data/processed/examples.csv` under CC BY-SA 4.0,
-with the attribution above.** The non-commercial handling described under
+**Ramses rows are therefore in `data/processed/examples.csv` under CC BY-SA 4.0, with
+the attribution above.** The non-commercial handling described under
 "Non-commercial corpora kept out of this repository" below no longer applies to
 Ramses — it now applies only to St Andrews.
 
@@ -260,8 +296,8 @@ carries and how often. The underlying corpora, which must be credited with them:
   statistics as CC BY 4.0; on 2026-09-04 Projet Ramses granted this project the corpus
   under **CC BY-SA 4.0** by email ("Yes, no problem for us!", archived in
   `docs/permission-requests.md`), which covers the Ramses-derived rows here
-  (`source` = `Ramses`, 50,647 rows, plus 4,402 `AES+Ramses`). The lexicon file therefore
-  stays public in full.
+  (lexicon rows, not corpus rows: `source` = `Ramses` in 50,647 lexicon rows, plus 4,402
+  `AES+Ramses`). The lexicon file therefore stays public in full.
 
 The app uses the lexicon only for sign groups this corpus does not attest, labels every
 such reading as "lexicon N× — no sentence in this corpus", and never counts it as an
@@ -303,7 +339,8 @@ never receives a private row, whatever is in the directory.
 
 (The Ramses Transliteration Corpus used to be documented here too. It moved to "Fifth
 corpus: the Ramses Transliteration Corpus" above on 2026-09-04, once its rights
-holders granted CC BY-SA 4.0 directly for this project's use.)
+holders granted CC BY-SA 4.0 directly for this project's use; only St Andrews is
+still private.)
 
 ### St Andrews Corpus of Ancient Egyptian texts (`source = StAndrews`)
 
@@ -506,8 +543,9 @@ Attribution must reach the person viewing the data, not only this file. The app
 displays the attribution in the sidebar. Do not remove it, and do not present the
 corpus as this project's own work.
 
-The Demotic dataset referenced in `scripts/download_all_sources.py`
-(`tla-demotic-v18-premium`) is also CC BY-SA 4.0. It is downloaded but is **not** part
-of `examples.csv`: it carries no hieroglyphic writings (0 of 13,383 rows), so it
-cannot support the sign-based reading this tool provides. If you build it in, add its
-citation here too.
+The Demotic dataset (`tla-demotic-v18-premium`, CC BY-SA 4.0) **is** part of
+`examples.csv`: 11,996 rows, cited above and in the app's attribution. It carries no
+hieroglyphic writings, so it adds transliteration evidence but no sign evidence. A
+deployment that leaves rows out (`CORPUS_SOURCES_EXCLUDE`, for instance `Ramses,Demotic`)
+credits only the corpora it actually loads, but this file describes the full
+`examples.csv`, and any copy of that file must carry every citation above.
