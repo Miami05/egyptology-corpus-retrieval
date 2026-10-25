@@ -1427,30 +1427,19 @@ def test_expected_tokens_defaults_to_current():
     assert ce._parse_args(["--benchmark", "x.csv", "--expected-tokens", "frozen"]).expected_tokens == "frozen"
 
 
-def test_the_typed_query_reaches_the_suggestion_layer_when_it_takes_query_raw(tmp_path, capsys, monkeypatch):
-    """The services fix (A54) adds `query_raw=` to suggest_top_readings; the harness
-    passes the query as typed, exactly as the app does, and omits it on a layer that
-    does not take it yet."""
-    import inspect
-
-    assert ce.SUGGEST_TAKES_QUERY_RAW == (
-        "query_raw" in inspect.signature(ce.suggest_top_readings).parameters
-    )
+def test_the_typed_query_reaches_the_suggestion_layer(tmp_path, capsys, monkeypatch):
+    """The harness passes the query as typed (`query_raw=`), exactly as the app does
+    (A54)."""
     original = ce.suggest_top_readings
     seen: list[dict] = []
 
     def recording(*args, **kwargs):
         seen.append(dict(kwargs))
-        kwargs.pop("query_raw", None)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(ce, "suggest_top_readings", recording)
-    monkeypatch.setattr(ce, "SUGGEST_TAKES_QUERY_RAW", True)
     _run_eval(tmp_path, capsys, tag="raw")
     assert seen and seen[-1]["query_raw"] == "htp di nsw wsir nb"
-    monkeypatch.setattr(ce, "SUGGEST_TAKES_QUERY_RAW", False)
-    _run_eval(tmp_path, capsys, tag="noraw")
-    assert "query_raw" not in seen[-1]
 
 
 @pytest.mark.parametrize(

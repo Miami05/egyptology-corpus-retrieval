@@ -26,7 +26,6 @@ Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such colum
 from __future__ import annotations
 
 import argparse
-import inspect
 import math
 import os
 import sys
@@ -62,12 +61,6 @@ from app.services.suggestions import (
 )
 from scripts.build_competitive_ambiguity_benchmark import STOP_TOKENS
 from scripts.eval_guards import TwinGuard
-
-# The services fix (audit A54, branch fix1-services) adds `query_raw=` to
-# suggest_top_readings: strictness is decided on the query as typed. Passed only when
-# the installed suggestion layer takes it, so this harness runs on either side of that
-# merge; once merged, the app and the harness hand the layer the same two strings.
-SUGGEST_TAKES_QUERY_RAW = "query_raw" in inspect.signature(suggest_top_readings).parameters
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 # Default for `_load_benchmark` callers that pass nothing. The CLI no longer has a
@@ -944,10 +937,6 @@ def main(argv: "list[str] | None" = None) -> None:
                 vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
             )
             suggestion_query = searched.reading or query_input
-        # The query as typed goes along too (see SUGGEST_TAKES_QUERY_RAW), exactly as
-        # the app passes `query_raw=query`. Under 'legacy' it equals query_mdc, which
-        # is the layer's own default, so that path is unchanged.
-        raw_kwargs = {"query_raw": query_input} if SUGGEST_TAKES_QUERY_RAW else {}
         suggestions = suggest_top_readings(
             retrieval_results,
             query_mdc=suggestion_query,
@@ -956,7 +945,6 @@ def main(argv: "list[str] | None" = None) -> None:
             query_raw=query_input,
             query_reading_order=query_reading_order,
             top_n=3,
-            **raw_kwargs,
         )
         candidates = [suggestion.candidate_transliteration for suggestion in suggestions]
         expected = str(bench_row["expected_transliteration"])
