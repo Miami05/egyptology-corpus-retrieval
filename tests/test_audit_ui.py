@@ -1069,6 +1069,78 @@ def test_parallel_card_shows_the_aes_text_name_escaped(monkeypatch):
     assert "<b>pX</b>" not in html_out
 
 
+# ---------- fix round 2: the A32 name also reaches the two tables and Reviews ----------
+
+
+def test_workspace_evidence_table_names_the_aes_text_and_keeps_the_id():
+    import app.ui.whyptology_app as app_module
+
+    results = pd.DataFrame([{**_AES_ROW, "period": "NK", "final_score": 0.5}])
+    table = app_module.evidence_table(results)
+    assert list(table["Text"]) == ["pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"]
+    assert "grammar_notes" not in table.columns and list(table["Match"]) == ["0.50"]
+    # The full rows are not changed: annotations and benchmarks key on the hash.
+    assert results.loc[0, "source_text_id"] == "AES_2DF6EC0096C3"
+    html_out = app_module.html_table(
+        app_module.evidence_table(
+            pd.DataFrame([{**_AES_ROW, "grammar_notes": "AES text: <b>pX</b>"}])
+        )
+    )
+    assert "&lt;b&gt;pX&lt;/b&gt;" in html_out and "<b>pX</b>" not in html_out
+
+
+def test_corpus_table_names_the_aes_text_and_keeps_the_id():
+    import app.ui.whyptology_app as app_module
+
+    window = pd.DataFrame(
+        [_AES_ROW, {"source": "TLA", "source_text_id": "T1", "language_stage": "Demotic"}]
+    )
+    display = app_module.corpus_display_frame(
+        window, ["source", "source_text_id", "language_stage"]
+    )
+    text_col = app_module.CORPUS_COLUMN_LABELS["source_text_id"]
+    assert list(display[text_col]) == [
+        "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)",
+        "T1",
+    ]
+
+
+def test_reviewed_rows_carry_grammar_notes_so_reviews_can_name_the_aes_text(monkeypatch):
+    from types import SimpleNamespace
+
+    class _Attrs(SimpleNamespace):
+        def __getattr__(self, name):  # any column the test does not set
+            return ""
+
+    example = _Attrs(id=7, **{k: v for k, v in _AES_ROW.items()})
+    latest = _Attrs(example_id=7, transliteration="ḏd.n=f", status="accepted")
+
+    class _Session:
+        def close(self):
+            pass
+
+    class _Examples:
+        def __init__(self, _session):
+            pass
+
+        def list_examples_by_ids(self, ids):
+            return [example] if 7 in ids else []
+
+    class _Annotations:
+        def __init__(self, _session):
+            pass
+
+        def list_latest_annotations_only(self):
+            return [latest]
+
+    monkeypatch.setattr(review_common, "SessionLocal", _Session)
+    monkeypatch.setattr(review_common, "ExampleRepo", _Examples)
+    monkeypatch.setattr(review_common, "AnnotationRepo", _Annotations)
+    rows = review_common.reviewed_annotation_rows()
+    assert len(rows) == 1
+    assert review_common.text_label(rows[0]) == "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"
+
+
 # ---------- review of A30: the CLI export credits each row's own TLA corpus ----------
 
 

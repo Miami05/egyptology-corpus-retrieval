@@ -288,6 +288,8 @@ def test_ramses_rows_do_not_claim_a_period():
         "ꞽmn-m-//", "bw-///-k-///", "ḥr-[...]", "x-[]", "[..]-ꞽr", "a [ ] b",
         # Fix round 1 (review of -8): BBAW also writes gaps as dashes or an ellipsis.
         "ḥtp-[---]", "[…] =f", "nb [. . .]", "[–]",
+        # Fix round 2 (review of cb3867d): BBAW's underscore gaps, 1,652+ rows.
+        "[_].ṱ =f", "[_]nn[_]kn", "mri̯.[⸮_?] =[⸮k?]", "[___].tw =ꞽ", "ꜥ[__]", "nꜣ _ n",
     ],
 )
 def test_translit_lacuna_regex_matches_partial_gaps(text):
@@ -603,6 +605,17 @@ def test_content_fingerprint_depends_on_rows_and_order_not_on_parquet_bytes(monk
     assert module.content_fingerprint(swapped) != module.content_fingerprint(df)
     inserted = pd.concat([pd.DataFrame({"b": ["new"], "a": ["0"]}), df], ignore_index=True)
     assert module.content_fingerprint(inserted) != module.content_fingerprint(df)
+
+
+def test_content_fingerprint_treats_every_missing_marker_alike(monkeypatch):
+    # Fix round 2 (review nit): pd.NA hashed as the text "<NA>", not as missing.
+    module = _download_module(monkeypatch, [])
+    base = module.content_fingerprint(pd.DataFrame({"a": ["x", None]}, dtype=object))
+    for missing in (float("nan"), pd.NA, pd.NaT):
+        frame = pd.DataFrame({"a": ["x", missing]}, dtype=object)
+        assert module.content_fingerprint(frame) == base
+    text = pd.DataFrame({"a": ["x", "<NA>"]}, dtype=object)
+    assert module.content_fingerprint(text) != base
 
 
 def test_an_existing_file_from_another_snapshot_is_refused(tmp_path, monkeypatch):

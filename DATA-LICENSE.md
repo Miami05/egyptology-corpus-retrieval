@@ -268,10 +268,14 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
 - **Lacunae in the transliteration (partly fixed).** The BBAW and Ramses importers now
   drop a row whose transliteration has a gap anywhere: `//` inside a word (`ꞽmn-m-//`)
-  or a bracket holding only gap filler (`[]`, `[...]`, `[---]`, `[…]`), text-only rows
-  included. The rows already in `examples.csv` were imported before that rule: 24 BBAW
-  and 133 Ramses rows still carry such a marker and can be offered as an attested
-  reading. They are removed in a separate, reviewed data clean-up, not by re-running
+  or a bracket holding only gap filler (`[]`, `[...]`, `[---]`, `[…]`), or an
+  underscore, which BBAW uses for a lost sign (`[_]`, `[___]`, `[⸮_?]`, `nꜣ _ n`; in
+  the raw export 827 of the 867 `[_]` rows with hieroglyphs have `//` there), text-only
+  rows included. The rows already in `examples.csv` were imported before that rule:
+  2,089 BBAW rows (24 with a bracket or `//`, 2,065 with an underscore) and 133 Ramses
+  rows still carry such a marker and can be offered as an attested reading. 22 AES
+  rows also carry an underscore gap; the AES importer has no transliteration-lacuna
+  rule yet. They are removed in a separate, reviewed data clean-up, not by re-running
   `--append` (which skips rows that are already present).
 
 ## Fifth corpus: the Ramses Transliteration Corpus (`source = Ramses`)

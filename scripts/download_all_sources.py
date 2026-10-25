@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import math
 import sys
 from pathlib import Path
 
@@ -86,8 +85,10 @@ def content_fingerprint(df: pd.DataFrame) -> str:
     digest.update(("\x1f".join(columns) + "\n").encode("utf-8"))
     for row in df[columns].itertuples(index=False, name=None):
         cells = (
+            # pd.isna, not a float-NaN test: pd.NA and NaT are missing too, and
+            # str(pd.NA) is the text "<NA>" (review nit, fix round 2).
             "\x00"
-            if v is None or (isinstance(v, float) and math.isnan(v))
+            if pd.api.types.is_scalar(v) and pd.isna(v)
             else str(v)
             for v in row
         )

@@ -274,6 +274,11 @@ class KeyAttemptGuard:
     transaction under a lock (only the slow-down sleep happens outside it), so two
     concurrent attempts cannot interleave the way the first version's separate
     calls could. State is in memory, so a restart clears it.
+
+    Neither layer caps how many attempts run at once: the slow-down delays each
+    attempt but N parallel connections still get about N / `global_max_delay`
+    guesses a second. The real protection is the key's length — use 20 or more
+    random characters (review of fix round 1).
     """
 
     def __init__(
@@ -712,6 +717,9 @@ def reviewed_annotation_rows() -> list[dict]:
                         latest.aesthetic_arrangement_flag
                     ),
                     "source_ref": example.source_ref,
+                    # Carries the 'AES text: <name>' note, so the Reviews page can
+                    # show the readable text name (audit A32), not only the hash.
+                    "grammar_notes": example.grammar_notes or "",
                     "latest_annotation_created_at": latest.created_at,
                 }
             )

@@ -1762,6 +1762,56 @@ def evidence_stage_label(raw_stage: object) -> str:
     return normalized if normalized is not None else "stage not recorded"
 
 
+def evidence_table(results: pd.DataFrame) -> pd.DataFrame:
+    """The workspace's ranked-evidence table, display-ready (escaped later by html_table)."""
+    show = [
+        col
+        for col in [
+            "source",
+            "language_stage",
+            "source_text_id",
+            "period",
+            "transliteration_gold",
+            "translation",
+            "final_score",
+        ]
+        if col in results.columns
+    ]
+    table = results.loc[:, show].copy()
+    if "source_text_id" in table.columns:
+        # The readable AES text name (audit A32), read from the full row — the name
+        # lives in grammar_notes / source_ref, which the table does not show. The
+        # hash id stays in brackets so it still matches annotations and benchmarks.
+        table["source_text_id"] = [
+            text_label(row, "—") for _, row in results.iterrows()
+        ]
+    if "language_stage" in table.columns:
+        # Next to Source, in the same quiet style — normalised so an
+        # unspecified row reads "stage not recorded", not the raw
+        # per-import placeholder text.
+        table["language_stage"] = table["language_stage"].map(evidence_stage_label)
+    table = table.rename(
+        columns={
+            "source": "Source",
+            "language_stage": "Stage",
+            "source_text_id": "Text",
+            "period": "Period",
+            "transliteration_gold": "Reading",
+            "translation": "Translation (German, from the corpus)",
+            "final_score": "Match",
+        }
+    )
+    # An HTML table, not st.dataframe: the canvas grid cannot use the
+    # Egyptological font, so the readings (the answer to the query) drew ꞽ as
+    # an empty box (audit A60). The Match bar becomes the plain number.
+    if "Match" in table.columns:
+        table["Match"] = table["Match"].map(
+            lambda score: f"{float(score):.2f}" if pd.notna(score) else "—"
+        )
+    table = table.fillna("—")
+    return table
+
+
 def render_workspace(df: pd.DataFrame) -> None:
     saved_notice = st.session_state.pop("whyptology_saved_notice", None)
     if saved_notice:
@@ -2372,44 +2422,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                 '<div class="panel-title">Evidence · Ranked corpus matches</div>',
                 unsafe_allow_html=True,
             )
-            show = [
-                col
-                for col in [
-                    "source",
-                    "language_stage",
-                    "source_text_id",
-                    "period",
-                    "transliteration_gold",
-                    "translation",
-                    "final_score",
-                ]
-                if col in results.columns
-            ]
-            table = results.loc[:, show].copy()
-            if "language_stage" in table.columns:
-                # Next to Source, in the same quiet style — normalised so an
-                # unspecified row reads "stage not recorded", not the raw
-                # per-import placeholder text.
-                table["language_stage"] = table["language_stage"].map(evidence_stage_label)
-            table = table.rename(
-                columns={
-                    "source": "Source",
-                    "language_stage": "Stage",
-                    "source_text_id": "Text",
-                    "period": "Period",
-                    "transliteration_gold": "Reading",
-                    "translation": "Translation (German, from the corpus)",
-                    "final_score": "Match",
-                }
-            )
-            # An HTML table, not st.dataframe: the canvas grid cannot use the
-            # Egyptological font, so the readings (the answer to the query) drew ꞽ as
-            # an empty box (audit A60). The Match bar becomes the plain number.
-            if "Match" in table.columns:
-                table["Match"] = table["Match"].map(
-                    lambda score: f"{float(score):.2f}" if pd.notna(score) else "—"
-                )
-            table = table.fillna("—")
+            table = evidence_table(results)
             st.markdown(html_table(table, {"Reading"}), unsafe_allow_html=True)
 
     with parallels_tab:
@@ -2605,6 +2618,29 @@ def html_table(
     )
 
 
+def corpus_display_frame(window: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """One page of the corpus explorer as display-ready cells (escaped by html_table)."""
+
+    def cell(row: pd.Series, col: str) -> str:
+        if col == "language_stage":
+            # Normalised wording for the stage column, matching the workspace's
+            # evidence rows — see evidence_stage_label.
+            return evidence_stage_label(row.get("language_stage"))
+        if col == "source_text_id":
+            # The readable AES text name, id kept in brackets (audit A32).
+            return text_label(row, "—")
+        return value(row, col, "—")
+
+    return pd.DataFrame(
+        {
+            CORPUS_COLUMN_LABELS.get(col, col): [
+                cell(row, col) for _, row in window.iterrows()
+            ]
+            for col in columns
+        }
+    )
+
+
 def render_corpus(df: pd.DataFrame) -> None:
     st.markdown(
         """
@@ -2734,19 +2770,7 @@ def render_corpus(df: pd.DataFrame) -> None:
         window = filtered.iloc[start : start + CORPUS_PAGE_SIZE]
         st.session_state["whyptology_corpus_page_rows"] = window
 
-        display = pd.DataFrame(
-            {
-                CORPUS_COLUMN_LABELS.get(col, col): [
-                    # Normalised wording for the stage column, matching the
-                    # workspace's evidence rows — see evidence_stage_label.
-                    evidence_stage_label(row.get("language_stage"))
-                    if col == "language_stage"
-                    else value(row, col, "—")
-                    for _, row in window.iterrows()
-                ]
-                for col in columns
-            }
-        )
+        display = corpus_display_frame(window, columns)
         # Only the reading column gets the transliteration font; everything else
         # stays in the interface font.
         st.markdown(
