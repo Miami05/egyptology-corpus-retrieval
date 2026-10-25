@@ -76,12 +76,15 @@ def drop_superfluous_text(value: str) -> str:
         value = dropped
 
 
-# Stands in for a deleted character in `superfluous_kept_words`; never in a reading.
+# Stand in for a deleted character / a deleted space in `superfluous_kept_words`;
+# never in a reading.
 _DELETED = "\x00"
+_DELETED_SPACE = "\x01"
+_DELETED_SPACES_RE = re.compile(_DELETED_SPACE + "+")
 
 
 def _blank(text: str) -> str:
-    return "".join(char if char.isspace() else _DELETED for char in text)
+    return "".join(_DELETED_SPACE if char.isspace() else _DELETED for char in text)
 
 
 def superfluous_kept_words(value: str) -> list[str]:
@@ -95,6 +98,10 @@ def superfluous_kept_words(value: str) -> list[str]:
     deleted characters blanked in place, so the word boundaries, and with them the
     alignment to another word list, survive. `''.join` of the kept words, spaced,
     equals `drop_superfluous_text(value)` up to whitespace.
+
+    A deleted span that spans a space joins what survives on either side into one
+    word, as `drop_superfluous_text` does (`h{a b}tp` → `htp`, not `h tp`): the joined
+    word is the entry of the first raw word it came from, and the others are `''`.
     """
     while True:
         masked = DOUBLE_BRACED_RE.sub(
@@ -104,7 +111,12 @@ def superfluous_kept_words(value: str) -> list[str]:
         if masked == value:
             break
         value = masked
-    return [word.replace(_DELETED, "") for word in value.split()]
+    kept: list[str] = []
+    for chunk in value.split():
+        parts = _DELETED_SPACES_RE.split(chunk)
+        kept.append("".join(parts).replace(_DELETED, ""))
+        kept.extend("" for _ in parts[1:])
+    return kept
 
 
 # TLA's weak-consonant marker, the combining inverted breve below (U+032F): `i̯` and

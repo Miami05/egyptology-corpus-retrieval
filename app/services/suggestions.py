@@ -434,9 +434,10 @@ class QueryForms:
 
         In mixed mode each candidate word is shown as the query token it can stand
         for: as written when it equals a strict (Unicode) query token, folded when its
-        fold equals a loose (ASCII) one. A word that could serve either is matched to
-        the token at its own position first, then to whichever query token is still
-        unclaimed, so `ꜥḥꜥ ꜥḥꜥ` meets both words of the query `aha ꜥḥꜥ`, while
+        fold equals a loose (ASCII) one. Words and query tokens are paired by a
+        maximum matching (preferring the token at the word's own position), so a word
+        that could serve either is reassigned when that lets another word meet its
+        token, and `ꜥḥꜥ ꜥḥꜥ` meets both words of the query `aha ꜥḥꜥ`, while
         `ꜣḥꜥ ꜣḥꜥ` only ever meets `aha` (Astra review: a single global loose set
         made the two candidates identical).
         """
@@ -446,33 +447,52 @@ class QueryForms:
             return unfolded_reading_form(value)
         words = unfolded_reading_form(value).split()
         folds = [loose_reading_form(word) for word in words]
-        remaining = Counter(self.tokens)
+        tokens = self.tokens
+
+        def fits(index: int, slot: int) -> bool:
+            token, loose = tokens[slot]
+            return (folds[index] if loose else words[index]) == token
+
+        # Each word's compatible query-token slots, tried in this order: the token at
+        # its own position, then strict tokens (they name their letters), then loose.
+        options = [
+            sorted(
+                (slot for slot in range(len(tokens)) if fits(index, slot)),
+                key=lambda slot, i=index: (slot != i, tokens[slot][1], slot),
+            )
+            for index in range(len(words))
+        ]
+        # Maximum matching (augmenting paths), so a word that could serve either a
+        # strict or a loose token never takes the loose one when that leaves the
+        # strict one unmet (Astra re-review: `aha ꜥḥꜥ n` against `ꜥḥꜥ n ꜣḥꜥ`, where
+        # the first word took `aha` positionally and the strict `ꜥḥꜥ` went unmatched).
+        owner: dict[int, int] = {}
+
+        def assign(index: int, seen: set[int]) -> bool:
+            for slot in options[index]:
+                if slot in seen:
+                    continue
+                seen.add(slot)
+                if slot not in owner or assign(owner[slot], seen):
+                    owner[slot] = index
+                    return True
+            return False
+
+        for index in range(len(words)):
+            assign(index, set())
         chosen: list[str | None] = [None] * len(words)
-        # Pass 1: the query token at the same position.
-        for index, (word, folded) in enumerate(zip(words, folds)):
-            if index >= len(self.tokens):
-                break
-            token, loose = self.tokens[index]
-            if (folded if loose else word) == token and remaining[(token, loose)] > 0:
-                chosen[index] = token
-                remaining[(token, loose)] -= 1
-        # Pass 2: an unclaimed query token anywhere (strict first: it names its
-        # letters); then any query token; otherwise the word as written.
+        for slot, index in owner.items():
+            chosen[index] = tokens[slot][0]
+        # An unmatched word: shown as the token form it duplicates, else as written.
         for index, (word, folded) in enumerate(zip(words, folds)):
             if chosen[index] is not None:
                 continue
-            for key in ((word, False), (folded, True)):
-                if remaining[key] > 0:
-                    chosen[index] = key[0]
-                    remaining[key] -= 1
-                    break
+            if word in self.strict_words:
+                chosen[index] = word
+            elif folded and folded in self.loose_words:
+                chosen[index] = folded
             else:
-                if word in self.strict_words:
-                    chosen[index] = word
-                elif folded and folded in self.loose_words:
-                    chosen[index] = folded
-                else:
-                    chosen[index] = word
+                chosen[index] = word
         return " ".join(word for word in chosen if word)
 
     def char_similarity(self, query_key: str, candidate_key: str) -> float:
