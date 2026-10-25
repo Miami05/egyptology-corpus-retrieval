@@ -281,3 +281,21 @@ retires the set; a retired set is never re-used for a claim. Every attempt, incl
 retired ones and failures, is preserved and disclosed with the number quoted.
 
 **Until (B) has run, no new accuracy number is quoted to experts.**
+
+## A6. Recorded before measurement: where the merged router differs from A2.4
+
+Written down at 10e7325, before any step of (A) ran, as A2.4 requires; not fixed tonight.
+Found by the final audit (Astra search-ranking-4, cross-verified by Opus).
+
+1. **No abstention at zero coverage.** When only one stage is eligible and the paste is
+   entirely unattested (e.g. a lone `𓂋` with only Earlier Egyptian eligible), the router
+   returns that stage with coverage 0; A2.4 specifies `None`.
+2. **Coverage counts more than the stage's own labelled rows.** A group attested only in an
+   AES row without a stage label counts as coverage 1 for a stage; A2.4 defines coverage
+   from the stage's own labelled, aligned rows. `run_stage_routing_eval.py` reports both
+   definitions (`own_coverage_<stage>`, `coverage_differs`) so the size of the difference
+   is measured, not guessed.
+
+Rule A2.3 (no Earlier/Late paste routed to Demotic) is judged on the router as merged.
+Whether to change the coverage definition or add the abstention is decided after (A), with
+its own pre-registration.
