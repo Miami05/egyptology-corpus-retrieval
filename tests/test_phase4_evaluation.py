@@ -152,17 +152,72 @@ def corpus_tokens():
     return token_sets, index, position
 
 
-def test_v2_benchmark_has_no_twin_anywhere_in_the_corpus(corpus_tokens):
-    """The property the whole phase is about: excluding the target must not leave a
-    near-identical row behind to hand the answer over."""
-    token_sets, index, position = corpus_tokens
+# The retired v2 set's twins at word overlap >= 0.9, reviewed 2026-10-25: benchmark id
+# -> the exact (source_text_id, source_sentence_id) of every twin row. Empty until the
+# audit-fixes merge: audit A17 now deletes `{…}` superfluous text from the loose key,
+# so COMP_003's BBAW edition `[m] [ꞽr(.t)]-Ḥr.w ḫ{t}nf.〈t〉.n =f` has exactly the
+# target's tokens. It was an edition twin all along; the `{t}` hid it. v2 is retired
+# (nothing gates on it); the gated sets are pinned by the allow-list test in
+# tests/test_audit_eval.py.
+V2_KNOWN_TWINS_AT_09 = {"COMP_003": {("bbaw_egyptian_2018", "B083910")}}
+
+
+def _twins_at(
+    target: int, token_sets: list, index: dict, threshold: float
+) -> set[int]:
+    """Every other row whose loose-token Jaccard with `target` is >= threshold."""
+    tokens = token_sets[target]
+    candidates: set[int] = set()
+    for token in tokens:
+        candidates.update(index.get(token, ()))
+    candidates.discard(target)
+    return {
+        row
+        for row in candidates
+        if len(tokens & token_sets[row]) / len(tokens | token_sets[row]) >= threshold
+    }
+
+
+def _v2_twins_at_09(token_sets: list, index: dict, position: dict) -> dict:
+    """benchmark id -> {(text id, sentence id) of each twin} for the v2 targets that have one."""
+    identity = {row: key for key, row in position.items()}
     benchmark = pd.read_csv(BENCHMARKS / "competitive_ambiguity_eval_queries_v2.csv")
     assert len(benchmark) == 20
+    found: dict = {}
     for _, row in benchmark.iterrows():
         key = (str(row["expected_source_text_id"]), str(row["expected_source_sentence_id"]))
         assert key in position, f"benchmark row {row['benchmark_id']} is not in the corpus"
-        _, best = rivals_for(position[key], token_sets, index, min_overlap=0.9)
-        assert best < 0.9, f"{row['benchmark_id']} has a twin at overlap {best:.2f}"
+        twins = _twins_at(position[key], token_sets, index, 0.9)
+        if twins:
+            found[str(row["benchmark_id"])] = {identity[twin] for twin in twins}
+    return found
+
+
+def test_v2_benchmark_twins_at_0_9_are_only_the_reviewed_ones(corpus_tokens):
+    """The property the whole phase is about: excluding the target must not leave a
+    near-identical row behind to hand the answer over. The reviewed twins are pinned
+    by identity, so a different twin of COMP_003, an extra twin of it, a twin of any
+    other target, or a vanished reviewed twin all fail."""
+    assert _v2_twins_at_09(*corpus_tokens) == V2_KNOWN_TWINS_AT_09
+
+
+def test_v2_twin_pin_catches_an_injected_extra_twin(corpus_tokens):
+    """Negative control (Astra review): one synthetic copy of COMP_001's target makes
+    the pinned comparison fail, so the pin above is not vacuous."""
+    token_sets, index, position = corpus_tokens
+    benchmark = pd.read_csv(BENCHMARKS / "competitive_ambiguity_eval_queries_v2.csv")
+    first = benchmark.iloc[0]
+    target = position[(str(first["expected_source_text_id"]), str(first["expected_source_sentence_id"]))]
+    copy_row = len(token_sets)
+    injected_sets = token_sets + [set(token_sets[target])]
+    injected_index = dict(index)
+    for token in token_sets[target]:
+        injected_index[token] = list(index[token]) + [copy_row]
+    injected_position = dict(position)
+    injected_position[("SYNTHETIC", "S1")] = copy_row
+    found = _v2_twins_at_09(injected_sets, injected_index, injected_position)
+    assert found != V2_KNOWN_TWINS_AT_09
+    assert ("SYNTHETIC", "S1") in found[str(first["benchmark_id"])]
 
 
 def test_v1_benchmark_is_kept_and_still_contaminated(corpus_tokens):

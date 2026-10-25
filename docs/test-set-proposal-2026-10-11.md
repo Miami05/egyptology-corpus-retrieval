@@ -1,9 +1,27 @@
 # Proposal: freezing an untouched test set (2026-10-11)
 
-Status: **proposal only.** Nothing described here has been built. No test set has been
-generated, `data/benchmarks/release_baseline.json` is unchanged, and no script was
-added for it. The project owner reads this and decides before anything is built (see
-"Open questions"). It answers audit finding A25.
+Status: **proposal with four decisions taken; audit finding A25 stays OPEN.** Nothing
+described here has been built. No test set has been generated,
+`data/benchmarks/release_baseline.json` is unchanged, and no script was added for it.
+This document is preparation, not the fix: development-set numbers still control
+release decisions until the set exists, its custody is in place and the release report
+uses it. Only then can A25 be closed.
+
+## Decisions (2026-10-25)
+
+Taken by the project owner; they replace the matching open questions below.
+
+1. **Size: n = 200.**
+2. **Sampling: stratified and seeded** (strata and rules in "Sampling").
+3. **Custody: outside version control, in `data/private/`** (gitignored), in its own
+   subdirectory, e.g. `data/private/test-set/`, never as a top-level CSV there:
+   `load_private_examples` loads every `*.csv` directly in `data/private/` as corpus
+   rows, so a queries file at that level would be served as corpus text.
+4. **No per-query failure analysis until after the first report.** The first release
+   report on the set uses aggregate numbers only; whether and how per-query analysis
+   is allowed afterwards (and whether that retires the set) is decided then.
+5. **When it is built:** in the later re-measure step, together with the twin-controlled
+   re-measurement, not now.
 
 ## Purpose and status of the existing sets
 
@@ -28,7 +46,7 @@ README or in a release note.
 
 ## Size
 
-Proposal: **n = 200 queries**, with 100 as the absolute minimum.
+Decided: **n = 200 queries** (the proposal's figure; 100 was the absolute minimum).
 
 The reason is how little a 20-query set can say. One query is five points, so 0.85 and
 0.90 cannot be told apart. The 95% interval around an accuracy of 0.8 (Wilson):
@@ -110,9 +128,12 @@ guard before using this set".
 The value of a test set is that nobody has tuned to it. In this repository that is hard
 to protect, because every teammate and every coding agent can read every file.
 
-* The **queries file and the per-query results are not committed** and are not
-  readable by coding agents. They live outside the repository with one named release
-  owner.
+* The **queries file and the per-query results are not committed.** Decided location:
+  a subdirectory of the gitignored `data/private/` (e.g. `data/private/test-set/`;
+  not a top-level CSV there, see Decisions). Gitignored keeps the file out of git and
+  out of every clone and push; it does not stop a process on the same machine from
+  reading it, so coding agents are instructed not to open that subdirectory, and the
+  release owner is the only person who reads it.
 * Committed instead: the **sha256** of the queries file, the builder arguments, the
   seed and the corpus row count. That is enough to prove which set a number came from
   and to rebuild the set if the file is lost and the corpus is unchanged.
@@ -123,7 +144,8 @@ to protect, because every teammate and every coding agent can read every file.
 * **Retirement.** A set that has been looked at per query, or used to choose between two
   configurations, is retired and replaced by a new sample with a new seed. Looking is
   one-way, so this rule has to be applied when it happens, not afterwards.
-* Per-query failure analysis on the test set is not permitted (open questions).
+* Per-query failure analysis on the test set is **not permitted until after the first
+  report** (decided); what is allowed afterwards is decided then.
 
 ## Reporting and floors
 
@@ -164,16 +186,18 @@ measurement and has to be pre-registered first.
 
 ## Open questions
 
-These need the project owner, they are not settled by anything in the repository:
+Size (200), sampling (stratified, seeded), custody location (`data/private/`
+subdirectory) and the failure-analysis rule up to the first report are decided (see
+Decisions). Still open:
 
-1. **Size:** 200 (proposed), 100 (minimum) or 300 (catches a 5-point loss)?
+1. ~~Size~~ decided: 200.
 2. **Quotas:** weight strata by corpus share, by share of expected user queries, or
    equally above the floor of 20? Should Late Egyptian (Ramses and TLA) and Demotic be
    weighted up?
-3. **Custodian:** who is the single release owner, and where is the file stored outside
-   the repository?
-4. **Failure analysis:** is per-query analysis ever allowed on the test set? Proposed:
-   no, and a test set that needed it is retired.
+3. **Custodian:** who is the single release owner? (Location decided: a
+   `data/private/` subdirectory.)
+4. **Failure analysis after the first report:** allowed at all, and does it retire the
+   set? (Before the first report: not allowed, decided.)
 5. **Floors:** lower Wilson bound or allowed number of lost queries, and who signs off
    the number?
 6. **The useful rule:** keep the frozen v4 rule for the test set (comparable with

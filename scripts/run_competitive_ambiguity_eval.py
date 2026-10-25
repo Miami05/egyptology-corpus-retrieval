@@ -26,11 +26,12 @@ Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such colum
 from __future__ import annotations
 
 import argparse
+import inspect
 import math
 import os
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -61,6 +62,12 @@ from app.services.suggestions import (
 )
 from scripts.build_competitive_ambiguity_benchmark import STOP_TOKENS
 from scripts.eval_guards import TwinGuard
+
+# The services fix (audit A54, branch fix1-services) adds `query_raw=` to
+# suggest_top_readings: strictness is decided on the query as typed. Passed only when
+# the installed suggestion layer takes it, so this harness runs on either side of that
+# merge; once merged, the app and the harness hand the layer the same two strings.
+SUGGEST_TAKES_QUERY_RAW = "query_raw" in inspect.signature(suggest_top_readings).parameters
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 # Default for `_load_benchmark` callers that pass nothing. The CLI no longer has a
@@ -273,7 +280,10 @@ class BaselineStats:
         self.by_canonical = guard.folded_groups
         self.lemma_sequences = [str(value or "") for value in examples_df["lemma_sequence"]]
         self.size = len(self.token_sets)
-        self.lengths = [len(tokens) for tokens in self.token_sets]
+        # Conventional BM25 inputs: how often each token occurs in a row, and the row's
+        # length in tokens (repeats counted). Same tokens as `token_sets`.
+        self.term_counts = [Counter(tokens) for tokens in guard.token_lists]
+        self.lengths = [len(tokens) for tokens in guard.token_lists]
         self.average_length = (sum(self.lengths) / len(self.lengths)) if self.lengths else 0.0
 
 
@@ -333,14 +343,28 @@ def bm25_ranking(
 ) -> list[int]:
     """Row positions of the best BM25 matches (k1=1.5, b=0.75), best first.
 
-    Binary term frequency (a token is in a row or it is not), idf from the whole
-    corpus document frequency, row length = number of distinct tokens. Only the
-    postings of the query's own tokens are touched. Same tie-break and de-duplication
-    as `overlap_ranking`.
+    Conventional Okapi BM25 (audit A23 review): term frequency is the token's count in
+    the row, row length is the row's token count with repeats, idf is the
+    non-negative `log(1 + (N - df + 0.5) / (df + 0.5))` over the whole corpus. The
+    query is a token set, so each query token counts once. Only the postings of the
+    query's own tokens are touched. Same tie-break and de-duplication as
+    `overlap_ranking`.
     """
     if not query_tokens or not stats.size:
         return []
+    scores = bm25_scores(query_tokens, stats, excluded)
+    ranked = sorted(scores, key=lambda position: (-scores[position], position))
+    return _top_distinct(ranked, stats, top_n)
+
+
+def bm25_scores(
+    query_tokens: set[str],
+    stats: BaselineStats,
+    excluded: "set[int] | frozenset[int]" = frozenset(),
+) -> dict[int, float]:
+    """Row position -> BM25 score, for every non-excluded row sharing a query token."""
     scores: dict[int, float] = defaultdict(float)
+    average_length = stats.average_length or 1.0
     for token in query_tokens:
         postings = stats.token_index.get(token, ())
         if not postings:
@@ -350,10 +374,10 @@ def bm25_ranking(
         for position in postings:
             if position in excluded:
                 continue
-            norm = 1.0 - BM25_B + BM25_B * stats.lengths[position] / (stats.average_length or 1.0)
-            scores[position] += idf * (BM25_K1 + 1.0) / (1.0 + BM25_K1 * norm)
-    ranked = sorted(scores, key=lambda position: (-scores[position], position))
-    return _top_distinct(ranked, stats, top_n)
+            tf = stats.term_counts[position][token]
+            norm = 1.0 - BM25_B + BM25_B * stats.lengths[position] / average_length
+            scores[position] += idf * tf * (BM25_K1 + 1.0) / (tf + BM25_K1 * norm)
+    return dict(scores)
 
 
 def candidate_lemmas_fast(
@@ -527,6 +551,74 @@ def _load_benchmark(benchmark_path: str = BENCHMARK_PATH) -> pd.DataFrame:
     return df
 
 
+def twin_threshold_arg(text: str) -> float:
+    """--exclude-twins: 0 (off) or a Jaccard threshold in (0, 1]; anything else is refused.
+
+    A Jaccard above 1 can never be reached, so e.g. `--exclude-twins 70` (a percent
+    typed by mistake) used to run silently with only the folded-reading rule active
+    while every result row recorded 70.0 as if it were a real configuration.
+    """
+    try:
+        value = float(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from error
+    if not (value == 0.0 or 0.0 < value <= 1.0):
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not 0 (off) or a word-overlap threshold in (0, 1], e.g. 0.7"
+        )
+    return value
+
+
+def key_token_drift(bench_row: pd.Series, guard: TwinGuard) -> tuple[set[str], set[str]]:
+    """(tokens only the frozen benchmark records, tokens only today's corpus row has).
+
+    The benchmark's FROZEN `expected_key_tokens` were cut by an older normaliser; when
+    it changes (e.g. audit A17 dropping `{…}` superfluous text, or `.pl` markers
+    no longer yielding `pl`) they drift from today's tokens for some targets. The
+    default scoring (`--expected-tokens current`, see `scoring_key_tokens`) no
+    longer reads that column, so the drift only matters to a `--expected-tokens
+    frozen` reproduction; it is reported per query either way, and the frozen
+    column is never rewritten. A target that is not in the corpus has no drift to
+    report.
+    """
+    positions = guard.target_positions(bench_row)
+    if not positions:
+        return set(), set()
+    recorded = {token for token in str(bench_row["expected_key_tokens"]).split() if token}
+    current = guard.token_sets[positions[0]]
+    return recorded - current, current - recorded
+
+
+EXPECTED_TOKEN_MODES = ("current", "frozen")
+
+
+def scoring_key_tokens(bench_row: pd.Series, mode: str = "current") -> set[str]:
+    """The expected tokens the useful rule scores against (audit A55/A17 review).
+
+    'current' (default) runs the benchmark's own `expected_transliteration` through
+    the SAME normaliser the candidates go through (`loose_reading_form`, see
+    `_useful_reason`), so both sides of every token comparison use one rule and a
+    normaliser change can never move a decision by changing only one side. 'frozen'
+    reads the benchmark's recorded `expected_key_tokens` column as it was cut — the
+    historical, mixed-normalisation scoring every result before 2026-10-25 used; it is
+    kept so those numbers stay reproducible and is labelled as such in the summary.
+    The benchmark files are never rewritten either way.
+    """
+    if mode == "frozen":
+        return _tokens(bench_row["expected_key_tokens"])
+    if mode != "current":
+        raise ValueError(f"expected-token mode must be one of {EXPECTED_TOKEN_MODES}, not {mode!r}")
+    return _tokens(loose_reading_form(str(bench_row["expected_transliteration"])))
+
+
+def format_token_drift(only_recorded: set[str], only_current: set[str]) -> str:
+    """`-pl +nn` style, sorted; empty when there is no drift."""
+    return " ".join(
+        [f"-{token}" for token in sorted(only_recorded)]
+        + [f"+{token}" for token in sorted(only_current)]
+    )
+
+
 def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -559,7 +651,7 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--exclude-twins",
-        type=float,
+        type=twin_threshold_arg,
         default=0.0,
         metavar="OVERLAP",
         help=(
@@ -570,6 +662,19 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
             "so the gate number is unchanged; 0.7 is the audit's recommendation. "
             "Both numbers should be quoted: the default one includes free edition-copy "
             "hits."
+        ),
+    )
+    parser.add_argument(
+        "--expected-tokens",
+        choices=list(EXPECTED_TOKEN_MODES),
+        default="current",
+        help=(
+            "Audit A55/A17. 'current' (default): the expected reading's tokens are "
+            "recomputed with today's normaliser, the same one the candidates go "
+            "through, so both sides of the useful rule agree. 'frozen': the "
+            "benchmark's recorded expected_key_tokens, as every run before 2026-10-25 "
+            "scored (mixed: frozen expected tokens against today's candidate tokens); "
+            "use it only to reproduce a historical number, e.g. v4 0.90."
         ),
     )
     parser.add_argument(
@@ -590,7 +695,8 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
             "than the raw string. 'legacy' is what "
             "this harness did before 2026-09-05 — index=None whenever no stage "
             "resolves, and the raw query string into the suggestion layer — and is kept "
-            "so the published v4 numbers (0.90 / MRR 0.79) can be reproduced exactly."
+            "so the published pre-2026-09-05 numbers can be reproduced exactly (with "
+            "--expected-tokens frozen; every published number predates that flag)."
         ),
     )
     parser.add_argument(
@@ -653,14 +759,25 @@ def render_extra_summary(
     bm25_ranks: "list[int | None]",
     near_exact_hits: int,
     strict_top3_hits: int,
+    key_token_drift_queries: int = 0,
+    expected_tokens: str = "current",
 ) -> str:
     """The summary lines added by audit A4 and A23, as printable text.
 
     Key names deliberately avoid the substrings verify_release greps for
-    (`top3_useful_family_accuracy:`, `mrr:`, `failures:`).
+    (`top3_useful_family_accuracy:`, `mrr:`, `failures:`). The `pool:` line labels
+    which kind of number the run produced, so a legacy (twins-in) number can never be
+    quoted as if it were twin-controlled.
     """
     lines = [
         f"twin_exclusion: {twin_threshold if twin_threshold > 0 else 'off'}",
+        (
+            f"pool: twin-controlled (target, rows at word overlap >= {twin_threshold} "
+            "and same-folded-reading rows removed)"
+            if twin_threshold > 0
+            else "pool: legacy (only the target row removed; edition twins stay in and "
+            "can give free hits)"
+        ),
     ]
     if twin_threshold > 0:
         lines.append(f"queries_with_twins: {queries_with_twins}")
@@ -670,7 +787,19 @@ def render_extra_summary(
     extra.update(margin_summary(app_ranks, bm25_ranks, "bm25_baseline"))
     extra["top3_near_exact"] = round(near_exact_hits / total, 4) if total else 0.0
     extra["top3_strict_useful"] = round(strict_top3_hits / total, 4) if total else 0.0
+    extra["key_token_drift_queries"] = key_token_drift_queries
     lines.extend(f"{key}: {value}" for key, value in extra.items())
+    if expected_tokens == "frozen":
+        lines.append(
+            "expected_tokens: frozen (recorded benchmark tokens against today's "
+            f"candidate tokens; {key_token_drift_queries} queries differ, see "
+            "key_token_drift; historical scoring, not consistent normalisation)"
+        )
+    else:
+        lines.append(
+            "expected_tokens: current (expected and candidate tokens both from "
+            "today's loose_reading_form)"
+        )
     return "\n".join(lines)
 
 
@@ -695,6 +824,7 @@ def main(argv: "list[str] | None" = None) -> None:
     strict_ranks: list[int | None] = []
     near_exact_hits = 0
     strict_top3_hits = 0
+    key_token_drift_queries = 0
 
     # Item D's symptom metric needs the token annotation behind each suggestion; one
     # pass over the corpus, reused for every query.
@@ -814,6 +944,10 @@ def main(argv: "list[str] | None" = None) -> None:
                 vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
             )
             suggestion_query = searched.reading or query_input
+        # The query as typed goes along too (see SUGGEST_TAKES_QUERY_RAW), exactly as
+        # the app passes `query_raw=query`. Under 'legacy' it equals query_mdc, which
+        # is the layer's own default, so that path is unchanged.
+        raw_kwargs = {"query_raw": query_input} if SUGGEST_TAKES_QUERY_RAW else {}
         suggestions = suggest_top_readings(
             retrieval_results,
             query_mdc=suggestion_query,
@@ -822,10 +956,11 @@ def main(argv: "list[str] | None" = None) -> None:
             query_raw=query_input,
             query_reading_order=query_reading_order,
             top_n=3,
+            **raw_kwargs,
         )
         candidates = [suggestion.candidate_transliteration for suggestion in suggestions]
         expected = str(bench_row["expected_transliteration"])
-        expected_key_tokens = _tokens(bench_row["expected_key_tokens"])
+        expected_key_tokens = scoring_key_tokens(bench_row, args.expected_tokens)
         expected_lemma_ids = _tokens(bench_row["expected_lemma_ids"])
         token_threshold = float(bench_row["acceptable_token_overlap_threshold"])
 
@@ -861,6 +996,9 @@ def main(argv: "list[str] | None" = None) -> None:
             token for token in loose_reading_form(suggestion_query).split() if token
         }
         expected_canonical = canonical_reading(expected)
+        drift = format_token_drift(*key_token_drift(bench_row, guard))
+        if drift:
+            key_token_drift_queries += 1
 
         def baseline_rank(positions: list[int]) -> int | None:
             for baseline_rank_value, position in enumerate(positions, start=1):
@@ -1013,6 +1151,15 @@ def main(argv: "list[str] | None" = None) -> None:
                     str(examples_df["transliteration_gold"].iat[position])
                     for position in overlap_positions
                 ),
+                # Appended last (fix round 1): frozen expected_key_tokens against the
+                # target row's tokens under today's normaliser, see key_token_drift.
+                "key_token_drift": drift,
+                # Appended after it (fix round 2): the run configuration that decides
+                # the scoring, per row, so compare_twin_scores.py can refuse a pair
+                # that differs in it instead of trusting two printed summaries.
+                "query_path": args.query_path,
+                "useful_rule": args.useful_rule,
+                "expected_tokens": args.expected_tokens,
             }
         )
 
@@ -1083,6 +1230,8 @@ def main(argv: "list[str] | None" = None) -> None:
         bm25_ranks=bm25_ranks,
         near_exact_hits=near_exact_hits,
         strict_top3_hits=strict_top3_hits,
+        key_token_drift_queries=key_token_drift_queries,
+        expected_tokens=args.expected_tokens,
     ))
 
     results_path.parent.mkdir(parents=True, exist_ok=True)

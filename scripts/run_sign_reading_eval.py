@@ -11,8 +11,13 @@ whose exact sign string recurs (as it always did) and now also removes from each
 target's retrieval pool every row whose sign-group Jaccard with the target is at least
 `--near-duplicate-overlap` (0.8) and every row with the same reading, so a near-copy
 cannot be "predicted" by copying it. `--no-exclude-duplicates` restores the old default
-and `--exclude-duplicates --near-duplicate-overlap 0` the old exact-only rule. Results
-go to NEW `*_v2.csv` files so the committed sign_reading_eval*.csv, produced under the
+and `--exclude-duplicates --near-duplicate-overlap 0 --no-exclude-same-text` the old
+exact-only rule (without `--no-exclude-same-text` the target's sibling AES sentences
+are still removed). It also
+removes every other sentence of the target's own text (`--exclude-same-text`, on by
+default; audit A56's text-level requirement). Only AES rows carry a text identity in
+this corpus (the text id in source_ref); TLA, BBAW and Ramses rows are their own text,
+a stated limitation printed with every run. Results go to NEW `*_v2.csv` files so the committed sign_reading_eval*.csv, produced under the
 old semantics, are never overwritten.
 
 Two accuracies are reported:
@@ -39,7 +44,12 @@ from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
 from app.services.suggestions import canonical_reading, loose_reading_form, suggest_top_readings
 from scripts.build_competitive_ambiguity_benchmark import build_token_index
-from scripts.eval_guards import folded_keys, twin_rows
+from scripts.eval_guards import (
+    SENTENCE_LEVEL_SOURCES,
+    folded_keys,
+    text_group_keys,
+    twin_rows,
+)
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 # NEW names on purpose (audit A56): the committed sign_reading_eval_results.csv and
@@ -77,12 +87,17 @@ class SignDuplicateGuard:
     Built once over the whole corpus. `removals(position)` returns the positions that
     must leave that target's pool besides the target's own sentence: rows with the
     same canonical reading (written with other signs or in another edition) and rows
-    whose sign-group set has Jaccard >= `overlap` with the target's. `overlap` 0
-    removes nothing, which is the legacy behaviour.
+    whose sign-group set has Jaccard >= `overlap` with the target's. With `same_text`,
+    every other sentence of the target's text (`text_group_keys`) leaves too. `overlap`
+    0 without `same_text` removes nothing, which is the legacy behaviour.
     """
 
-    def __init__(self, df: pd.DataFrame, overlap: float) -> None:
+    def __init__(self, df: pd.DataFrame, overlap: float, same_text: bool = False) -> None:
         self.overlap = overlap
+        self.text_keys: list[str] = text_group_keys(df) if same_text else []
+        self.by_text: dict[str, list[int]] = defaultdict(list)
+        for position, key in enumerate(self.text_keys):
+            self.by_text[key].append(position)
         self.sign_sets: list[set[str]] = []
         self.index: dict[str, list[int]] = {}
         self.keys: list[str] = folded_keys(df)
@@ -94,17 +109,19 @@ class SignDuplicateGuard:
             self.index = build_token_index(self.sign_sets)
 
     def removals(self, position: int) -> set[int]:
-        if self.overlap <= 0:
-            return set()
-        out = {
-            other
-            for other, _ in twin_rows(
-                self.sign_sets[position], self.sign_sets, self.index, self.overlap
+        out: set[int] = set()
+        if self.overlap > 0:
+            out.update(
+                other
+                for other, _ in twin_rows(
+                    self.sign_sets[position], self.sign_sets, self.index, self.overlap
+                )
             )
-        }
-        key = self.keys[position]
-        if key:
-            out.update(self.by_key[key])
+            key = self.keys[position]
+            if key:
+                out.update(self.by_key[key])
+        if self.text_keys:
+            out.update(self.by_text[self.text_keys[position]])
         out.discard(position)
         return out
 
@@ -183,7 +200,18 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
         help=(
             "With duplicate exclusion on: remove from each target's pool every row whose "
             "sign-group Jaccard with the target is at least this, and every row with the "
-            "same reading. 0 = off (the old exact-only rule)."
+            "same reading. 0 = off; the old exact-only rule also needs "
+            "--no-exclude-same-text."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-same-text",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "On by default (audit A56). With duplicate exclusion on, also remove every "
+            "other sentence of the target's own text from its pool. Only AES rows carry "
+            "a text identity; other sources' sentences are their own text."
         ),
     )
     return parser.parse_args(argv)
@@ -222,7 +250,18 @@ def main(argv: "list[str] | None" = None) -> None:
         targets = targets.head(args.limit)
     print(f"evaluating {len(targets)} sign queries (leave-one-out)\n")
 
-    guard = SignDuplicateGuard(df, args.near_duplicate_overlap if args.exclude_duplicates else 0.0)
+    same_text = bool(args.exclude_duplicates and args.exclude_same_text)
+    guard = SignDuplicateGuard(
+        df,
+        args.near_duplicate_overlap if args.exclude_duplicates else 0.0,
+        same_text=same_text,
+    )
+    if same_text:
+        print(
+            "same-text exclusion: AES by text id; "
+            f"{', '.join(SENTENCE_LEVEL_SOURCES)} and Ramses have no text identity, so "
+            "only the target sentence itself leaves for them"
+        )
     # Canonical reading -> row positions, for the lemma lookup below (the old code
     # re-mapped canonical_reading over the whole pool for every candidate).
     rows_by_key = guard.by_key

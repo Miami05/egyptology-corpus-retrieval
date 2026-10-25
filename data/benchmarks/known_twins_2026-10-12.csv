@@ -14,7 +14,8 @@ competitive_ambiguity_eval_queries.csv,COMP_001,TLA,TLA_EARLIER_11464,S11464,0.7
 competitive_ambiguity_eval_queries.csv,COMP_001,TLA,TLA_EARLIER_12637,S12637,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B040449,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B081238,0.7273,False,0.7-0.9
-competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B083910,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B082013,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B083910,1.0,False,>=0.9
 competitive_ambiguity_eval_queries.csv,COMP_001,BBAW,bbaw_egyptian_2018,B086107,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_002,TLA,TLA_EARLIER_102,S102,0.8182,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_002,TLA,TLA_EARLIER_1014,S1014,0.8,False,0.7-0.9
@@ -46,6 +47,7 @@ competitive_ambiguity_eval_queries.csv,COMP_002,BBAW,bbaw_egyptian_2018,B088588,
 competitive_ambiguity_eval_queries.csv,COMP_002,BBAW,bbaw_egyptian_2018,B090533,0.75,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_005,TLA,TLA_EARLIER_7759,S7759,0.8182,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_005,BBAW,bbaw_egyptian_2018,B087287,0.8333,True,0.7-0.9
+competitive_ambiguity_eval_queries.csv,COMP_005,BBAW,bbaw_egyptian_2018,B091116,0.8333,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_006,TLA,TLA_EARLIER_247,S247,0.8333,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_006,TLA,TLA_EARLIER_305,S305,0.8182,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_006,TLA,TLA_EARLIER_571,S571,0.8182,False,0.7-0.9
@@ -136,6 +138,7 @@ competitive_ambiguity_eval_queries.csv,COMP_012,TLA,TLA_EARLIER_11044,S11044,0.7
 competitive_ambiguity_eval_queries.csv,COMP_012,TLA,TLA_EARLIER_11828,S11828,0.75,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_012,TLA,TLA_EARLIER_12051,S12051,0.75,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_012,TLA,TLA_EARLIER_12542,S12542,0.7143,False,0.7-0.9
+competitive_ambiguity_eval_queries.csv,COMP_012,BBAW,bbaw_egyptian_2018,B083141,0.7143,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_012,BBAW,bbaw_egyptian_2018,B087232,0.7143,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_012,BBAW,bbaw_egyptian_2018,B088712,0.7143,False,0.7-0.9
 competitive_ambiguity_eval_queries.csv,COMP_012,BBAW,bbaw_egyptian_2018,B089866,0.7692,False,0.7-0.9
@@ -191,7 +194,7 @@ competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_017,BBAW,bbaw_egy
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_017,BBAW,bbaw_egyptian_2018,B084267,0.8636,False,0.7-0.9
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_017,BBAW,bbaw_egyptian_2018,B084268,0.8636,False,0.7-0.9
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_017,BBAW,bbaw_egyptian_2018,B084269,0.8182,False,0.7-0.9
-competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_022,BBAW,bbaw_egyptian_2018,B001570,0.7333,False,0.7-0.9
+competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_022,BBAW,bbaw_egyptian_2018,B001570,0.7857,False,0.7-0.9
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_022,Ramses,RAMSES_494772340266,S_train_014083,0.7333,False,0.7-0.9
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_022,Ramses,RAMSES_2C974EB82802,S_train_027591,0.7333,False,0.7-0.9
 competitive_ambiguity_eval_queries_holdout_2026-09-05.csv,HOLD_023,BBAW,bbaw_egyptian_2018,B085679,0.7647,False,0.7-0.9
@@ -227,7 +230,8 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_003,TLA,TLA_EARLIER_11464,S11464,
 competitive_ambiguity_eval_queries_v2.csv,COMP_003,TLA,TLA_EARLIER_12637,S12637,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B040449,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B081238,0.7273,False,0.7-0.9
-competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B083910,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B082013,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B083910,1.0,False,>=0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_003,BBAW,bbaw_egyptian_2018,B086107,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_004,TLA,TLA_EARLIER_1950,S1950,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_004,TLA,TLA_EARLIER_3268,S3268,0.7778,False,0.7-0.9
@@ -239,7 +243,8 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_004,TLA,TLA_EARLIER_10017,S10017,
 competitive_ambiguity_eval_queries_v2.csv,COMP_004,TLA,TLA_EARLIER_11464,S11464,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_004,TLA,TLA_EARLIER_12637,S12637,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_004,BBAW,bbaw_egyptian_2018,B040449,0.7,False,0.7-0.9
-competitive_ambiguity_eval_queries_v2.csv,COMP_004,BBAW,bbaw_egyptian_2018,B083910,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_004,BBAW,bbaw_egyptian_2018,B082013,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_004,BBAW,bbaw_egyptian_2018,B083910,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_005,TLA,TLA_EARLIER_7759,S7759,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_006,TLA,TLA_EARLIER_7720,S7720,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_006,TLA,TLA_EARLIER_12728,S12728,0.7273,False,0.7-0.9
@@ -291,7 +296,7 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B0806
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B083292,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B083942,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085028,0.7778,False,0.7-0.9
-competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085087,0.875,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B087668,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B088343,0.75,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_007,BBAW,bbaw_egyptian_2018,B089863,0.7,False,0.7-0.9
@@ -308,6 +313,7 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_008,TLA,TLA_EARLIER_8897,S8897,0.
 competitive_ambiguity_eval_queries_v2.csv,COMP_008,TLA,TLA_EARLIER_11464,S11464,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_008,TLA,TLA_EARLIER_12637,S12637,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_008,BBAW,bbaw_egyptian_2018,B082119,0.7273,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_008,BBAW,bbaw_egyptian_2018,B083910,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_009,TLA,TLA_EARLIER_5709,S5709,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_1950,S1950,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_3268,S3268,0.7,False,0.7-0.9
@@ -317,6 +323,7 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_8897,S8897,0.
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_10017,S10017,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_11464,S11464,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,TLA,TLA_EARLIER_12637,S12637,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_010,BBAW,bbaw_egyptian_2018,B083910,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_010,BBAW,bbaw_egyptian_2018,B084670,0.8182,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,TLA,TLA_EARLIER_305,S305,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,TLA,TLA_EARLIER_571,S571,0.7,False,0.7-0.9
@@ -339,7 +346,7 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_011,TLA,TLA_EARLIER_12051,S12051,
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B031622,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B083292,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B085028,0.7,False,0.7-0.9
-competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B089868,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_011,BBAW,bbaw_egyptian_2018,B092309,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,TLA,TLA_EARLIER_305,S305,0.7,False,0.7-0.9
@@ -365,7 +372,7 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B0832
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B083942,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B084356,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B085028,0.7,False,0.7-0.9
-competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B089868,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_012,BBAW,bbaw_egyptian_2018,B092309,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_014,BBAW,bbaw_egyptian_2018,B082211,0.7273,False,0.7-0.9
@@ -433,11 +440,13 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_019,TLA,TLA_EARLIER_11828,S11828,
 competitive_ambiguity_eval_queries_v2.csv,COMP_019,TLA,TLA_EARLIER_12051,S12051,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_019,BBAW,bbaw_egyptian_2018,B080684,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_019,BBAW,bbaw_egyptian_2018,B083942,0.7273,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_019,BBAW,bbaw_egyptian_2018,B085087,0.8889,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_019,BBAW,bbaw_egyptian_2018,B089868,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_019,BBAW,bbaw_egyptian_2018,B092309,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_020,BBAW,bbaw_egyptian_2018,B057373,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_021,TLA,TLA_EARLIER_7759,S7759,0.8182,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_021,BBAW,bbaw_egyptian_2018,B087287,0.8333,True,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_021,BBAW,bbaw_egyptian_2018,B091116,0.8333,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,TLA,TLA_EARLIER_102,S102,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,TLA,TLA_EARLIER_324,S324,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,TLA,TLA_EARLIER_1014,S1014,0.8889,False,0.7-0.9
@@ -470,7 +479,9 @@ competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B0806
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B081859,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B083292,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B083942,0.7273,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B086319,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B086462,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B087668,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B090776,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v2.csv,COMP_022,BBAW,bbaw_egyptian_2018,B092309,0.7,False,0.7-0.9
@@ -521,7 +532,7 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B0806
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B083292,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B083942,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B085028,0.7778,False,0.7-0.9
-competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B085087,0.875,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B087668,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B088343,0.75,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_002,BBAW,bbaw_egyptian_2018,B089863,0.7,False,0.7-0.9
@@ -559,7 +570,7 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_006,TLA,TLA_EARLIER_12051,S12051,
 competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B031622,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B083292,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B085028,0.7,False,0.7-0.9
-competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B089868,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_006,BBAW,bbaw_egyptian_2018,B092309,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,TLA,TLA_EARLIER_305,S305,0.7,False,0.7-0.9
@@ -585,7 +596,7 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B0832
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B083942,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B084356,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085028,0.7,False,0.7-0.9
-competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B085087,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B089868,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_007,BBAW,bbaw_egyptian_2018,B092309,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_008,TLA,TLA_EARLIER_305,S305,0.7273,False,0.7-0.9
@@ -618,6 +629,7 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_009,TLA,TLA_EARLIER_11828,S11828,
 competitive_ambiguity_eval_queries_v3.csv,COMP_009,TLA,TLA_EARLIER_12051,S12051,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_009,BBAW,bbaw_egyptian_2018,B080684,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_009,BBAW,bbaw_egyptian_2018,B083942,0.7273,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_009,BBAW,bbaw_egyptian_2018,B085087,0.8889,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_009,BBAW,bbaw_egyptian_2018,B089868,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_009,BBAW,bbaw_egyptian_2018,B092309,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_010,TLA,TLA_EARLIER_7720,S7720,0.7273,False,0.7-0.9
@@ -665,7 +677,9 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B0806
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B081859,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B083292,0.8,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B083942,0.7273,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B085087,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B086319,0.7,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B086462,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B087668,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B090776,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_012,BBAW,bbaw_egyptian_2018,B092309,0.7,False,0.7-0.9
@@ -772,6 +786,7 @@ competitive_ambiguity_eval_queries_v3.csv,COMP_019,TLA,TLA_EARLIER_8847,S8847,0.
 competitive_ambiguity_eval_queries_v3.csv,COMP_019,BBAW,bbaw_egyptian_2018,B081680,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_019,BBAW,bbaw_egyptian_2018,B090847,0.8889,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_019,BBAW,bbaw_egyptian_2018,B092309,0.7778,False,0.7-0.9
+competitive_ambiguity_eval_queries_v3.csv,COMP_019,BBAW,bbaw_egyptian_2018,B092744,0.7,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_019,Ramses,RAMSES_C153E76C9C40,S_train_054960,0.7778,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_020,TLA,TLA_EARLIER_1014,S1014,0.7273,False,0.7-0.9
 competitive_ambiguity_eval_queries_v3.csv,COMP_020,TLA,TLA_EARLIER_1731,S1731,0.7273,False,0.7-0.9

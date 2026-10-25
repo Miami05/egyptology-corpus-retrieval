@@ -10,6 +10,15 @@ the pool, the second took them out). It prints, per benchmark, the headline numb
 for both runs, the fixed baselines' numbers and the app's margin over them, and the
 queries whose useful rank or shown suggestions changed. It only reads CSVs and writes
 two NEW files; it never touches a committed result.
+
+Before comparing, each pair is validated (`validate_pair`): both runs must cover exactly
+the same benchmark ids with the same query, target and scoring definition (expected
+key tokens, lemma ids, token threshold), under the same stage mode, query path,
+useful rule and expected-token mode (each recorded per row by the eval since
+2026-10-25 and required in both runs), the first with twin exclusion off and the
+second with one threshold above 0. A pair that fails is refused, because the headline
+numbers are computed per run while the change table only sees ids present in both, so
+a dropped or swapped query could look like an improvement.
 """
 
 from __future__ import annotations
@@ -76,6 +85,89 @@ def metrics_from_results(results: pd.DataFrame) -> dict[str, float]:
     return out
 
 
+# Columns that identify a query, its target and how it is scored: they must agree id
+# for id. The last three are the useful rule's inputs; two benchmark files with the
+# same queries but different expected tokens (v4 vs v4_driftcorrected) are not a pair.
+IDENTITY_COLUMNS = (
+    "query_input",
+    "query_type",
+    "expected_transliteration",
+    "expected_source_text_id",
+    "expected_source_sentence_id",
+    "expected_key_tokens",
+    "expected_lemma_ids",
+    "acceptable_token_overlap_threshold",
+)
+# Run configuration that must be recorded in, and the same across, both runs. A run
+# that lacks one of these columns is refused: an unrecorded setting cannot be checked.
+SHARED_CONFIG_COLUMNS = ("stage_mode", "query_path", "useful_rule", "expected_tokens")
+
+
+def _single_value(results: pd.DataFrame, column: str, label: str) -> str:
+    values = {str(value) for value in results[column]}
+    if len(values) != 1:
+        raise ValueError(f"{label}: {column} is not constant across rows: {sorted(values)}")
+    return values.pop()
+
+
+def validate_pair(twins_in: pd.DataFrame, twins_out: pd.DataFrame, name: str = "") -> None:
+    """Refuse to compare two runs that are not the same benchmark under two twin settings.
+
+    Raises ValueError, naming the problem, when: a benchmark id repeats in either run;
+    the id sets differ; any identity column (query, query type, expected reading,
+    target ids, expected key tokens, lemma ids, token threshold) differs for an id; a
+    run configuration column (stage mode, query path, useful rule, expected-token
+    mode) is missing from either run, not constant, or differs; the first run did not
+    have twin exclusion off or the second did not have one threshold above 0.
+    """
+    label = name or "pair"
+    for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
+        if "benchmark_id" not in frame.columns:
+            raise ValueError(f"{label}: {side} run has no benchmark_id column")
+        repeated = sorted(frame.loc[frame["benchmark_id"].duplicated(), "benchmark_id"].astype(str))
+        if repeated:
+            raise ValueError(f"{label}: {side} run repeats benchmark ids {repeated}")
+    ids_in = set(twins_in["benchmark_id"].astype(str))
+    ids_out = set(twins_out["benchmark_id"].astype(str))
+    if ids_in != ids_out:
+        raise ValueError(
+            f"{label}: the runs cover different queries; only in twins-in "
+            f"{sorted(ids_in - ids_out)}, only in twins-out {sorted(ids_out - ids_in)}"
+        )
+    left = twins_in.assign(benchmark_id=twins_in["benchmark_id"].astype(str)).set_index("benchmark_id")
+    right = twins_out.assign(benchmark_id=twins_out["benchmark_id"].astype(str)).set_index("benchmark_id")
+    for column in IDENTITY_COLUMNS:
+        if column not in left.columns or column not in right.columns:
+            raise ValueError(f"{label}: both runs need the {column} column")
+        mismatched = sorted(
+            bid for bid in ids_in if str(left.at[bid, column]) != str(right.at[bid, column])
+        )
+        if mismatched:
+            raise ValueError(f"{label}: {column} differs for {mismatched}")
+    for column in SHARED_CONFIG_COLUMNS:
+        for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
+            if column not in frame.columns:
+                raise ValueError(
+                    f"{label}: {side} run does not record {column}; re-run it with the "
+                    "current scripts/run_competitive_ambiguity_eval.py"
+                )
+        value_in = _single_value(twins_in, column, f"{label} twins-in")
+        value_out = _single_value(twins_out, column, f"{label} twins-out")
+        if value_in != value_out:
+            raise ValueError(f"{label}: {column} differs ({value_in} vs {value_out})")
+    for side, frame in (("twins-in", twins_in), ("twins-out", twins_out)):
+        if "twin_exclusion" not in frame.columns:
+            raise ValueError(f"{label}: {side} run has no twin_exclusion column")
+    threshold_in = float(_single_value(twins_in, "twin_exclusion", f"{label} twins-in"))
+    threshold_out = float(_single_value(twins_out, "twin_exclusion", f"{label} twins-out"))
+    if threshold_in != 0.0:
+        raise ValueError(f"{label}: the twins-in run had twin exclusion {threshold_in}, not off")
+    if not 0.0 < threshold_out <= 1.0:
+        raise ValueError(
+            f"{label}: the twins-out run had twin exclusion {threshold_out}, not in (0, 1]"
+        )
+
+
 def query_changes(twins_in: pd.DataFrame, twins_out: pd.DataFrame) -> pd.DataFrame:
     """Per-query rows where the useful rank or the shown suggestions differ."""
     joined = twins_in.merge(
@@ -124,6 +216,7 @@ def main(argv: "list[str] | None" = None) -> None:
     for name, in_path, out_path in args.pair:
         twins_in = pd.read_csv(in_path).fillna("")
         twins_out = pd.read_csv(out_path).fillna("")
+        validate_pair(twins_in, twins_out, name)
         before = metrics_from_results(twins_in)
         after = metrics_from_results(twins_out)
         print(f"\n{name}: twins left in the pool vs twins removed")
