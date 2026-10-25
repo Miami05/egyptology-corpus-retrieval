@@ -51,6 +51,10 @@ BOUNDARY = "<s>"
 # Additive smoothing. Small, because most sign/reading pairs are genuinely unattested
 # and we do not want to invent readings the corpus never shows.
 SMOOTHING = 0.1
+# What `ReadingModel.unreadable_emission` charges for a group with no reading at all:
+# the smoothed probability of an unseen reading of a group attested once,
+# log(SMOOTHING / (SMOOTHING + 1)) ≈ -2.40. Shared by every model (A53, fix round 1).
+UNREADABLE_EMISSION = log(SMOOTHING / (SMOOTHING + 1.0))
 
 # Minimum glyph overlap before an unattested sign group borrows another group's
 # readings. Measured precision/coverage tradeoff on 1,689 held-out sentences
@@ -240,13 +244,10 @@ class ReadingModel:
     # Demotic). This is an expected state, not a defect, so it is counted apart
     # from `sentences_skipped` (see app.data.loader.AlignmentReport.text_only_rows).
     sentences_text_only: int = 0
-    # (cache key, value) for `unreadable_emission`; see there.
-    _unreadable_cache: tuple[tuple[int, int], float] | None = field(default=None, repr=False)
 
     # ---------- training ----------
 
     def fit(self, df: pd.DataFrame) -> ReadingModel:
-        self._unreadable_cache = None
         for _, row in df.iterrows():
             signs = str(row.get("hieroglyphs_norm") or "").split()
             readings = str(row.get("transliteration_gold") or "").split()
@@ -278,7 +279,6 @@ class ReadingModel:
         """Make an external lexicon available for groups the corpus does not attest."""
         self.lexicon = dict(readings)
         self.lexicon_sources = dict(sources or {})
-        self._unreadable_cache = None
         return self
 
     # ---------- inspection ----------
@@ -310,24 +310,21 @@ class ReadingModel:
 
     @property
     def unreadable_emission(self) -> float:
-        """Log-probability this model charges for a group it cannot read at all.
+        """Log-probability charged for a group this model cannot read at all.
 
         A group with no corpus, lexicon, composed or fallback reading used to cost
         `_emission('', '')` = log(SMOOTHING / SMOOTHING) = 0, i.e. nothing, so a model
         that had never seen a paste's signs out-scored one that attested them (A53).
-        The charge is the model's own smoothed mass for a reading of a typical group
-        it has never seen: SMOOTHING / (SMOOTHING + the mean number of attestations
-        per attested group, at least 1). It scales with the model, like `_emission`.
+
+        The charge is `UNREADABLE_EMISSION`, one constant shared by every model. The
+        first fix scaled it with the model's mean attestation count, which made a
+        smaller model that knows less charge *less* for not knowing (fix round 1).
+        A shared constant is not enough on its own either — any fixed number can be
+        undercut by a well-attested but ambiguous group — so stage choice also ranks
+        on readable coverage first (`app.services.stage.choose_stage_by_likelihood`);
+        with equal coverage this constant then cancels between stages.
         """
-        key = (self.sentences_seen, len(self.sign_reading))
-        if self._unreadable_cache is None or self._unreadable_cache[0] != key:
-            groups = len(self.sign_reading)
-            mean_total = (
-                sum(sum(c.values()) for c in self.sign_reading.values()) / groups if groups else 0.0
-            )
-            value = log(SMOOTHING / (SMOOTHING + max(mean_total, 1.0)))
-            self._unreadable_cache = (key, value)
-        return self._unreadable_cache[1]
+        return UNREADABLE_EMISSION
 
     def _lexicon_emission(self, sign: str, reading: str) -> float:
         """Same estimate as `_emission`, over the external lexicon's counts."""

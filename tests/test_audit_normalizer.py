@@ -117,9 +117,10 @@ def test_a48_other_plural_shapes_unchanged():
     assert search_fold("šms(.t).pl") == search_fold("šms(.t).w")
 
 
-def test_a48_strict_reading_key_unchanged():
-    # strict_reading_key shares the plural regexes; the bracketed-w rule is search-fold only.
-    assert strict_reading_key("šms(.w).pl") == "šmsww"
+def test_a48_strict_reading_key_folds_the_bracketed_plural_too():
+    # Fix round 1: the bracket rules moved into fold_plural_marker, which the strict
+    # key shares, so `šms(.w).pl` and `šms.w` are one reading (was `šmsww`).
+    assert strict_reading_key("šms(.w).pl") == strict_reading_key("šms.w") == "šmsw"
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +164,12 @@ def test_a17_double_braces_keep_their_text():
     assert search_fold("{{šꜥ{f}.t}}") == search_fold("šꜥ.t")
 
 
-def test_a17_fully_single_braced_text_keeps_a_key():
-    # Deleting every span would leave an empty key: the row would be unreachable
-    # (tests/test_query_notations.py::test_every_corpus_row_is_reachable...).
-    assert search_fold("{m} ={tn}") == search_fold("m tn")
-    assert search_fold("{Ḫwi̯.n-H̱nm.w}") != ""
+def test_a17_fully_single_braced_text_has_no_key():
+    # Fix round 1 (Astra review): a text that is superfluous from end to end has no
+    # reading to search; it keeps only its raw display. (3 BBAW rows; the
+    # every-row-reachable check in tests/test_query_notations.py must exempt them.)
+    assert search_fold("{m} ={tn}") == ""
+    assert search_fold("{Ḫwi̯.n-H̱nm.w}") == ""
 
 
 def test_a17_loader_survives_a_fully_braced_row():
@@ -179,7 +181,8 @@ def test_a17_loader_survives_a_fully_braced_row():
         }
     )
     out = _normalize_corpus_frame(frame)
-    assert out["mdc_norm"].tolist() == [search_fold("m tn"), search_fold("nb"), search_fold("ꞽt f")]
+    assert out["mdc_norm"].tolist() == ["", search_fold("nb"), search_fold("ꞽt f")]
+    assert out["transliteration_gold"].tolist()[0] == "{m} ={tn}"  # raw display kept
 
 
 # ---------------------------------------------------------------------------

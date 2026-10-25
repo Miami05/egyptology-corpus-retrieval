@@ -2042,6 +2042,9 @@ def render_workspace(df: pd.DataFrame) -> None:
                     # sounds — is given the transliteration the query was
                     # understood as, falling back to the text as typed.
                     query_mdc=searched.reading or query,
+                    # ...but which words may match loosely is decided on what
+                    # was typed, not on that conversion (A54).
+                    query_raw=query,
                     query_reading_order=reading_order,
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",

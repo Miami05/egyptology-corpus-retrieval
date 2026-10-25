@@ -12,10 +12,12 @@ import pandas as pd
 
 from app.data.query import parse_query
 from app.data.normalizer import (
+    fold_letter_variants,
     fold_plural_marker,
     fold_weak_consonant_marker,
     nfc,
     normalize_mdc,
+    normalize_notation,
     normalize_sign_sequence,
     normalize_transliteration,
     normalize_whitespace,
@@ -200,8 +202,15 @@ def strict_reading_key(value: object) -> str:
     have their key rewritten by this and 25 pairs of distinct readings merge.
     Consonants stay distinct as before: ꜣ ≠ ꜥ, ḥ ≠ h, ḫ ≠ ẖ, ṯ ≠ t, ḏ ≠ d, and a
     genuine spelling variant like `ꞽt` / `ꞽtꞽ` remains two readings.
+
+    Two more notation folds, both lossless (fix round 1, A16/A48): the variant letter
+    encodings `ʿ ȝ ỉ` are the letters `ꜥ ꜣ ꞽ` (`fold_letter_variants`; 0 corpus rows use
+    them, so only typed queries change), and brackets around either half of the plural
+    notation no longer leave a second `w` (`šms(.w).pl`, `šms.w(.pl)` → `šmsw`, like
+    `šms.w`; 82 corpus rows).
     """
     text = nfc(_safe_str(value)).lower().replace("⸗", "=")
+    text = fold_letter_variants(text)
     text = fold_plural_marker(text)
     text = fold_weak_consonant_marker(text)
     text = STRICT_DROP_RE.sub("", text)
@@ -309,23 +318,20 @@ def has_egyptological_letters(text: object) -> bool:
 
 def unfolded_reading_form(value: object) -> str:
     """`loose_reading_form` without the lossy letter fold: markers become spaces, but
-    every letter stays as written (ꜣ ≠ ꜥ, ḥ ≠ h), with the same plural and weak-consonant
-    notation folds as `strict_reading_key`. Used instead of the loose form for a query
-    that itself contains Egyptological letters (A54), so `n.t` and `n(.t)` still share
-    words while `ꜥḥꜥ` and `ꜣḥꜥ` do not.
+    every letter stays as written (ꜣ ≠ ꜥ, ḥ ≠ h). The notation is normalised by
+    `normalize_notation`, the same lossless helper the search key starts from, so a
+    letter variant the search accepts (`ʿnḫ`) is the same letter here (`ꜥnḫ`), and the
+    plural, weak-consonant and superfluous-text rules agree with retrieval. Used for
+    the query words typed with Egyptological letters (A54), so `n.t` and `n(.t)` still
+    share words while `ꜥḥꜥ` and `ꜣḥꜥ` do not.
     """
-    text = fold_plural_marker(nfc(_safe_str(value)).lower().replace("⸗", "="))
-    text = fold_weak_consonant_marker(text)
+    text = normalize_notation(_safe_str(value).replace("⸗", "="))
     text = STRICT_DROP_RE.sub("", LOOSE_MARKER_RE.sub(" ", text))
     return normalize_whitespace(text)
 
 
-def char_ngram_similarity(left: object, right: object, fold: bool = True) -> float:
-    """Cosine similarity of character 2-4-grams. `fold=False` compares the letters as
-    written (`unfolded_reading_form`) instead of the lossy ASCII fold."""
-    form = loose_reading_form if fold else unfolded_reading_form
-    left_form = form(left)
-    right_form = form(right)
+def _ngram_cosine(left_form: str, right_form: str) -> float:
+    """Cosine similarity of character 2-4-grams of two already-formed strings."""
     left_text = f" {left_form} "
     right_text = f" {right_form} "
     if not left_text.strip() or not right_text.strip():
@@ -345,6 +351,106 @@ def char_ngram_similarity(left: object, right: object, fold: bool = True) -> flo
     if left_norm == 0.0 or right_norm == 0.0:
         return 0.0
     return numerator / (left_norm * right_norm)
+
+
+@dataclass(frozen=True)
+class QueryForms:
+    """How the words of one text query may be compared with a candidate reading (A54).
+
+    The lossy ASCII fold may only stand in for letters the user did *not* type. That
+    is decided per word, on the query as typed (`query_raw`), never on the reading it
+    was resolved to: `htp dji nswt` reaches this layer as `htp ḏi nswt`, and the `ḏ`
+    there is the app's own conversion of `dj`, not a letter the user chose.
+
+    - `loose`: every word was typed in plain ASCII/MdC → the old loose comparison,
+      byte for byte (`loose_reading_form` on both sides).
+    - `strict`: every word carries an Egyptological letter → letters compared as
+      written (`unfolded_reading_form` on both sides).
+    - `mixed`: e.g. `htp ḏi nswt` typed with one palette letter. Each ASCII word is
+      compared loosely and each Unicode word strictly: a candidate word is shown in
+      its loose form only when that equals one of the query's loose words, otherwise
+      as written, so `ḥtp` matches the typed `htp` while `ḏi` must be `ḏi`.
+    """
+
+    mode: str
+    query_form: str
+    loose_words: frozenset[str] = frozenset()
+
+    @classmethod
+    def build(cls, reading: str, query_raw: str) -> QueryForms:
+        reading_words = _safe_str(reading).split()
+        raw_words = _safe_str(query_raw).split()
+        if len(raw_words) == len(reading_words):
+            flags = [not has_egyptological_letters(raw) for raw in raw_words]
+        else:
+            # The resolution changed the word count (it never does today); decide per
+            # resolved word, but a raw query with no Egyptological letter stays loose.
+            whole = not has_egyptological_letters(query_raw)
+            flags = [whole or not has_egyptological_letters(word) for word in reading_words]
+        if all(flags):
+            return cls("loose", loose_reading_form(reading))
+        if not any(flags):
+            return cls("strict", unfolded_reading_form(reading))
+        parts: list[str] = []
+        loose_words: set[str] = set()
+        for word, loose in zip(reading_words, flags):
+            if loose:
+                form = loose_reading_form(word)
+                loose_words.update(form.split())
+            else:
+                form = unfolded_reading_form(word)
+            if form:
+                parts.append(form)
+        return cls("mixed", " ".join(parts), frozenset(loose_words))
+
+    @property
+    def loose(self) -> bool:
+        return self.mode == "loose"
+
+    def candidate(self, value: object) -> str:
+        """The candidate reading in the form comparable with `query_form`."""
+        if self.mode == "loose":
+            return loose_reading_form(value)
+        if self.mode == "strict":
+            return unfolded_reading_form(value)
+        words: list[str] = []
+        for word in unfolded_reading_form(value).split():
+            folded = loose_reading_form(word)
+            words.append(folded if folded and folded in self.loose_words else word)
+        return " ".join(words)
+
+    def char_similarity(self, query_key: str, candidate_key: str) -> float:
+        if self.mode == "loose":
+            return char_ngram_similarity(query_key, candidate_key, fold=True)
+        if self.mode == "strict":
+            return char_ngram_similarity(query_key, candidate_key, fold=False)
+        return _ngram_cosine(self.query_form, self.candidate(candidate_key))
+
+    def shown_shared(self, shared: list[str], candidate_transliteration: str) -> list[str]:
+        """Shared words as the candidate writes them: loose words are mapped back to
+        the candidate's own Unicode word, strict ones are already as written."""
+        if self.mode == "strict":
+            return list(shared)
+        if self.mode == "loose":
+            return unfold_shared_tokens(shared, candidate_transliteration)
+        shown: list[str] = []
+        # Ordered as the loose mode orders them (by ASCII fold), not ASCII-first.
+        for token in sorted(shared, key=lambda t: (loose_reading_form(t), t)):
+            word = (
+                unfold_shared_tokens([token], candidate_transliteration)[0]
+                if token in self.loose_words
+                else token
+            )
+            if word not in shown:
+                shown.append(word)
+        return shown
+
+
+def char_ngram_similarity(left: object, right: object, fold: bool = True) -> float:
+    """Cosine similarity of character 2-4-grams. `fold=False` compares the letters as
+    written (`unfolded_reading_form`) instead of the lossy ASCII fold."""
+    form = loose_reading_form if fold else unfolded_reading_form
+    return _ngram_cosine(form(left), form(right))
 
 
 def _group_lcs(query_groups: list[str], candidate_groups: list[str]) -> float:
@@ -382,7 +488,7 @@ def _evidence_summary(
     query_reading_order: str,
     candidate_transliteration: str,
     query_hieroglyphs: str = "",
-    loose_ok: bool = True,
+    forms: QueryForms | None = None,
 ) -> str:
     bits: list[str] = []
     if query_hieroglyphs:
@@ -399,17 +505,18 @@ def _evidence_summary(
             bits.append(f"sign groups cover {best_coverage:.0%} of the query, in order")
     candidate_key = canonical_reading(candidate_transliteration)
     query_key = canonical_reading(query_mdc)
-    # For a query with Egyptological letters the "loose" forms below keep every
-    # letter (`unfolded_reading_form`), so a different consonant is never "shared".
-    form = loose_reading_form if loose_ok else unfolded_reading_form
-    candidate_loose = form(candidate_transliteration)
-    query_loose = form(query_mdc)
+    # Words the user typed with Egyptological letters keep every letter here (see
+    # QueryForms), so a different consonant is never "shared" (A54).
+    if forms is None:
+        forms = QueryForms.build(query_mdc, query_mdc)
+    candidate_loose = forms.candidate(candidate_transliteration)
+    query_loose = forms.query_form
 
     if query_key and candidate_key == query_key:
         bits.append("same normalized query reading")
     elif query_loose and candidate_loose == query_loose:
         bits.append("same simplified query reading")
-    elif query_key and char_ngram_similarity(query_key, candidate_key, fold=loose_ok) >= 0.72:
+    elif query_key and forms.char_similarity(query_key, candidate_key) >= 0.72:
         bits.append("near simplified query reading")
 
     query_reading_norm = normalize_sign_sequence(query_reading_order)
@@ -432,10 +539,7 @@ def _evidence_summary(
     if query_tokens and candidate_tokens:
         shared = sorted(query_tokens & candidate_tokens)
         if shared:
-            if loose_ok:
-                shown = ", ".join(unfold_shared_tokens(shared, candidate_transliteration)[:8])
-            else:
-                shown = ", ".join(shared[:8])  # already the letters as written
+            shown = ", ".join(forms.shown_shared(shared, candidate_transliteration)[:8])
             bits.append(f"shared transliteration tokens: {shown}")
 
     lemma_sets = [
@@ -466,10 +570,9 @@ def _evidence_summary(
     return "; ".join(bits)
 
 
-def pool_absolute_evidence(evidence: list[float]) -> float:
-    """The factor that scales every confidence in one result pool: the strongest
-    absolute match any candidate has (1.0 for an empty pool, never above 1)."""
-    return max(0.0, min(1.0, max(evidence, default=1.0)))
+def absolute_evidence(evidence: float) -> float:
+    """One candidate's own absolute match strength, clamped to [0, 1]."""
+    return max(0.0, min(1.0, evidence))
 
 
 def suggest_top_readings(
@@ -480,6 +583,7 @@ def suggest_top_readings(
     weights: SuggestionWeights = DEFAULT_SUGGESTION_WEIGHTS,
     query_hieroglyphs: str = "",
     debug_signals: list[dict] | None = None,
+    query_raw: str | None = None,
 ) -> list[ReadingSuggestion]:
     """Group the retrieved rows by reading and rank the readings.
 
@@ -498,11 +602,19 @@ def suggest_top_readings(
     That mean is *relative*: `relative_score` and `mean_score` (0.36 of the mass) are
     divided by the pool's own best score, so they are 1.0 for any one-row pool and
     set a floor of about 0.4 on a candidate with almost no overlap (A21). The
-    displayed confidence is therefore the relative value times the pool's
-    absolute evidence, the strongest live absolute match (token overlap, character
-    similarity, exactness, glyph coverage, reading-order overlap) of any candidate.
-    It is one factor for the whole pool, so it rescales every confidence alike and
-    cannot change the order: candidates are still sorted on the relative value.
+    displayed confidence is therefore the relative value times *that candidate's
+    own* absolute evidence, its strongest live absolute match (token overlap,
+    character similarity, exactness, glyph coverage, reading-order overlap). It is
+    per candidate, so one strong candidate in the pool can no longer lift a weak
+    one's confidence (fix round 1). The order is still the relative order — the
+    factor is applied after sorting — so the displayed confidences need not fall
+    monotonically down the list: a candidate ranked second by retrieval can show a
+    higher match strength than the first.
+
+    `query_raw` is the query exactly as the user typed it, when `query_mdc` is the
+    reading it was already resolved to (the app passes `parse_query(...).reading`).
+    Which words may be matched through the lossy ASCII fold is decided on it, per
+    word (see QueryForms). Without it `query_mdc` is taken as the typed text.
 
     `debug_signals`, when a list is passed, receives one dict per candidate group
     with this layer's *own* per-term breakdown (each live signal's weight, raw
@@ -512,10 +624,10 @@ def suggest_top_readings(
     statement of the ranking path changes.
     """
     # The lossy ASCII fold may only stand in for letters the user did not type: it
-    # is decided on the query as typed, before the ASCII-to-Unicode resolution
-    # below, which would otherwise make every ASCII query look Unicode (A54). For a
-    # hieroglyph query the text signals are not live, so it keeps the old path.
-    loose_ok = bool(query_hieroglyphs) or not has_egyptological_letters(query_mdc)
+    # is decided on the query as typed (`query_raw`, or `query_mdc` itself when the
+    # caller passes the typed text), before the ASCII-to-Unicode resolution below,
+    # which would otherwise make every ASCII query look Unicode (A54).
+    typed = _safe_str(query_mdc if query_raw is None else query_raw)
 
     # A Manuel de Codage or ASCII-digraph query is not a reading, and this layer
     # compares readings as strings of sounds. Resolve it to the transliteration it
@@ -523,6 +635,12 @@ def suggest_top_readings(
     # query reading" fires for a query typed in the app's own ASCII convention. A
     # Unicode query comes back unchanged.
     query_mdc = parse_query(query_mdc).reading or query_mdc
+    # For a hieroglyph query the text signals are not live, so it keeps the old path.
+    forms = (
+        QueryForms("loose", loose_reading_form(query_mdc))
+        if query_hieroglyphs
+        else QueryForms.build(query_mdc, typed)
+    )
 
     if retrieval_results.empty:
         return []
@@ -538,8 +656,7 @@ def suggest_top_readings(
     debug_start = len(debug_signals) if debug_signals is not None else 0
     max_row_score = max(float(value) for value in results["final_score"].fillna(0.0))
     query_key = canonical_reading(query_mdc) if not query_hieroglyphs else ""
-    reading_form = loose_reading_form if loose_ok else unfolded_reading_form
-    query_loose = reading_form(query_mdc) if not query_hieroglyphs else ""
+    query_loose = forms.query_form if not query_hieroglyphs else ""
     query_reading_norm = normalize_sign_sequence(query_reading_order)
     query_glyph_groups = query_hieroglyphs.split()
     surplus_penalty = effective_surplus_penalty(
@@ -588,18 +705,26 @@ def suggest_top_readings(
         }
 
         if text_live:
-            candidate_loose = reading_form(best_candidate)
+            candidate_loose = forms.candidate(best_candidate)
             translit_overlap = max(
                 token_overlap_score(query_key, candidate_key, surplus_penalty),
                 token_overlap_score(query_loose, candidate_loose, surplus_penalty),
             )
-            if weights.carry_forward_idf and "idf_overlap_score" in group.columns:
+            if (
+                weights.carry_forward_idf
+                and forms.loose
+                and "idf_overlap_score" in group.columns
+            ):
                 # Read, never recompute: this is the number retrieval already
                 # scored this candidate's rows with (retrieval is not touched).
+                # Only for a query typed wholly in ASCII/MdC: retrieval's overlap is
+                # computed on the lossy ASCII key, so for a word typed with
+                # Egyptological letters it would credit a different consonant
+                # (`ꜣḥꜥ` for `ꜥḥꜥ`) with full overlap (A54, cfg_a/cfg_c).
                 translit_overlap = float(
                     group["idf_overlap_score"].fillna(0.0).astype(float).max()
                 )
-            char_similarity = char_ngram_similarity(query_key, candidate_key, fold=loose_ok)
+            char_similarity = forms.char_similarity(query_key, candidate_key)
             exact_or_near_bonus = 1.0 if candidate_key == query_key else 0.0
             if exact_or_near_bonus == 0.0 and query_loose == candidate_loose:
                 exact_or_near_bonus = 0.85
@@ -694,7 +819,7 @@ def suggest_top_readings(
                     query_reading_order=query_reading_order,
                     candidate_transliteration=best["candidate_transliteration"],
                     query_hieroglyphs=query_hieroglyphs,
-                    loose_ok=loose_ok,
+                    forms=forms,
                 ),
             }
         )
@@ -702,15 +827,14 @@ def suggest_top_readings(
     # Descending by the *relative* confidence then support; ties break by
     # transliteration in ordinary alphabetical order (they used to break
     # reverse-alphabetically, an accident of a single reverse=True over the whole
-    # key). The absolute-evidence factor is applied after sorting, so it can never
-    # reorder anything (A21).
-    pool_evidence = pool_absolute_evidence([row["evidence"] for row in rows])
+    # key). Each candidate's own absolute-evidence factor is applied after sorting,
+    # so it can never reorder anything (A21).
     if debug_signals is not None:
-        for entry in debug_signals[debug_start:]:
+        for entry, row in zip(debug_signals[debug_start:], rows):
             relative = entry["confidence_score"]
             entry["relative_confidence"] = relative
-            entry["pool_evidence"] = pool_evidence
-            entry["confidence_score"] = round(min(0.99, relative * pool_evidence), 3)
+            entry["evidence"] = absolute_evidence(row["evidence"])
+            entry["confidence_score"] = round(min(0.99, relative * entry["evidence"]), 3)
     rows.sort(
         key=lambda row: (
             -row["confidence_score"],
@@ -720,7 +844,8 @@ def suggest_top_readings(
     )
     suggestions = []
     for row in rows[:top_n]:
+        evidence = absolute_evidence(row["evidence"])
         row = {key: value for key, value in row.items() if key != "evidence"}
-        row["confidence_score"] = round(min(0.99, row["confidence_score"] * pool_evidence), 3)
+        row["confidence_score"] = round(min(0.99, row["confidence_score"] * evidence), 3)
         suggestions.append(ReadingSuggestion(**row))
     return suggestions
