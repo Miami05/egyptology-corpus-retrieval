@@ -441,6 +441,7 @@ def choose_stage_by_likelihood(
     paste: str,
     resources_by_stage: Callable[[str | None], StageResources],
     coverage: dict[str, int] | None = None,
+    use_format_hints: bool = True,
 ) -> tuple[str | None, dict[str, float]]:
     """Language identification for a hieroglyph paste, by per-sign log-likelihood.
 
@@ -459,6 +460,9 @@ def choose_stage_by_likelihood(
     this used to segment the control-free normalised string, so a paste whose
     joiners changed the grouping was routed on a segmentation nobody decoded). An
     already-normalised paste carries no controls and segments exactly as before.
+    `use_format_hints` is handed to `segment_paste` unchanged, so a caller that decodes
+    without hints (the expert eval's `--no-format-hints` ablation) also chooses the
+    stage without them.
 
     Segmentation is not part of the comparison. `build_stage_resources` now
     builds the segmenter from the *pooled* frame for every stage (measured
@@ -532,7 +536,9 @@ def choose_stage_by_likelihood(
         return None, {}
 
     pooled = resources_by_stage(None)
-    segmentation, groups_as_pasted = segment_paste(paste, pooled.segmenter)
+    segmentation, groups_as_pasted = segment_paste(
+        paste, pooled.segmenter, use_format_hints=use_format_hints
+    )
     if not groups_as_pasted:
         return None, {}
     groups = segmentation.groups

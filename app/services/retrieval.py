@@ -4,7 +4,11 @@ from typing import Callable, Literal
 
 import pandas as pd
 
-from app.data.normalizer import contains_hieroglyphs, normalize_sign_sequence
+from app.data.normalizer import (
+    contains_hieroglyphs,
+    normalize_sign_sequence,
+    quadrat_hints,
+)
 from app.data.query import QueryParse, parse_query
 from app.services.segmentation import segment_paste
 from dataclasses import dataclass
@@ -184,6 +188,7 @@ def retrieve_top_k(
 def resolve_auto_stage(
     query: str,
     resources_by_stage: Callable[[str | None], StageResources],
+    use_format_hints: bool = True,
 ) -> tuple[str | None, bool, dict[str, float]]:
     """Resolve "auto" to a concrete stage (or `None`, pooled) for one query.
 
@@ -209,11 +214,16 @@ def resolve_auto_stage(
     paste, and empty for a text query (no per-stage likelihoods computed there).
     The winner need not have the highest of those scores: attested coverage is
     compared first, and `choose_stage_by_likelihood(..., coverage={})` reports it.
+
+    `use_format_hints` must match the decoding that follows (it is passed to
+    `segment_paste`); the default, `True`, is what every shipped path decodes with.
     """
     if contains_hieroglyphs(query):
         # The raw query, not its normalised form: normalising deletes the layout
         # controls that `segment_paste` reads as quadrat hints (audit item 13).
-        stage, scores = choose_stage_by_likelihood(query, resources_by_stage)
+        stage, scores = choose_stage_by_likelihood(
+            query, resources_by_stage, use_format_hints=use_format_hints
+        )
         return stage, stage is not None, scores
 
     pooled = resources_by_stage(None)
@@ -245,6 +255,7 @@ def retrieve_with_stage(
     k: int = 3,
     weights: ScoreWeights = DEFAULT_WEIGHTS,
     query_hieroglyphs_norm: str | None = None,
+    use_format_hints: bool = True,
 ) -> StageRetrievalResult:
     """Retrieve with a declared, absent, or automatically inferred stage.
 
@@ -272,22 +283,40 @@ def retrieve_with_stage(
       (restricting to one stage's group counts changes which grouping wins — see
       `app.services.segmentation`), even if the caller's own `query_hieroglyphs_norm`
       was computed against the pooled segmenter. When nothing can be inferred, a
-      pooled pass at the caller's `k` is returned instead.
+      pooled pass at the caller's `k` is returned instead. That pass matches on the
+      caller's `query_hieroglyphs_norm` as before, except for one case: the caller
+      passed none and the paste's layout controls join signs across its spacing
+      (`quadrat_hints` finds a no-cut position). The stage choice was made on the
+      pooled, layout-aware `segment_paste` groups, so the fallback retrieves on those
+      same groups instead of on the pasted spacing (Astra review of audit item 13).
+      Every paste without such controls, and every text query, is unchanged.
+
+    `use_format_hints` is passed to the stage choice and to every `segment_paste`
+    call here, so a hint-free ablation stays hint-free throughout.
     """
     del df_all  # see docstring: retrieval runs on the resolved StageResources' frame
     if stage == "auto":
         inferred_stage, inferred, _likelihood_scores = resolve_auto_stage(
-            query_mdc, resources_by_stage
+            query_mdc, resources_by_stage, use_format_hints=use_format_hints
         )
         if not inferred:
             pooled = resources_by_stage(None)
+            fallback_groups = query_hieroglyphs_norm
+            if (
+                fallback_groups is None
+                and use_format_hints
+                and contains_hieroglyphs(query_mdc)
+                and quadrat_hints(query_mdc)[1]
+            ):
+                segmentation, _as_pasted = segment_paste(query_mdc, pooled.segmenter)
+                fallback_groups = " ".join(segmentation.groups)
             first_pass = retrieve_top_k(
                 pooled.frame,
                 query_mdc,
                 query_reading_order=query_reading_order,
                 k=k,
                 weights=weights,
-                query_hieroglyphs_norm=query_hieroglyphs_norm,
+                query_hieroglyphs_norm=fallback_groups,
                 index=pooled.index,
             )
             return StageRetrievalResult(
@@ -296,7 +325,9 @@ def retrieve_with_stage(
         resources = resources_by_stage(inferred_stage)
         regrouped = query_hieroglyphs_norm
         if contains_hieroglyphs(query_mdc):
-            segmentation, _as_pasted = segment_paste(query_mdc, resources.segmenter)
+            segmentation, _as_pasted = segment_paste(
+                query_mdc, resources.segmenter, use_format_hints=use_format_hints
+            )
             regrouped = " ".join(segmentation.groups)
         second_pass = retrieve_top_k(
             resources.frame,

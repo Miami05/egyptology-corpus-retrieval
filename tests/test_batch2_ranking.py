@@ -213,7 +213,7 @@ def test_choose_stage_by_likelihood_takes_the_raw_paste(toy):  # noqa: F811
         "  𓀀   𓆓𓂧 ",
     ],
 )
-def test_pastes_without_controls_choose_exactly_as_before(paste: str):
+def test_pastes_without_controls_choose_exactly_as_before(paste: str, monkeypatch):
     """For a control-free paste the new path must segment, score and choose exactly
     as the old one did: `segmenter.segment(paste.split())` on the normalised paste."""
     df = _likelihood_corpus()
@@ -244,9 +244,116 @@ def test_pastes_without_controls_choose_exactly_as_before(paste: str):
 
     stage_raw, scores_raw = choose_stage_by_likelihood(paste, recording)
     assert recorded and all(groups == old_groups for groups in recorded)
-    stage_norm, scores_norm = choose_stage_by_likelihood(
-        normalize_hieroglyphs(paste), resources_by_stage
-    )
+    # The old function, literally: its two segmentation lines patched back in.
+    import app.services.segmentation as segmentation_module
+
+    def old_segment_paste(query, segmenter, use_format_hints=True):
+        groups_as_pasted = normalize_hieroglyphs(query).split()
+        return segmenter.segment(groups_as_pasted), groups_as_pasted
+
+    monkeypatch.setattr(segmentation_module, "segment_paste", old_segment_paste)
+    stage_norm, scores_norm = choose_stage_by_likelihood(paste, resources_by_stage)
+    monkeypatch.undo()
     assert stage_raw == stage_norm
     assert scores_raw.keys() == scores_norm.keys()
     assert np.allclose(list(scores_raw.values()), list(scores_norm.values()), rtol=0, atol=0)
+
+
+# ---------- review follow-up (Opus + Astra) ----------
+
+
+def test_choose_stage_by_likelihood_honours_use_format_hints(toy):  # noqa: F811
+    """Opus review: `--no-format-hints` decodes without hints, so the stage must be
+    chosen on that same hint-free segmentation, not the hint-aware one."""
+    hint_free, _ = segment_paste(WITH_CONTROLS, toy, use_format_hints=False)
+    hint_aware, _ = segment_paste(WITH_CONTROLS, toy)
+    assert hint_free.groups != hint_aware.groups  # the toy paste must tell them apart
+
+    resources_by_stage, model = _recording_resources(toy)
+    choose_stage_by_likelihood(WITH_CONTROLS, resources_by_stage, use_format_hints=False)
+    assert model.seen and all(groups == hint_free.groups for groups in model.seen)
+
+    model.seen.clear()
+    resolve_auto_stage(WITH_CONTROLS, resources_by_stage, use_format_hints=False)
+    assert model.seen and all(groups == hint_free.groups for groups in model.seen)
+
+
+@pytest.mark.parametrize("no_format_hints", [False, True])
+def test_expert_eval_auto_stage_follows_the_format_hints_switch(toy, no_format_hints):  # noqa: F811
+    from scripts.run_expert_paste_eval import resolve_stage
+
+    resources_by_stage, model = _recording_resources(toy)
+    row = pd.Series({"query_input": WITH_CONTROLS})
+    resolve_stage("auto", row, resources_by_stage, use_format_hints=not no_format_hints)
+    decoded, _ = segment_paste(WITH_CONTROLS, toy, use_format_hints=not no_format_hints)
+    assert model.seen and all(groups == decoded.groups for groups in model.seen)
+
+
+def _tie_fallback_setup(monkeypatch, segmenter):
+    """`retrieve_with_stage(stage="auto")` with the stage choice forced to a tie, and
+    `retrieve_top_k` recording the sign groups it is asked to match on."""
+    import app.services.retrieval as retrieval
+
+    calls: list[str | None] = []
+    monkeypatch.setattr(
+        retrieval, "resolve_auto_stage", lambda *args, **kwargs: (None, False, {})
+    )
+
+    def recording_retrieve(frame, query_mdc, **kwargs):
+        calls.append(kwargs.get("query_hieroglyphs_norm"))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(retrieval, "retrieve_top_k", recording_retrieve)
+    pooled = SimpleNamespace(frame=pd.DataFrame(), index=None, segmenter=segmenter)
+    return retrieval, (lambda stage: pooled), calls
+
+
+def test_auto_stage_tie_fallback_retrieves_on_the_layout_aware_groups(
+    monkeypatch, toy  # noqa: F811
+):
+    """Astra review: on a tie the fallback retrieved on the pasted spacing (`AB C`)
+    while the stage choice and decoding used the layout-aware `ABC`."""
+    retrieval, resources_by_stage, calls = _tie_fallback_setup(monkeypatch, toy)
+    retrieval.retrieve_with_stage(
+        pd.DataFrame(), resources_by_stage, WITH_CONTROLS, stage="auto"
+    )
+    decoded, _ = segment_paste(WITH_CONTROLS, toy)
+    assert calls == [" ".join(decoded.groups)] == [f"{A}{B}{C}"]
+
+    # With hints off the fallback keeps the old behaviour (no regrouping).
+    calls.clear()
+    retrieval.retrieve_with_stage(
+        pd.DataFrame(),
+        resources_by_stage,
+        WITH_CONTROLS,
+        stage="auto",
+        use_format_hints=False,
+    )
+    assert calls == [None]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        WITHOUT_CONTROLS,
+        "𓆓𓂧 𓀀",
+        "𓆓 𓂧 𓀀",
+        "𓈖𓏏𓈖 𓅓",
+        "𓅓 𓆓𓂧 𓀀 𓈖𓏏𓈖",
+        "ḏd =f",
+        "dd mdw",
+    ],
+)
+def test_auto_stage_tie_fallback_is_unchanged_without_controls(
+    monkeypatch, toy, query  # noqa: F811
+):
+    """A query with no format controls takes the fallback exactly as before: the
+    caller's `query_hieroglyphs_norm` (here `None`) is passed through untouched."""
+    retrieval, resources_by_stage, calls = _tie_fallback_setup(monkeypatch, toy)
+    retrieval.retrieve_with_stage(pd.DataFrame(), resources_by_stage, query, stage="auto")
+    assert calls == [None]
+    calls.clear()
+    retrieval.retrieve_with_stage(
+        pd.DataFrame(), resources_by_stage, query, stage="auto", query_hieroglyphs_norm="X"
+    )
+    assert calls == ["X"]
