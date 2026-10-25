@@ -153,10 +153,16 @@ class CorpusStats:
 
     mdc_frequencies: dict[str, int]
     glyph_frequencies: dict[str, int]
+    # How many rows the frequencies were counted over. A per-stage set counts them
+    # over its stage subset but scores the pooled frame, so the IDF corpus size must
+    # be this, not the length of the frame being scored (audit A51). `None` (stats
+    # built by hand) falls back to the frame length.
+    n_rows: int | None = None
 
 
 def build_corpus_stats(df: pd.DataFrame) -> CorpusStats:
     return CorpusStats(
+        n_rows=len(df),
         mdc_frequencies=document_frequencies(df["mdc_norm"]),
         glyph_frequencies=(
             document_frequencies(df["hieroglyphs_norm"])
@@ -262,6 +268,11 @@ def combine_scores(
     if "exact_bonus" not in out.columns:
         out["exact_bonus"] = 0.0
     corpus_size = len(out)
+    idf_corpus_size = (
+        corpus_stats.n_rows
+        if corpus_stats is not None and corpus_stats.n_rows is not None
+        else corpus_size
+    )
     text_penalty = effective_surplus_penalty(
         query_mdc_norm, weights.idf_surplus_penalty
     )
@@ -285,7 +296,7 @@ def combine_scores(
                 query_mdc_norm,
                 value,
                 frequencies,
-                corpus_size,
+                idf_corpus_size,
                 candidate_surplus_penalty=text_penalty,
             )
         )
@@ -339,7 +350,7 @@ def combine_scores(
                     query_hieroglyphs_norm,
                     value,
                     glyph_frequencies,
-                    corpus_size,
+                    idf_corpus_size,
                     candidate_surplus_penalty=glyph_penalty,
                 )
             )

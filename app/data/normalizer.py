@@ -7,8 +7,9 @@ import zlib
 WHITESPACE_RE = re.compile(r"\s+")
 # `=` (and the Egyptological `⸗`) mark a suffix pronoun. They separate tokens.
 SUFFIX_MARKER_RE = re.compile(r"[=\u2e17]")
-# An editorially supplied yod: `(ꞽ)`, `(.ꞽ)`, `(j)`, `(.j)` — see normalize_transliteration.
-PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjı]\)")
+# An editorially supplied yod: `(ꞽ)`, `(.ꞽ)`, `(j)`, `(.j)`, and the ASCII `(i)`, `(.i)` a
+# typist without special keys writes — see normalize_transliteration.
+PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjıi]\)")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
 # The plural marker: TLA rows write `.PL` (2,842 tokens), AES/BBAW rows write `.pl`
@@ -20,6 +21,21 @@ MULTI_COLON_RE = re.compile(r":+")
 # sequence. Case-insensitive so `.PL` matches directly (callers may run this before
 # lowercasing); `.PL.t` never occurs in the corpus, so no interaction to handle.
 PLURAL_MARKER_RE = re.compile(r"(?:\.w)?\.pl(?![^\W\d_])", re.IGNORECASE)
+# `šms(.w).pl`, `(w).pl`: the `.w` is written in brackets, so PLURAL_MARKER_RE cannot see
+# it across the `)` and the fold would add a second one (`šms.w.w`, indexed `shmsww`).
+# 74 corpus rows. Dropping the bracketed `.w` first lets the fold turn `šms.pl` into
+# `šms.w`. Only `.w`: `(.t).pl` and `(ꞽ).pl` are another morpheme plus the plural.
+BRACKETED_PLURAL_W_RE = re.compile(r"\(\.?w\)(?=\.pl(?![^\W\d_]))", re.IGNORECASE)
+# `{…}` marks text the editor considers superfluous (BBAW; also the St Andrews
+# convention, see scripts/import_standrews.py): written on the monument, not part of the
+# reading. Only a *single* pair of braces: BBAW also wraps whole captions and additions
+# in `{{…}}` (148 rows, e.g. `{{pꜣ}} {{pri̯}}`), which is real text and must stay
+# searchable — the lookarounds skip those, and normalize_mdc later deletes their braces.
+SUPERFLUOUS_RE = re.compile(r"(?<!\{)\{(?!\{)[^{}]*\}(?!\})")
+# A `/` between two digits is a fraction (`1/2`, `1/64`). Deleting it made `1/2` the
+# whole number `12`. `_` survives NON_ALNUM_KEEP_COLON_RE and is not a token split, so
+# `1_2` stays one token that no whole number can equal.
+FRACTION_SLASH_RE = re.compile(r"(?<=\d)/(?=\d)")
 
 
 def fold_plural_marker(value: str) -> str:
@@ -51,6 +67,15 @@ def fold_weak_consonant_marker(value: str) -> str:
     return WEAK_CONSONANT_MARKER_RE.sub(
         lambda match: _WEAK_CONSONANT_FOLD[match.group(1).lower()], text
     )
+
+
+# Variant spellings of an Egyptological letter, mapped to the *canonical letter* (not
+# to ASCII) so they follow whatever the later ꜣ/ꜥ/ꞽ folds do. `ʿ` (U+02BF) is a common
+# substitute for the ayin ꜥ, `ȝ` (U+021D) for the aleph ꜣ, `ỉ` (U+1EC9) for the yod ꞽ.
+# The corpus holds none of them (0 rows), so this only touches queries; before it they
+# fell through to normalize_mdc and were deleted (`ʿnḫ` → `nkh`, `ỉr` → `r`). Upper case
+# is already lowered by normalize_text.
+_LETTER_VARIANTS = str.maketrans({"ʿ": "ꜥ", "ȝ": "ꜣ", "ỉ": "ꞽ"})
 
 # ---------------------------------------------------------------------------
 # Hieroglyph character classes
@@ -379,7 +404,9 @@ def quadrat_hints(value: object) -> tuple[list[str], frozenset[int]]:
 
 
 def normalize_text(value: str) -> str:
-    value = nfc(value).lower().strip()
+    # Compose again after lowercasing: capital H̱ has no precomposed codepoint, so it is
+    # `H` + U+0331 until `.lower()` makes it `h` + U+0331, which only NFC turns into ẖ.
+    value = nfc(nfc(value).lower()).strip()
     return normalize_whitespace(value)
 
 
@@ -391,6 +418,7 @@ def normalize_mdc(value: str) -> str:
     # than vanish: deleting it turned `ḏd=f` into the single token `djdf`, which
     # matches nothing. The corpus side is unaffected — no stored value contains `=`.
     value = SUFFIX_MARKER_RE.sub(" ", value)
+    value = FRACTION_SLASH_RE.sub("_", value)
     value = NON_ALNUM_KEEP_COLON_RE.sub("", value)
     value = MULTI_COLON_RE.sub(":", value)
     return normalize_whitespace(value)
@@ -416,10 +444,23 @@ def normalize_transliteration(value: str) -> str:
     match. `ꞽ`, `j`, dotless `ı` (+ its combining half ring U+0357) all become `i`;
     `ṱ` becomes `t` and `ḳ` becomes `q` for the same reason.
 
-    The `.PL`/`.pl` plural marker is folded to `.w` (see `fold_plural_marker`) right
-    after lowercasing, before the yod rule below.
+    Before any of that: editorially superfluous `{…}` text is deleted (`nb{.t}` → `nb`;
+    `{{…}}` is kept, and so is a text that is nothing but `{…}`), TLA's weak-consonant
+    marker is folded (`u̯` → `w`, `i̯` → `ꞽ`, see `fold_weak_consonant_marker`), and the
+    variant letters ʿ ȝ ỉ become ꜥ ꜣ ꞽ. A bracketed `.w` in front of `.pl` is dropped,
+    and the `.PL`/`.pl` plural marker is folded to `.w` (see `fold_plural_marker`), all
+    before the yod rule below.
     """
     value = normalize_text(value)
+    kept = SUPERFLUOUS_RE.sub("", value)
+    # A row that is single-braced from end to end (3 BBAW rows, `{m} ={tn} {ꞽs} {ḫ}`)
+    # would be left with no key at all and unreachable; keep its text then (the braces
+    # themselves go in normalize_mdc).
+    if re.search(r"\w", kept):
+        value = kept
+    value = fold_weak_consonant_marker(value)
+    value = value.translate(_LETTER_VARIANTS)
+    value = BRACKETED_PLURAL_W_RE.sub("", value)
     value = fold_plural_marker(value)
     # `n(.ꞽ).t`, `(ꞽ)r(.ꞽ)-pꜥ.t`: a yod in round brackets is one the editor supplied,
     # not one written on the wall. It is dropped so `n.t` and `n(.ꞽ).t` stay one

@@ -351,8 +351,16 @@ class ScoringTables:
         mdc_frequencies: dict[str, int],
         glyph_frequencies: dict[str, int],
         reuse: "ScoringTables | None" = None,
+        corpus_size: int | None = None,
     ) -> "ScoringTables":
         """Build the tables for `df`, weighted by the given document frequencies.
+
+        `corpus_size` is the number of rows the document frequencies were counted
+        over. It defaults to `len(df)`, which is right when the frequencies come from
+        the whole frame. A per-stage set shares the pooled frame but counts frequencies
+        over its stage subset (`app.services.stage`), and must pass the subset's size:
+        pooled N against subset frequencies shifted every IDF weight up by a constant
+        `log(N_pooled / N_stage)` and flattened the common-to-rare ratio (audit A51).
 
         `reuse` supplies already-built `TokenTable`s for the same frame — every
         stage's `StageResources.frame` is the same pooled frame, so the four stage
@@ -372,7 +380,7 @@ class ScoringTables:
             )
         else:
             glyph = None
-        corpus_size = len(df)
+        corpus_size = len(df) if corpus_size is None else corpus_size
         return cls(
             row_ids=row_ids,
             text=text,
