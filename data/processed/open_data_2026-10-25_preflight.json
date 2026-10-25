@@ -1,0 +1,105 @@
+{
+  "date": "2026-10-25",
+  "status": "downloaded_and_measured",
+  "reason": "Raw directories are gitignored (.gitignore updated); sources downloaded and converted into separate files; examples.csv unchanged.",
+  "sources": {
+    "ud_egyptian_pc": {
+      "raw_directory": "data/raw/ud_egyptian_pc/",
+      "git_check_ignore_exit_status": 0,
+      "downloaded": true
+    },
+    "oraec": {
+      "raw_directory": "data/raw/oraec/",
+      "git_check_ignore_exit_status": 0,
+      "downloaded": true
+    },
+    "unikemet": {
+      "raw_directory": "data/raw/unikemet/",
+      "git_check_ignore_exit_status": 0,
+      "downloaded": true
+    },
+    "jsesh": {
+      "raw_directory": "data/raw/jsesh/",
+      "git_check_ignore_exit_status": 0,
+      "downloaded": true
+    },
+    "wikidata": {
+      "raw_directory": "data/raw/wikidata/",
+      "git_check_ignore_exit_status": 0,
+      "downloaded": true
+    }
+  },
+  "corpus": {
+    "path": "data/processed/examples.csv",
+    "sha256": "44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2",
+    "bytes": 68634374,
+    "rows": 130472,
+    "rows_by_source": {
+      "TLA": 28369,
+      "AES": 9823,
+      "BBAW": 52216,
+      "Ramses": 40064
+    }
+  },
+  "local_baseline": {
+    "aes_rows_with_text_id_in_source_ref": 9823,
+    "aes_distinct_text_ids": 696,
+    "aes_text_id_availability_percent": 100.0,
+    "bbaw_rows_with_text_parameter_in_source_ref": 0,
+    "bbaw_source_text_id_values": [
+      "bbaw_egyptian_2018"
+    ],
+    "distinct_lemma_ids": 16254,
+    "lemma_id_method": "Whitespace tokens from lemma_sequence; substring before first |, excluding empty strings; preserves nonnumeric IDs including Demotic d-prefix.",
+    "corpus_distinct_signs": 868,
+    "corpus_sign_occurrences": 1190119,
+    "sign_method": "Characters in hieroglyphs in U+13000..U+1342F or U+13460..U+143FF; excludes layout controls and non-Unicode placeholders.",
+    "nederhof_table": "data/processed/sign_functions.csv",
+    "nederhof_distinct_signs": 780,
+    "nederhof_covered_distinct_corpus_signs": 681,
+    "nederhof_distinct_sign_coverage_percent": 78.45622119815668,
+    "nederhof_covered_corpus_sign_occurrences": 1066946,
+    "nederhof_occurrence_coverage_percent": 89.65036269482296
+  },
+  "licence_evidence": "DATA-LICENSE.md: Open-source import preflight — 2026-10-25 (imports blocked)",
+  "measured": {
+    "ud_sentences": 3089,
+    "ud_aligned": 2857,
+    "ud_text_only": 232,
+    "ud_with_lacuna": 74,
+    "ud_overlap_by_tla_sentence_id": 0,
+    "ud_duplicate_strict": 338,
+    "ud_duplicate_fold": 63,
+    "ud_overlap_partial": 604,
+    "ud_net_new": 2084,
+    "ud_net_new_without_lacuna": 2033,
+    "ud_net_new_aligned": 1918,
+    "oraec_texts": 13026,
+    "oraec_aes_text_ids_linked": 696,
+    "oraec_aes_linked_rows": 9823,
+    "oraec_aes_link_rate": 1.0,
+    "oraec_aes_rows_with_trismegistos": 6273,
+    "oraec_aes_rows_with_bibliography": 9773,
+    "oraec_aes_rows_with_idno": 8706,
+    "oraec_bbaw_linked_rows_unique": 46286,
+    "oraec_bbaw_linked_rows_unique_3plus_words": 41498,
+    "oraec_bbaw_ambiguous": 4138,
+    "oraec_bbaw_link_rate": 0.8864,
+    "sign_reference_codepoints": 5067,
+    "sign_reference_corpus_signs_in_unikemet": 868,
+    "sign_reference_corpus_signs_with_function_or_value": 842,
+    "sign_reference_occurrence_coverage": 0.9951,
+    "sign_reference_union_with_nederhof": 856,
+    "sign_reference_union_occurrence_coverage": 0.9999,
+    "sign_reference_net_new_vs_nederhof": 175,
+    "sign_reference_still_uncovered": 12,
+    "wikidata_lexemes_with_p12188": 14802,
+    "wikidata_tla_ids_with_english_gloss": 14062,
+    "wikidata_corpus_lemma_ids_on_wikidata": 6513,
+    "wikidata_lemma_ids_with_english_gloss": 6375,
+    "wikidata_gloss_coverage": 0.3922,
+    "wikidata_gloss_coverage_non_demotic": 0.6028,
+    "wikidata_demotic_ids_glossed": 0,
+    "wikidata_row_weighted_coverage": 0.4723
+  }
+}

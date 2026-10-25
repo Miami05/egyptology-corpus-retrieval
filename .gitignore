@@ -72,6 +72,11 @@ data/raw/bbaw_egyptian/
 data/raw/helsinki_lexicon/
 data/raw/ramses/
 data/raw/standrews/
+data/raw/ud_egyptian_pc/
+data/raw/oraec/
+data/raw/unikemet/
+data/raw/jsesh/
+data/raw/wikidata/
 
 # Importer side outputs; the corpus itself is examples.csv
 data/processed/bbaw_rows.csv
