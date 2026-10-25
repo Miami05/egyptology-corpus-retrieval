@@ -121,8 +121,8 @@ def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Shared normalisation for any frame with the `examples.csv` schema.
 
     Used by both `load_examples_csv` (the public, redistributed corpus) and
-    `load_private_examples` (gitignored, non-commercial corpora) so the two never
-    drift apart: a private row must be searchable and readable exactly like a
+    `load_private_examples` (the gitignored, non-commercial St Andrews corpus) so the
+    two never drift apart: a private row must be searchable and readable exactly like a
     public one, just kept out of the database, exports and API.
     """
     for col in REQUIRED_COLUMNS:
@@ -201,9 +201,11 @@ def load_examples_csv(path: str) -> pd.DataFrame:
 def load_private_examples(directory: str | Path) -> pd.DataFrame:
     """Load every `*.csv` under `directory` as private, non-redistributed corpus rows.
 
-    These are the NC-licensed corpora (Ramses, the St Andrews texts) that can never
-    enter `data/processed/examples.csv` — CC BY-SA is share-alike and cannot carry
-    NC material. `directory` is expected to be gitignored (see `.gitignore` and
+    This is where the NC-licensed St Andrews texts live: they can never enter
+    `data/processed/examples.csv`, because CC BY-SA is share-alike and cannot carry
+    NC material. (Ramses used to be private too, but is a public CC BY-SA corpus in
+    `examples.csv` since the rights holders' grant of 2026-09-04; a Ramses row in this
+    directory would be a duplicate.) `directory` is expected to be gitignored (see `.gitignore` and
     `test_private_data_dir_is_gitignored`); nothing here writes to it or reads
     anywhere else, and the caller is responsible for keeping the result away from
     the database, exports and the API — see `app/ui/whyptology_app.py` for where the

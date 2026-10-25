@@ -151,6 +151,22 @@ there is no reason to run the window.
 sessions are lost on restart, which is what rotation is for. Nothing else changes; the
 CSV stays where it is.
 
+**Choosing the key, and what guards it (audit 2026-10-11, A18/A19/A20/A58).** Generate it,
+do not invent it: `python3 -c 'import secrets; print(secrets.token_urlsafe(24))'` (32
+characters; anything under 20 random characters is too short for a public URL). Any
+Unicode is accepted; the comparison is on UTF-8 bytes. After 5 wrong keys inside 15
+minutes the gate refuses *every* unlock, the correct key included, for 30 s, doubling with
+each further failure up to 15 min. The counter is process-wide (a guesser gets a fresh
+session per connection), lives in memory, and a restart clears it; the flip side is that
+someone guessing can keep real reviewers waiting until the cooldown ends. Each failure is
+logged as `reviewer-key: failed unlock attempt (N recent failures)` — never the typed
+value — so `journalctl --user -u egyptology.service | grep reviewer-key` shows guessing.
+**An empty `REVIEWER_KEY` now switches annotation saving off for everyone** (it used to
+leave saving open to any visitor): the sidebar says so, and the log warns once per process
+when `ANNOTATIONS_DURABLE` is on. Only local development opts back in, with
+`ALLOW_OPEN_ANNOTATIONS=1`; never set that on a public host. (The settings table above
+still says "unset = anyone may save"; this paragraph supersedes it.)
+
 **What it costs, measured on the developer's Mac 2026-09-05** (130,472 public rows +
 the real 7,659-row `standrews.csv`): the keyed resource set is **+1,033 MB (1.01 GB)**
 resident on top of the public one and takes **19.3 s** to build — the concat 0.18 s and
@@ -200,6 +216,12 @@ so a warm request went from **8.4 s to 0.15 s** on the Mac (it previously reload
 130,472-row CSV on *every* request and took the scalar retrieval path; the verifier's split
 of the old path was roughly half each — CSV load 3.9 s, scalar retrieval 4.2 s — and the
 change removes both). Both the Streamlit and API paths are now fast.
+
+The API is **not** exposed on the live URL and must not be (no Funnel/Serve route, no
+`--host 0.0.0.0`) unless that is a deliberate decision: it has no authentication and no
+rate limit. Since the 2026-10-11 audit (A52) each response does carry a `licence` block
+and an `attribution` list naming the corpus of every returned row, and `query_mdc` is
+capped at 500 characters.
 
 ### Warming that cold build
 
@@ -419,6 +441,9 @@ egy         # activate ~/venvs/egyptology + cd here (defined in ~/.zshrc)
 egy-test    # pytest tests/ -q
 egy-run     # streamlit run app/ui/whyptology_app.py
 ```
+
+With no `REVIEWER_KEY` set, annotation saving is off. To try the annotation form
+locally, run `ALLOW_OPEN_ANNOTATIONS=1 streamlit run app/ui/whyptology_app.py` (never on a public host).
 
 To rebuild the environment, use 3.12 explicitly:
 

@@ -5,7 +5,6 @@ import hashlib
 import html
 import logging
 import os
-import secrets
 from html import escape
 from pathlib import Path
 import sys
@@ -66,35 +65,39 @@ from app.services.suggestions import suggest_top_readings
 from app.storage.bootstrap import ensure_corpus_ready
 from app.storage.db import IS_SQLITE, DatabaseUnavailable, SessionLocal
 from app.storage.repo import AnnotationRepo
+from app.ui import review_common
 from app.ui.review_common import (
     ANNOTATION_STATUSES,
     attach_db_ids,
-    build_reviewed_export_csv,
     build_row_key,
+    check_reviewer_key,
     coerce_bool,
     annotated_example_count,
-    LICENCE_NOTICE,
     annotated_example_ids,
     annotation_history_to_df,
     load_annotation_state,
     load_annotation_states,
+    md_code,
+    md_escape,
     reviewed_annotation_rows,
     safe_str,
     score_breakdown_lines,
+    signature_for_frame,
+    with_licence_notice,
 )
 
 DATA_PATH = PROJECT_ROOT / "data/processed/examples.csv"
-# Non-commercial corpora (Ramses, the St Andrews texts) never enter examples.csv —
-# CC BY-SA is share-alike and cannot carry NC material — so they live here instead:
-# a gitignored directory (see .gitignore and test_private_data_dir_is_gitignored),
-# loaded at runtime and concatenated onto the public corpus only after it has been
-# through the database step (see load_public_corpus below), so they never get a
-# database id, never enter the database itself, and are invisible to the exports and
-# the API. Since 2026-09-05 they are also invisible to any *session* that has not
-# presented the reviewer key: the app boots on the public frame and builds the
-# private one lazily, per session, behind `private_rows_unlocked` — see
-# `session_corpus`, `load_keyed_corpus` and the "reviewer-key gate" section of
-# DEPLOYMENT.md.
+# The non-commercial corpus (the St Andrews texts; Ramses is public CC BY-SA now and
+# is in examples.csv) never enters examples.csv — CC BY-SA is share-alike and cannot
+# carry NC material — so it lives here instead: a gitignored directory (see
+# .gitignore and test_private_data_dir_is_gitignored), loaded at runtime and
+# concatenated onto the public corpus only after it has been through the database
+# step (see load_public_corpus below), so it never gets a database id, never enters
+# the database itself, and is invisible to the exports and the API. Since 2026-09-05
+# it is also invisible to any *session* that has not presented the reviewer key: the
+# app boots on the public frame and builds the private one lazily, per session,
+# behind `private_rows_unlocked` — see `session_corpus`, `load_keyed_corpus` and the
+# "reviewer-key gate" section of DEPLOYMENT.md.
 PRIVATE_DATA_DIR = Path(
     os.environ.get("PRIVATE_DATA_DIR") or str(PROJECT_ROOT / "data" / "private")
 )
@@ -207,16 +210,20 @@ def inject_theme() -> None:
 # named — not just the one the project started with. `test_every_corpus_source_is_credited`
 # fails if a new source is imported without adding its citation here.
 CORPUS_CREDITS: dict[str, str] = {
-    # Linked to the two licensed dataset publications (§3(a)(1)(A)(v) asks for a URI
+    # Linked to the three licensed dataset publications (§3(a)(1)(A)(v) asks for a URI
     # to the *licensed material*), not to the TLA website — the website itself carries
-    # no CC licence for its data, see DATA-LICENSE.md.
+    # no CC licence for its data, see DATA-LICENSE.md. The plain-text twins used in the
+    # CSV export live in review_common.PUBLIC_CREDITS; a test keeps the two in step.
     "TLA": (
         'the <a href="https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/'
         'tla-Earlier_Egyptian_original-v18-premium" target="_blank" rel="noopener">'
-        "Earlier Egyptian corpus v18</a> and "
+        "Earlier Egyptian corpus v18</a>, "
         '<a href="https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/'
         'tla-late_egyptian-v19-premium" target="_blank" rel="noopener">'
-        "Late Egyptian corpus v19</a> of the Thesaurus Linguae Aegyptiae (TLA), "
+        "Late Egyptian corpus v19</a> and "
+        '<a href="https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/'
+        'tla-demotic-v18-premium" target="_blank" rel="noopener">'
+        "Demotic corpus v18</a> of the Thesaurus Linguae Aegyptiae (TLA), "
         "ed. Richter &amp; Werning (BBAW) and Fischer-Elfert &amp; Dils (SAW Leipzig)"
     ),
     "AES": (
@@ -236,9 +243,10 @@ CORPUS_CREDITS: dict[str, str] = {
     # CC BY-SA 4.0 for this project's use by email 2026-09-04 — see
     # docs/permission-requests.md ("Reply from Projet Ramses, 2026-09-04") and
     # DATA-LICENSE.md. The Ramses README's own CC BY-NC-SA 4.0 terms still govern
-    # everyone else. Rows are not in examples.csv yet (withheld for an unrelated
-    # modelling reason), so this entry is dormant — see corpus_credit_html: a public
-    # entry only renders when that source is actually present in the frame.
+    # everyone else. The rows are in examples.csv (40,064 of them since 651ee91,
+    # 2026-09-04); corpus_credit_html still renders a public entry only when that
+    # source is actually present in the frame, so a deployment that excludes Ramses
+    # (CORPUS_SOURCES_EXCLUDE) does not credit it.
     "Ramses": (
         '<a href="https://doi.org/10.5281/zenodo.4954597" target="_blank" '
         'rel="noopener">the Ramses transliteration corpus V. 2019-09-01, '
@@ -370,12 +378,30 @@ def corpus_signature(df: pd.DataFrame) -> str:
 
     The row count used to serve as the cache key, but a re-import with the same
     number of rows then silently kept the stale model. Hashing the sign and reading
-    columns (a few ms) invalidates exactly when the training data changes.
+    columns invalidates exactly when the training data changes.
+
+    Two refinements (audit A31, A44). The hash costs ~0.2 s on 130k rows and the app
+    asked for it 3-4 times per rerun, so it is remembered per DataFrame object (the
+    shared cached frames keep their identity across reruns); the memo lives in
+    review_common because this script file is re-executed on every rerun. And the
+    signature says whether the frame carries database ids: after a database hiccup at
+    boot the frame has none but the same text, and without the suffix every cache
+    keyed on the signature kept serving that id-less frame (Save then said "not linked
+    to the project database") after the database came back. `+noids` also covers a
+    frame whose `id` column is all missing (the keyed frame while the database was
+    down).
     """
-    hasher = hashlib.blake2b(digest_size=16)
-    for column in ("hieroglyphs_norm", "transliteration_gold"):
-        hasher.update(pd.util.hash_pandas_object(df[column], index=False).values.tobytes())
-    return hasher.hexdigest()
+
+    def compute(frame: pd.DataFrame) -> str:
+        hasher = hashlib.blake2b(digest_size=16)
+        for column in ("hieroglyphs_norm", "transliteration_gold"):
+            hasher.update(
+                pd.util.hash_pandas_object(frame[column], index=False).values.tobytes()
+            )
+        has_ids = "id" in frame.columns and bool(frame["id"].notna().any())
+        return hasher.hexdigest() + ("+ids" if has_ids else "+noids")
+
+    return signature_for_frame(df, compute)
 
 
 @st.cache_resource(show_spinner=False)
@@ -440,13 +466,18 @@ def load_corpus_csv() -> pd.DataFrame:
 
 def excluded_corpus_sources() -> frozenset[str]:
     """Sources a deployment chooses not to load, from `corpus_sources_exclude` /
-    `CORPUS_SOURCES_EXCLUDE` (comma-separated `source` values).
+    `CORPUS_SOURCES_EXCLUDE` (comma-separated `source` or `language_stage` values).
 
     The committed corpus holds every CC BY-SA row we have — 131k after Ramses and
     Demotic joined on 2026-09-04 — which no longer fits Streamlit Community Cloud's
     1 GB. That deployment stays alive for the links people already have by loading
     a subset (`"Ramses,Demotic"`); the server loads everything. A statement about
     the host, so it is set per deployment, never in code.
+
+    A token matches a row's `source` OR its `language_stage`: the Demotic rows are
+    `source = TLA, language_stage = Demotic`, so matching `source` alone never dropped
+    them (audit A9). The flip side is that a stage name also drops other sources that
+    carry it, so `Late Egyptian` would remove the Ramses rows too.
     """
     raw = configured_setting("corpus_sources_exclude", "CORPUS_SOURCES_EXCLUDE")
     return frozenset(part.strip() for part in raw.split(",") if part.strip())
@@ -456,11 +487,14 @@ def exclude_corpus_sources(df: pd.DataFrame) -> pd.DataFrame:
     excluded = excluded_corpus_sources()
     if not excluded or "source" not in df.columns:
         return df
-    keep = ~df["source"].astype(str).isin(excluded)
+    drop = df["source"].astype(str).str.strip().isin(excluded)
+    if "language_stage" in df.columns:
+        drop |= df["language_stage"].astype(str).str.strip().isin(excluded)
+    keep = ~drop
     out = df.loc[keep].reset_index(drop=True)
     out.attrs = dict(df.attrs)
     logging.getLogger(__name__).info(
-        "corpus: excluded sources %s (%d rows dropped)", sorted(excluded), int((~keep).sum())
+        "corpus: excluded sources/stages %s (%d rows dropped)", sorted(excluded), int((~keep).sum())
     )
     return out
 
@@ -810,6 +844,23 @@ def go_to(page: str) -> None:
     st.session_state["page"] = page
 
 
+def looked_for_clause(searched) -> str:
+    """The " for ..." part of the empty-result warning, safe to put in Markdown.
+
+    The query is user text (and arrives from a shared `?q=` link), and st.warning
+    renders Markdown, so it is escaped here, in one place: a pasted `![x](https://…)`
+    must not load an image and `[text](https://…)` must not become a link.
+    """
+    if searched is None:
+        return ""
+    if not searched.is_hieroglyphic:
+        return (
+            f" for **{md_escape(searched.reading or searched.raw)}** "
+            f"(searched as {md_code(searched.search_key)})"
+        )
+    return f" for **{md_escape(searched.hieroglyphs_norm)}**"
+
+
 def sidebar(sidebar_df: pd.DataFrame | None = None) -> str:
     if "page" not in st.session_state:
         st.session_state["page"] = "Home"
@@ -913,10 +964,6 @@ def render_home(df: pd.DataFrame) -> None:
               evidence behind each one, and records expert corrections. It is not OCR
               and not automatic translation.
             </p>
-            <div class="hero-actions">
-              <a class="hero-button" href="?view=workspace">Explore the workspace&nbsp; →</a>
-              <a class="hero-button secondary" href="?view=corpus">Browse the corpus</a>
-            </div>
           </div>
           <div class="trust-row">
             <span>Corpus loaded:</span>{trust_items}
@@ -927,6 +974,17 @@ def render_home(df: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
+    # Buttons, not `<a href="?view=...">` links: a link opens a new tab, which is a new
+    # session, and a reviewer who had just unlocked was locked out again (audit A61).
+    # The ?view= deep link handler stays for shared links.
+    with st.container(horizontal=True, key="hero_actions"):
+        st.button(
+            "Explore the workspace →",
+            type="primary",
+            on_click=go_to,
+            args=("Workspace",),
+        )
+        st.button("Browse the corpus", on_click=go_to, args=("Corpus",))
 
     st.markdown(
         """
@@ -1119,6 +1177,28 @@ def render_storage_warning(once_key: str = "") -> None:
     )
 
 
+def open_annotations_allowed() -> bool:
+    """Whether the operator explicitly allows annotation writes with no reviewer key.
+
+    A statement about the host, like `annotations_durable`: set `allow_open_annotations`
+    in Streamlit secrets or ALLOW_OPEN_ANNOTATIONS=1 for local development. Never set
+    it on a public deployment.
+    """
+    value = configured_setting("allow_open_annotations", "ALLOW_OPEN_ANNOTATIONS")
+    return value.strip().lower() in {"1", "true", "yes"}
+
+
+@st.cache_resource(show_spinner=False)
+def _warn_annotations_closed_once() -> bool:
+    """One log line per process, not one per rerun (cache_resource runs it once)."""
+    logging.getLogger(__name__).warning(
+        "annotations: ANNOTATIONS_DURABLE is on but REVIEWER_KEY is not set and "
+        "ALLOW_OPEN_ANNOTATIONS is off, so annotation saving is switched off for "
+        "everyone. Set REVIEWER_KEY and restart."
+    )
+    return True
+
+
 def annotations_unlocked() -> bool:
     """Whether this visitor may write annotations.
 
@@ -1127,12 +1207,15 @@ def annotations_unlocked() -> bool:
     exposes no per-visitor identity and session counters reset on refresh, so
     rate-limiting has nothing to key on; a shared reviewer passphrase is the
     mechanism that actually fits. Set `reviewer_key` in Streamlit secrets (or the
-    REVIEWER_KEY environment variable) to require it. With no key configured the
-    app stays open, exactly as before, so local development is unaffected.
+    REVIEWER_KEY environment variable) to require it.
+
+    With no key configured writes fail CLOSED: a key that was left empty during a
+    rotation must not turn the shared database into a public form. Local development
+    opts back in explicitly with ALLOW_OPEN_ANNOTATIONS=1 (`open_annotations_allowed`).
     """
     expected = str(configured_reviewer_key() or "")
     if not expected:
-        return True
+        return open_annotations_allowed()
     return st.session_state.get(REVIEWER_OK_KEY, False)
 
 
@@ -1152,6 +1235,12 @@ def render_reviewer_gate() -> None:
     """
     expected = str(configured_reviewer_key() or "")
     if not expected:
+        if not open_annotations_allowed():
+            st.caption(
+                "Annotation saving is switched off: no reviewer key is configured."
+            )
+            if not storage_is_ephemeral():
+                _warn_annotations_closed_once()
         if private_data_dir_has_files():
             st.caption(
                 "Private corpus files are present but `REVIEWER_KEY` is not set, so "
@@ -1170,6 +1259,10 @@ def render_reviewer_gate() -> None:
                 )
             else:
                 st.caption("Annotation saving is unlocked for this session.")
+            st.caption(
+                "The first search after the server restarts builds the reviewer "
+                "indexes and can take a minute or more."
+            )
             if st.button("Lock this session", key="whyptology_reviewer_lock"):
                 st.session_state[REVIEWER_OK_KEY] = False
                 st.session_state.pop("whyptology_reviewer_key_input", None)
@@ -1191,10 +1284,28 @@ def render_reviewer_gate() -> None:
             "Reviewer key", type="password", key="whyptology_reviewer_key_input"
         )
         if st.button("Unlock", key="whyptology_reviewer_unlock"):
-            if entered and secrets.compare_digest(entered, expected):
+            log = logging.getLogger(__name__)
+            # The counter lives in review_common (this script re-runs from the top
+            # on every interaction, so a module-level counter here would reset).
+            guard = review_common.REVIEWER_KEY_GUARD
+            wait = guard.seconds_locked()
+            if wait:
+                # Locked: the key is not evaluated, so guesses make no progress.
+                st.error(f"Too many failed attempts. Try again in {wait} s.")
+            elif check_reviewer_key(entered, expected):
+                guard.reset()
+                log.info("reviewer-key: unlock ok")
                 st.session_state[REVIEWER_OK_KEY] = True
                 st.rerun()
             else:
+                # Never log or store the typed value. An empty submission is not a
+                # guess, so it is not counted.
+                if entered:
+                    count = guard.record_failure()
+                    log.warning(
+                        "reviewer-key: failed unlock attempt (%d recent failures)",
+                        count,
+                    )
                 st.error("That key was not recognised.")
 
 
@@ -1335,7 +1446,11 @@ def render_annotation_form(
     )
 
     if not annotations_unlocked():
-        st.caption("Saving is limited to reviewers — unlock it in the sidebar.")
+        if configured_reviewer_key():
+            st.caption("Saving is limited to reviewers — unlock it in the sidebar.")
+        else:
+            # No key is configured, so there is nothing to unlock.
+            st.caption("Saving is switched off on this deployment.")
         return
 
     render_storage_warning(once_key="workspace")
@@ -1783,7 +1898,7 @@ def render_workspace(df: pd.DataFrame) -> None:
     # notation it was read as — the two are matched against different columns and
     # the notations fold differently, so guessing silently looks like a broken
     # search. Showing the interpretation back is what makes a misread visible.
-    parse = parse_query(query, vocabulary=load_search_index(df, corpus_signature(df)).vocabulary)
+    parse = parse_query(query, vocabulary=load_search_index(df, signature).vocabulary)
     if not parse.is_empty:
         if parse.is_hieroglyphic:
             groups = parse.hieroglyphs_norm.split()
@@ -1800,12 +1915,13 @@ def render_workspace(df: pd.DataFrame) -> None:
                 )
         elif parse.reading and parse.notation == "mdc":
             st.caption(
-                f"Read as **Manuel de Codage** → {parse.reading} · "
-                f"searched as `{parse.search_key}`"
+                f"Read as **Manuel de Codage** → {md_escape(parse.reading)} · "
+                f"searched as {md_code(parse.search_key)}"
             )
         else:
             st.caption(
-                f"Detected **{parse.notation_label}** · searched as `{parse.search_key}`"
+                f"Detected **{parse.notation_label}** · searched as "
+                f"{md_code(parse.search_key)}"
             )
 
     with st.expander("Normalized reading order (optional)"):
@@ -2068,7 +2184,7 @@ def render_workspace(df: pd.DataFrame) -> None:
                     )
                     st.caption(
                         f"Runner-up — your spacing as pasted ({gap:.1f} nats behind): "
-                        f"*{escape(pasted_reading)}*"
+                        f"*{md_escape(pasted_reading)}*"
                     )
             elif signs != segmentation.groups:
                 st.caption("Using your edited grouping.")
@@ -2191,11 +2307,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                     if not related:
                         continue
                     shown = " · ".join(
-                        f"{display_sign_group(g)} = *{r}* ({n}×, {s:.0%} shared signs)"
+                        f"{md_escape(display_sign_group(g))} = *{md_escape(r)}* "
+                        f"({n}×, {s:.0%} shared signs)"
                         for g, s, r, n in related
                     )
                     st.markdown(
-                        f"- **{display_sign_group(p.sign)}** is not attested. "
+                        f"- **{md_escape(display_sign_group(p.sign))}** is not attested. "
                         f"Groups in the corpus sharing its signs: {shown}"
                     )
             if ambiguous:
@@ -2210,7 +2327,8 @@ def render_workspace(df: pd.DataFrame) -> None:
                         if r != p.predicted
                     )
                     st.markdown(
-                        f"- **{display_sign_group(p.sign)}** → chose `{p.predicted}` over {others or '—'}"
+                        f"- **{md_escape(display_sign_group(p.sign))}** → chose "
+                        f"{md_code(p.predicted)} over {md_escape(others) or '—'}"
                     )
 
     with suggestions_tab:
@@ -2227,22 +2345,15 @@ def render_workspace(df: pd.DataFrame) -> None:
             # the text may simply be outside the subset we are licensed to hold.
             # Say which, name what was searched for, and say how big the haystack is.
             searched = st.session_state.get("whyptology_last_parse")
-            looked_for = ""
-            if searched is not None and not searched.is_hieroglyphic:
-                looked_for = (
-                    f" for **{searched.reading or searched.raw}** "
-                    f"(searched as `{searched.search_key}`)"
-                )
-            elif searched is not None:
-                looked_for = f" for **{searched.hieroglyphs_norm}**"
             st.warning(
-                f"No parallel in this corpus{looked_for}. Nothing here shares a sign "
+                f"No parallel in this corpus{looked_for_clause(searched)}. Nothing here shares a sign "
                 "group or a reading token with it — an honest empty result, not a "
                 "weak match."
             )
             st.caption(
                 f"That means it is absent from the {len(df):,} sentences this tool "
-                f"holds ({', '.join(sorted(set(df['source'].astype(str))))}), which is "
+                f"holds ({md_escape(', '.join(sorted(set(df['source'].astype(str)))))}), "
+                "which is "
                 "the openly licensed part of the TLA and AES corpora — not that it is "
                 "unattested in Egyptian. A text outside that subset cannot be found "
                 "here however it is typed."
@@ -2285,16 +2396,15 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "final_score": "Match",
                 }
             )
-            st.dataframe(
-                table,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "Match": st.column_config.ProgressColumn(
-                        "Match", min_value=0.0, max_value=1.0, format="%.2f"
-                    )
-                },
-            )
+            # An HTML table, not st.dataframe: the canvas grid cannot use the
+            # Egyptological font, so the readings (the answer to the query) drew ꞽ as
+            # an empty box (audit A60). The Match bar becomes the plain number.
+            if "Match" in table.columns:
+                table["Match"] = table["Match"].map(
+                    lambda score: f"{float(score):.2f}" if pd.notna(score) else "—"
+                )
+            table = table.fillna("—")
+            st.markdown(html_table(table, {"Reading"}), unsafe_allow_html=True)
 
     with parallels_tab:
         if results is None or results.empty:
@@ -2322,11 +2432,11 @@ def render_workspace(df: pd.DataFrame) -> None:
             except DatabaseUnavailable:
                 annotation_states = {}
             for position, (_, row) in enumerate(results.reset_index(drop=True).iterrows()):
-                label = value(row, "transliteration_gold", "Untitled reading")
+                label = md_escape(value(row, "transliteration_gold", "Untitled reading"))
                 score = row.get("final_score")
                 score_text = f" · match {float(score):.2f}" if pd.notna(score) else ""
                 with st.expander(
-                    f"{value(row, 'source_text_id', '—')}{score_text} — {label}",
+                    f"{md_escape(value(row, 'source_text_id', '—'))}{score_text} — {label}",
                     expanded=position == 0,
                 ):
                     meta_cols = st.columns(4)
@@ -2347,12 +2457,14 @@ def render_workspace(df: pd.DataFrame) -> None:
                             if field == "language_stage"
                             else value(row, field)
                         )
-                        column.markdown(f"**{text}**")
+                        column.markdown(f"**{md_escape(text)}**")
 
-                    st.markdown(f"**Reading:** {value(row, 'transliteration_gold')}")
+                    st.markdown(
+                        f"**Reading:** {md_escape(value(row, 'transliteration_gold'))}"
+                    )
                     st.markdown(
                         "**Translation (German, from the corpus):** "
-                        f"{value(row, 'translation')}"
+                        f"{md_escape(value(row, 'translation'))}"
                     )
                     if value(row, "hieroglyphs") != "—":
                         st.markdown(
@@ -2365,12 +2477,13 @@ def render_workspace(df: pd.DataFrame) -> None:
                     # reading, not Manuel de Codage, and it is empty for every AES
                     # row. What matters to a user is the key the row is *searched*
                     # under, which is what `mdc_norm` holds.
-                    st.markdown(f"**Search key:** `{value(row, 'mdc_norm')}`")
+                    st.markdown(f"**Search key:** {md_code(value(row, 'mdc_norm'))}")
                     st.markdown(
-                        f"**Normalized reading order:** {value(row, 'normalized_reading_order')}"
+                        "**Normalized reading order:** "
+                        f"{md_escape(value(row, 'normalized_reading_order'))}"
                     )
                     if value(row, "evidence") != "—":
-                        st.markdown(f"**Evidence:** {value(row, 'evidence')}")
+                        st.markdown(f"**Evidence:** {md_escape(value(row, 'evidence'))}")
 
                     breakdown = score_breakdown_lines(row)
                     if breakdown:
@@ -2449,7 +2562,33 @@ def render_workspace(df: pd.DataFrame) -> None:
                     ("Reference", "source_ref"),
                 ]:
                     st.caption(caption)
-                    st.markdown(f"**{value(top_row, field)}**")
+                    st.markdown(f"**{md_escape(value(top_row, field))}**")
+
+
+def html_table(
+    frame: pd.DataFrame, reading_columns: frozenset[str] | set[str] = frozenset()
+) -> str:
+    """An escaped HTML table of already display-ready cells, for `unsafe_allow_html`.
+
+    `st.dataframe` draws on a canvas that ignores CSS font-family, so Egyptological
+    letters (ꞽ U+A7BD, the combining marks) show as empty boxes there. An HTML table
+    can use the transliteration font: the columns named in `reading_columns` get the
+    `corpus-cell-reading` class. Headers and cells are escaped here, so callers pass
+    plain text.
+    """
+    header = "".join(f"<th>{escape(str(col))}</th>" for col in frame.columns)
+    body_rows = []
+    for values_in_row in frame.itertuples(index=False, name=None):
+        cells = []
+        for col, cell in zip(frame.columns, values_in_row):
+            css_class = ' class="corpus-cell-reading"' if col in reading_columns else ""
+            cells.append(f"<td{css_class}>{escape(str(cell))}</td>")
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
+    return (
+        '<div class="corpus-table-wrap"><table class="corpus-table">'
+        f"<thead><tr>{header}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+    )
 
 
 def render_corpus(df: pd.DataFrame) -> None:
@@ -2581,34 +2720,23 @@ def render_corpus(df: pd.DataFrame) -> None:
         window = filtered.iloc[start : start + CORPUS_PAGE_SIZE]
         st.session_state["whyptology_corpus_page_rows"] = window
 
-        header = "".join(
-            f"<th>{escape(CORPUS_COLUMN_LABELS.get(col, col))}</th>" for col in columns
-        )
-        body_rows = []
-        for _, row in window.iterrows():
-            cells = []
-            for col in columns:
-                # Normalised wording for the stage column, matching the workspace's
-                # evidence rows — see evidence_stage_label.
-                cell = escape(
+        display = pd.DataFrame(
+            {
+                CORPUS_COLUMN_LABELS.get(col, col): [
+                    # Normalised wording for the stage column, matching the
+                    # workspace's evidence rows — see evidence_stage_label.
                     evidence_stage_label(row.get("language_stage"))
                     if col == "language_stage"
                     else value(row, col, "—")
-                )
-                # Only the reading column gets the transliteration font; everything
-                # else stays in the interface font.
-                css_class = (
-                    ' class="corpus-cell-reading"'
-                    if col == "transliteration_gold"
-                    else ""
-                )
-                cells.append(f"<td{css_class}>{cell}</td>")
-            body_rows.append(f"<tr>{''.join(cells)}</tr>")
-
+                    for _, row in window.iterrows()
+                ]
+                for col in columns
+            }
+        )
+        # Only the reading column gets the transliteration font; everything else
+        # stays in the interface font.
         st.markdown(
-            f'<div class="corpus-table-wrap"><table class="corpus-table">'
-            f"<thead><tr>{header}</tr></thead>"
-            f"<tbody>{''.join(body_rows)}</tbody></table></div>",
+            html_table(display, {CORPUS_COLUMN_LABELS["transliteration_gold"]}),
             unsafe_allow_html=True,
         )
 
@@ -2660,8 +2788,6 @@ def render_corpus(df: pd.DataFrame) -> None:
                 # The copy button on st.code is the clipboard; the HTML card above
                 # cannot offer one.
                 st.code(glyphs, language=None)
-        if len(filtered) > 30:
-            st.caption(f"Showing the first 30 of {len(filtered):,} matching records.")
 
 
 def render_projects(df: pd.DataFrame) -> None:
@@ -2876,7 +3002,9 @@ def render_signs(df: pd.DataFrame) -> None:
         )
         examples = entry.examples.get(reading, [])
         if examples:
-            with st.expander(f"Sentences reading it as “{reading}” ({len(examples)})"):
+            with st.expander(
+                f"Sentences reading it as “{md_escape(reading)}” ({len(examples)})"
+            ):
                 st.dataframe(
                     pd.DataFrame(examples).rename(
                         columns={
@@ -3376,7 +3504,11 @@ corpus = session_corpus(public_corpus)
 # Deliberately `public_corpus`, not `corpus`: the warm-up runs at service start in an
 # unkeyed session (scripts/warm_streamlit.py), and a keyed reviewer's rerun must not
 # turn it into a warm-up of the private resource set for the whole process.
-warm_stage_resources(public_corpus)
+# Only when the database answered: a boot-time database failure leaves the frame
+# without ids, and warming ~1.9 GB of resources for that id-less frame would be spent
+# on indexes the next (healthy) run does not use, since the signature differs (A44).
+if database_status == "ok":
+    warm_stage_resources(public_corpus)
 if database_status != "ok":
     st.warning(
         "**Read-only mode.** The project database is not reachable, so annotations "
