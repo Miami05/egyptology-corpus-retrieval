@@ -472,11 +472,19 @@ def signature_for_frame(df: pd.DataFrame, compute: Callable[[pd.DataFrame], str]
         _SIGNATURE_MEMO[key] = (weakref.ref(df, forget), value)
     return value
 
+# Every editable annotation field, so an earlier revision's qualification stays
+# visible after a later one clears it. Leaving out `uncertainty_note`,
+# `grammar_note`, `display_sequence` and `alt_transliterations` hid "final sign
+# damaged" the moment a later save emptied the field (Astra #12).
 HISTORY_COLUMNS = [
     "id",
     "status",
     "transliteration",
+    "uncertainty_note",
+    "grammar_note",
+    "display_sequence",
     "normalized_reading_order",
+    "alt_transliterations",
     "variant_writing_note",
     "morphology_note",
     "syntax_note",
@@ -549,7 +557,11 @@ def annotation_history_to_df(rows: list) -> pd.DataFrame:
                 "id": row.id,
                 "status": row.status,
                 "transliteration": row.transliteration,
+                "uncertainty_note": row.uncertainty_note or "",
+                "grammar_note": row.grammar_note or "",
+                "display_sequence": row.display_sequence or "",
                 "normalized_reading_order": row.normalized_reading_order,
+                "alt_transliterations": row.alt_transliterations or "",
                 "variant_writing_note": row.variant_writing_note,
                 "morphology_note": row.morphology_note,
                 "syntax_note": row.syntax_note,
@@ -557,7 +569,8 @@ def annotation_history_to_df(rows: list) -> pd.DataFrame:
                 "created_at": row.created_at,
             }
             for row in rows
-        ]
+        ],
+        columns=pd.Index(HISTORY_COLUMNS),
     )
 
 
