@@ -422,8 +422,9 @@ def test_every_script_still_imports():
 
 def test_regeneration_dependency_is_declared():
     """download_all_sources.py imports `datasets`; the corpus is advertised as
-    regenerable, so the dependency has to be installable from requirements.txt."""
-    requirements = (PROJECT_ROOT / "requirements.txt").read_text()
+    regenerable, so the dependency has to be installable from requirements-dev.txt
+    (the app's requirements.txt stays free of dev and import tools, audit A45)."""
+    requirements = (PROJECT_ROOT / "requirements-dev.txt").read_text()
     assert "datasets" in requirements
 
 

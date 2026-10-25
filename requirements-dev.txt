@@ -1,0 +1,18 @@
+# Development, test and data-regeneration tools. The server venv installs
+# requirements.txt only (see DEPLOYMENT.md); a local environment installs this
+# file, which pulls the app pins in first.
+-r requirements.txt
+
+# Test suite (tests/): pytest tests/ -q
+pytest==9.1.1
+
+# Only needed to regenerate data/raw from the upstream Hugging Face datasets
+# (scripts/download_all_sources.py); the app itself never imports it.
+datasets>=2.19,<3
+
+# St Andrews importer (scripts/import_standrews.py) and its tests. hieropy is
+# GPL-licensed and the permission request to the corpus owner says it "stays out
+# of the application itself", so it belongs in THIS file only and must never move
+# into requirements.txt. 0.1.9 is the version the importer and the permission
+# request were checked against; the newer 0.1.10 has not been tested.
+hieropy==0.1.9

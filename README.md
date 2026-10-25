@@ -127,7 +127,7 @@ guard is what stops a redeploy from overwriting live annotations.
 
 ```bash
 python3.12 -m venv ~/venvs/egyptology          # 3.12: the pins have no 3.14 wheels
-~/venvs/egyptology/bin/pip install -r requirements.txt
+~/venvs/egyptology/bin/pip install -r requirements.txt   # the app; requirements-dev.txt adds pytest and the importers' tools
 ~/venvs/egyptology/bin/python -m streamlit run app/ui/whyptology_app.py
 ```
 
