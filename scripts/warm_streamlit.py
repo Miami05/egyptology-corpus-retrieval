@@ -28,8 +28,10 @@ class (`.suggestion-card {`) whether or not a result was drawn. An expectation s
 like an attribute (`class="suggestion-card"`) is stricter: it passes only on a real
 start tag carrying that attribute, in an element that renders HTML (`st.html`, or
 `st.markdown` with unsafe_allow_html), outside any non-rendering element (style,
-script, template, textarea, title, noscript). The same markup shown as text, quoted
-in a comment, or written inside a `<textarea>` is not a result.
+script, template, textarea, title, noscript) and, for Markdown, outside any code
+(fenced, indented or inline: see `markdown_without_code`). The same markup shown as
+text, quoted in a comment or a code span, or written inside a `<textarea>` is not a
+result.
 
 Usage (never blocks a service start for longer than --timeout):
 
@@ -70,6 +72,60 @@ _COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 _ATTRIBUTE_EXPECTATION = re.compile(r'^([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"<>]*)"$')
 # Elements whose content the browser never draws as markup.
 _NON_RENDERING = frozenset({"style", "script", "template", "textarea", "title", "noscript", "xmp"})
+
+
+# A run of backticks that opens or closes an inline code span (CommonMark: the span closes
+# at the next run of exactly the same length).
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)", re.DOTALL)
+# A fence line: up to three spaces, then three or more backticks or tildes.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _indent(line: str) -> int:
+    expanded = line.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip(" "))
+
+
+def markdown_without_code(body: str) -> str:
+    """The Markdown `body` with its code removed: fenced blocks (unclosed ones run to the
+    end), indented blocks (four or more spaces after a blank line or at the start) and
+    inline code spans. Markdown shows code as text, so a tag inside it draws nothing.
+
+    Deliberately simpler than CommonMark and biased one way: where it differs it removes
+    MORE than a renderer would treat as code (a fence inside an HTML block, a backtick in
+    an attribute, an indented list continuation), never less. Removing too much can only
+    make the deploy check miss a real card and roll back; it cannot pass a page whose
+    card is shown as code. The app's cards are written at column 0 with no blank line
+    inside, so none of these rules touch them."""
+    kept: list[str] = []
+    fence: tuple[str, int] | None = None
+    previous_blank = True
+    in_indented = False
+    for line in body.split("\n"):
+        if fence is not None:
+            closing = _FENCE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= fence[1] \
+                    and not line[closing.end():].strip():
+                fence = None
+            kept.append("")
+            previous_blank, in_indented = False, False
+            continue
+        opening = _FENCE.match(line)
+        if opening:
+            fence = (opening.group(1)[0], len(opening.group(1)))
+            kept.append("")
+            previous_blank, in_indented = False, False
+            continue
+        blank = not line.strip()
+        if not blank and _indent(line) >= 4 and (previous_blank or in_indented):
+            kept.append("")
+            in_indented = True
+        else:
+            kept.append(line)
+            if not blank:
+                in_indented = False
+        previous_blank = blank
+    return _CODE_SPAN.sub("", "\n".join(kept))
 
 
 def rendered_markup(body: str) -> str:
@@ -133,8 +189,11 @@ def element_shows(kind: str, element, expect_text: str) -> bool:
     attribute = _ATTRIBUTE_EXPECTATION.match(expect_text)
     if attribute is None:
         return expect_text in rendered_markup(body)
-    renders_html = kind == "html" or (kind == "markdown" and element.markdown.allow_html)
-    return renders_html and renders_start_tag(body, *attribute.groups())
+    if kind == "html":
+        return renders_start_tag(body, *attribute.groups())
+    if kind == "markdown" and element.markdown.allow_html:
+        return renders_start_tag(markdown_without_code(body), *attribute.groups())
+    return False
 
 
 @dataclass

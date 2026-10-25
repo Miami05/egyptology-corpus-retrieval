@@ -45,10 +45,12 @@
 # r99), and never reused: each one is above every revision of that day already in the
 # folder, kept copies (.suspect, .unverified, .corrupt) included.
 #
-# One run at a time: a run holds BACKUP_DIR/.lock from before the snapshot until it
-# exits, so the timer and a manual run cannot both pick the same name or compare with
-# the same baseline. A second run waits up to LOCK_WAIT seconds, then gives up with
-# exit 5 and touches nothing. A lock left by a run that died is taken over.
+# One run at a time: a run holds a kernel lock (flock) on BACKUP_DIR/.backup.lock from
+# before the snapshot until it exits, so the timer and a manual run cannot both pick the
+# same name or compare with the same baseline. A second run waits up to LOCK_WAIT
+# seconds, then gives up with exit 5 and touches nothing. The kernel drops the lock when
+# its holder dies, so there is no stale lock to take over, and the lock file itself is
+# never deleted (deleting it is what let two runs both believe they held the old one).
 #
 # Exit codes: 0 all good; 1 no database, or a DATABASE_URL this script cannot back up;
 # 2 the copy is corrupt; 3 the copy is readable but holds fewer annotations than the
@@ -92,8 +94,7 @@ MONTHLY_FILE="${MONTHLY_DIR}/egyptology-${MONTH}.db.gz"
 # Created after the first published snapshot. With it present and no snapshot to be
 # found, the folder was emptied: that must fail, not pass as "first backup".
 SEEN_MARKER="${BACKUP_DIR}/.has-snapshots"
-LOCK_DIR="${BACKUP_DIR}/.lock"
-HAVE_LOCK=0
+LOCK_FILE="${BACKUP_DIR}/.backup.lock"
 WORK_DIR=""
 
 # Runs on every exit: cleans the scratch folder and reports the outcome to the
@@ -106,9 +107,6 @@ finish() {
     rm -rf "$WORK_DIR"
   fi
   rm -f "$SNAPSHOT" "$CANDIDATE"     # whatever was not published or kept by name
-  if [[ "$HAVE_LOCK" == "1" ]]; then
-    rm -rf "$LOCK_DIR"
-  fi
   if [[ -n "$HEALTHCHECK_URL" ]]; then
     local url="${HEALTHCHECK_URL%/}"
     if [[ $rc -ne 0 ]]; then
@@ -146,27 +144,37 @@ if [[ ! -f "$DB_PATH" ]]; then
 fi
 mkdir -p "$BACKUP_DIR"
 
-# The lock is a directory (mkdir is atomic everywhere; flock is not on every box) holding
-# the owner's pid. Taken before the snapshot and held until exit: snapshot, comparison,
-# publication and retention are one step that two runs must never interleave.
+# The lock: fd 9 open on LOCK_FILE for the life of this shell, flocked through $PYTHON
+# (the box has no promise of the flock CLI; Python's fcntl is everywhere). The flock
+# belongs to the open file, which this shell keeps, so it outlives the Python that took
+# it and is released by the kernel when this run exits or dies. Taken before the
+# snapshot and held until exit: snapshot, comparison, publication and retention are one
+# step that two runs must never interleave.
 take_lock() {
-  local waited=0 owner
-  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-      echo "backup: taking over the lock left by run ${owner}, which is no longer running" >&2
-      rm -rf "$LOCK_DIR"
-      continue
-    fi
-    if [[ $waited -ge $LOCK_WAIT ]]; then
-      echo "backup: another backup run${owner:+ (pid ${owner})} still holds ${LOCK_DIR} after ${LOCK_WAIT}s — giving up, nothing written" >&2
-      exit 5
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  HAVE_LOCK=1
-  echo "$$" > "$LOCK_DIR/pid"
+  local rc=0
+  exec 9>>"$LOCK_FILE"
+  "$PYTHON" - "$LOCK_WAIT" <<'PY' || rc=$?
+import fcntl
+import sys
+import time
+
+deadline = time.monotonic() + float(sys.argv[1])
+while True:
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            sys.exit(5)
+        time.sleep(0.2)
+PY
+  if [[ $rc -eq 5 ]]; then
+    echo "backup: another backup run still holds ${LOCK_FILE} after ${LOCK_WAIT}s — giving up, nothing written" >&2
+    exit 5
+  elif [[ $rc -ne 0 ]]; then
+    echo "backup: could not lock ${LOCK_FILE} (exit ${rc}) — nothing written" >&2
+    exit 5
+  fi
 }
 take_lock
 
@@ -387,26 +395,30 @@ if [[ -n "$OFFSITE_TARGET" ]]; then
   # Today's file first, then a reconcile of EVERY retained daily and monthly file: a
   # night whose upload failed (or a month boundary crossed during an outage) heals on the
   # next run. Copy only, never sync: nothing is ever deleted off-site by these lines, and
-  # --checksum makes a file already there a no-op.
+  # --checksum makes a file already there a no-op. Every rsync/rclone gets `9>&-`: a
+  # helper it leaves running (an ssh ControlMaster) must not inherit the lock's
+  # descriptor, or it would hold the backup lock after this run and every later run
+  # would give up with exit 5. (On a compound command bash keeps an inheritable copy, so
+  # it has to be on each command.)
   if [[ "$OFFSITE_TARGET" =~ ^[A-Za-z0-9_-]+: ]]; then
-    "$RCLONE" copyto "$ARCHIVE" "${OFFSITE_TARGET%/}/$(basename "$ARCHIVE")" --checksum
-    "$RCLONE" copy "$BACKUP_DIR" "${OFFSITE_TARGET%/}" --max-depth 1 --include 'egyptology-*.db.gz' --checksum
-    "$RCLONE" copy "$MONTHLY_DIR" "${OFFSITE_TARGET%/}/monthly" --include 'egyptology-*.db.gz' --checksum
+    "$RCLONE" copyto "$ARCHIVE" "${OFFSITE_TARGET%/}/$(basename "$ARCHIVE")" --checksum 9>&-
+    "$RCLONE" copy "$BACKUP_DIR" "${OFFSITE_TARGET%/}" --max-depth 1 --include 'egyptology-*.db.gz' --checksum 9>&-
+    "$RCLONE" copy "$MONTHLY_DIR" "${OFFSITE_TARGET%/}/monthly" --include 'egyptology-*.db.gz' --checksum 9>&-
     if [[ "$OFFSITE_PRUNE" == "1" ]]; then
       # Same retention off-site as on-box; a remote that never expires files
       # would silently grow forever. --max-depth 1 keeps this to the daily files:
       # without it the include pattern would also match monthly/ and delete the
       # long tail. Not fatal: a key without delete rights is the safer setup, and
       # then the bucket's lifecycle rule does the expiring.
-      "$RCLONE" delete "${OFFSITE_TARGET%/}" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include 'egyptology-*.db.gz' \
+      "$RCLONE" delete "${OFFSITE_TARGET%/}" --max-depth 1 --min-age "${RETENTION_DAYS}d" --include 'egyptology-*.db.gz' 9>&- \
         || echo "backup: warning — off-site prune failed (a key without delete rights is fine; rely on the B2 lifecycle rule)" >&2
     fi
-    "$RCLONE" ls "${OFFSITE_TARGET%/}" | tail -n 3
+    "$RCLONE" ls "${OFFSITE_TARGET%/}" 9>&- | tail -n 3
   else
-    rsync -a --partial "$ARCHIVE" "$OFFSITE_TARGET"
-    rsync -a --partial --include='egyptology-*.db.gz' --exclude='*' "${BACKUP_DIR}/" "$OFFSITE_TARGET"
+    rsync -a --partial "$ARCHIVE" "$OFFSITE_TARGET" 9>&-
+    rsync -a --partial --include='egyptology-*.db.gz' --exclude='*' "${BACKUP_DIR}/" "$OFFSITE_TARGET" 9>&-
     # No trailing slash: creates monthly/ at the destination and copies all of it.
-    rsync -a --partial "$MONTHLY_DIR" "$OFFSITE_TARGET"
+    rsync -a --partial "$MONTHLY_DIR" "$OFFSITE_TARGET" 9>&-
   fi
   echo "backup: offsite copy done"
 else

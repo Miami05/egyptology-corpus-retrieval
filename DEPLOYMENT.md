@@ -38,8 +38,10 @@ ssh ledio@vela-optiplex-3070 ./egyptology-deploy.sh
 
 In order, the script:
 
-1. refuses to run (touching nothing) if `~/egyptology-deploy.FAILED` exists (an earlier
-   rollback failed; see Rollback), if another deploy holds `~/.egyptology-deploy.lock`, if
+1. refuses to run (touching nothing) if another deploy holds the lock on
+   `~/.egyptology-deploy.lock` (a kernel `flock`, taken through the system `python3`: it is
+   released when its run exits or dies, and the file is never deleted), then, under that
+   lock, if `~/egyptology-deploy.FAILED` exists (an earlier rollback failed; see Rollback), if
    tracked files in the clone are modified, or if `origin` is not a fast-forward of what is
    running. It warns if `DATABASE_URL` is not under `~/egyptology-data`;
 2. records what is running now in `~/egyptology-last-good*` (above), before anything changes;
@@ -79,7 +81,8 @@ class means changing `EXPECT_TEXT` in the deploy script. Not the bare class name
 stylesheet injected on every page contains `.suggestion-card {`, so a page with no result
 would pass. Because the expectation is an attribute, the checker accepts it only on a real
 start tag in an element that renders HTML: not in a `<style>` block, a comment, a
-`<script>`/`<template>`/`<textarea>`, or markup shown as plain text. The checker used,
+`<script>`/`<template>`/`<textarea>`, Markdown code (inline, fenced or indented), or markup
+shown as plain text. The checker used,
 by the deploy and by its rollback, is the **target** commit's `warm_streamlit.py` (on the
 old venv during a rollback: a future checker that needs a newer Streamlit would turn a
 working rollback into a MANUAL one, which is the safe direction).
@@ -419,9 +422,12 @@ then gzip, then a content check, and only then publishes it as
 day publishes `egyptology-<date>-r02.db.gz` (and so on): an accepted snapshot is never
 overwritten. Revision numbers compare as numbers (`-r100` is newer than `-r99`) and are never
 reused: each is one above every revision of that day in the folder, kept copies included.
-Only one run at a time: a run holds `BACKUP_DIR/.lock` from before the snapshot to exit, a
-second run (the timer overlapping a manual one) waits up to `LOCK_WAIT` seconds (default 900)
-and then exits 5 having written nothing, and a lock whose run died is taken over. It exits non-zero if the check is not `ok`,
+Only one run at a time: a run holds a kernel `flock` on `BACKUP_DIR/.backup.lock` from
+before the snapshot to exit, a second run (the timer overlapping a manual one) waits up to
+`LOCK_WAIT` seconds (default 900) and then exits 5 having written nothing. The kernel drops
+the lock when its run dies, so there is nothing stale to take over, and the file is never
+deleted. rsync/rclone run with the descriptor closed, so a helper they leave behind cannot
+keep holding the lock. It exits non-zero if the check is not `ok`,
 keeping the bad file for inspection, so a failed night shows as a `failed` unit rather than
 a silently missing backup. A Python fallback using the same API runs where `sqlite3` is
 absent — which the box was until 2026-09-05. It opens the database read-only through a

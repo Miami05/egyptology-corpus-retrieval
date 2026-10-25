@@ -32,12 +32,16 @@
 #      ~/egyptology-deploy.FAILED; every later run refuses to start while that file
 #      exists, so a rerun cannot overwrite the records the MANUAL steps point at
 #
-# One deploy at a time: ~/.egyptology-deploy.lock is held for the whole run, and a
-# second run while it is held exits 1 without touching anything.
+# One deploy at a time: a kernel lock (flock) on ~/.egyptology-deploy.lock is held for
+# the whole run, and a second run while it is held exits 1 without touching anything.
+# The FAILED marker is checked only once the lock is held, so a run that started while
+# another was failing its rollback still sees the marker that run wrote.
 #
 # Knobs (environment): INSTALL_UNITS=1 copies deploy/systemd/* into the user unit
 # folder (default: only warn when they differ), STOP_BEFORE_UPDATE=0|1 (default 0),
-# BASE_PYTHON (the interpreter that creates release venvs; default the live venv's).
+# BASE_PYTHON (the interpreter that creates release venvs; default the live venv's),
+# LOCK_PYTHON (takes the deploy lock; default python3), DEPLOY_LOCK_WAIT (seconds to wait
+# for another deploy's lock; default 0).
 # Tests point DEPLOY_HOME, HEALTH_URL, HEALTH_TRIES and HEALTH_INTERVAL elsewhere.
 set -euo pipefail
 
@@ -61,8 +65,12 @@ LAST_GOOD_UNITS="$HOME_DIR/egyptology-last-good-units"
 # Left by a rollback that failed (exit 2); while it exists no deploy runs. Delete it by
 # hand once the MANUAL steps are done.
 FAILED_MARKER="$HOME_DIR/egyptology-deploy.FAILED"
-LOCK_DIR="$HOME_DIR/.egyptology-deploy.lock"
-HAVE_LOCK=0
+LOCK_FILE="$HOME_DIR/.egyptology-deploy.lock"
+# The interpreter that takes the kernel lock (the box has no promise of the flock CLI).
+# Ubuntu's own python3, not the app venv: a deploy must be able to lock while the venv
+# is broken. DEPLOY_LOCK_WAIT: seconds to wait for another deploy (default 0, give up).
+LOCK_PYTHON="${LOCK_PYTHON:-python3}"
+DEPLOY_LOCK_WAIT="${DEPLOY_LOCK_WAIT:-0}"
 SCRATCH=""
 UNIT_DIR="$HOME_DIR/.config/systemd/user"
 DEPLOY_COPY="$HOME_DIR/egyptology-deploy.sh"
@@ -426,7 +434,7 @@ apply_new_tree() {
       systemctl --user stop egyptology.service || return 1
       STOPPED_AT=$SECONDS
     fi
-    git -C "$REPO" merge --ff-only "$AFTER" || return 1
+    git -C "$REPO" merge --ff-only "$AFTER" 9>&- || return 1
   fi
   install_helpers || return 1
   install_units || return 1
@@ -501,34 +509,55 @@ rollback() {
   return 1
 }
 
-# Held for the whole run (a directory: mkdir is atomic, and the box has no promise of
-# flock). A lock whose owner is gone is taken over.
+# Held for the whole run: fd 9 stays open on LOCK_FILE and carries a flock taken through
+# Python. The kernel releases it when this run exits or dies, so there is no stale lock
+# to take over, and the file is never deleted (a deleted-and-recreated lock file is how
+# two runs could both believe they held it).
 take_deploy_lock() {
-  local owner
-  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-      echo "deploy: taking over the lock left by run $owner, which is no longer running" >&2
-      rm -rf "$LOCK_DIR"
-      continue
-    fi
-    echo "deploy: another deploy${owner:+ (pid $owner)} holds $LOCK_DIR — nothing touched" >&2
+  local rc=0
+  if [[ -d "$LOCK_FILE" ]]; then
+    # The lock of the deploy script before the flock one. It may belong to a deploy that
+    # is running right now, so it is never removed here.
+    echo "deploy: $LOCK_FILE is an old-style lock directory — another deploy may be running." >&2
+    echo "deploy:   If none is, remove it (rm -r $LOCK_FILE) and run again. Nothing touched." >&2
     exit 1
-  done
-  HAVE_LOCK=1
-  echo "$$" > "$LOCK_DIR/pid"
+  fi
+  exec 9>>"$LOCK_FILE"
+  "$LOCK_PYTHON" - "$DEPLOY_LOCK_WAIT" <<'PY' || rc=$?
+import fcntl
+import sys
+import time
+
+deadline = time.monotonic() + float(sys.argv[1])
+while True:
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            sys.exit(5)
+        time.sleep(0.2)
+PY
+  if [[ $rc -eq 5 ]]; then
+    echo "deploy: another deploy holds $LOCK_FILE — nothing touched" >&2
+    exit 1
+  elif [[ $rc -ne 0 ]]; then
+    echo "deploy: could not lock $LOCK_FILE with $LOCK_PYTHON (exit $rc) — nothing touched" >&2
+    exit 1
+  fi
 }
 
 cleanup() {
   if [[ -n "$SCRATCH" ]]; then
     rm -rf "$SCRATCH"
   fi
-  if [[ "$HAVE_LOCK" == "1" ]]; then
-    rm -rf "$LOCK_DIR"
-  fi
 }
 
 main() {
+  trap cleanup EXIT
+  take_deploy_lock
+  # Only now, under the lock: a run that was waiting while another failed its rollback
+  # must see the marker that run wrote before it released the lock.
   if [[ -e "$FAILED_MARKER" ]]; then
     {
       echo "deploy: an earlier rollback failed ($FAILED_MARKER) — refusing to run, so the records"
@@ -537,8 +566,6 @@ main() {
     } >&2
     exit 1
   fi
-  trap cleanup EXIT
-  take_deploy_lock
   cd "$REPO"
   load_env_file "$ENV_FILE"
 
@@ -556,7 +583,10 @@ main() {
   esac
 
   BEFORE="$(git rev-parse HEAD)"
-  git fetch -q origin
+  # `9>&-` on the commands that reach the network: a helper they may leave running (an
+  # ssh ControlMaster, a credential helper) must not inherit the lock's descriptor and
+  # hold the deploy lock after this run has ended.
+  git fetch -q origin 9>&-
   AFTER="$(git rev-parse '@{u}')"
   if ! git merge-base --is-ancestor "$BEFORE" "$AFTER"; then
     echo "deploy: $(git rev-parse --short "$AFTER") upstream is not a fast-forward of $(git rev-parse --short "$BEFORE") — nothing touched" >&2
@@ -569,7 +599,7 @@ main() {
     # The merge below smudges the LFS corpus (~69 MB); fetch it while the service is
     # still up so the download is not part of the downtime. Best effort.
     if corpus_changed "$BEFORE" "$AFTER" && git lfs version >/dev/null 2>&1; then
-      git lfs fetch origin "$AFTER" >/dev/null || echo "deploy: LFS prefetch failed — the merge will download the corpus instead" >&2
+      git lfs fetch origin "$AFTER" >/dev/null 9>&- || echo "deploy: LFS prefetch failed — the merge will download the corpus instead" >&2
     fi
   fi
 

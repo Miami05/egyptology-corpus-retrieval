@@ -5,12 +5,14 @@ Everything here runs against stubs: no systemd, B2, ntfy or live server is touch
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import tomllib
 from pathlib import Path
@@ -249,6 +251,44 @@ def test_an_attribute_expectation_needs_a_real_rendered_start_tag(message):
 def test_an_attribute_expectation_passes_on_a_real_result(message):
     state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
     warm_streamlit.inspect_forward(message, state)
+    assert state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        f"see `{_CARD}` here",                                              # inline code
+        f"``{_CARD} with ` inside``",                                       # longer backtick run
+        f"text\n\n```html\n{_CARD}\n```\n",                               # fenced code
+        f"~~~\n{_CARD}\n~~~",                                              # tilde fence
+        f"```\n{_CARD}",                                                    # unclosed fence
+        f"intro\n\n    {_CARD}",                                            # indented code block
+        f"    {_CARD}",                                                     # indented at the start
+    ],
+    ids=["inline", "double-backtick", "fenced", "tilde-fence", "unclosed-fence", "indented", "indented-start"],
+)
+def test_an_attribute_expectation_ignores_markdown_code(body):
+    """Regression for Astra's round-3 A11 finding: the HTML parser saw raw Markdown, so a
+    card tag shown as code (which Streamlit draws as text) counted as a rendered result."""
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(_markdown_msg(body), state)
+    assert not state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # what render_suggestion_card sends: dedented, nested lines indented 2 and 4 spaces
+        '<article class="suggestion-card">\n  <div class="suggestion-head">\n'
+        '    <span class="suggestion-rank">1</span>\n  </div>\n</article>',
+        f"`code` first\n\n{_CARD}",
+        f"```\ncode\n```\n{_CARD}",
+    ],
+    ids=["app-card", "after-inline-code", "after-fence"],
+)
+def test_a_card_outside_markdown_code_still_counts(body):
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(_markdown_msg(body), state)
     assert state.expect_seen
 
 
@@ -686,45 +726,118 @@ def test_rsync_offsite_reconciles_dailies_and_the_whole_monthly_folder(backup_en
         "egyptology-2026-01.db.gz", "egyptology-2026-02.db.gz"]
 
 
+class _Flock:
+    """Hold the kernel lock another run would hold, from this test process."""
+
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = open(path, "a")
+        fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def release(self) -> None:
+        if not self.handle.closed:
+            self.handle.close()
+
+
 def test_a_backup_waits_for_a_running_one_and_never_publishes_beside_it(backup_env):
     """Regression for the round-2 A13 review (Astra blocker): two overlapping runs could
     pick the same name, and the later `mv -f` replaced an accepted snapshot."""
-    backup_env.backups.mkdir()
-    lock = backup_env.backups / ".lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{os.getpid()}\n")                      # a live owner
-    result = backup_env.run("2026-01-10", LOCK_WAIT="1")
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    try:
+        result = backup_env.run("2026-01-10", LOCK_WAIT="1")
+    finally:
+        holder.release()
     assert result.returncode == 5, result.stdout + result.stderr
     assert "still holds" in result.stderr
-    assert sorted(path.name for path in backup_env.backups.iterdir()) == [".lock"]
-    assert (lock / "pid").read_text().strip() == str(os.getpid()), "another run's lock was removed"
+    assert sorted(path.name for path in backup_env.backups.iterdir()) == [".backup.lock"]
+
+
+def test_a_held_lock_is_never_broken_whatever_pid_it_names(backup_env):
+    """Regression for Astra's round-3 A13 blocker: two runs could both read the same dead
+    owner, one took the lock over, and the other then deleted that NEW owner's lock with
+    its stale observation, so both ran. The kernel lock has no owner record to go stale:
+    a file naming a dead pid, or an old-style lock directory, never lets a run past a
+    live holder."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    lock.write_text(f"{dead.pid}\n")
+    (backup_env.backups / ".lock").mkdir()
+    (backup_env.backups / ".lock" / "pid").write_text(f"{dead.pid}\n")
+    try:
+        result = backup_env.run("2026-01-10", LOCK_WAIT="1")
+        assert lock.exists(), "the lock file was deleted"
+    finally:
+        holder.release()
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert not list(backup_env.backups.glob("egyptology-*"))
 
 
 def test_a_backup_runs_once_the_other_run_releases_the_lock(backup_env):
-    backup_env.backups.mkdir()
-    lock = backup_env.backups / ".lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{os.getpid()}\n")
-    releaser = subprocess.Popen(["sh", "-c", f'sleep 2; rm -rf "{lock}"'])
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    releaser = threading.Timer(2, holder.release)
+    releaser.start()
     try:
         result = backup_env.run("2026-01-10", LOCK_WAIT="30")
     finally:
-        releaser.wait()
+        releaser.cancel()
+        holder.release()
     assert result.returncode == 0, result.stdout + result.stderr
     assert (backup_env.backups / "egyptology-2026-01-10.db.gz").is_file()
-    assert not lock.exists(), "the run did not release its own lock"
+    assert lock.exists(), "the lock file must stay: deleting it is what let two runs both hold one"
+    _Flock(lock).release()                                               # and it is free again
 
 
-def test_a_lock_left_by_a_dead_run_is_taken_over(backup_env):
+def test_a_lock_file_left_by_a_dead_run_does_not_block(backup_env):
     backup_env.backups.mkdir()
-    dead = subprocess.Popen(["true"])
-    dead.wait()
-    lock = backup_env.backups / ".lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{dead.pid}\n")
+    (backup_env.backups / ".backup.lock").write_text("12345\n")
     result = backup_env.run("2026-01-10", LOCK_WAIT="0")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "taking over the lock" in result.stderr
+
+
+def test_simultaneous_runs_over_a_stale_lock_publish_one_snapshot_each(backup_env):
+    """The race interleaving itself: several runs start together over a lock file a dead
+    run left. Each must run alone, so each publishes its own revision and none is lost."""
+    backup_env.run("2026-01-10")                                         # the day's first
+    (backup_env.backups / ".backup.lock").write_text("12345\n")
+    environment = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "DB_PATH", "OFFSITE_TARGET")}
+    environment.update(
+        PATH=f"{backup_env.rclone.parent}:{os.environ['PATH']}", PYTHON=sys.executable,
+        BACKUP_DIR=str(backup_env.backups), BACKUP_STAMP="2026-01-10", LOCK_WAIT="60",
+    )
+    runs = [
+        subprocess.Popen(["bash", str(BACKUP_SCRIPT), str(backup_env.db)], env=environment,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for _ in range(4)
+    ]
+    outputs = [run.communicate(timeout=120)[0] for run in runs]
+    assert [run.returncode for run in runs] == [0, 0, 0, 0], outputs
+    published = sorted(path.name for path in backup_env.backups.glob("egyptology-2026-01-10*.db.gz"))
+    assert len(published) == 5, published
+
+
+def test_an_offsite_helper_left_running_does_not_keep_the_lock(backup_env, tmp_path):
+    """rclone or rsync can leave a helper behind (an ssh ControlMaster); it must not
+    inherit the lock, or every later run gives up with exit 5."""
+    sleeper_pid = tmp_path / "sleeper.pid"
+    lingering = _stub(
+        tmp_path / "lingering-rclone",
+        f'sleep 30 >/dev/null 2>&1 </dev/null &\necho $! >> "{sleeper_pid}"\nexit 0\n',
+    )
+    try:
+        first = backup_env.run("2026-01-10", OFFSITE_TARGET="remote:bucket", RCLONE=str(lingering))
+        assert first.returncode == 0, first.stdout + first.stderr
+        second = backup_env.run("2026-01-11", LOCK_WAIT="1")
+        assert second.returncode == 0, second.stdout + second.stderr
+    finally:
+        for pid in sleeper_pid.read_text().split() if sleeper_pid.exists() else []:
+            try:
+                os.kill(int(pid), 9)
+            except ProcessLookupError:
+                pass
 
 
 def test_revisions_compare_as_numbers_past_r99(backup_env):
@@ -908,17 +1021,26 @@ class DeployBox:
     def release_dirs(self) -> list[str]:
         return sorted(path.name for path in self.releases.iterdir()) if self.releases.exists() else []
 
-    def run(self, **extra: str) -> subprocess.CompletedProcess:
+    def _environment(self, extra: dict[str, str]) -> dict[str, str]:
         self.calls.write_text("")
         environment = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "STOP_BEFORE_UPDATE")}
         environment.update(
             _GIT_ENV, PATH=f"{self.stubs}:{os.environ['PATH']}", DEPLOY_HOME=str(self.home),
             CALL_LOG=str(self.calls), HEALTH_TRIES="2", HEALTH_INTERVAL="0", GIT_TERMINAL_PROMPT="0",
-            BASE_PYTHON=str(self.stubs / "base-python"),
+            BASE_PYTHON=str(self.stubs / "base-python"), LOCK_PYTHON=sys.executable,
         )
         environment.update(extra)
+        return environment
+
+    def run(self, **extra: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["bash", str(DEPLOY_SCRIPT)], env=environment, capture_output=True, text=True, timeout=120
+            ["bash", str(DEPLOY_SCRIPT)], env=self._environment(extra), capture_output=True, text=True, timeout=120
+        )
+
+    def start(self, **extra: str) -> subprocess.Popen:
+        return subprocess.Popen(
+            ["bash", str(DEPLOY_SCRIPT)], env=self._environment(extra),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
 
 
@@ -1229,16 +1351,85 @@ def test_a_second_deploy_while_one_is_running_touches_nothing(deploy_box):
     deploy_box.write("app.py", "v2\n")
     deploy_box.publish("v2")
     lock = deploy_box.home / ".egyptology-deploy.lock"
-    lock.mkdir()
-    (lock / "pid").write_text(f"{os.getpid()}\n")              # a live owner
-    result = deploy_box.run()
+    holder = _Flock(lock)                                        # a running deploy
+    try:
+        result = deploy_box.run()
+    finally:
+        holder.release()                                         # that run finished
     assert result.returncode == 1, result.stdout + result.stderr
     assert "another deploy" in result.stderr
     assert deploy_box.head() == before and deploy_box.log() == []
     assert not (deploy_box.home / "egyptology-last-good").exists()
-    shutil.rmtree(lock)                                          # that run finished
     assert deploy_box.run().returncode == 0
-    assert not lock.exists(), "the deploy did not release its lock"
+    assert lock.is_file(), "the lock file stays; only the kernel lock on it is released"
+    _Flock(lock).release()                                       # and it is free again
+
+
+def test_a_held_deploy_lock_is_never_broken_whatever_pid_it_names(deploy_box):
+    """Regression for Astra's round-3 blocker: a contender that read a dead owner deleted
+    the lock a NEW owner had just taken, and both deploys ran."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    holder = _Flock(lock)
+    lock.write_text(f"{dead.pid}\n")
+    try:
+        result = deploy_box.run()
+        assert lock.is_file(), "the held lock was deleted"
+    finally:
+        holder.release()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert deploy_box.log() == []
+
+
+def test_a_helper_git_fetch_leaves_running_does_not_keep_the_deploy_lock(deploy_box, tmp_path):
+    """git's ssh can leave a ControlMaster running; it must not inherit the lock."""
+    real_git = shutil.which("git")
+    sleeper_pid = tmp_path / "sleeper.pid"
+    wrapper = tmp_path / "git-wrapper"
+    wrapper.mkdir()
+    _stub(wrapper / "git", f'if [ "$1" = fetch ]; then sleep 30 >/dev/null 2>&1 </dev/null & echo $! >> "{sleeper_pid}"; fi\n'
+          f'exec "{real_git}" "$@"\n')
+    path = f"{deploy_box.stubs}:{wrapper}:{os.environ['PATH']}"
+    try:
+        assert deploy_box.run(PATH=path).returncode == 0
+        second = deploy_box.run(PATH=path)
+        assert second.returncode == 0, second.stdout + second.stderr
+    finally:
+        for pid in sleeper_pid.read_text().split() if sleeper_pid.exists() else []:
+            try:
+                os.kill(int(pid), 9)
+            except ProcessLookupError:
+                pass
+
+
+def test_an_old_style_lock_directory_is_left_alone(deploy_box):
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    lock.mkdir()
+    result = deploy_box.run()
+    assert result.returncode == 1 and "old-style lock directory" in result.stderr
+    assert lock.is_dir() and deploy_box.log() == []
+
+
+def test_the_failed_marker_is_checked_under_the_lock(deploy_box):
+    """Regression for Astra's round-3 should_fix: the marker was checked before the lock,
+    so a run waiting on the lock while another failed its rollback went on to overwrite
+    the records that run's MANUAL block points at."""
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    holder = _Flock(lock)                                        # the deploy that is failing
+    try:
+        waiting = deploy_box.start(DEPLOY_LOCK_WAIT="30")
+        time.sleep(1.5)                                          # it is past any early check
+        (deploy_box.home / "egyptology-deploy.FAILED").write_text("MANUAL ...\n")
+    finally:
+        holder.release()                                         # the failing run exits 2
+    out, err = waiting.communicate(timeout=60)
+    assert waiting.returncode == 1, out + err
+    assert "an earlier rollback failed" in err
+    assert not (deploy_box.home / "egyptology-last-good").exists()
+    assert deploy_box.log() == []
 
 
 def test_a_failed_freeze_without_a_lock_stops_before_anything_changes(deploy_box):
