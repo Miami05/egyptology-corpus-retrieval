@@ -33,19 +33,30 @@
 #                    accept a snapshot with fewer annotations than the previous
 #                    one (a deliberate deletion); without it the run fails
 #   BACKUP_STAMP     the date in the file names (default today, YYYY-MM-DD); tests
+#   LOCK_WAIT        seconds to wait for another backup run to finish (default 900)
+#   SQLITE3          the sqlite3 CLI (default from PATH; a name that is not found
+#                    selects the Python path, which is what runs on the server)
 #
 # The snapshot is first written under a hidden candidate name, checked, and only then
 # published as egyptology-<date>.db.gz (a second run on the same day publishes
 # egyptology-<date>-r02.db.gz and so on: an accepted snapshot is never overwritten).
 # It is compared with the newest ACCEPTED snapshot, today's included, dailies and the
-# monthly long tail alike.
+# monthly long tail alike. Revisions are numbers, compared as numbers (r100 is newer than
+# r99), and never reused: each one is above every revision of that day already in the
+# folder, kept copies (.suspect, .unverified, .corrupt) included.
+#
+# One run at a time: a run holds BACKUP_DIR/.lock from before the snapshot until it
+# exits, so the timer and a manual run cannot both pick the same name or compare with
+# the same baseline. A second run waits up to LOCK_WAIT seconds, then gives up with
+# exit 5 and touches nothing. A lock left by a run that died is taken over.
 #
 # Exit codes: 0 all good; 1 no database, or a DATABASE_URL this script cannot back up;
 # 2 the copy is corrupt; 3 the copy is readable but holds fewer annotations than the
 # newest accepted snapshot (it is kept as <name>.db.gz.suspect, and nothing older is
 # touched, not on this machine and not off-site); 4 the newest accepted snapshot cannot
 # be read, or every earlier snapshot has gone missing, so nothing can be compared (the
-# copy is kept as <name>.db.gz.unverified; same "touch nothing" rule). Any non-zero exit
+# copy is kept as <name>.db.gz.unverified; same "touch nothing" rule); 5 another backup
+# run held the lock for longer than LOCK_WAIT (nothing was written). Any non-zero exit
 # means no good backup was published, and the systemd unit will show `failed`.
 
 set -euo pipefail
@@ -57,6 +68,8 @@ PYTHON="${PYTHON:-/home/ledio/venvs/egyptology/bin/python}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-}"
 ALLOW_ANNOTATION_DROP="${ALLOW_ANNOTATION_DROP:-0}"
 OFFSITE_PRUNE="${OFFSITE_PRUNE:-1}"
+LOCK_WAIT="${LOCK_WAIT:-900}"
+SQLITE3="${SQLITE3:-sqlite3}"
 
 # ---------------------------------------------------------------------------
 # Off-machine copy. A backup on the same disk as the database survives a bad
@@ -79,6 +92,8 @@ MONTHLY_FILE="${MONTHLY_DIR}/egyptology-${MONTH}.db.gz"
 # Created after the first published snapshot. With it present and no snapshot to be
 # found, the folder was emptied: that must fail, not pass as "first backup".
 SEEN_MARKER="${BACKUP_DIR}/.has-snapshots"
+LOCK_DIR="${BACKUP_DIR}/.lock"
+HAVE_LOCK=0
 WORK_DIR=""
 
 # Runs on every exit: cleans the scratch folder and reports the outcome to the
@@ -91,6 +106,9 @@ finish() {
     rm -rf "$WORK_DIR"
   fi
   rm -f "$SNAPSHOT" "$CANDIDATE"     # whatever was not published or kept by name
+  if [[ "$HAVE_LOCK" == "1" ]]; then
+    rm -rf "$LOCK_DIR"
+  fi
   if [[ -n "$HEALTHCHECK_URL" ]]; then
     local url="${HEALTHCHECK_URL%/}"
     if [[ $rc -ne 0 ]]; then
@@ -128,13 +146,37 @@ if [[ ! -f "$DB_PATH" ]]; then
 fi
 mkdir -p "$BACKUP_DIR"
 
+# The lock is a directory (mkdir is atomic everywhere; flock is not on every box) holding
+# the owner's pid. Taken before the snapshot and held until exit: snapshot, comparison,
+# publication and retention are one step that two runs must never interleave.
+take_lock() {
+  local waited=0 owner
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+      echo "backup: taking over the lock left by run ${owner}, which is no longer running" >&2
+      rm -rf "$LOCK_DIR"
+      continue
+    fi
+    if [[ $waited -ge $LOCK_WAIT ]]; then
+      echo "backup: another backup run${owner:+ (pid ${owner})} still holds ${LOCK_DIR} after ${LOCK_WAIT}s — giving up, nothing written" >&2
+      exit 5
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  HAVE_LOCK=1
+  echo "$$" > "$LOCK_DIR/pid"
+}
+take_lock
+
 # `.backup` (the online backup API), never `cp`: a plain copy of a live SQLite
 # file can catch a half-written page or miss a committed one still in the WAL,
 # and you find out at restore time. Both branches below use the same API — the
 # CLI's `.backup` command and Python's `Connection.backup` are the same call.
-if command -v sqlite3 >/dev/null 2>&1; then
+if command -v "$SQLITE3" >/dev/null 2>&1; then
   echo "backup: snapshotting with the sqlite3 CLI"
-  sqlite3 "$DB_PATH" ".backup '${SNAPSHOT}'"
+  "$SQLITE3" "$DB_PATH" ".backup '${SNAPSHOT}'"
 else
   # Ubuntu 24.04 server as installed has no sqlite3 CLI and `ledio` has no sudo
   # to add one, so this is the path that actually runs there.
@@ -142,10 +184,13 @@ else
   "$PYTHON" - "$DB_PATH" "$SNAPSHOT" <<'PY'
 import sqlite3
 import sys
+from pathlib import Path
 
 source_path, target_path = sys.argv[1], sys.argv[2]
-# Read-only URI so a backup can never be what modifies the live database.
-source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+# Read-only URI so a backup can never be what modifies the live database. as_uri()
+# percent-encodes the path: a `#` or `%23` in a file name must name that file, not
+# start a fragment or decode into a different one.
+source = sqlite3.connect(f"{Path(source_path).resolve().as_uri()}?mode=ro", uri=True)
 target = sqlite3.connect(target_path)
 with target:
     source.backup(target)
@@ -161,8 +206,9 @@ INTEGRITY="$(
   "$PYTHON" - "$SNAPSHOT" <<'PY'
 import sqlite3
 import sys
+from pathlib import Path
 
-connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+connection = sqlite3.connect(f"{Path(sys.argv[1]).resolve().as_uri()}?mode=ro", uri=True)
 print(connection.execute("PRAGMA integrity_check").fetchone()[0])
 connection.close()
 PY
@@ -193,8 +239,9 @@ count_archive() {
   "$PYTHON" - "${WORK_DIR}/count.db" <<'PY' || return 1
 import sqlite3
 import sys
+from pathlib import Path
 
-connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+connection = sqlite3.connect(f"{Path(sys.argv[1]).resolve().as_uri()}?mode=ro", uri=True)
 
 
 def count(table):
@@ -212,30 +259,50 @@ PY
   rm -f "${WORK_DIR}/count.db"
 }
 
-# The newest accepted snapshot: the dailies (egyptology-YYYY-MM-DD[-rNN].db.gz) and the
-# monthly long tail (monthly/egyptology-YYYY-MM.db.gz), ordered by the date in the name,
-# not by file time. In that order a month's file comes before the month's dailies (it is
-# a copy of the first one) and a same-day rerun after the day's first snapshot.
+# Prints "<date> <revision>" for a snapshot name with any suffix after .db.gz:
+# egyptology-YYYY-MM-DD.db.gz is revision 1, egyptology-YYYY-MM-DD-rNN.db.gz is NN (as a
+# number), and a monthly egyptology-YYYY-MM.db.gz is revision 0 of the date YYYY-MM, which
+# sorts before that month's dailies (it is a copy of the first one). Other names: nothing.
+snapshot_key() {
+  local name="${1##*/}"
+  if [[ "$name" =~ ^egyptology-([0-9]{4}-[0-9]{2}-[0-9]{2})(-r([0-9]+))?\.db\.gz ]]; then
+    echo "${BASH_REMATCH[1]} $((10#${BASH_REMATCH[3]:-1}))"
+  elif [[ "$name" =~ ^egyptology-([0-9]{4}-[0-9]{2})\.db\.gz ]]; then
+    echo "${BASH_REMATCH[1]} 0"
+  fi
+}
+
+# The newest accepted snapshot: the dailies and the monthly long tail, ordered by the date
+# in the name (not by file time) and then by revision NUMBER, so -r100 is after -r99.
 latest_accepted() {
   local file key
   for file in "$BACKUP_DIR"/egyptology-*.db.gz "$MONTHLY_DIR"/egyptology-*.db.gz; do
     [[ -f "$file" ]] || continue
-    key="$(basename "$file")"
-    key="${key#egyptology-}"
-    printf '%s\t%s\n' "${key%.db.gz}" "$file"
-  done | LC_ALL=C sort | tail -n 1 | cut -f2-
+    key="$(snapshot_key "$file")"
+    [[ -n "$key" ]] || continue
+    printf '%s\t%s\t%s\n' "${key% *}" "${key#* }" "$file"
+  done | LC_ALL=C sort -t $'\t' -k1,1 -k2,2n | tail -n 1 | cut -f3-
 }
 
-# The first free published name for today; a name taken by a kept .suspect or
-# .unverified copy counts as taken, so nothing kept for a human is ever overwritten.
+# Today's next published name: one revision above every revision of today already in the
+# folder, published or kept (.suspect, .unverified, .corrupt). Never the first free gap,
+# so a number is never reused and a later revision is always a later run.
 publish_name() {
-  local base="${BACKUP_DIR}/egyptology-${STAMP}" name n=2
-  name="${base}.db.gz"
-  while [[ -e "$name" || -e "${name}.suspect" || -e "${name}.unverified" ]]; do
-    name="$(printf '%s-r%02d.db.gz' "$base" "$n")"
-    n=$((n + 1))
+  local base="${BACKUP_DIR}/egyptology-${STAMP}" file key highest=0 n
+  for file in "$base".db.gz* "$base"-r*.db.gz*; do
+    [[ -e "$file" ]] || continue
+    key="$(snapshot_key "$file")"
+    [[ -n "$key" && "${key% *}" == "$STAMP" ]] || continue
+    n="${key#* }"
+    if [[ $n -gt $highest ]]; then
+      highest=$n
+    fi
   done
-  echo "$name"
+  if [[ $highest -eq 0 ]]; then
+    echo "${base}.db.gz"
+  else
+    printf '%s-r%02d.db.gz\n' "$base" "$((highest + 1))"
+  fi
 }
 
 if ! TODAY_COUNTS="$(count_archive "$CANDIDATE")"; then

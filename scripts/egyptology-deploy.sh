@@ -18,12 +18,22 @@
 #      installed into, so a failing pip leaves the tree, the venv and the service as
 #      they were. A commit whose dependencies did not change reuses the live venv
 #   4. fast-forward the tree (STOP_BEFORE_UPDATE=1 stops the service first; default 0,
-#      no public downtime: the unit's STREAMLIT_SERVER_FILE_WATCHER_TYPE=none keeps the
-#      running process from picking up the new files), helpers, unit files, corpus sync
-#      with the NEW venv, then stop, point ~/venvs/egyptology at the new venv, start, and
-#      a real check that the app renders a result
-#   5. any failure in 4: stop, restore the units, the tree and the venv link, start, and
-#      re-run the same check; the old release venv is kept for exactly this
+#      no public downtime: the unit's STREAMLIT_SERVER_FILE_WATCHER_TYPE=none stops the
+#      running process from RELOADING what it already loaded, but a module or page it has
+#      not imported yet is read from the new tree if a visitor reaches it in the window
+#      between this merge and the stop below, corpus sync included. That risk was
+#      accepted with the default), helpers, unit files, corpus sync with the NEW venv,
+#      then stop, point ~/venvs/egyptology at the new venv, start, and a real check that
+#      the app renders a result
+#   5. any failure in 4: stop (and refuse to go on unless the service is really down),
+#      restore the units, the tree and the venv link, start, and re-run the same check;
+#      the old release venv is kept for exactly this
+#   6. a rollback that itself fails exits 2 with a MANUAL block and leaves
+#      ~/egyptology-deploy.FAILED; every later run refuses to start while that file
+#      exists, so a rerun cannot overwrite the records the MANUAL steps point at
+#
+# One deploy at a time: ~/.egyptology-deploy.lock is held for the whole run, and a
+# second run while it is held exits 1 without touching anything.
 #
 # Knobs (environment): INSTALL_UNITS=1 copies deploy/systemd/* into the user unit
 # folder (default: only warn when they differ), STOP_BEFORE_UPDATE=0|1 (default 0),
@@ -48,6 +58,12 @@ ENV_FILE="$HOME_DIR/egyptology.env"
 LAST_GOOD="$HOME_DIR/egyptology-last-good"
 LAST_GOOD_VENV="$HOME_DIR/egyptology-last-good-venv"
 LAST_GOOD_UNITS="$HOME_DIR/egyptology-last-good-units"
+# Left by a rollback that failed (exit 2); while it exists no deploy runs. Delete it by
+# hand once the MANUAL steps are done.
+FAILED_MARKER="$HOME_DIR/egyptology-deploy.FAILED"
+LOCK_DIR="$HOME_DIR/.egyptology-deploy.lock"
+HAVE_LOCK=0
+SCRATCH=""
 UNIT_DIR="$HOME_DIR/.config/systemd/user"
 DEPLOY_COPY="$HOME_DIR/egyptology-deploy.sh"
 CORPUS_CSV=data/processed/examples.csv
@@ -130,6 +146,9 @@ wait_healthy() {
 # The checker is the TARGET commit's copy, saved to $CHECKER before anything changed, and
 # the rollback runs the same one: an older commit's warm_streamlit.py may not know
 # --expect-text, and a rollback must not be judged by a weaker check than the deploy.
+# Known limit: in a rollback it runs on the OLD venv. A future checker that needs a newer
+# Streamlit than that venv has would fail to import there, and a rollback that worked
+# would still end in MANUAL (exit 2); the MANUAL block is then the safe answer anyway.
 verify_app() {
   wait_healthy || return 1
   "$VENV/bin/python" "$CHECKER" --url "$APP_URL" --timeout 180 \
@@ -201,11 +220,13 @@ prepare_dependency_spec() {
 }
 
 # The constraints for a build without a lock (see prepare_dependency_spec).
+# A failed `pip freeze` is fatal: without it nothing is held, and the build would quietly
+# resolve every transitive dependency afresh, which is exactly what this guards against.
 write_constraints() {
   : > "$SCRATCH/constraints.txt"
-  if ! "$PREVIOUS_VENV/bin/pip" freeze > "$SCRATCH/frozen.txt" 2>/dev/null; then
-    echo "deploy: warning — could not list the running venv's packages; unpinned packages resolve fresh" >&2
-    return 0
+  if ! "$PREVIOUS_VENV/bin/pip" freeze > "$SCRATCH/frozen.txt"; then
+    echo "deploy: could not list the running venv's packages (pip freeze failed), so they cannot be held at their versions" >&2
+    return 1
   fi
   requirement_names "$SCRATCH/requirements.txt" > "$SCRATCH/names.txt"
   pins "$SCRATCH/frozen.txt" \
@@ -234,7 +255,14 @@ build_release_venv() {
   else
     echo "deploy: no requirements.lock in this commit — packages requirements.txt does not pin stay at the running venv's versions"
     write_constraints || return 1
-    "$NEW_VENV/bin/pip" install -q -r "$SCRATCH/requirements.txt" -c "$SCRATCH/constraints.txt" || return 1
+    if ! "$NEW_VENV/bin/pip" install -q -r "$SCRATCH/requirements.txt" -c "$SCRATCH/constraints.txt"; then
+      # Usually a held-back package the new pins do not fit (a newer streamlit that needs
+      # a newer protobuf, say). Say how to get past it, rather than only "failed".
+      echo "deploy: hint — without a lock, packages requirements.txt does not pin are held at the running versions" >&2
+      echo "deploy:   ($SCRATCH/constraints.txt), and a new pin may need a newer one. Commit a requirements.lock" >&2
+      echo "deploy:   built from a tested venv, or pin that package in requirements.txt." >&2
+      return 1
+    fi
   fi
   cp "$SCRATCH/deps-spec" "$NEW_VENV/$SPEC_MARKER" || return 1
 }
@@ -423,12 +451,29 @@ apply_new_tree() {
 # deploy, start, and the SAME paste check the deploy failed, not just /_stcore/health
 # (that is the false-health condition A11 describes). Never touches ignored files, so the
 # database (*.db) is safe. A release venv built for the failed commit is removed.
+# The rollback must not change files under a running process, nor let `start` (a no-op
+# on a running unit) and a passing check on the NEW app pass for a restored old one.
+service_stopped() {
+  local state
+  if systemctl --user stop egyptology.service; then
+    return 0
+  fi
+  state="$(systemctl --user is-active egyptology.service 2>/dev/null || true)"
+  case "$state" in
+    inactive|failed)
+      echo "deploy: warning — stop failed, but the service is $state; rolling back" >&2
+      return 0
+      ;;
+  esac
+  echo "deploy: could not stop the service (state: ${state:-unknown}) — not rolling back under a running app" >&2
+  return 1
+}
+
 rollback() {
   local target="$1"
   echo "deploy: FAILED — rolling back to $(git -C "$REPO" rev-parse --short "$target")" >&2
-  systemctl --user stop egyptology.service \
-    || echo "deploy: warning — could not stop the service before rolling back" >&2
-  if restore_units \
+  if service_stopped \
+    && restore_units \
     && git -C "$REPO" reset --hard "$target" \
     && point_venv_at "$PREVIOUS_VENV" \
     && install_helpers \
@@ -450,11 +495,50 @@ rollback() {
     echo "  git -C $REPO reset --hard \$(cat $LAST_GOOD)"
     echo "  ln -sfn \"\$(cat $LAST_GOOD_VENV)\" $VENV"
     echo "  systemctl --user start egyptology.service"
-  } >&2
+    echo "  # check the app, then allow deploys again:"
+    echo "  rm $FAILED_MARKER"
+  } | tee "$SCRATCH/manual.txt" >&2
   return 1
 }
 
+# Held for the whole run (a directory: mkdir is atomic, and the box has no promise of
+# flock). A lock whose owner is gone is taken over.
+take_deploy_lock() {
+  local owner
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
+      echo "deploy: taking over the lock left by run $owner, which is no longer running" >&2
+      rm -rf "$LOCK_DIR"
+      continue
+    fi
+    echo "deploy: another deploy${owner:+ (pid $owner)} holds $LOCK_DIR — nothing touched" >&2
+    exit 1
+  done
+  HAVE_LOCK=1
+  echo "$$" > "$LOCK_DIR/pid"
+}
+
+cleanup() {
+  if [[ -n "$SCRATCH" ]]; then
+    rm -rf "$SCRATCH"
+  fi
+  if [[ "$HAVE_LOCK" == "1" ]]; then
+    rm -rf "$LOCK_DIR"
+  fi
+}
+
 main() {
+  if [[ -e "$FAILED_MARKER" ]]; then
+    {
+      echo "deploy: an earlier rollback failed ($FAILED_MARKER) — refusing to run, so the records"
+      echo "deploy:   the MANUAL steps read ($LAST_GOOD, $LAST_GOOD_VENV, $LAST_GOOD_UNITS) stay as they are."
+      echo "deploy:   Follow the MANUAL block from that run (also in the file), then delete the file."
+    } >&2
+    exit 1
+  fi
+  trap cleanup EXIT
+  take_deploy_lock
   cd "$REPO"
   load_env_file "$ENV_FILE"
 
@@ -499,7 +583,6 @@ main() {
   BUILT_VENV=""
 
   SCRATCH="$(mktemp -d)"
-  trap 'rm -rf "$SCRATCH"' EXIT
   CHECKER="$SCRATCH/warm_streamlit.py"
   git show "$AFTER:scripts/warm_streamlit.py" > "$CHECKER" 2>/dev/null \
     || git show "$BEFORE:scripts/warm_streamlit.py" > "$CHECKER"
@@ -518,6 +601,11 @@ main() {
     if rollback "$BEFORE"; then
       exit 1
     fi
+    {
+      echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER"), the rollback failed"
+      cat "$SCRATCH/manual.txt" 2>/dev/null || true
+    } > "$FAILED_MARKER"
+    echo "deploy: wrote $FAILED_MARKER; no deploy runs until it is deleted" >&2
     exit 2
   fi
 

@@ -38,21 +38,26 @@ ssh ledio@vela-optiplex-3070 ./egyptology-deploy.sh
 
 In order, the script:
 
-1. refuses to run (touching nothing) if tracked files in the clone are modified, or if
-   `origin` is not a fast-forward of what is running. It warns if `DATABASE_URL` is not
-   under `~/egyptology-data`;
+1. refuses to run (touching nothing) if `~/egyptology-deploy.FAILED` exists (an earlier
+   rollback failed; see Rollback), if another deploy holds `~/.egyptology-deploy.lock`, if
+   tracked files in the clone are modified, or if `origin` is not a fast-forward of what is
+   running. It warns if `DATABASE_URL` is not under `~/egyptology-data`;
 2. records what is running now in `~/egyptology-last-good*` (above), before anything changes;
 3. `git fetch`es and builds **the target commit's** dependencies into a **new release venv**
    in `~/venvs/egyptology-releases/`, from `requirements.lock` when the commit has one
    (checked against every pin in `requirements.txt`; a stale lock stops the deploy), otherwise
    from `requirements.txt` with every package it does not name held at the version the
-   running venv has. The live venv is never installed into, so a failing pip leaves the tree,
+   running venv has (a failed `pip freeze` of the running venv stops the deploy rather than
+   resolving them afresh; a pip failure in this mode prints a hint to commit a lock or pin
+   the package). The live venv is never installed into, so a failing pip leaves the tree,
    the venv and the running service untouched (exit 1). A commit whose dependency files did
    not change reuses the live venv and builds nothing;
 4. fast-forwards the tree **with the service still running** (default
    `STOP_BEFORE_UPDATE=0`, no public downtime; the unit's
-   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` stops the running process from picking up the
-   new files, audit A40; `STOP_BEFORE_UPDATE=1` stops it first instead), refreshes
+   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` stops the running process reloading what it has
+   already loaded, audit A40, but a module or page it has not imported yet is read from the
+   new tree if a visitor reaches it between the merge and the stop, corpus import included
+   — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first instead), refreshes
    `/home/ledio/bin` from `scripts/`, installs the unit files **only when `INSTALL_UNITS=1`**
    (otherwise it says when they differ from `deploy/systemd/`), imports the corpus with the
    **new** venv if the commit changed `data/processed/examples.csv` (see below), then stops the
@@ -72,8 +77,12 @@ script is what treats a bad app as a failed deploy. The check looks for the attr
 `class="suggestion-card"` that `whyptology_app.py` writes on every result card; renaming the
 class means changing `EXPECT_TEXT` in the deploy script. Not the bare class name: the theme
 stylesheet injected on every page contains `.suggestion-card {`, so a page with no result
-would pass (the checker also ignores `<style>` blocks, as a second layer). The checker used,
-by the deploy and by its rollback, is the **target** commit's `warm_streamlit.py`.
+would pass. Because the expectation is an attribute, the checker accepts it only on a real
+start tag in an element that renders HTML: not in a `<style>` block, a comment, a
+`<script>`/`<template>`/`<textarea>`, or markup shown as plain text. The checker used,
+by the deploy and by its rollback, is the **target** commit's `warm_streamlit.py` (on the
+old venv during a rollback: a future checker that needs a newer Streamlit would turn a
+working rollback into a MANUAL one, which is the safe direction).
 
 **The deploy script is version-controlled.** The canonical copy is
 `scripts/egyptology-deploy.sh` in the repo; `/home/ledio/egyptology-deploy.sh` on the box is
@@ -90,13 +99,17 @@ scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh
 
 Automatic: if the corpus import, the restart, the health check or the paste check fails
 after the files changed, the script **stops the service first** (a failed check can leave the
-new app serving), puts back the unit files it replaced and removes the ones it added
+new app serving; if the stop fails and `systemctl --user is-active` does not say `inactive` or
+`failed`, it changes nothing more and goes straight to MANUAL), puts back the unit files it replaced and removes the ones it added
 (`daemon-reload`), runs `git reset --hard <the commit that was running>` (ignored files, so
 `*.db`, are untouched), points `~/venvs/egyptology` back at the previous venv (kept for
 exactly this), starts the service and runs **the same paste check** again, not just the
 health URL. Then it prints `ROLLED BACK to <sha>` (exit 1) and deletes the failed commit's
-release venv. If the rollback itself fails it prints a `MANUAL:` block (exit 2). By hand, for
-example after a deploy that passed the check but turned out wrong:
+release venv. If the rollback itself fails it prints a `MANUAL:` block (exit 2) and writes it
+to `~/egyptology-deploy.FAILED`; **no deploy runs while that file exists**, so a rerun cannot
+overwrite the `~/egyptology-last-good*` records the block points at. Follow the block, check
+the app, then `rm ~/egyptology-deploy.FAILED`. By hand, for example after a deploy that passed
+the check but turned out wrong:
 
 ```bash
 ssh ledio@vela-optiplex-3070
@@ -404,10 +417,15 @@ restore time) into a hidden candidate file, then `PRAGMA integrity_check` **on t
 then gzip, then a content check, and only then publishes it as
 `egyptology-<date>.db.gz`, then the monthly copy, then retention. A second run on the same
 day publishes `egyptology-<date>-r02.db.gz` (and so on): an accepted snapshot is never
-overwritten. It exits non-zero if the check is not `ok`,
+overwritten. Revision numbers compare as numbers (`-r100` is newer than `-r99`) and are never
+reused: each is one above every revision of that day in the folder, kept copies included.
+Only one run at a time: a run holds `BACKUP_DIR/.lock` from before the snapshot to exit, a
+second run (the timer overlapping a manual one) waits up to `LOCK_WAIT` seconds (default 900)
+and then exits 5 having written nothing, and a lock whose run died is taken over. It exits non-zero if the check is not `ok`,
 keeping the bad file for inspection, so a failed night shows as a `failed` unit rather than
 a silently missing backup. A Python fallback using the same API runs where `sqlite3` is
-absent — which the box was until 2026-09-05.
+absent — which the box was until 2026-09-05. It opens the database read-only through a
+percent-encoded `file:` URI, so a `#` or `%` in the file name names that file.
 
 **The content check (audit A13).** `integrity_check` proves the file is a sound database,
 not that the annotations are still in it: a bad migration or a wrong `DELETE` gives a
