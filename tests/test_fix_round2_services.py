@@ -176,7 +176,7 @@ def _trained(rows: list[tuple[str, str]]) -> ReadingModel:
 
 def _fake_resources(models: dict[str | None, ReadingModel]):
     class _Identity:
-        def segment(self, groups):
+        def segment(self, groups, **_hints):
             return SimpleNamespace(groups=list(groups))
 
     def get(stage):
