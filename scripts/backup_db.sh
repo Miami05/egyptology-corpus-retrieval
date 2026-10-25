@@ -9,9 +9,13 @@
 #
 # Both also come from the environment (DB_PATH, BACKUP_DIR), and both have
 # defaults that match the server layout in DEPLOYMENT.md. When DB_PATH is not given
-# and DATABASE_URL is a `sqlite:///...` URL (the unit reads it from egyptology.env,
-# the same place the app does), the file named there is backed up, so the app and
-# the backup cannot disagree about where the database is. Other knobs:
+# and DATABASE_URL is set (the unit reads it from egyptology.env, the same place the
+# app does), the file named there is backed up, so the app and the backup cannot
+# disagree about where the database is. The URL forms are the ones
+# app/core/config.py's resolve_database_url treats as a file: `sqlite:///path` and
+# `sqlite+<driver>:///path`, a relative path anchored at the clone (REPO_DIR). Any
+# other DATABASE_URL (Postgres, in-memory, a `file:` URI) is refused with exit 1
+# rather than silently backing up the default file. Other knobs:
 #
 #   RETENTION_DAYS   how long to keep daily snapshots (default 30). The first
 #                    snapshot of each month is also kept for ever in monthly/
@@ -30,26 +34,23 @@
 #                    one (a deliberate deletion); without it the run fails
 #   BACKUP_STAMP     the date in the file names (default today, YYYY-MM-DD); tests
 #
-# Exit codes: 0 all good; 1 no database; 2 the copy is corrupt; 3 the copy is
-# readable but holds fewer annotations than the previous snapshot (it is kept as
-# egyptology-<date>.db.gz.suspect, and nothing older is touched, not on this
-# machine and not off-site). Any non-zero exit means no good backup was taken
-# today, and the systemd unit will show `failed`.
+# The snapshot is first written under a hidden candidate name, checked, and only then
+# published as egyptology-<date>.db.gz (a second run on the same day publishes
+# egyptology-<date>-r02.db.gz and so on: an accepted snapshot is never overwritten).
+# It is compared with the newest ACCEPTED snapshot, today's included, dailies and the
+# monthly long tail alike.
+#
+# Exit codes: 0 all good; 1 no database, or a DATABASE_URL this script cannot back up;
+# 2 the copy is corrupt; 3 the copy is readable but holds fewer annotations than the
+# newest accepted snapshot (it is kept as <name>.db.gz.suspect, and nothing older is
+# touched, not on this machine and not off-site); 4 the newest accepted snapshot cannot
+# be read, or every earlier snapshot has gone missing, so nothing can be compared (the
+# copy is kept as <name>.db.gz.unverified; same "touch nothing" rule). Any non-zero exit
+# means no good backup was published, and the systemd unit will show `failed`.
 
 set -euo pipefail
 
 DB_PATH="${1:-${DB_PATH:-}}"
-if [[ -z "$DB_PATH" && "${DATABASE_URL:-}" == sqlite:///* ]]; then
-  DB_PATH="${DATABASE_URL#sqlite:///}"
-  DB_PATH="${DB_PATH%%\?*}"
-  if [[ "$DB_PATH" == :* ]]; then
-    DB_PATH=""                     # sqlite:///:memory: has no file to back up
-  elif [[ "$DB_PATH" != /* ]]; then
-    # The app resolves a relative path against the clone (app/core/config.py).
-    DB_PATH="${REPO_DIR:-/home/ledio/egyptology}/${DB_PATH}"
-  fi
-fi
-DB_PATH="${DB_PATH:-/home/ledio/egyptology/egyptology.db}"
 BACKUP_DIR="${2:-${BACKUP_DIR:-/home/ledio/egyptology-backups}}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 PYTHON="${PYTHON:-/home/ledio/venvs/egyptology/bin/python}"
@@ -69,10 +70,15 @@ OFFSITE_TARGET="${OFFSITE_TARGET:-}"
 
 STAMP="${BACKUP_STAMP:-$(date +%Y-%m-%d)}"
 MONTH="${STAMP%-*}"                # YYYY-MM
-SNAPSHOT="${BACKUP_DIR}/egyptology-${STAMP}.db"
-ARCHIVE="${SNAPSHOT}.gz"
+# Written and checked under a hidden name the retention, baseline and upload globs
+# never match; published under its real name only after every check passed.
+SNAPSHOT="${BACKUP_DIR}/.candidate-${STAMP}-$$.db"
+CANDIDATE="${SNAPSHOT}.gz"
 MONTHLY_DIR="${BACKUP_DIR}/monthly"
 MONTHLY_FILE="${MONTHLY_DIR}/egyptology-${MONTH}.db.gz"
+# Created after the first published snapshot. With it present and no snapshot to be
+# found, the folder was emptied: that must fail, not pass as "first backup".
+SEEN_MARKER="${BACKUP_DIR}/.has-snapshots"
 WORK_DIR=""
 
 # Runs on every exit: cleans the scratch folder and reports the outcome to the
@@ -84,6 +90,7 @@ finish() {
   if [[ -n "$WORK_DIR" ]]; then
     rm -rf "$WORK_DIR"
   fi
+  rm -f "$SNAPSHOT" "$CANDIDATE"     # whatever was not published or kept by name
   if [[ -n "$HEALTHCHECK_URL" ]]; then
     local url="${HEALTHCHECK_URL%/}"
     if [[ $rc -ne 0 ]]; then
@@ -96,6 +103,24 @@ finish() {
   exit "$rc"
 }
 trap finish EXIT
+
+# The same reading of DATABASE_URL as app/core/config.py (see the header).
+if [[ -z "$DB_PATH" && -n "${DATABASE_URL:-}" ]]; then
+  if [[ "$DATABASE_URL" =~ ^sqlite(\+[A-Za-z0-9_]+)?:///(.*)$ ]]; then
+    DB_PATH="${BASH_REMATCH[2]%%\?*}"
+  fi
+  if [[ -z "$DB_PATH" || "$DB_PATH" == :* || "$DB_PATH" == file:* ]]; then
+    # Never echo the URL itself: a Postgres URL carries a password.
+    echo "backup: DATABASE_URL is not a sqlite:///<file> URL this script can back up — refusing rather than backing up a different file" >&2
+    exit 1
+  fi
+  if [[ "$DB_PATH" != /* ]]; then
+    # The app resolves a relative path against the clone (app/core/config.py).
+    DB_PATH="${REPO_DIR:-/home/ledio/egyptology}/${DB_PATH}"
+  fi
+fi
+DB_PATH="${DB_PATH:-/home/ledio/egyptology/egyptology.db}"
+echo "backup: database ${DB_PATH}"
 
 if [[ ! -f "$DB_PATH" ]]; then
   echo "backup: no database at $DB_PATH" >&2
@@ -143,20 +168,22 @@ connection.close()
 PY
 )"
 if [[ "$INTEGRITY" != "ok" ]]; then
-  echo "backup: integrity_check said '${INTEGRITY}' — keeping the bad copy for inspection" >&2
+  BAD="${BACKUP_DIR}/egyptology-${STAMP}-$$.db.corrupt"
+  mv -f "$SNAPSHOT" "$BAD"
+  echo "backup: integrity_check said '${INTEGRITY}' — keeping the bad copy for inspection as ${BAD}" >&2
   exit 2
 fi
 echo "backup: integrity_check ok"
 
-rm -f "$ARCHIVE"
 gzip -9 "$SNAPSHOT"
-echo "backup: wrote ${ARCHIVE} ($(du -h "$ARCHIVE" | cut -f1))"
+echo "backup: compressed the candidate ($(du -h "$CANDIDATE" | cut -f1))"
 
 # What is in the archive? integrity_check proves the file is a sound database,
 # not that the annotations are still in it: a bad migration or a wrong DELETE
 # gives a perfectly healthy file with an empty annotations table, and retention
-# would then age the last good copy out. So count rows in the ARCHIVE (what a
-# restore would use), and compare with the newest earlier snapshot.
+# would then age the last good copy out. So count rows in the compressed candidate
+# (what a restore would use), and compare with the newest accepted snapshot, today's
+# included: a same-day rerun after an accidental deletion must not pass.
 WORK_DIR="$(mktemp -d)"
 
 # $1 = a .db.gz file; prints "<examples> <annotations>". A missing table counts as 0.
@@ -185,21 +212,61 @@ PY
   rm -f "${WORK_DIR}/count.db"
 }
 
-if ! TODAY_COUNTS="$(count_archive "$ARCHIVE")"; then
-  echo "backup: ${ARCHIVE} failed gzip/row-count verification — keeping it for inspection" >&2
+# The newest accepted snapshot: the dailies (egyptology-YYYY-MM-DD[-rNN].db.gz) and the
+# monthly long tail (monthly/egyptology-YYYY-MM.db.gz), ordered by the date in the name,
+# not by file time. In that order a month's file comes before the month's dailies (it is
+# a copy of the first one) and a same-day rerun after the day's first snapshot.
+latest_accepted() {
+  local file key
+  for file in "$BACKUP_DIR"/egyptology-*.db.gz "$MONTHLY_DIR"/egyptology-*.db.gz; do
+    [[ -f "$file" ]] || continue
+    key="$(basename "$file")"
+    key="${key#egyptology-}"
+    printf '%s\t%s\n' "${key%.db.gz}" "$file"
+  done | LC_ALL=C sort | tail -n 1 | cut -f2-
+}
+
+# The first free published name for today; a name taken by a kept .suspect or
+# .unverified copy counts as taken, so nothing kept for a human is ever overwritten.
+publish_name() {
+  local base="${BACKUP_DIR}/egyptology-${STAMP}" name n=2
+  name="${base}.db.gz"
+  while [[ -e "$name" || -e "${name}.suspect" || -e "${name}.unverified" ]]; do
+    name="$(printf '%s-r%02d.db.gz' "$base" "$n")"
+    n=$((n + 1))
+  done
+  echo "$name"
+}
+
+if ! TODAY_COUNTS="$(count_archive "$CANDIDATE")"; then
+  BAD="$(publish_name).corrupt"
+  mv -f "$CANDIDATE" "$BAD"
+  echo "backup: the compressed copy failed gzip/row-count verification — keeping it for inspection as ${BAD}" >&2
   exit 2
 fi
 read -r EXAMPLES ANNOTATIONS <<<"$TODAY_COUNTS"
-echo "backup: archive holds examples=${EXAMPLES} annotations=${ANNOTATIONS}"
+echo "backup: candidate holds examples=${EXAMPLES} annotations=${ANNOTATIONS}"
+ARCHIVE="$(publish_name)"
 
-PREVIOUS="$(find "$BACKUP_DIR" -maxdepth 1 -name 'egyptology-*.db.gz' ! -name "egyptology-${STAMP}.db.gz" | sort | tail -n 1)"
-if [[ -z "$PREVIOUS" ]]; then
-  echo "backup: no earlier snapshot to compare with — skipping the row-count comparison"
+PREVIOUS="$(latest_accepted)"
+if [[ -z "$PREVIOUS" && -f "$SEEN_MARKER" ]]; then
+  mv -f "$CANDIDATE" "${ARCHIVE}.unverified"
+  echo "backup: earlier snapshots were published here, but none is left in ${BACKUP_DIR} or monthly/." >&2
+  echo "backup: kept this copy as ${ARCHIVE}.unverified and changed nothing else; find out where they went." >&2
+  exit 4
+elif [[ -z "$PREVIOUS" ]]; then
+  echo "backup: no earlier snapshot to compare with (first backup) — skipping the row-count comparison"
 elif ! PREVIOUS_COUNTS="$(count_archive "$PREVIOUS")"; then
-  echo "backup: warning — could not read ${PREVIOUS}; skipping the row-count comparison" >&2
+  # Fail closed: an unreadable baseline must not let a shrunken database through, and
+  # retention must not run while the newest good copy may be the damaged one.
+  mv -f "$CANDIDATE" "${ARCHIVE}.unverified"
+  echo "backup: cannot read the newest accepted snapshot ${PREVIOUS}, so nothing can be compared." >&2
+  echo "backup: kept this copy as ${ARCHIVE}.unverified and changed nothing else (no retention, no off-site copy)." >&2
+  echo "backup: check that file; if it is damaged, rename it to <name>.bad and run again." >&2
+  exit 4
 else
   read -r PREV_EXAMPLES PREV_ANNOTATIONS <<<"$PREVIOUS_COUNTS"
-  echo "backup: previous $(basename "$PREVIOUS") holds examples=${PREV_EXAMPLES} annotations=${PREV_ANNOTATIONS}"
+  echo "backup: newest accepted $(basename "$PREVIOUS") holds examples=${PREV_EXAMPLES} annotations=${PREV_ANNOTATIONS}"
   SUSPECT=""
   if [[ "$ANNOTATIONS" -lt "$PREV_ANNOTATIONS" ]]; then
     SUSPECT="annotations fell from ${PREV_ANNOTATIONS} to ${ANNOTATIONS}"
@@ -216,14 +283,20 @@ else
       # A name the retention glob does not match, so it is never aged out, and the
       # older good snapshots stay untouched: no retention, monthly copy or off-site
       # copy happens after this point.
-      mv -f "$ARCHIVE" "${ARCHIVE}.suspect"
+      mv -f "$CANDIDATE" "${ARCHIVE}.suspect"
       echo "backup: ${SUSPECT} compared with $(basename "$PREVIOUS")." >&2
-      echo "backup: kept today's copy as ${ARCHIVE}.suspect and changed nothing else." >&2
+      echo "backup: kept this copy as ${ARCHIVE}.suspect and changed nothing else." >&2
       echo "backup: if this was deliberate, run again with ALLOW_ANNOTATION_DROP=1." >&2
       exit 3
     fi
   fi
 fi
+
+# Every check passed: publish. A rename within the folder, so the name never holds a
+# partial file.
+mv -f "$CANDIDATE" "$ARCHIVE"
+touch "$SEEN_MARKER"
+echo "backup: wrote ${ARCHIVE} ($(du -h "$ARCHIVE" | cut -f1))"
 
 # The long tail: the first good snapshot of every month, kept for ever. Daily
 # retention only looks at the top level of BACKUP_DIR (-maxdepth 1), never here.
@@ -244,11 +317,14 @@ if [[ -n "$OFFSITE_TARGET" ]]; then
   # colon, no `@` and no `/`. Anything else (`user@host:/path/`, a mounted dir)
   # is an rsync destination. rclone is a static binary in ~/bin (no sudo needed).
   RCLONE="${RCLONE:-$HOME/bin/rclone}"
+  # Today's file first, then a reconcile of EVERY retained daily and monthly file: a
+  # night whose upload failed (or a month boundary crossed during an outage) heals on the
+  # next run. Copy only, never sync: nothing is ever deleted off-site by these lines, and
+  # --checksum makes a file already there a no-op.
   if [[ "$OFFSITE_TARGET" =~ ^[A-Za-z0-9_-]+: ]]; then
     "$RCLONE" copyto "$ARCHIVE" "${OFFSITE_TARGET%/}/$(basename "$ARCHIVE")" --checksum
-    # The monthly copy goes up every run, not only on the night it is made: a
-    # failed upload then heals itself, and --checksum makes an existing one a no-op.
-    "$RCLONE" copyto "$MONTHLY_FILE" "${OFFSITE_TARGET%/}/monthly/$(basename "$MONTHLY_FILE")" --checksum
+    "$RCLONE" copy "$BACKUP_DIR" "${OFFSITE_TARGET%/}" --max-depth 1 --include 'egyptology-*.db.gz' --checksum
+    "$RCLONE" copy "$MONTHLY_DIR" "${OFFSITE_TARGET%/}/monthly" --include 'egyptology-*.db.gz' --checksum
     if [[ "$OFFSITE_PRUNE" == "1" ]]; then
       # Same retention off-site as on-box; a remote that never expires files
       # would silently grow forever. --max-depth 1 keeps this to the daily files:
@@ -261,8 +337,9 @@ if [[ -n "$OFFSITE_TARGET" ]]; then
     "$RCLONE" ls "${OFFSITE_TARGET%/}" | tail -n 3
   else
     rsync -a --partial "$ARCHIVE" "$OFFSITE_TARGET"
-    # -R with the `/./` marker creates monthly/ at the destination.
-    rsync -aR --partial "${BACKUP_DIR}/./monthly/$(basename "$MONTHLY_FILE")" "$OFFSITE_TARGET"
+    rsync -a --partial --include='egyptology-*.db.gz' --exclude='*' "${BACKUP_DIR}/" "$OFFSITE_TARGET"
+    # No trailing slash: creates monthly/ at the destination and copies all of it.
+    rsync -a --partial "$MONTHLY_DIR" "$OFFSITE_TARGET"
   fi
   echo "backup: offsite copy done"
 else

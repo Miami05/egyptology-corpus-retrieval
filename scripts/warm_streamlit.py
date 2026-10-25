@@ -22,12 +22,14 @@ reports `script_finished` with FINISHED_SUCCESSFULLY, so "the script finished" s
 nothing about the page working. This client therefore watches the elements as they
 arrive and fails on any `exception` element (not a warning), and with
 `--expect-text` it also fails unless some markdown/html/text element contains that
-text, which proves a real search rendered a real result.
+text, which proves a real search rendered a real result. `<style>` blocks do not
+count: the app injects its whole theme stylesheet on every page, and that names
+every result class (`.suggestion-card {`) whether or not a result was drawn.
 
 Usage (never blocks a service start for longer than --timeout):
 
     python scripts/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 300
-    python scripts/warm_streamlit.py --query "..." --expect-text suggestion-card
+    python scripts/warm_streamlit.py --query "..." --expect-text 'class="suggestion-card"'
 
 Exit codes: 0 the run finished and rendered no exception (and the expected text, if
 asked for, appeared); 1 anything else: timeout, closed connection, compile error,
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -52,6 +55,14 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 
 HEALTH_PATH = "/_stcore/health"
 STREAM_PATH = "/_stcore/stream"
+
+# A <style> block, or an unclosed one running to the end of the element.
+_STYLE_BLOCK = re.compile(r"<style\b[^>]*>.*?(?:</style\s*>|\Z)", re.IGNORECASE | re.DOTALL)
+
+
+def rendered_markup(body: str) -> str:
+    """The part of an element's body that can draw something: no <style> blocks."""
+    return _STYLE_BLOCK.sub("", body)
 
 
 @dataclass
@@ -84,7 +95,7 @@ def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
                 (element.exception.type or "<redacted>", element.exception.message[:200])
             )
     elif kind in ("markdown", "html", "text") and state.expect_text and not state.expect_seen:
-        if state.expect_text in getattr(element, kind).body:
+        if state.expect_text in rendered_markup(getattr(element, kind).body):
             state.expect_seen = True
 
 
@@ -218,8 +229,9 @@ def main() -> int:
         "--expect-text",
         default="",
         help=(
-            "fail unless a markdown/html/text element containing this text is "
-            "rendered, for example a CSS class only a real result carries"
+            "fail unless a markdown/html/text element containing this text, outside "
+            "any <style> block, is rendered, for example the class attribute only a "
+            "real result carries"
         ),
     )
     parser.add_argument("--verbose", action="store_true")
