@@ -150,6 +150,28 @@ def token_overlap_score(
     return shared / denominator
 
 
+def reading_order_score(query: str, candidate: str) -> float:
+    """Order-sensitive similarity of two complete reading orders (audit item 6).
+
+    The reading-order field is a *sequence* of signs, so the set-based
+    `token_overlap_score` was the wrong measure for it: `A B` and `B A` scored 1.0
+    and were labelled "same normalized reading order". This is the longest common
+    token subsequence divided by the longer sequence's length, so it is 1.0 exactly
+    when the two token sequences are equal, and a swap, a repeat or a surplus token
+    each cost something. Used for the reading-order field only; every other overlap
+    stays set-based.
+    """
+    q_tokens = tokenize_query(query)
+    c_tokens = tokenize_query(candidate)
+    if not q_tokens or not c_tokens:
+        return 0.0
+    # One character per distinct token, so rapidfuzz compares token sequences.
+    encoding: dict[str, str] = {}
+    q_encoded = "".join(encoding.setdefault(t, chr(0x20000 + len(encoding))) for t in q_tokens)
+    c_encoded = "".join(encoding.setdefault(t, chr(0x20000 + len(encoding))) for t in c_tokens)
+    return LCSseq.similarity(q_encoded, c_encoded) / max(len(q_tokens), len(c_tokens))
+
+
 @dataclass(frozen=True)
 class CorpusStats:
     """Query-independent statistics, computed once per corpus."""
@@ -389,7 +411,7 @@ def combine_scores(
         out["glyph_exact_bonus"] = 0.0
     if query_reading_order_norm:
         out["reading_order_overlap"] = out["normalized_reading_order_norm"].map(
-            lambda value: token_overlap_score(query_reading_order_norm, value)
+            lambda value: reading_order_score(query_reading_order_norm, value)
         )
     else:
         # The map below returned a constant 0.0 for every row when there is no

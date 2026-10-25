@@ -438,7 +438,7 @@ def build_stage_resources(
 
 
 def choose_stage_by_likelihood(
-    paste_hieroglyphs_norm: str,
+    paste: str,
     resources_by_stage: Callable[[str | None], StageResources],
     coverage: dict[str, int] | None = None,
 ) -> tuple[str | None, dict[str, float]]:
@@ -452,6 +452,13 @@ def choose_stage_by_likelihood(
     a stage's rows — but the reading model already computes how likely a stage's
     own statistics find a candidate reading of it, and that generalises language
     identification directly, without inventing a new score or a new threshold.
+
+    `paste` is the paste as the user gave it, layout controls included: it is
+    segmented with `segment_paste`, the same call that later decodes it, so the
+    groups the stage is chosen on are the groups that get read (audit item 13 —
+    this used to segment the control-free normalised string, so a paste whose
+    joiners changed the grouping was routed on a segmentation nobody decoded). An
+    already-normalised paste carries no controls and segments exactly as before.
 
     Segmentation is not part of the comparison. `build_stage_resources` now
     builds the segmenter from the *pooled* frame for every stage (measured
@@ -518,12 +525,17 @@ def choose_stage_by_likelihood(
     caller can print/audit the comparison that decided (or declined to decide)
     the choice.
     """
-    groups_as_pasted = paste_hieroglyphs_norm.split()
-    if not groups_as_pasted:
+    # Imported here for the same circularity reason as in build_stage_resources.
+    from app.services.segmentation import segment_paste
+
+    if not paste.split():
         return None, {}
 
     pooled = resources_by_stage(None)
-    groups = pooled.segmenter.segment(groups_as_pasted).groups
+    segmentation, groups_as_pasted = segment_paste(paste, pooled.segmenter)
+    if not groups_as_pasted:
+        return None, {}
+    groups = segmentation.groups
     n_groups = len(groups)
     if n_groups == 0:
         return None, {}

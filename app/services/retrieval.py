@@ -4,7 +4,7 @@ from typing import Callable, Literal
 
 import pandas as pd
 
-from app.data.normalizer import contains_hieroglyphs, normalize_hieroglyphs, normalize_sign_sequence
+from app.data.normalizer import contains_hieroglyphs, normalize_sign_sequence
 from app.data.query import QueryParse, parse_query
 from app.services.segmentation import segment_paste
 from dataclasses import dataclass
@@ -211,8 +211,9 @@ def resolve_auto_stage(
     compared first, and `choose_stage_by_likelihood(..., coverage={})` reports it.
     """
     if contains_hieroglyphs(query):
-        paste_norm = normalize_hieroglyphs(query)
-        stage, scores = choose_stage_by_likelihood(paste_norm, resources_by_stage)
+        # The raw query, not its normalised form: normalising deletes the layout
+        # controls that `segment_paste` reads as quadrat hints (audit item 13).
+        stage, scores = choose_stage_by_likelihood(query, resources_by_stage)
         return stage, stage is not None, scores
 
     pooled = resources_by_stage(None)
