@@ -21,13 +21,22 @@ does not fail the run: it renders the traceback as an `exception` element and th
 reports `script_finished` with FINISHED_SUCCESSFULLY, so "the script finished" says
 nothing about the page working. This client therefore watches the elements as they
 arrive and fails on any `exception` element (not a warning), and with
-`--expect-text` it also fails unless some markdown/html/text element contains that
-text, which proves a real search rendered a real result.
+`--expect-text` it also fails unless some element shows that text, which proves a
+real search rendered a real result. `<style>` blocks and HTML comments do not count:
+the app injects its whole theme stylesheet on every page, and that names every result
+class (`.suggestion-card {`) whether or not a result was drawn. An expectation shaped
+like an attribute (`class="suggestion-card"`) is stricter: it passes only on a real
+start tag carrying that attribute, in an element that renders HTML (`st.html`, or
+`st.markdown` with unsafe_allow_html), outside any non-rendering element (style,
+script, template, textarea, title, noscript) and, for Markdown, outside any code
+(fenced, indented or inline: see `markdown_without_code`). The same markup shown as
+text, quoted in a comment or a code span, or written inside a `<textarea>` is not a
+result.
 
 Usage (never blocks a service start for longer than --timeout):
 
     python scripts/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 300
-    python scripts/warm_streamlit.py --query "..." --expect-text suggestion-card
+    python scripts/warm_streamlit.py --query "..." --expect-text 'class="suggestion-card"'
 
 Exit codes: 0 the run finished and rendered no exception (and the expected text, if
 asked for, appeared); 1 anything else: timeout, closed connection, compile error,
@@ -38,9 +47,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sys
 import time
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from tornado.httpclient import HTTPRequest
@@ -52,6 +63,137 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 
 HEALTH_PATH = "/_stcore/health"
 STREAM_PATH = "/_stcore/stream"
+
+# A <style> block, or an unclosed one running to the end of the element.
+_STYLE_BLOCK = re.compile(r"<style\b[^>]*>.*?(?:</style\s*>|\Z)", re.IGNORECASE | re.DOTALL)
+# An HTML comment, or an unclosed one running to the end of the element.
+_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+# `name="value"`: an expectation that names an attribute a real element must carry.
+_ATTRIBUTE_EXPECTATION = re.compile(r'^([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"<>]*)"$')
+# Elements whose content the browser never draws as markup.
+_NON_RENDERING = frozenset({"style", "script", "template", "textarea", "title", "noscript", "xmp"})
+
+
+# A run of backticks that opens or closes an inline code span (CommonMark: the span closes
+# at the next run of exactly the same length).
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)", re.DOTALL)
+# A fence line: up to three spaces, then three or more backticks or tildes.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _indent(line: str) -> int:
+    expanded = line.expandtabs(4)
+    return len(expanded) - len(expanded.lstrip(" "))
+
+
+def markdown_without_code(body: str) -> str:
+    """The Markdown `body` with its code removed: fenced blocks (unclosed ones run to the
+    end), indented blocks (four or more spaces after a blank line or at the start) and
+    inline code spans. Markdown shows code as text, so a tag inside it draws nothing.
+
+    Deliberately simpler than CommonMark and biased one way: where it differs it removes
+    MORE than a renderer would treat as code (a fence inside an HTML block, a backtick in
+    an attribute, an indented list continuation), never less. Removing too much can only
+    make the deploy check miss a real card and roll back; it cannot pass a page whose
+    card is shown as code. The app's cards are written at column 0 with no blank line
+    inside, so none of these rules touch them."""
+    kept: list[str] = []
+    fence: tuple[str, int] | None = None
+    previous_blank = True
+    in_indented = False
+    for line in body.split("\n"):
+        if fence is not None:
+            closing = _FENCE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= fence[1] \
+                    and not line[closing.end():].strip():
+                fence = None
+            kept.append("")
+            previous_blank, in_indented = False, False
+            continue
+        opening = _FENCE.match(line)
+        if opening:
+            fence = (opening.group(1)[0], len(opening.group(1)))
+            kept.append("")
+            previous_blank, in_indented = False, False
+            continue
+        blank = not line.strip()
+        if not blank and _indent(line) >= 4 and (previous_blank or in_indented):
+            kept.append("")
+            in_indented = True
+        else:
+            kept.append(line)
+            if not blank:
+                in_indented = False
+        previous_blank = blank
+    return _CODE_SPAN.sub("", "\n".join(kept))
+
+
+def rendered_markup(body: str) -> str:
+    """The part of an element's body that can draw something: no <style> blocks, no comments."""
+    return _COMMENT.sub("", _STYLE_BLOCK.sub("", body))
+
+
+class _StartTagFinder(HTMLParser):
+    """Looks for one start tag carrying `name="value"` outside comments and non-rendering
+    elements. For `class` the value is a list of class names, so `class="a b"` carries
+    `class="a"` too; any other attribute must match exactly."""
+
+    def __init__(self, name: str, value: str):
+        super().__init__(convert_charrefs=True)
+        self.name, self.value = name.lower(), value
+        self.hidden: list[str] = []
+        self.found = False
+
+    def _carries(self, attrs: list[tuple[str, str | None]]) -> bool:
+        for name, value in attrs:
+            if name != self.name or value is None:
+                continue
+            if name == "class":
+                wanted = set(self.value.split())
+                if wanted and wanted <= set(value.split()):
+                    return True
+            elif value == self.value:
+                return True
+        return False
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden:
+            if tag == self.hidden[-1]:
+                self.hidden.append(tag)
+            return
+        if tag in _NON_RENDERING:
+            self.hidden.append(tag)
+        elif self._carries(attrs):
+            self.found = True
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.hidden and tag not in _NON_RENDERING and self._carries(attrs):
+            self.found = True
+
+    def handle_endtag(self, tag):
+        if self.hidden and tag == self.hidden[-1]:
+            self.hidden.pop()
+
+
+def renders_start_tag(body: str, name: str, value: str) -> bool:
+    """True when the HTML `body` draws an element carrying `name="value"`."""
+    finder = _StartTagFinder(name, value)
+    finder.feed(body)
+    finder.close()
+    return finder.found
+
+
+def element_shows(kind: str, element, expect_text: str) -> bool:
+    """Does this markdown/html/text element show `expect_text`? See the module docstring."""
+    body = getattr(element, kind).body
+    attribute = _ATTRIBUTE_EXPECTATION.match(expect_text)
+    if attribute is None:
+        return expect_text in rendered_markup(body)
+    if kind == "html":
+        return renders_start_tag(body, *attribute.groups())
+    if kind == "markdown" and element.markdown.allow_html:
+        return renders_start_tag(markdown_without_code(body), *attribute.groups())
+    return False
 
 
 @dataclass
@@ -84,7 +226,7 @@ def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
                 (element.exception.type or "<redacted>", element.exception.message[:200])
             )
     elif kind in ("markdown", "html", "text") and state.expect_text and not state.expect_seen:
-        if state.expect_text in getattr(element, kind).body:
+        if element_shows(kind, element, state.expect_text):
             state.expect_seen = True
 
 
@@ -218,8 +360,9 @@ def main() -> int:
         "--expect-text",
         default="",
         help=(
-            "fail unless a markdown/html/text element containing this text is "
-            "rendered, for example a CSS class only a real result carries"
+            "fail unless an element shows this text outside <style> blocks and "
+            "comments; an attribute such as 'class=\"suggestion-card\"' must be on a "
+            "real start tag in an element that renders HTML"
         ),
     )
     parser.add_argument("--verbose", action="store_true")

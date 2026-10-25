@@ -5,12 +5,14 @@ Everything here runs against stubs: no systemd, B2, ntfy or live server is touch
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import tomllib
 from pathlib import Path
@@ -150,9 +152,17 @@ def _exception_msg(type_: str = "KeyError", message: str = "boom", is_warning: b
     return forward
 
 
-def _markdown_msg(body: str) -> ForwardMsg:
+def _markdown_msg(body: str, allow_html: bool = True) -> ForwardMsg:
+    """Like the app's st.markdown(..., unsafe_allow_html=True) unless allow_html=False."""
     forward = ForwardMsg()
     forward.delta.new_element.markdown.body = body
+    forward.delta.new_element.markdown.allow_html = allow_html
+    return forward
+
+
+def _element_msg(kind: str, body: str) -> ForwardMsg:
+    forward = ForwardMsg()
+    getattr(forward.delta.new_element, kind).body = body
     return forward
 
 
@@ -186,15 +196,123 @@ def test_inspect_forward_recognises_the_expected_text():
     assert state.expect_seen
 
 
+def test_inspect_forward_ignores_the_expected_text_inside_a_stylesheet():
+    """Regression for the A11 review: the app injects its theme on every page, and the
+    theme names `.suggestion-card`, so a page with no result used to count as one."""
+    for expect in ("suggestion-card", 'class="suggestion-card"'):
+        state = warm_streamlit.RunState(expect_text=expect)
+        warm_streamlit.inspect_forward(
+            _markdown_msg('<style>.suggestion-card { color: red; }\n/* class="suggestion-card" */</style>'), state
+        )
+        warm_streamlit.inspect_forward(_markdown_msg('<STYLE media="all">.suggestion-card {}'), state)  # unclosed
+        assert not state.expect_seen, expect
+        warm_streamlit.inspect_forward(
+            _markdown_msg('<style>.x {}</style><article class="suggestion-card">r</article>'), state
+        )
+        assert state.expect_seen, expect
+
+
+_CARD = '<div class="suggestion-card">removed result</div>'
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _markdown_msg(f"<!-- {_CARD} -->"),                                  # commented out
+        _markdown_msg(f"<p>before</p><!-- {_CARD}"),                         # unclosed comment
+        _element_msg("text", _CARD),                                         # st.text shows it literally
+        _markdown_msg(_CARD, allow_html=False),                              # escaped, shown as text
+        _markdown_msg('<p>the class="suggestion-card" attribute</p>'),       # text, not a tag
+        _markdown_msg(f"<textarea>{_CARD}</textarea>"),                      # not drawn as markup
+        _markdown_msg(f"<script>var s = '{_CARD}';</script>"),
+        _markdown_msg(f"<template>{_CARD}</template>"),
+        _markdown_msg('<style class="suggestion-card">.x {}</style>'),
+    ],
+    ids=["comment", "unclosed-comment", "text-element", "markdown-no-html", "plain-text",
+         "textarea", "script", "template", "style-tag"],
+)
+def test_an_attribute_expectation_needs_a_real_rendered_start_tag(message):
+    """Regression for Astra's round-2 A11 finding: a substring check passed on a commented-out
+    card and on the card's markup shown as plain text."""
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(message, state)
+    assert not state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _markdown_msg('<article class="suggestion-card">r</article>'),
+        _markdown_msg("<div class='suggestion-card rank-1'>r</div>"),       # one of several classes
+        _element_msg("html", "<!-- old --><textarea></textarea>" + _CARD),
+    ],
+    ids=["markdown", "class-list", "html-element"],
+)
+def test_an_attribute_expectation_passes_on_a_real_result(message):
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(message, state)
+    assert state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        f"see `{_CARD}` here",                                              # inline code
+        f"``{_CARD} with ` inside``",                                       # longer backtick run
+        f"text\n\n```html\n{_CARD}\n```\n",                               # fenced code
+        f"~~~\n{_CARD}\n~~~",                                              # tilde fence
+        f"```\n{_CARD}",                                                    # unclosed fence
+        f"intro\n\n    {_CARD}",                                            # indented code block
+        f"    {_CARD}",                                                     # indented at the start
+    ],
+    ids=["inline", "double-backtick", "fenced", "tilde-fence", "unclosed-fence", "indented", "indented-start"],
+)
+def test_an_attribute_expectation_ignores_markdown_code(body):
+    """Regression for Astra's round-3 A11 finding: the HTML parser saw raw Markdown, so a
+    card tag shown as code (which Streamlit draws as text) counted as a rendered result."""
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(_markdown_msg(body), state)
+    assert not state.expect_seen
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # what render_suggestion_card sends: dedented, nested lines indented 2 and 4 spaces
+        '<article class="suggestion-card">\n  <div class="suggestion-head">\n'
+        '    <span class="suggestion-rank">1</span>\n  </div>\n</article>',
+        f"`code` first\n\n{_CARD}",
+        f"```\ncode\n```\n{_CARD}",
+    ],
+    ids=["app-card", "after-inline-code", "after-fence"],
+)
+def test_a_card_outside_markdown_code_still_counts(body):
+    state = warm_streamlit.RunState(expect_text='class="suggestion-card"')
+    warm_streamlit.inspect_forward(_markdown_msg(body), state)
+    assert state.expect_seen
+
+
+def test_a_plain_expectation_ignores_comments():
+    state = warm_streamlit.RunState(expect_text="suggestion-card")
+    warm_streamlit.inspect_forward(_markdown_msg(f"<!-- {_CARD} -->"), state)
+    assert not state.expect_seen
+
+
+# Like the real app, the probe injects a stylesheet naming the result class on every run.
 _PROBE_APP = textwrap.dedent(
     '''
     import streamlit as st
 
+    st.markdown("<style>.suggestion-card { border: 1px solid; }</style>", unsafe_allow_html=True)
     mode = st.query_params.get("q", "")
     if mode == "boom":
         raise KeyError("renamed_column")
     elif mode == "card":
         st.markdown('<div class="suggestion-card">a result</div>', unsafe_allow_html=True)
+    elif mode == "comment":
+        st.markdown('<!-- <div class="suggestion-card">removed</div> -->', unsafe_allow_html=True)
+    elif mode == "as-text":
+        st.text('<div class="suggestion-card">shown as text</div>')
     elif mode == "rerun":
         if not st.session_state.get("did_rerun"):
             st.session_state["did_rerun"] = True
@@ -278,8 +396,24 @@ def test_warm_up_passes_a_plain_run_and_a_run_that_renders_the_expected_text(pro
 
 
 def test_warm_up_fails_when_the_expected_text_never_appears(probe_server):
-    result = _warm(probe_server, "--query", "none-here", "--expect-text", "suggestion-card")
-    assert result.returncode == 1
+    """The page carries the stylesheet naming the class, but no result element."""
+    for expect in ("suggestion-card", 'class="suggestion-card"'):
+        result = _warm(probe_server, "--query", "none-here", "--expect-text", expect)
+        assert result.returncode == 1, expect
+        assert "never rendered" in result.stderr
+
+
+def test_warm_up_passes_with_the_deploy_scripts_exact_expectation(probe_server):
+    expect = re.search(r"^EXPECT_TEXT='(.+)'$", DEPLOY_SCRIPT.read_text(), re.M).group(1)
+    result = _warm(probe_server, "--query", "card", "--expect-text", expect)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("mode", ["comment", "as-text"])
+def test_warm_up_fails_on_result_markup_that_is_not_a_rendered_result(probe_server, mode):
+    expect = re.search(r"^EXPECT_TEXT='(.+)'$", DEPLOY_SCRIPT.read_text(), re.M).group(1)
+    result = _warm(probe_server, "--query", mode, "--expect-text", expect)
+    assert result.returncode == 1, result.stdout + result.stderr
     assert "never rendered" in result.stderr
 
 
@@ -457,7 +591,7 @@ def test_offsite_prune_is_depth_limited_and_never_fatal(backup_env):
     assert result.returncode == 0, result.stderr
     log = backup_env.rclone_log.read_text().splitlines()
     assert any(line.startswith("delete b2:bucket/path --max-depth 1 ") for line in log)
-    assert any(" b2:bucket/path/monthly/egyptology-2026-01.db.gz" in line and line.startswith("copyto") for line in log)
+    assert any(line.startswith(f"copy {backup_env.backups}/monthly b2:bucket/path/monthly ") for line in log)
     assert "off-site prune failed" in result.stderr
 
 
@@ -492,6 +626,292 @@ def test_the_database_path_comes_from_database_url_when_not_given(backup_env):
     assert _archive_counts(backup_env.backups / "egyptology-2026-01-10.db.gz") == (3, 1)
 
 
+def _set_annotations(db: Path, count: int) -> None:
+    connection = sqlite3.connect(db)
+    connection.execute("DELETE FROM annotations")
+    connection.executemany("INSERT INTO annotations (note) VALUES (?)", [(f"a{i}",) for i in range(count)])
+    connection.commit()
+    connection.close()
+
+
+def test_a_same_day_rerun_never_overwrites_and_compares_with_todays_snapshot(backup_env):
+    """Regression for the A13 review: the rerun deleted the day's archive first and
+    compared with yesterday, so annotation 6 could vanish with exit 0."""
+    assert backup_env.run("2026-01-09").returncode == 0               # 5 annotations
+    _set_annotations(backup_env.db, 6)
+    assert backup_env.run("2026-01-10").returncode == 0               # this morning: 6
+    morning = backup_env.backups / "egyptology-2026-01-10.db.gz"
+    _set_annotations(backup_env.db, 5)                                # the accidental deletion
+
+    rerun = backup_env.run("2026-01-10")
+
+    assert rerun.returncode == 3, rerun.stdout + rerun.stderr
+    assert "annotations fell from 6 to 5" in rerun.stderr
+    assert _archive_counts(morning) == (10, 6), "the only snapshot holding annotation 6 was replaced"
+    assert (backup_env.backups / "egyptology-2026-01-10-r02.db.gz.suspect").is_file()
+    assert not list(backup_env.backups.glob(".candidate-*"))
+
+
+def test_an_accepted_same_day_rerun_is_published_beside_the_first(backup_env):
+    assert backup_env.run("2026-01-10").returncode == 0
+    _set_annotations(backup_env.db, 7)
+    again = backup_env.run("2026-01-10")
+    assert again.returncode == 0, again.stderr
+    assert _archive_counts(backup_env.backups / "egyptology-2026-01-10.db.gz") == (10, 5)
+    assert _archive_counts(backup_env.backups / "egyptology-2026-01-10-r02.db.gz") == (10, 7)
+    # ...and the next comparison is against the rerun, the newest accepted snapshot.
+    _set_annotations(backup_env.db, 6)
+    assert backup_env.run("2026-01-11").returncode == 3
+
+
+def test_an_unreadable_newest_snapshot_fails_closed(backup_env):
+    assert backup_env.run("2026-01-09").returncode == 0
+    old_good = backup_env.backups / "egyptology-2026-01-09.db.gz"
+    _age(old_good, 60)                                                # retention would remove it
+    (backup_env.backups / "egyptology-2026-01-10.db.gz").write_bytes(b"not gzip")
+    _set_annotations(backup_env.db, 0)
+
+    result = backup_env.run("2026-01-11", OFFSITE_TARGET="b2:bucket/path")
+
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "cannot read the newest accepted snapshot" in result.stderr
+    assert (backup_env.backups / "egyptology-2026-01-11.db.gz.unverified").is_file()
+    assert not (backup_env.backups / "egyptology-2026-01-11.db.gz").exists()
+    assert old_good.is_file(), "retention ran without a readable baseline"
+    assert not backup_env.rclone_log.exists()
+
+
+def test_a_monthly_snapshot_is_a_baseline_when_no_daily_is_left(backup_env):
+    assert backup_env.run("2026-01-10").returncode == 0
+    (backup_env.backups / "egyptology-2026-01-10.db.gz").unlink()     # e.g. aged out
+    _set_annotations(backup_env.db, 2)
+    result = backup_env.run("2026-03-01")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "compared with egyptology-2026-01.db.gz" in result.stderr
+
+
+def test_an_emptied_backup_folder_is_not_mistaken_for_a_first_backup(backup_env):
+    assert backup_env.run("2026-01-10").returncode == 0
+    for archive in backup_env.backups.rglob("egyptology-*.db.gz"):
+        archive.unlink()
+    result = backup_env.run("2026-01-11")
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "none is left" in result.stderr
+    assert (backup_env.backups / "egyptology-2026-01-11.db.gz.unverified").is_file()
+
+
+def test_offsite_reconciles_every_retained_daily_and_monthly_archive(backup_env):
+    """Regression for the A13 review: only the current month's file was ever sent, so a
+    failed upload across a month boundary was never retried."""
+    assert backup_env.run("2026-01-31").returncode == 0               # no off-site yet
+    result = backup_env.run("2026-02-01", OFFSITE_TARGET="b2:bucket/path", OFFSITE_PRUNE="0")
+    assert result.returncode == 0, result.stderr
+    log = backup_env.rclone_log.read_text().splitlines()
+    assert f"copy {backup_env.backups}/monthly b2:bucket/path/monthly --include egyptology-*.db.gz --checksum" in log
+    assert f"copy {backup_env.backups} b2:bucket/path --max-depth 1 --include egyptology-*.db.gz --checksum" in log
+    assert not any(line.startswith(("sync", "delete", "move")) for line in log)
+
+
+def test_rsync_offsite_reconciles_dailies_and_the_whole_monthly_folder(backup_env, tmp_path):
+    if shutil.which("rsync") is None:
+        pytest.skip("no rsync here")
+    target = tmp_path / "offsite"
+    target.mkdir()
+    assert backup_env.run("2026-01-31").returncode == 0
+    result = backup_env.run("2026-02-01", OFFSITE_TARGET=f"{target}/")
+    assert result.returncode == 0, result.stderr
+    assert sorted(path.name for path in target.glob("egyptology-*.db.gz")) == [
+        "egyptology-2026-01-31.db.gz", "egyptology-2026-02-01.db.gz"]
+    assert sorted(path.name for path in (target / "monthly").iterdir()) == [
+        "egyptology-2026-01.db.gz", "egyptology-2026-02.db.gz"]
+
+
+class _Flock:
+    """Hold the kernel lock another run would hold, from this test process."""
+
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.handle = open(path, "a")
+        fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def release(self) -> None:
+        if not self.handle.closed:
+            self.handle.close()
+
+
+def test_a_backup_waits_for_a_running_one_and_never_publishes_beside_it(backup_env):
+    """Regression for the round-2 A13 review (Astra blocker): two overlapping runs could
+    pick the same name, and the later `mv -f` replaced an accepted snapshot."""
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    try:
+        result = backup_env.run("2026-01-10", LOCK_WAIT="1")
+    finally:
+        holder.release()
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "still holds" in result.stderr
+    assert sorted(path.name for path in backup_env.backups.iterdir()) == [".backup.lock"]
+
+
+def test_a_held_lock_is_never_broken_whatever_pid_it_names(backup_env):
+    """Regression for Astra's round-3 A13 blocker: two runs could both read the same dead
+    owner, one took the lock over, and the other then deleted that NEW owner's lock with
+    its stale observation, so both ran. The kernel lock has no owner record to go stale:
+    a file naming a dead pid, or an old-style lock directory, never lets a run past a
+    live holder."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    lock.write_text(f"{dead.pid}\n")
+    (backup_env.backups / ".lock").mkdir()
+    (backup_env.backups / ".lock" / "pid").write_text(f"{dead.pid}\n")
+    try:
+        result = backup_env.run("2026-01-10", LOCK_WAIT="1")
+        assert lock.exists(), "the lock file was deleted"
+    finally:
+        holder.release()
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert not list(backup_env.backups.glob("egyptology-*"))
+
+
+def test_a_backup_runs_once_the_other_run_releases_the_lock(backup_env):
+    lock = backup_env.backups / ".backup.lock"
+    holder = _Flock(lock)
+    releaser = threading.Timer(2, holder.release)
+    releaser.start()
+    try:
+        result = backup_env.run("2026-01-10", LOCK_WAIT="30")
+    finally:
+        releaser.cancel()
+        holder.release()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (backup_env.backups / "egyptology-2026-01-10.db.gz").is_file()
+    assert lock.exists(), "the lock file must stay: deleting it is what let two runs both hold one"
+    _Flock(lock).release()                                               # and it is free again
+
+
+def test_a_lock_file_left_by_a_dead_run_does_not_block(backup_env):
+    backup_env.backups.mkdir()
+    (backup_env.backups / ".backup.lock").write_text("12345\n")
+    result = backup_env.run("2026-01-10", LOCK_WAIT="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_simultaneous_runs_over_a_stale_lock_publish_one_snapshot_each(backup_env):
+    """The race interleaving itself: several runs start together over a lock file a dead
+    run left. Each must run alone, so each publishes its own revision and none is lost."""
+    backup_env.run("2026-01-10")                                         # the day's first
+    (backup_env.backups / ".backup.lock").write_text("12345\n")
+    environment = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "DB_PATH", "OFFSITE_TARGET")}
+    environment.update(
+        PATH=f"{backup_env.rclone.parent}:{os.environ['PATH']}", PYTHON=sys.executable,
+        BACKUP_DIR=str(backup_env.backups), BACKUP_STAMP="2026-01-10", LOCK_WAIT="60",
+    )
+    runs = [
+        subprocess.Popen(["bash", str(BACKUP_SCRIPT), str(backup_env.db)], env=environment,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for _ in range(4)
+    ]
+    outputs = [run.communicate(timeout=120)[0] for run in runs]
+    assert [run.returncode for run in runs] == [0, 0, 0, 0], outputs
+    published = sorted(path.name for path in backup_env.backups.glob("egyptology-2026-01-10*.db.gz"))
+    assert len(published) == 5, published
+
+
+def test_an_offsite_helper_left_running_does_not_keep_the_lock(backup_env, tmp_path):
+    """rclone or rsync can leave a helper behind (an ssh ControlMaster); it must not
+    inherit the lock, or every later run gives up with exit 5."""
+    sleeper_pid = tmp_path / "sleeper.pid"
+    lingering = _stub(
+        tmp_path / "lingering-rclone",
+        f'sleep 30 >/dev/null 2>&1 </dev/null &\necho $! >> "{sleeper_pid}"\nexit 0\n',
+    )
+    try:
+        first = backup_env.run("2026-01-10", OFFSITE_TARGET="remote:bucket", RCLONE=str(lingering))
+        assert first.returncode == 0, first.stdout + first.stderr
+        second = backup_env.run("2026-01-11", LOCK_WAIT="1")
+        assert second.returncode == 0, second.stdout + second.stderr
+    finally:
+        for pid in sleeper_pid.read_text().split() if sleeper_pid.exists() else []:
+            try:
+                os.kill(int(pid), 9)
+            except ProcessLookupError:
+                pass
+
+
+def test_revisions_compare_as_numbers_past_r99(backup_env):
+    """Regression for the round-2 A13 review: `-r100` sorted before `-r99`, and the first
+    free gap was reused, so the baseline could be an older snapshot."""
+    day = backup_env.backups
+    assert backup_env.run("2026-01-10").returncode == 0                # 5 annotations
+    _set_annotations(backup_env.db, 6)
+    assert backup_env.run("2026-01-10").returncode == 0
+    (day / "egyptology-2026-01-10-r02.db.gz").rename(day / "egyptology-2026-01-10-r99.db.gz")
+    _set_annotations(backup_env.db, 7)
+    assert backup_env.run("2026-01-10").returncode == 0
+    assert _archive_counts(day / "egyptology-2026-01-10-r100.db.gz") == (10, 7)
+    _set_annotations(backup_env.db, 6)                                 # annotation 7 deleted
+    result = backup_env.run("2026-01-11")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "compared with egyptology-2026-01-10-r100.db.gz" in result.stderr
+
+
+def test_a_revision_number_is_never_reused_after_a_gap(backup_env):
+    day = backup_env.backups
+    assert backup_env.run("2026-01-10").returncode == 0
+    _set_annotations(backup_env.db, 6)
+    assert backup_env.run("2026-01-10").returncode == 0
+    (day / "egyptology-2026-01-10-r02.db.gz").rename(day / "egyptology-2026-01-10-r03.db.gz")
+    (day / "egyptology-2026-01-10-r04.db.gz.suspect").write_bytes(b"kept for a human")
+    _set_annotations(backup_env.db, 7)
+    assert backup_env.run("2026-01-10").returncode == 0
+    assert _archive_counts(day / "egyptology-2026-01-10-r05.db.gz") == (10, 7)
+    assert not (day / "egyptology-2026-01-10-r02.db.gz").exists()
+
+
+@pytest.mark.parametrize("name", ["live%23.db", "live#x.db", "li ve%41.db"])
+def test_the_python_snapshot_reads_exactly_the_named_file(backup_env, name):
+    """Regression for the round-2 A43 review: the Python path put the file name straight
+    into a SQLite URI, so `%23` decoded to `#` (another file) and `#` began a fragment."""
+    target = _make_db(backup_env.tmp / name, examples=3, annotations=1)
+    if "%" in name:                                     # the file a decoded URI would name
+        _make_db(backup_env.tmp / name.replace("%23", "#").replace("%41", "A"), examples=8, annotations=4)
+    result = backup_env.run("2026-01-10", db_arg=False, DB_PATH=str(target), SQLITE3="no-such-sqlite3-cli")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "no sqlite3 CLI; snapshotting with" in result.stdout
+    assert _archive_counts(backup_env.backups / "egyptology-2026-01-10.db.gz") == (3, 1)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["sqlite:///rel/x.db", "sqlite+pysqlite:///rel/x.db?timeout=5", "sqlite:///{tmp}/abs.db"],
+)
+def test_the_backup_reads_database_url_the_way_the_app_does(backup_env, url):
+    """Regression for A43: `sqlite+pysqlite:///` fell back to the default file."""
+    url = url.format(tmp=backup_env.tmp)
+    expected = resolve_database_url(url, root=backup_env.tmp).split(":///", 1)[1].split("?", 1)[0]
+    Path(expected).parent.mkdir(parents=True, exist_ok=True)
+    _make_db(Path(expected), examples=3, annotations=1)
+    result = backup_env.run("2026-01-10", db_arg=False, DATABASE_URL=url, REPO_DIR=str(backup_env.tmp))
+    assert result.returncode == 0, result.stderr
+    assert f"backup: database {expected}" in result.stdout
+    assert _archive_counts(backup_env.backups / "egyptology-2026-01-10.db.gz") == (3, 1)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["postgresql+psycopg://user:secret@host/db", "sqlite:///:memory:", "sqlite://",
+     "sqlite:///file:x.db?mode=ro&uri=true"],
+)
+def test_the_backup_refuses_a_database_url_it_cannot_back_up(backup_env, url):
+    result = backup_env.run("2026-01-10", db_arg=False, DATABASE_URL=url)
+    assert result.returncode == 1
+    assert "refusing" in result.stderr
+    assert "secret" not in result.stdout + result.stderr
+    assert not list(backup_env.backups.glob("*")) if backup_env.backups.exists() else True
+
+
 # ---------------------------------------------------------------------------
 # A12 + A40 + A41 + A46 + A11: egyptology-deploy.sh (against stubs)
 # ---------------------------------------------------------------------------
@@ -512,7 +932,8 @@ def _vcs(cwd: Path, *args: str) -> str:
 
 
 class DeployBox:
-    """A fake server: origin repo, a clone as the live tree, a fake venv, stub systemctl."""
+    """A fake server: origin repo, a clone as the live tree, the original (real-directory)
+    venv, a stub base interpreter that creates release venvs, stub systemctl."""
 
     def __init__(self, tmp: Path):
         self.tmp = tmp
@@ -520,6 +941,8 @@ class DeployBox:
         self.work = tmp / "work"
         self.origin = tmp / "origin.git"
         self.repo = self.home / "egyptology"
+        self.venv = self.home / "venvs" / "egyptology"
+        self.releases = self.home / "venvs" / "egyptology-releases"
         self.calls = tmp / "calls.log"
         self.stubs = tmp / "stubs"
         self.calls.write_text("")
@@ -540,17 +963,34 @@ class DeployBox:
         _vcs(self.work, "remote", "add", "origin", str(self.origin))
         _vcs(tmp, "clone", "-q", str(self.origin), str(self.repo))
 
-        venv_bin = self.home / "venvs" / "egyptology" / "bin"
-        venv_bin.mkdir(parents=True)
-        # pip fails only for the *target* requirements (a scratch path), never for the restore.
-        _stub(venv_bin / "pip", 'echo "pip $*" >> "$CALL_LOG"\n'
-              'case "$*" in *"/egyptology/requirements.txt"*) exit 0;; esac\n'
+        # Every pip and python logs which venv it belongs to ($0).
+        _stub(self.stubs / "venv-pip", 'echo "pip[$0] $*" >> "$CALL_LOG"\n'
+              'if [ "$1" = freeze ]; then [ -n "$FAIL_FREEZE" ] && exit 1\n'
+              '  printf "altair==5.0.0\\nStreamlit==1.49.0\\nprotobuf==6.31.1\\n"; exit 0; fi\n'
+              'prev=""; for a in "$@"; do\n'
+              '  [ "$prev" = -c ] && cp "$a" "$CALL_LOG.constraints"\n'
+              '  [ "$prev" = -r ] && cp "$a" "$CALL_LOG.installed"\n'
+              '  prev="$a"; done\n'
               '[ -n "$FAIL_PIP" ] && exit 1\nexit 0\n')
-        _stub(venv_bin / "python", 'echo "python $*" >> "$CALL_LOG"\n'
-              'case "$*" in *warm_streamlit.py*) [ -n "$FAIL_WARM" ] && exit 1;; esac\n'
+        _stub(self.stubs / "venv-python", 'echo "python[$0] $*" >> "$CALL_LOG"\n'
+              'case "$*" in *warm_streamlit.py*)\n'
+              '  [ "$FAIL_WARM" = always ] && exit 1\n'
+              f'  [ -n "$FAIL_WARM" ] && grep -qx "$FAIL_WARM" "{self.repo}/app.py" && exit 1;;\n'
+              'esac\n'
               'case "$*" in *import_examples.py*) [ -n "$FAIL_IMPORT" ] && exit 1;; esac\nexit 0\n')
+        (self.venv / "bin").mkdir(parents=True)
+        shutil.copy(self.stubs / "venv-pip", self.venv / "bin" / "pip")
+        shutil.copy(self.stubs / "venv-python", self.venv / "bin" / "python")
+        _stub(self.stubs / "base-python", 'echo "base-python $*" >> "$CALL_LOG"\n'
+              '[ -n "$FAIL_VENV" ] && exit 1\n'
+              f'mkdir -p "$3/bin" && cp "{self.stubs}/venv-pip" "$3/bin/pip" && cp "{self.stubs}/venv-python" "$3/bin/python"\n')
         _stub(self.stubs / "systemctl",
-              f'echo "systemctl $* (head $(git -C "{self.repo}" rev-parse --short HEAD))" >> "$CALL_LOG"\n')
+              f'echo "systemctl $* (head $(git -C "{self.repo}" rev-parse --short HEAD), '
+              f'venv $(readlink "{self.venv}" || echo original))" >> "$CALL_LOG"\n'
+              'case "$2" in\n'
+              '  stop) [ -n "$FAIL_STOP" ] && exit 1;;\n'
+              '  is-active) echo "${ACTIVE_STATE:-active}"; [ "${ACTIVE_STATE:-active}" = active ] || exit 3;;\n'
+              'esac\nexit 0\n')
         _stub(self.stubs / "journalctl", 'echo "(journal)"\n')
         _stub(self.stubs / "curl", 'exit 0\n')
 
@@ -575,15 +1015,32 @@ class DeployBox:
     def log(self) -> list[str]:
         return self.calls.read_text().splitlines()
 
-    def run(self, **extra: str) -> subprocess.CompletedProcess:
-        environment = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    def live_venv(self) -> str:
+        return os.readlink(self.venv) if self.venv.is_symlink() else "original"
+
+    def release_dirs(self) -> list[str]:
+        return sorted(path.name for path in self.releases.iterdir()) if self.releases.exists() else []
+
+    def _environment(self, extra: dict[str, str]) -> dict[str, str]:
+        self.calls.write_text("")
+        environment = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "STOP_BEFORE_UPDATE")}
         environment.update(
             _GIT_ENV, PATH=f"{self.stubs}:{os.environ['PATH']}", DEPLOY_HOME=str(self.home),
             CALL_LOG=str(self.calls), HEALTH_TRIES="2", HEALTH_INTERVAL="0", GIT_TERMINAL_PROMPT="0",
+            BASE_PYTHON=str(self.stubs / "base-python"), LOCK_PYTHON=sys.executable,
         )
         environment.update(extra)
+        return environment
+
+    def run(self, **extra: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["bash", str(DEPLOY_SCRIPT)], env=environment, capture_output=True, text=True, timeout=120
+            ["bash", str(DEPLOY_SCRIPT)], env=self._environment(extra), capture_output=True, text=True, timeout=120
+        )
+
+    def start(self, **extra: str) -> subprocess.Popen:
+        return subprocess.Popen(
+            ["bash", str(DEPLOY_SCRIPT)], env=self._environment(extra),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         )
 
 
@@ -675,80 +1132,343 @@ def test_load_env_file_keeps_values_literally(tmp_path):
     ]
 
 
-def test_a_failing_pip_leaves_the_tree_and_the_service_untouched(deploy_box):
+def test_a_failing_pip_leaves_the_tree_the_venv_and_the_service_untouched(deploy_box):
+    """Regression for the A12/A45 review: pip installed into the running service's venv."""
     before = deploy_box.head()
     deploy_box.write("app.py", "v2\n")
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
     deploy_box.publish("v2")
     result = deploy_box.run(FAIL_PIP="1")
     assert result.returncode == 1, result.stdout + result.stderr
+    assert "untouched" in result.stderr
     assert deploy_box.head() == before
     assert (deploy_box.repo / "app.py").read_text() == "v1\n"
     assert _vcs(deploy_box.repo, "status", "--porcelain") == ""
     assert not _calls_matching(deploy_box, "systemctl")
-    # the restore install from the old tree's requirements
-    assert _calls_matching(deploy_box, f"pip install -q -r {deploy_box.repo}/requirements.txt")
+    assert not _calls_matching(deploy_box, f"pip[{deploy_box.venv}/bin/pip] install")
+    assert deploy_box.live_venv() == "original"
+    assert deploy_box.release_dirs() == [], "the half-built release venv was left behind"
+    # Recorded before anything changed, so the manual recovery has a target even now.
+    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == before
 
 
-def test_a_successful_deploy_stops_before_the_merge_and_records_last_good(deploy_box):
+def test_a_successful_deploy_switches_to_a_release_venv_while_stopped(deploy_box):
     before = deploy_box.head()
     deploy_box.write("app.py", "v2\n")
     after = deploy_box.publish("v2")
     result = deploy_box.run()
     assert result.returncode == 0, result.stdout + result.stderr
     assert deploy_box.head() == after
-    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == after
-    stop = _calls_matching(deploy_box, "systemctl --user stop egyptology.service")
-    assert stop and stop[0].endswith(f"(head {before[:7]})"), stop
-    assert _calls_matching(deploy_box, "systemctl --user restart egyptology.service")
+    # The live venv was never installed into; the service now runs a release venv.
+    assert not _calls_matching(deploy_box, f"pip[{deploy_box.venv}/bin/pip] install")
+    live = deploy_box.live_venv()
+    assert Path(live).parent == deploy_box.releases and Path(live).name.startswith(after[:7])
+    assert (Path(live) / ".egyptology-deps").is_file()
+    # The original directory is kept, as the rollback target, and recorded as such.
+    (original,) = [name for name in deploy_box.release_dirs() if name.startswith("original-")]
+    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == before
+    assert (deploy_box.home / "egyptology-last-good-venv").read_text().strip() == str(deploy_box.releases / original)
+    # stop -> switch -> start, never a restart with the venv changing underneath.
+    service = [line for line in deploy_box.log() if line.startswith("systemctl --user")]
+    assert service[0].startswith("systemctl --user stop egyptology.service") and service[0].endswith("venv original)")
+    assert service[1].startswith("systemctl --user start egyptology.service") and service[1].endswith(f"venv {live})")
+    assert not _calls_matching(deploy_box, "restart")
     warm = _calls_matching(deploy_box, "warm_streamlit.py")
-    assert warm and "--expect-text suggestion-card" in warm[-1]
-    assert "𓆓𓂧" in warm[-1]
+    assert len(warm) == 1 and '--expect-text class="suggestion-card"' in warm[0]
+    assert "𓆓𓂧" in warm[0]
     # The operational copy of the script is refreshed from the repo, beside it.
     assert (deploy_box.home / "egyptology-deploy.sh").read_text() == DEPLOY_SCRIPT.read_text()
     assert os.access(deploy_box.home / "egyptology-deploy.sh", os.X_OK)
 
 
-def test_a_deploy_with_nothing_new_does_not_stop_the_service(deploy_box):
+def test_without_a_lock_unpinned_packages_are_held_at_the_running_versions(deploy_box):
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    assert deploy_box.run().returncode == 0
+    constraints = Path(f"{deploy_box.calls}.constraints").read_text().split()
+    assert constraints == ["altair==5.0.0", "protobuf==6.31.1"]   # streamlit is requirements.txt's
+
+
+def test_a_lock_file_is_what_the_release_venv_is_built_from(deploy_box):
+    lock = "altair==5.0.0\nprotobuf==6.31.1\nstreamlit==1.49.0\n"
+    deploy_box.write("requirements.lock", lock)
+    deploy_box.publish("lock")
     result = deploy_box.run()
     assert result.returncode == 0, result.stdout + result.stderr
-    assert not _calls_matching(deploy_box, "systemctl --user stop")
-    assert _calls_matching(deploy_box, "systemctl --user restart egyptology.service")
-    assert "nothing to pull" in result.stdout
+    install = _calls_matching(deploy_box, "install")
+    assert len(install) == 1 and install[0].endswith("/requirements.lock") and " -c " not in install[0]
+    assert Path(f"{deploy_box.calls}.installed").read_text() == lock
 
 
-def test_stop_before_update_can_be_switched_off(deploy_box):
+def test_a_lock_that_disagrees_with_requirements_stops_the_deploy(deploy_box):
+    before = deploy_box.head()
+    deploy_box.write("requirements.lock", "streamlit==1.48.0\n")
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("stale lock")
+    result = deploy_box.run()
+    assert result.returncode == 1
+    assert "streamlit==1.49.0" in result.stderr and "regenerate the lock" in result.stderr
+    assert deploy_box.head() == before and deploy_box.live_venv() == "original"
+    assert not _calls_matching(deploy_box, "systemctl")
+
+
+def test_unchanged_dependencies_reuse_the_venv_and_old_releases_are_pruned(deploy_box):
     deploy_box.write("app.py", "v2\n")
     deploy_box.publish("v2")
-    result = deploy_box.run(STOP_BEFORE_UPDATE="0")
+    assert deploy_box.run().returncode == 0
+    first = deploy_box.live_venv()
+
+    deploy_box.write("app.py", "v3\n")
+    deploy_box.publish("v3, code only")
+    assert deploy_box.run().returncode == 0
+    assert deploy_box.live_venv() == first
+    assert not _calls_matching(deploy_box, "base-python")
+
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    deploy_box.publish("v4, new streamlit")
+    assert deploy_box.run().returncode == 0
+    second = deploy_box.live_venv()
+    assert second != first
+    # Kept: the venv now serving and the one it replaced. The original is gone.
+    assert deploy_box.release_dirs() == sorted([Path(first).name, Path(second).name])
+
+
+def test_stop_before_update_defaults_off_and_can_be_switched_on(deploy_box):
+    """Opus review decision for A40: no public downtime by default."""
+    deploy_box.write("app.py", "v2\n")
+    after = deploy_box.publish("v2")
+    assert deploy_box.run().returncode == 0
+    stops = _calls_matching(deploy_box, "systemctl --user stop")
+    assert len(stops) == 1 and f"(head {after[:7]}," in stops[0], "stopped before the merge"
+
+    deploy_box.write("app.py", "v3\n")
+    deploy_box.publish("v3")
+    assert deploy_box.run(STOP_BEFORE_UPDATE="1").returncode == 0
+    stops = _calls_matching(deploy_box, "systemctl --user stop")
+    assert len(stops) == 2 and f"(head {after[:7]}," in stops[0]
+    assert re.search(r'^STOP_BEFORE_UPDATE="\$\{STOP_BEFORE_UPDATE:-0\}"$', DEPLOY_SCRIPT.read_text(), re.M)
+
+
+def test_a_deploy_with_nothing_new_still_checks_the_app(deploy_box):
+    result = deploy_box.run()
     assert result.returncode == 0, result.stdout + result.stderr
-    assert not _calls_matching(deploy_box, "systemctl --user stop")
+    assert "nothing to pull" in result.stdout
+    assert len(_calls_matching(deploy_box, "systemctl --user start egyptology.service")) == 1
+    assert _calls_matching(deploy_box, "warm_streamlit.py")
 
 
-def test_a_failed_warm_up_rolls_the_deploy_back(deploy_box):
-    """Regression for A12/A11: the new commit stayed in place and the deploy printed 'healthy'."""
+def test_a_failed_check_stops_rolls_back_and_rechecks(deploy_box):
+    """Regression for the A12 review: the rollback left the new app running while it
+    reset files, and judged the old one by /_stcore/health alone."""
     before = deploy_box.head()
     deploy_box.write("app.py", "v2\n")
-    deploy_box.publish("v2")
-    result = deploy_box.run(FAIL_WARM="1")
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    after = deploy_box.publish("v2")
+    result = deploy_box.run(FAIL_WARM="v2")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "ROLLED BACK" in result.stderr
     assert deploy_box.head() == before
     assert (deploy_box.repo / "app.py").read_text() == "v1\n"
-    assert len(_calls_matching(deploy_box, "systemctl --user restart egyptology.service")) == 2
+    service = [line.split(" (")[0] for line in deploy_box.log() if line.startswith("systemctl --user")]
+    assert service == [
+        "systemctl --user stop egyptology.service", "systemctl --user start egyptology.service",
+        "systemctl --user stop egyptology.service", "systemctl --user start egyptology.service",
+    ]
+    rollback_stop = [line for line in deploy_box.log() if line.startswith("systemctl --user stop")][1]
+    assert f"(head {after[:7]}," in rollback_stop, "the rollback reset the tree before stopping"
+    # The same paste check, twice: the failed deploy and the rollback.
+    assert len(_calls_matching(deploy_box, "warm_streamlit.py")) == 2
+    # Back on the original venv; the failed commit's release venv is gone.
+    (original,) = deploy_box.release_dirs()
+    assert original.startswith("original-") and deploy_box.live_venv() == str(deploy_box.releases / original)
+    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == before
+
+
+def test_a_rollback_whose_check_fails_asks_for_a_human(deploy_box):
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    result = deploy_box.run(FAIL_WARM="always")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "MANUAL" in result.stderr
+    assert f"$(cat {deploy_box.home}/egyptology-last-good)" in result.stderr
+    assert f"$(cat {deploy_box.home}/egyptology-last-good-venv)" in result.stderr
+    assert (deploy_box.home / "egyptology-last-good").read_text().strip() == before
+
+
+def test_a_rollback_that_cannot_stop_the_service_changes_nothing_and_asks_for_a_human(deploy_box):
+    """Regression for Astra's round-2 A12 finding: a failed stop was only a warning, so the
+    rollback reset files under the running new app and `start` + the check 'passed'."""
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    after = deploy_box.publish("v2")
+    result = deploy_box.run(FAIL_STOP="1")                       # the service stays active
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "not rolling back under a running app" in result.stderr and "MANUAL" in result.stderr
+    assert "ROLLED BACK" not in result.stderr
+    assert deploy_box.head() == after, "files were reset under the running app"
+    assert deploy_box.live_venv() == "original"
+    assert not _calls_matching(deploy_box, "systemctl --user start")
+    assert _calls_matching(deploy_box, "systemctl --user is-active egyptology.service")
+
+
+def test_a_rollback_goes_on_when_the_stop_failed_but_the_service_is_down(deploy_box):
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    result = deploy_box.run(FAIL_STOP="1", ACTIVE_STATE="failed")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "ROLLED BACK" in result.stderr
+    assert deploy_box.head() == before
+
+
+def test_after_a_failed_rollback_no_deploy_runs_until_the_marker_is_removed(deploy_box):
+    """Opus round-2 review: a rerun after exit 2 rewrote the last-good records and deleted
+    the saved units, so the MANUAL steps then pointed at the failed state."""
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    assert deploy_box.run(FAIL_WARM="always").returncode == 2
+    marker = deploy_box.home / "egyptology-deploy.FAILED"
+    assert "MANUAL" in marker.read_text() and f"rm {marker}" in marker.read_text()
+    last_good = deploy_box.home / "egyptology-last-good"
+    last_good_venv = deploy_box.home / "egyptology-last-good-venv"
+    records = (last_good.read_text(), last_good_venv.read_text())
+
+    rerun = deploy_box.run()
+
+    assert rerun.returncode == 1, rerun.stdout + rerun.stderr
+    assert "an earlier rollback failed" in rerun.stderr
+    assert (last_good.read_text(), last_good_venv.read_text()) == records
+    assert records[0].strip() == before
+    assert deploy_box.log() == []
+    marker.unlink()
+    assert deploy_box.run().returncode == 0
+
+
+def test_a_second_deploy_while_one_is_running_touches_nothing(deploy_box):
+    before = deploy_box.head()
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    holder = _Flock(lock)                                        # a running deploy
+    try:
+        result = deploy_box.run()
+    finally:
+        holder.release()                                         # that run finished
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "another deploy" in result.stderr
+    assert deploy_box.head() == before and deploy_box.log() == []
     assert not (deploy_box.home / "egyptology-last-good").exists()
+    assert deploy_box.run().returncode == 0
+    assert lock.is_file(), "the lock file stays; only the kernel lock on it is released"
+    _Flock(lock).release()                                       # and it is free again
+
+
+def test_a_held_deploy_lock_is_never_broken_whatever_pid_it_names(deploy_box):
+    """Regression for Astra's round-3 blocker: a contender that read a dead owner deleted
+    the lock a NEW owner had just taken, and both deploys ran."""
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    holder = _Flock(lock)
+    lock.write_text(f"{dead.pid}\n")
+    try:
+        result = deploy_box.run()
+        assert lock.is_file(), "the held lock was deleted"
+    finally:
+        holder.release()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert deploy_box.log() == []
+
+
+def test_a_helper_git_fetch_leaves_running_does_not_keep_the_deploy_lock(deploy_box, tmp_path):
+    """git's ssh can leave a ControlMaster running; it must not inherit the lock."""
+    real_git = shutil.which("git")
+    sleeper_pid = tmp_path / "sleeper.pid"
+    wrapper = tmp_path / "git-wrapper"
+    wrapper.mkdir()
+    _stub(wrapper / "git", f'if [ "$1" = fetch ]; then sleep 30 >/dev/null 2>&1 </dev/null & echo $! >> "{sleeper_pid}"; fi\n'
+          f'exec "{real_git}" "$@"\n')
+    path = f"{deploy_box.stubs}:{wrapper}:{os.environ['PATH']}"
+    try:
+        assert deploy_box.run(PATH=path).returncode == 0
+        second = deploy_box.run(PATH=path)
+        assert second.returncode == 0, second.stdout + second.stderr
+    finally:
+        for pid in sleeper_pid.read_text().split() if sleeper_pid.exists() else []:
+            try:
+                os.kill(int(pid), 9)
+            except ProcessLookupError:
+                pass
+
+
+def test_an_old_style_lock_directory_is_left_alone(deploy_box):
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    lock.mkdir()
+    result = deploy_box.run()
+    assert result.returncode == 1 and "old-style lock directory" in result.stderr
+    assert lock.is_dir() and deploy_box.log() == []
+
+
+def test_the_failed_marker_is_checked_under_the_lock(deploy_box):
+    """Regression for Astra's round-3 should_fix: the marker was checked before the lock,
+    so a run waiting on the lock while another failed its rollback went on to overwrite
+    the records that run's MANUAL block points at."""
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    holder = _Flock(lock)                                        # the deploy that is failing
+    try:
+        waiting = deploy_box.start(DEPLOY_LOCK_WAIT="30")
+        time.sleep(1.5)                                          # it is past any early check
+        (deploy_box.home / "egyptology-deploy.FAILED").write_text("MANUAL ...\n")
+    finally:
+        holder.release()                                         # the failing run exits 2
+    out, err = waiting.communicate(timeout=60)
+    assert waiting.returncode == 1, out + err
+    assert "an earlier rollback failed" in err
+    assert not (deploy_box.home / "egyptology-last-good").exists()
+    assert deploy_box.log() == []
+
+
+def test_a_failed_freeze_without_a_lock_stops_before_anything_changes(deploy_box):
+    """Regression for Astra's round-2 A12/A45 finding: a failed `pip freeze` left the
+    constraints empty and the build resolved every transitive dependency afresh."""
+    before = deploy_box.head()
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    deploy_box.publish("new streamlit")
+    result = deploy_box.run(FAIL_FREEZE="1")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "pip freeze failed" in result.stderr and "untouched" in result.stderr
+    assert not _calls_matching(deploy_box, "install")
+    assert deploy_box.head() == before and deploy_box.live_venv() == "original"
+    assert deploy_box.release_dirs() == [] and not _calls_matching(deploy_box, "systemctl")
+
+
+def test_a_failed_build_without_a_lock_says_how_to_get_past_it(deploy_box):
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
+    deploy_box.publish("new streamlit")
+    result = deploy_box.run(FAIL_PIP="1")
+    assert result.returncode == 1
+    assert "Commit a requirements.lock" in result.stderr
 
 
 def test_a_failed_corpus_import_rolls_back_too(deploy_box):
     before = deploy_box.head()
     deploy_box.write("data/processed/examples.csv", "id\n1\n2\n")
+    deploy_box.write("requirements.txt", "streamlit==1.50.0\n")
     deploy_box.publish("more corpus")
     result = deploy_box.run(FAIL_IMPORT="1")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "ROLLED BACK" in result.stderr
     assert deploy_box.head() == before
-    assert _calls_matching(deploy_box, "import_examples.py --dry-run")
-    # restarted once, after the rollback, never on the half-imported tree
-    assert len(_calls_matching(deploy_box, "systemctl --user restart egyptology.service")) == 1
+    (dry_run,) = _calls_matching(deploy_box, "import_examples.py --dry-run")
+    assert f"python[{deploy_box.releases}/" in dry_run, "the import must run on the new release venv"
+    # started once, after the rollback, never on the half-imported tree
+    assert len(_calls_matching(deploy_box, "systemctl --user start egyptology.service")) == 1
+    assert deploy_box.live_venv() == "original"
+    assert deploy_box.release_dirs() == []
 
 
 def test_a_corpus_change_runs_the_dry_run_then_the_sync(deploy_box):
@@ -801,9 +1521,32 @@ def test_unit_files_are_only_installed_when_asked(deploy_box):
     assert _calls_matching(deploy_box, "systemctl --user daemon-reload")
 
 
-def test_the_deploy_check_depends_on_a_css_class_the_app_really_emits():
-    assert 'class="suggestion-card"' in (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
-    assert re.search(r'^EXPECT_TEXT="suggestion-card"$', DEPLOY_SCRIPT.read_text(), re.M)
+def test_a_rollback_restores_the_unit_files_from_before_the_deploy(deploy_box):
+    """Regression for the A12/A46 review: new units stayed installed after a rollback."""
+    unit_dir = deploy_box.home / ".config" / "systemd" / "user"
+    unit_dir.mkdir(parents=True)
+    (unit_dir / "egyptology.service").write_text("[Service]\n# the live, hand-made unit\n")
+    deploy_box.write("deploy/systemd/egyptology.service", "[Service]\nExecStart=/bin/false\n")
+    deploy_box.write("deploy/systemd/egyptology-extra.timer", "[Timer]\n")
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2 with new units")
+    result = deploy_box.run(INSTALL_UNITS="1", FAIL_WARM="v2")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert (unit_dir / "egyptology.service").read_text() == "[Service]\n# the live, hand-made unit\n"
+    assert not (unit_dir / "egyptology-extra.timer").exists()
+    calls = [line.split(" (")[0] for line in deploy_box.log() if line.startswith("systemctl")]
+    reloads = [i for i, call in enumerate(calls) if call == "systemctl --user daemon-reload"]
+    last_start = max(i for i, call in enumerate(calls) if call == "systemctl --user start egyptology.service")
+    assert len(reloads) == 2 and reloads[1] < last_start, "units restored after the old app started"
+
+
+def test_the_deploy_check_depends_on_markup_only_a_result_carries():
+    expect = re.search(r"^EXPECT_TEXT='(.+)'$", DEPLOY_SCRIPT.read_text(), re.M).group(1)
+    assert expect == 'class="suggestion-card"'
+    assert expect in (PROJECT_ROOT / "app" / "ui" / "whyptology_app.py").read_text()
+    # The stylesheet the app injects on every page names the class but never this attribute.
+    theme = (PROJECT_ROOT / "app" / "ui" / "whyptology_theme.css").read_text()
+    assert ".suggestion-card" in theme and expect not in theme
 
 
 # ---------------------------------------------------------------------------
@@ -914,3 +1657,15 @@ def test_deployment_doc_points_at_files_and_variables_that_exist():
     for variable in ("INSTALL_UNITS", "STOP_BEFORE_UPDATE"):
         assert variable in DEPLOY_SCRIPT.read_text()
     assert "Rollback" in doc and "egyptology-last-good" in doc
+
+
+def test_deployment_doc_states_the_reviewed_settings_and_monitors():
+    doc = (PROJECT_ROOT / "DEPLOYMENT.md").read_text()
+    (row,) = [line for line in doc.splitlines() if line.startswith("| `REVIEWER_KEY` |")]
+    assert "unset = annotation saving off" in row and "anyone may save" not in doc
+    # Healthchecks receives heartbeats; it is not an HTTP monitor (A42 review).
+    assert "healthchecks.io HTTP check" not in doc and "Uptime Kuma" in doc
+    (stop_row,) = [line for line in doc.splitlines() if line.startswith("| `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` |")]
+    assert "default `0`" in stop_row
+    for name in ("egyptology-last-good-venv", "egyptology-last-good-units", "requirements.lock", "restic"):
+        assert name in doc, name

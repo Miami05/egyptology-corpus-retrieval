@@ -12,12 +12,13 @@ answers at the old `streamlit.app` address is unmaintained.
 | Path | What |
 |---|---|
 | `/home/ledio/egyptology` | clone of `main`; the app runs from here |
-| `/home/ledio/venvs/egyptology` | Python 3.12 virtualenv (≈ 760 MB) |
+| `/home/ledio/venvs/egyptology` | the path the unit runs Python from. Since the release-venv deploy (2026-10) a **symlink** to one Python 3.12 venv in `venvs/egyptology-releases/` (≈ 760 MB each); the first such deploy moves the original directory there as `original-<time>` |
+| `/home/ledio/venvs/egyptology-releases/` | release venvs, one per dependency change: the one serving and the one it replaced (the rollback target); older ones are removed after a successful deploy |
 | `/home/ledio/egyptology-private` | `PRIVATE_DATA_DIR`: non-redistributed CC BY-NC-SA rows (St Andrews). Outside the clone so `git pull` never touches it. Copy files in with `scp`. |
 | `/home/ledio/egyptology-backups` | nightly `egyptology-YYYY-MM-DD.db.gz` snapshots, 30-day retention, plus `monthly/` (the first snapshot of every month, kept for ever). Written by the timer below |
 | `/home/ledio/egyptology.env` | secrets and per-host settings, `chmod 600`, read by the service, the backup and the deploy script. Template: `deploy/systemd/egyptology.env.example` |
 | `/home/ledio/egyptology-deploy.sh` | the one-command update; refreshed from `scripts/egyptology-deploy.sh` by every successful deploy |
-| `/home/ledio/egyptology-last-good` | the commit the last successful deploy left running; the target of a manual rollback |
+| `/home/ledio/egyptology-last-good`, `-last-good-venv`, `-last-good-units/` | what was running when the latest deploy **started**: the commit, the venv directory, and copies of any unit files that deploy replaced (plus `ADDED`, the units it added). Written before anything changes, so they are the right target for a manual rollback even after a failed first deploy |
 | `/home/ledio/bin` | operational copies of `scripts/backup_db.sh` and `scripts/warm_streamlit.py`, refreshed from the clone by the deploy script. Outside the clone so a systemd unit never points into a tree an update is rewriting |
 | `~/.config/systemd/user/egyptology.service` | the service: Streamlit on `127.0.0.1:8502`, headless, `Restart=on-failure`, enabled; `loginctl enable-linger ledio` keeps it running with nobody logged in. **Versioned in `deploy/systemd/`** (see "The unit files" below) |
 | `~/.config/systemd/user/egyptology-backup.{service,timer}` | the nightly backup, 03:30 with `Persistent=true` and up to 5 min of jitter. Versioned in `deploy/systemd/` |
@@ -37,34 +38,54 @@ ssh ledio@vela-optiplex-3070 ./egyptology-deploy.sh
 
 In order, the script:
 
-1. refuses to run (touching nothing) if tracked files in the clone are modified, or if
-   `origin` is not a fast-forward of what is running. It warns if `DATABASE_URL` is not
-   under `~/egyptology-data`;
-2. `git fetch`es, then installs **the target commit's** `requirements.txt` into the venv
-   *before* any file changes. If pip fails, the tree and the running service were never
-   touched (it restores the venv from the old requirements and exits 1);
-3. stops the service right before the files change, so no process ever sees code change
-   underneath it (`STOP_BEFORE_UPDATE=0` skips this and keeps the old no-downtime window,
-   at the cost that a visitor's rerun during the deploy can mix old modules with the new
-   main script), and fast-forwards. The unit also sets
-   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` as a second layer (audit A40);
-4. refreshes `/home/ledio/bin` from `scripts/`, installs the unit files **only when
-   `INSTALL_UNITS=1`** (otherwise it says when they differ from `deploy/systemd/`),
-   imports the corpus if the commit changed `data/processed/examples.csv` (see below),
-   restarts the service, waits for `/_stcore/health`, and then **runs a real paste**
-   (`warm_streamlit.py --expect-text suggestion-card`). "Healthy" only proves Streamlit
-   answers; a crashing app answers too. The deploy fails unless the paste rendered a
+1. refuses to run (touching nothing) if another deploy holds the lock on
+   `~/.egyptology-deploy.lock` (a kernel `flock`, taken through the system `python3`: it is
+   released when its run exits or dies, and the file is never deleted), then, under that
+   lock, if `~/egyptology-deploy.FAILED` exists (an earlier rollback failed; see Rollback), if
+   tracked files in the clone are modified, or if `origin` is not a fast-forward of what is
+   running. It warns if `DATABASE_URL` is not under `~/egyptology-data`;
+2. records what is running now in `~/egyptology-last-good*` (above), before anything changes;
+3. `git fetch`es and builds **the target commit's** dependencies into a **new release venv**
+   in `~/venvs/egyptology-releases/`, from `requirements.lock` when the commit has one
+   (checked against every pin in `requirements.txt`; a stale lock stops the deploy), otherwise
+   from `requirements.txt` with every package it does not name held at the version the
+   running venv has (a failed `pip freeze` of the running venv stops the deploy rather than
+   resolving them afresh; a pip failure in this mode prints a hint to commit a lock or pin
+   the package). The live venv is never installed into, so a failing pip leaves the tree,
+   the venv and the running service untouched (exit 1). A commit whose dependency files did
+   not change reuses the live venv and builds nothing;
+4. fast-forwards the tree **with the service still running** (default
+   `STOP_BEFORE_UPDATE=0`, no public downtime; the unit's
+   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` stops the running process reloading what it has
+   already loaded, audit A40, but a module or page it has not imported yet is read from the
+   new tree if a visitor reaches it between the merge and the stop, corpus import included
+   — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first instead), refreshes
+   `/home/ledio/bin` from `scripts/`, installs the unit files **only when `INSTALL_UNITS=1`**
+   (otherwise it says when they differ from `deploy/systemd/`), imports the corpus with the
+   **new** venv if the commit changed `data/processed/examples.csv` (see below), then stops the
+   service, points `~/venvs/egyptology` at the new venv, starts it, waits for
+   `/_stcore/health`, and **runs a real paste**
+   (`warm_streamlit.py --expect-text 'class="suggestion-card"'`). "Healthy" only proves
+   Streamlit answers; a crashing app answers too. The deploy fails unless the paste rendered a
    result card and no exception element;
-5. on any failure in steps 3-4 it rolls back automatically (below). On success it writes
-   the commit to `~/egyptology-last-good` and refreshes `~/egyptology-deploy.sh` from the
-   repo copy (the new copy takes effect on the next run).
+5. on any failure in step 4 it rolls back automatically (below). On success it removes
+   release venvs other than the serving one and the one it replaced, and refreshes
+   `~/egyptology-deploy.sh` from the repo copy (the new copy takes effect on the next run).
 
 It prints the commit it is serving and one line per step saying what it did. If it prints
 the last 30 log lines instead, the app did not come up — read them. The unit's
 `ExecStartPost` warm-up stays non-fatal on purpose (the unit must not flap); the deploy
-script is what treats a bad app as a failed deploy. The check depends on the CSS class
-name `suggestion-card` that `whyptology_app.py` emits; renaming it means changing
-`EXPECT_TEXT` in the deploy script.
+script is what treats a bad app as a failed deploy. The check looks for the attribute
+`class="suggestion-card"` that `whyptology_app.py` writes on every result card; renaming the
+class means changing `EXPECT_TEXT` in the deploy script. Not the bare class name: the theme
+stylesheet injected on every page contains `.suggestion-card {`, so a page with no result
+would pass. Because the expectation is an attribute, the checker accepts it only on a real
+start tag in an element that renders HTML: not in a `<style>` block, a comment, a
+`<script>`/`<template>`/`<textarea>`, Markdown code (inline, fenced or indented), or markup
+shown as plain text. The checker used,
+by the deploy and by its rollback, is the **target** commit's `warm_streamlit.py` (on the
+old venv during a rollback: a future checker that needs a newer Streamlit would turn a
+working rollback into a MANUAL one, which is the safe direction).
 
 **The deploy script is version-controlled.** The canonical copy is
 `scripts/egyptology-deploy.sh` in the repo; `/home/ledio/egyptology-deploy.sh` on the box is
@@ -80,23 +101,49 @@ scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh
 ### Rollback
 
 Automatic: if the corpus import, the restart, the health check or the paste check fails
-after the files changed, the script runs `git reset --hard <the commit that was running>`
-(ignored files, so `*.db`, are untouched), reinstalls that commit's requirements, restarts,
-waits for health and prints `ROLLED BACK to <sha>` (exit 1). If the rollback itself fails it
-prints a `MANUAL:` block (exit 2). By hand, for example after a deploy that passed the
-check but turned out wrong:
+after the files changed, the script **stops the service first** (a failed check can leave the
+new app serving; if the stop fails and `systemctl --user is-active` does not say `inactive` or
+`failed`, it changes nothing more and goes straight to MANUAL), puts back the unit files it replaced and removes the ones it added
+(`daemon-reload`), runs `git reset --hard <the commit that was running>` (ignored files, so
+`*.db`, are untouched), points `~/venvs/egyptology` back at the previous venv (kept for
+exactly this), starts the service and runs **the same paste check** again, not just the
+health URL. Then it prints `ROLLED BACK to <sha>` (exit 1) and deletes the failed commit's
+release venv. If the rollback itself fails it prints a `MANUAL:` block (exit 2) and writes it
+to `~/egyptology-deploy.FAILED`; **no deploy runs while that file exists**, so a rerun cannot
+overwrite the `~/egyptology-last-good*` records the block points at. Follow the block, check
+the app, then `rm ~/egyptology-deploy.FAILED`. By hand, for example after a deploy that passed
+the check but turned out wrong:
 
 ```bash
 ssh ledio@vela-optiplex-3070
+systemctl --user stop egyptology.service
+# Only if that deploy ran with INSTALL_UNITS=1: copy ~/egyptology-last-good-units/*.service
+# and *.timer back to ~/.config/systemd/user/, delete the units listed in its ADDED file,
+# then: systemctl --user daemon-reload
 git -C ~/egyptology reset --hard $(cat ~/egyptology-last-good)
-~/venvs/egyptology/bin/pip install -r ~/egyptology/requirements.txt
-systemctl --user restart egyptology.service
+ln -sfn "$(cat ~/egyptology-last-good-venv)" ~/venvs/egyptology
+systemctl --user start egyptology.service
 ```
 
-`~/egyptology-last-good` holds the commit of the last *successful* deploy; it does not exist
-until the first successful run of the new script. A rollback costs another warm-up (about
-three minutes). Not covered: a bad data migration. The database is only ever touched by
+The `~/egyptology-last-good*` records are rewritten at the start of every deploy, so they
+undo **the latest** deploy only; after a no-op deploy they name what is running now. Run the
+manual steps before deploying again. A rollback costs another warm-up (about three minutes).
+Not covered: a bad data migration. The database is only ever touched by
 `import_examples.py` (insert-only), and the nightly backup is the safety net there.
+
+**The full lock (`requirements.lock`, audit A45).** Not committed yet. Generate it from the
+venv the server is serving once a deploy has passed, and commit it; from then on every release
+venv is that exact set, and only a deliberate lock change upgrades anything:
+
+```bash
+ssh ledio@vela-optiplex-3070 '~/venvs/egyptology/bin/pip freeze --exclude-editable' > requirements.lock
+```
+
+Until then the deploy holds every package `requirements.txt` does not name at the running
+venv's version, which stops a doc-only deploy from upgrading protobuf or tornado underneath
+the app, but a rebuilt machine would still resolve them fresh. Each release venv is about
+760 MB and at most three exist during a deploy (the box's disk is about 72% full: check
+`df -h ~` before the first one).
 
 Since 2026-09-05 the repo copy runs `import_examples.py --dry-run` before the real sync when
 the corpus changed, so the deploy log distinguishes "nothing to insert" from "N inserted"
@@ -111,10 +158,11 @@ failure mode; do not carry it over unchanged if `DATABASE_URL` ever points off t
 **It takes about three minutes**, nearly all of it the restart: the unit's `ExecStartPost`
 warms the stage resource sets before systemd calls the service started, so a deploy that
 returns is serving a warm app. Measured no-op deploy 2026-09-05: 2 m 55 s total, health in
-2 s once the restart returned. A corpus import adds ~25 s. (Measured before the
-stop-before-merge order below; with it the service is down from the `stop` until the restart
-returns, and the script prints that time as `the service was down for about Ns`. The extra
-paste check adds a few seconds. To be measured on the box, as is `MemoryPeak`:
+2 s once the restart returned. A corpus import adds ~25 s. (Measured before the release-venv
+deploy; the service is now down from the `stop` before the venv switch until the check
+passes, and the script prints that time as `the service was down for about Ns`. Building a
+release venv, only when dependencies changed, happens while the old app still serves. The
+extra paste check adds a few seconds. To be measured on the box, as is `MemoryPeak`:
 `systemctl --user show egyptology -p MemoryPeak,MemoryMax`.)
 
 Useful afterwards:
@@ -138,10 +186,10 @@ first, then the environment. Set per host, never in code.
 | `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving **and the private NC rows**; unset = annotation saving off for everyone and *nobody* gets the private rows (`ALLOW_OPEN_ANNOTATIONS=1` reopens saving, for local development only) |
 | `DATABASE_URL` | unset today; `sqlite:////home/ledio/egyptology-data/egyptology.db` after the move below | unset = `egyptology.db` in the project root (a relative SQLite path is anchored at the project root, not the current folder, since 2026-10); a `postgres://` URL switches engines with no code change. Every process prints `database: <path> (from ...)` to stderr at start, so the journal says which file the app opened. The backup script reads this variable too |
 | `NTFY_TOPIC` | set by Ledio in the env file | the ntfy.sh topic the failure notifications go to. It works like a password and the repo is public, so it is only ever in `egyptology.env` |
-| `HEALTHCHECK_URL` | set by Ledio in the env file | healthchecks.io ping URL; `backup_db.sh` pings it on success and `<url>/fail` on failure, so a night with no ping raises an alert |
+| `HEALTHCHECK_URL` | set by Ledio in the env file | a Healthchecks (healthchecks.io) heartbeat URL; `backup_db.sh` pings it on success and `<url>/fail` on failure, so a night with no ping raises an alert. A heartbeat only: it does not probe the website |
 | `OFFSITE_PRUNE` | unset (= 1) | `0` stops the backup script deleting old files off-site (use once the B2 key cannot delete) |
 | `ALLOW_ANNOTATION_DROP` | unset | `1`, for one manual run only, accepts a backup that has fewer annotations than the previous one |
-| `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` | deploy script, not the service | `INSTALL_UNITS=1 ~/egyptology-deploy.sh` copies `deploy/systemd/*` into `~/.config/systemd/user`; `STOP_BEFORE_UPDATE=0` keeps the service running during the file swap |
+| `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` | deploy script, not the service | `INSTALL_UNITS=1 ~/egyptology-deploy.sh` copies `deploy/systemd/*` into `~/.config/systemd/user`; `STOP_BEFORE_UPDATE=1` stops the service before the file swap (default `0`: it keeps serving until the venv switch) |
 | `STREAMLIT_SERVER_FILE_WATCHER_TYPE` | `none` (in the unit) | stops the running app reloading modules when a deploy rewrites the tree |
 | `DEFAULT_STAGE` | unset (= `auto`) | `auto` / `all` / a stage name; Auto builds one extra resource set per stage it uses |
 | `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated values to drop at load; each token matches a row's `source` **or** its `language_stage` (so `Demotic` drops the TLA Demotic rows, and `Late Egyptian` would drop Ramses too) — how a 1 GB host would stay on the 78k subset |
@@ -382,20 +430,33 @@ fallback.
 
 `scripts/backup_db.sh` takes the snapshot: `sqlite3 … ".backup"` (the online backup API —
 never `cp`, which can catch a half-written page on a live database and you find out at
-restore time), then `PRAGMA integrity_check` **on the copy**, then gzip, then a content
-check, then the monthly copy, then retention. It exits non-zero if the check is not `ok`,
+restore time) into a hidden candidate file, then `PRAGMA integrity_check` **on the copy**,
+then gzip, then a content check, and only then publishes it as
+`egyptology-<date>.db.gz`, then the monthly copy, then retention. A second run on the same
+day publishes `egyptology-<date>-r02.db.gz` (and so on): an accepted snapshot is never
+overwritten. Revision numbers compare as numbers (`-r100` is newer than `-r99`) and are never
+reused: each is one above every revision of that day in the folder, kept copies included.
+Only one run at a time: a run holds a kernel `flock` on `BACKUP_DIR/.backup.lock` from
+before the snapshot to exit, a second run (the timer overlapping a manual one) waits up to
+`LOCK_WAIT` seconds (default 900) and then exits 5 having written nothing. The kernel drops
+the lock when its run dies, so there is nothing stale to take over, and the file is never
+deleted. rsync/rclone run with the descriptor closed, so a helper they leave behind cannot
+keep holding the lock. It exits non-zero if the check is not `ok`,
 keeping the bad file for inspection, so a failed night shows as a `failed` unit rather than
 a silently missing backup. A Python fallback using the same API runs where `sqlite3` is
-absent — which the box was until 2026-09-05.
+absent — which the box was until 2026-09-05. It opens the database read-only through a
+percent-encoded `file:` URI, so a `#` or `%` in the file name names that file.
 
 **The content check (audit A13).** `integrity_check` proves the file is a sound database,
 not that the annotations are still in it: a bad migration or a wrong `DELETE` gives a
 healthy file with an empty table, and 30 days later retention would age the last good copy
 out, on the box and in B2. So after gzip the script runs `gzip -t`, decompresses the
-**archive** (what a restore would use) and counts `examples` and `annotations`, and compares
-with the newest earlier snapshot:
+**compressed copy** (what a restore would use) and counts `examples` and `annotations`, and
+compares with the **newest accepted snapshot**, today's included (so a same-day rerun after a
+deletion cannot pass by comparing with yesterday), dailies and `monthly/` alike (so a
+baseline survives even when every daily has aged out):
 
-- **fewer annotations: exit 3.** Today's copy is renamed
+- **fewer annotations: exit 3.** The copy is kept as
   `egyptology-<date>.db.gz.suspect` (a name retention does not match), both counts are
   printed, and *nothing else happens*: no retention, no monthly copy, no off-site copy, so
   every older good snapshot stays. The unit shows `failed` and the notification fires. The
@@ -405,8 +466,13 @@ with the newest earlier snapshot:
   has been looked at.
 - **examples: exit 3 only if the count fell to 0**; any other drop prints a warning (a
   deliberate corpus shrink is legitimate).
-- no earlier snapshot (first run, or it cannot be read): the comparison is skipped and the
-  script says so.
+- **the newest accepted snapshot cannot be read: exit 4**, fail closed. The copy is kept as
+  `<name>.db.gz.unverified` and nothing else happens (no retention, no off-site copy). Check
+  that file; if it is damaged, rename it to `<name>.bad` and run again.
+- **no snapshot at all, but earlier ones were published here** (the folder has a
+  `.has-snapshots` marker): also exit 4, because an emptied folder is not a first backup.
+- a genuine first backup (no snapshot, no marker): the comparison is skipped and the script
+  says so.
 
 The check costs a decompress and two counts: +0.15 s on a 28 MB database (1.27 s to 1.42 s
 without a previous snapshot, 1.58 s with one, measured on the Mac); expect about 1 s on the
@@ -416,8 +482,11 @@ box's 63 MB file and about 63 MB of scratch space in `$TMPDIR`.
 `~/egyptology-backups/monthly/egyptology-YYYY-MM.db.gz` and kept for ever (about 14–22 MB
 each, roughly 0.25 GB a year). Retention only looks at the top level of the folder, so it
 never touches `monthly/`, and the off-site prune is `--max-depth 1` for the same reason.
-Off-site the monthly file goes to `<OFFSITE_TARGET>/monthly/` (every run; `--checksum`
-makes an existing one a no-op).
+Off-site, every run sends today's file and then **reconciles every retained daily and every
+monthly file** with the destination (`rclone copy`, never `sync`; `--checksum` makes a file
+already there a no-op), so a night or a month boundary whose upload failed heals on the next
+run. Nothing in that step deletes anything off-site. If a B2 lifecycle rule expires the
+dailies, give it at least `RETENTION_DAYS` (30), or the reconcile re-uploads what it expired.
 
 **Off-site deletes.** The script's `rclone delete --min-age` prune is now non-fatal, and
 `OFFSITE_PRUNE=0` turns it off. The safer end state, which needs Ledio (never through
@@ -426,12 +495,17 @@ with that key and `hard_delete` false, a lifecycle rule on the bucket that expir
 files, and B2 Object Lock if the bucket allows it. Then neither the box nor a bad
 `RETENTION_DAYS` can wipe the off-site copies. Keep the old key until the new one is proven.
 
-**Heartbeat.** With `HEALTHCHECK_URL` set (a healthchecks.io check, in `egyptology.env`) the
+**Heartbeat.** With `HEALTHCHECK_URL` set (a Healthchecks heartbeat check, in `egyptology.env`) the
 script pings it on success and `<url>/fail` on any failure, so a night where the timer never
 fired also raises an alert, which `OnFailure=` cannot catch.
 
 **Rehearse a restore once a month** from the off-site copy: `rclone copy`, `gzip -t`,
 decompress, then run the counting snippet under "Restore". Matching counts are the point.
+
+**Future option, not needed now: restic** (BSD-2-Clause). It could replace the custom
+retention, upload and verification with deduplicated, encrypted snapshots and
+`restic check`. The SQLite online snapshot and the annotation-count comparison would stay
+either way: restic cannot tell a healthy file from one whose annotations were deleted.
 
 `egyptology-backup.timer` runs it at 03:30 with `Persistent=true`, so a night the box spent
 asleep is caught up at the next boot instead of skipped. First run 2026-09-05: 63 MB
@@ -536,7 +610,7 @@ Three layers, because each one misses something the next catches:
 |---|---|---|
 | `OnFailure=egyptology-notify@%n.service` on the service and the backup unit; the notify unit posts to `https://ntfy.sh/$NTFY_TOPIC` | the service ending in `failed` (after `Restart=` gave up, by default 5 starts in 10 s), a failed or `exit 3` backup | a single crash that `Restart=on-failure` recovered; Tailscale or Funnel being off; the timer never firing |
 | `HEALTHCHECK_URL` heartbeat from `backup_db.sh` | a night with no backup at all, a box that was off | anything about the website |
-| an external uptime check on `https://vela-optiplex-3070.taile0409f.ts.net/_stcore/health` (UptimeRobot, or a healthchecks.io HTTP check) | the public site being unreachable for any reason | the app serving errors (the deploy's paste check covers deploys, not later breakage) |
+| an HTTP monitor that probes `https://vela-optiplex-3070.taile0409f.ts.net/_stcore/health` from **another** machine, e.g. Uptime Kuma (MIT, self-hosted) on a different box, or UptimeRobot. Not set up yet. Healthchecks cannot do this: it only receives heartbeats, it never probes a site | the public site being unreachable for any reason | the app serving errors (the deploy's paste check covers deploys, not later breakage) |
 
 The notification text carries only the unit name and the host name. Test the channel with
 `systemctl --user start egyptology-notify@test.service`.
@@ -655,7 +729,8 @@ python3.12 -m venv ~/venvs/egyptology
 `requirements.txt` is what the server installs (the app only); `requirements-dev.txt` adds
 pytest, `datasets` (only for regenerating `data/raw`) and a pinned `hieropy` (the St Andrews
 importer and its tests; GPL, so it stays out of `requirements.txt` and the application).
-Only top-level packages are pinned; a full lock file is still open. On a laptop,
+Only top-level packages are pinned in `requirements.txt`; the server deploy builds from
+`requirements.lock` once one is committed (see "Rollback"). On a laptop,
 `showErrorDetails = "none"` in `.streamlit/config.toml` means a crash shows a generic
 message in the browser and the traceback only in the terminal.
 
