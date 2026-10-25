@@ -6,6 +6,15 @@ Here the query is the *hieroglyphs* of a sentence whose own row has been removed
 the corpus, so the tool must propose a reading from sign evidence and parallels alone
 -- the position an Egyptologist is actually in.
 
+Duplicate handling (audit A56): duplicate exclusion is ON by default. It skips targets
+whose exact sign string recurs (as it always did) and now also removes from each
+target's retrieval pool every row whose sign-group Jaccard with the target is at least
+`--near-duplicate-overlap` (0.8) and every row with the same reading, so a near-copy
+cannot be "predicted" by copying it. `--no-exclude-duplicates` restores the old default
+and `--exclude-duplicates --near-duplicate-overlap 0` the old exact-only rule. Results
+go to NEW `*_v2.csv` files so the committed sign_reading_eval*.csv, produced under the
+old semantics, are never overwritten.
+
 Two accuracies are reported:
   exact  - the gold reading is reproduced verbatim (very hard on unseen sentences)
   useful - a suggestion shares enough of the gold reading's tokens or lemmas to be a
@@ -16,8 +25,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -27,12 +38,18 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.data.loader import load_examples_csv
 from app.services.retrieval import retrieve_top_k
 from app.services.suggestions import canonical_reading, loose_reading_form, suggest_top_readings
+from scripts.build_competitive_ambiguity_benchmark import build_token_index
+from scripts.eval_guards import folded_keys, twin_rows
 
 EXAMPLES_PATH = "data/processed/examples.csv"
-RESULTS_PATH = "data/benchmarks/sign_reading_eval_results.csv"
-FAILURES_PATH = "data/benchmarks/sign_reading_eval_failures.csv"
+# NEW names on purpose (audit A56): the committed sign_reading_eval_results.csv and
+# _failures.csv were measured with duplicate exclusion off and must stay as the
+# legacy record, not be mixed with numbers from the new defaults.
+RESULTS_PATH = "data/benchmarks/sign_reading_eval_results_v2.csv"
+FAILURES_PATH = "data/benchmarks/sign_reading_eval_failures_v2.csv"
 
 USEFUL_TOKEN_THRESHOLD = 0.30
+NEAR_DUPLICATE_OVERLAP = 0.8
 
 
 def _tokens(value: object) -> set[str]:
@@ -54,7 +71,72 @@ def _overlap(left: set[str], right: set[str]) -> float:
     return len(left & right) / len(left | right)
 
 
-def main() -> None:
+class SignDuplicateGuard:
+    """Which pool rows are copies of a target: same reading, or near-same sign groups.
+
+    Built once over the whole corpus. `removals(position)` returns the positions that
+    must leave that target's pool besides the target's own sentence: rows with the
+    same canonical reading (written with other signs or in another edition) and rows
+    whose sign-group set has Jaccard >= `overlap` with the target's. `overlap` 0
+    removes nothing, which is the legacy behaviour.
+    """
+
+    def __init__(self, df: pd.DataFrame, overlap: float) -> None:
+        self.overlap = overlap
+        self.sign_sets: list[set[str]] = []
+        self.index: dict[str, list[int]] = {}
+        self.keys: list[str] = folded_keys(df)
+        self.by_key: dict[str, list[int]] = defaultdict(list)
+        for position, key in enumerate(self.keys):
+            self.by_key[key].append(position)
+        if overlap > 0:
+            self.sign_sets = [set(str(value).split()) for value in df["hieroglyphs_norm"]]
+            self.index = build_token_index(self.sign_sets)
+
+    def removals(self, position: int) -> set[int]:
+        if self.overlap <= 0:
+            return set()
+        out = {
+            other
+            for other, _ in twin_rows(
+                self.sign_sets[position], self.sign_sets, self.index, self.overlap
+            )
+        }
+        key = self.keys[position]
+        if key:
+            out.update(self.by_key[key])
+        out.discard(position)
+        return out
+
+
+def pool_keep_mask(
+    df: pd.DataFrame, target: pd.Series, extra_removed: "set[int] | None" = None
+) -> np.ndarray:
+    """Boolean mask over `df` rows that stay in the target's pool (positional)."""
+    keep = ~(
+        (df["source_text_id"] == target["source_text_id"])
+        & (df["source_sentence_id"] == target["source_sentence_id"])
+    ).to_numpy()
+    if extra_removed:
+        keep[list(extra_removed)] = False
+    return keep
+
+
+def source_table(results: pd.DataFrame) -> pd.DataFrame:
+    """Per-source accuracy: the pooled number hides that TLA, AES, BBAW and Ramses differ."""
+    grouped = results.groupby("source")
+    return pd.DataFrame(
+        {
+            "queries": grouped.size(),
+            "top1_exact": grouped["top1_exact"].mean().round(4),
+            "top3_exact": grouped["top3_exact"].mean().round(4),
+            "top3_useful": grouped["top3_useful"].mean().round(4),
+            "mean_pool_rows_removed": grouped["pool_rows_removed"].mean().round(2),
+        }
+    )
+
+
+def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--examples", default=EXAMPLES_PATH)
     parser.add_argument("--results", default=RESULTS_PATH)
@@ -72,21 +154,61 @@ def main() -> None:
         help="Skip queries with fewer than this many sign groups.",
     )
     parser.add_argument(
-        "--exclude-duplicates",
-        action="store_true",
+        "--stride-sample",
+        type=int,
+        default=0,
         help=(
-            "Skip queries whose exact sign string also occurs elsewhere in the corpus. "
-            "This corpus is formulaic, so without this the score partly measures "
-            "memorisation of a twin rather than prediction."
+            "Evaluate N targets taken every k-th over ALL targets (deterministic), so "
+            "every source is represented. Drawn before the duplicate skip, so runs with "
+            "different duplicate settings share the same sample. --limit takes the first "
+            "N rows, which is TLA only; use this for a quick, comparable sample. 0 = off."
         ),
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--exclude-duplicates",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "On by default (audit A56). Skip queries whose exact sign string also "
+            "occurs elsewhere in the corpus and, with --near-duplicate-overlap, drop "
+            "near-copies from the pool. This corpus is formulaic, so without this the "
+            "score partly measures memorisation of a twin rather than prediction. "
+            "--no-exclude-duplicates restores the old default (nothing excluded)."
+        ),
+    )
+    parser.add_argument(
+        "--near-duplicate-overlap",
+        type=float,
+        default=NEAR_DUPLICATE_OVERLAP,
+        help=(
+            "With duplicate exclusion on: remove from each target's pool every row whose "
+            "sign-group Jaccard with the target is at least this, and every row with the "
+            "same reading. 0 = off (the old exact-only rule)."
+        ),
+    )
+    return parser.parse_args(argv)
 
-    df = load_examples_csv(args.examples)
+
+def main(argv: "list[str] | None" = None) -> None:
+    args = _parse_args(argv)
+
+    df = load_examples_csv(args.examples).reset_index(drop=True)
     have_signs = df[df["hieroglyphs_norm"].astype(str).str.strip() != ""].copy()
     print(f"corpus {len(df)} rows; {len(have_signs)} carry hieroglyphs")
 
     targets = have_signs
+    if args.min_signs > 1:
+        targets = targets[
+            targets["hieroglyphs_norm"].astype(str).str.split().map(len)
+            >= args.min_signs
+        ]
+    if args.stride_sample and len(targets) > args.stride_sample:
+        # Taken BEFORE the duplicate skip below, so the same N targets are drawn
+        # whatever the duplicate settings are and runs under different settings can be
+        # compared query for query (the skip then removes a few of them).
+        targets = targets.iloc[:: max(1, len(targets) // args.stride_sample)].head(
+            args.stride_sample
+        )
     if args.exclude_duplicates:
         counts = have_signs["hieroglyphs_norm"].astype(str).value_counts()
         unique_signs = set(counts[counts == 1].index)
@@ -96,26 +218,25 @@ def main() -> None:
             f"excluded {before - len(targets)} rows whose sign string recurs in the "
             "corpus; a twin would make retrieval trivial"
         )
-    if args.min_signs > 1:
-        targets = targets[
-            targets["hieroglyphs_norm"].astype(str).str.split().map(len)
-            >= args.min_signs
-        ]
     if args.limit:
         targets = targets.head(args.limit)
     print(f"evaluating {len(targets)} sign queries (leave-one-out)\n")
+
+    guard = SignDuplicateGuard(df, args.near_duplicate_overlap if args.exclude_duplicates else 0.0)
+    # Canonical reading -> row positions, for the lemma lookup below (the old code
+    # re-mapped canonical_reading over the whole pool for every candidate).
+    rows_by_key = guard.by_key
+    lemma_ids_by_row = [_lemma_ids(value) for value in df["lemma_sequence"]]
 
     rows: list[dict] = []
     exact1 = exact3 = useful1 = useful3 = 0
     reciprocal = 0.0
 
-    for position, (_, target) in enumerate(targets.iterrows(), start=1):
-        pool = df[
-            ~(
-                (df["source_text_id"] == target["source_text_id"])
-                & (df["source_sentence_id"] == target["source_sentence_id"])
-            )
-        ]
+    for position, (target_position, target) in enumerate(targets.iterrows(), start=1):
+        removed = guard.removals(target_position)
+        keep = pool_keep_mask(df, target, removed)
+        pool = df.loc[keep, :]
+        excluded = set(np.flatnonzero(~keep).tolist())
         query = str(target["hieroglyphs"])
         gold = str(target["transliteration_gold"])
         gold_key = canonical_reading(gold)
@@ -138,13 +259,10 @@ def main() -> None:
                 if _overlap(gold_tokens, cand_tokens) >= USEFUL_TOKEN_THRESHOLD:
                     useful_rank = rank
                 else:
-                    matches = pool[
-                        pool["transliteration_gold"].map(canonical_reading)
-                        == canonical_reading(candidate)
-                    ]
                     cand_lemmas: set[str] = set()
-                    for value in matches["lemma_sequence"]:
-                        cand_lemmas |= _lemma_ids(value)
+                    for row_position in rows_by_key.get(canonical_reading(candidate), ()):
+                        if row_position not in excluded:
+                            cand_lemmas |= lemma_ids_by_row[row_position]
                     shared = gold_lemmas & cand_lemmas
                     if len(shared) >= 2:
                         useful_rank = rank
@@ -179,6 +297,10 @@ def main() -> None:
                 "confidences": " || ".join(
                     f"{s.confidence_score:.3f}" for s in suggestions
                 ),
+                # Appended last (audit A56): which corpus source the target is from and
+                # how many near-copies were taken out of its pool.
+                "source": target["source"],
+                "pool_rows_removed": len(removed),
             }
         )
         if position % 50 == 0:
@@ -197,6 +319,11 @@ def main() -> None:
         ("failures", int((~results["top3_useful"]).sum()) if len(results) else 0),
     ]:
         print(f"{label}: {value}")
+    if len(results):
+        print(f"pool_rows_removed_mean: {results['pool_rows_removed'].mean():.2f}")
+        print(f"pool_rows_removed_max: {int(results['pool_rows_removed'].max())}")
+        print("\nPer source:")
+        print(source_table(results).to_string())
 
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(args.results, index=False)

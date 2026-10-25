@@ -26,8 +26,11 @@ Older benchmark files (v1/v2/v3, and the plain-named v1 file) have no such colum
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
+import tempfile
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -56,11 +59,14 @@ from app.services.suggestions import (
     notation_folded_reading_key,
     suggest_top_readings,
 )
+from scripts.build_competitive_ambiguity_benchmark import STOP_TOKENS
+from scripts.eval_guards import TwinGuard
 
 EXAMPLES_PATH = "data/processed/examples.csv"
+# Default for `_load_benchmark` callers that pass nothing. The CLI no longer has a
+# default benchmark (--benchmark is required, audit A26): this file is v1, where 17 of
+# 20 targets have an edition twin in the corpus, so a bare run measured memorisation.
 BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
-RESULTS_PATH = "data/benchmarks/competitive_ambiguity_eval_results.csv"
-FAILURES_PATH = "data/benchmarks/competitive_ambiguity_eval_failures.csv"
 
 
 def derive_v4_declared_stage(expected_source_text_id: object, period: object) -> str | None:
@@ -95,13 +101,27 @@ def _row_key(row: pd.Series) -> tuple[str, str]:
     return str(row["source_text_id"]), str(row["source_sentence_id"])
 
 
-def _exclude_expected(examples_df: pd.DataFrame, bench_row: pd.Series) -> pd.DataFrame:
-    expected_key = (
-        str(bench_row["expected_source_text_id"]),
-        str(bench_row["expected_source_sentence_id"]),
+def _exclude_expected(
+    examples_df: pd.DataFrame,
+    bench_row: pd.Series,
+    extra_positions: "list[int] | set[int] | None" = None,
+) -> pd.DataFrame:
+    """The corpus without this query's target row (and, optionally, other rows).
+
+    `extra_positions` are *positional* row numbers of `examples_df` to drop as well
+    (the target's edition twins, see scripts/eval_guards.py). Left out, the result is
+    exactly what the row-wise version returned before (audit A4); callers that pass
+    two arguments are unaffected.
+    """
+    expected_text_id = str(bench_row["expected_source_text_id"])
+    expected_sentence_id = str(bench_row["expected_source_sentence_id"])
+    keep = ~(
+        (examples_df["source_text_id"].astype(str) == expected_text_id).to_numpy()
+        & (examples_df["source_sentence_id"].astype(str) == expected_sentence_id).to_numpy()
     )
-    mask = examples_df.apply(lambda row: _row_key(row) != expected_key, axis=1)
-    return examples_df.loc[mask, :].copy()
+    if extra_positions:
+        keep[list(extra_positions)] = False
+    return examples_df.loc[keep, :].copy()
 
 
 def _tokens(value: object) -> set[str]:
@@ -223,6 +243,188 @@ def _useful_reason(
     )
 
 
+# ---------------------------------------------------------------------------
+# Fixed baselines and stricter reporting rows (audit A23).
+#
+# The headline "useful" rule is loose enough that a plain word-overlap ranker nearly
+# matches the app on v4, so every run also scores two fixed rankers on the SAME
+# candidate pool (target, and twins when excluded, removed) with the SAME useful rule,
+# and reports the app's margin over them. Nothing here feeds the gate: the v4 rule is
+# frozen and these are extra rows only.
+# ---------------------------------------------------------------------------
+
+BM25_K1 = 1.5
+BM25_B = 0.75
+# Strict-useful (reported only): token Jaccard after dropping one-letter particles.
+STRICT_TOKEN_THRESHOLD = 0.5
+NEAR_EXACT_THRESHOLD = 0.8
+
+
+class BaselineStats:
+    """Per-corpus tables for the baselines, built once per run from a TwinGuard."""
+
+    def __init__(self, examples_df: pd.DataFrame, guard: TwinGuard) -> None:
+        self.token_sets = guard.token_sets
+        self.token_index = guard.token_index
+        # The notation-folded key equals the strict (canonical) key since the fold
+        # shipped (tests/test_notation_fold.py pins that), so the guard's keys are
+        # reused instead of calling canonical_reading on 130k rows a second time.
+        self.canonical = guard.keys
+        self.by_canonical = guard.folded_groups
+        self.lemma_sequences = [str(value or "") for value in examples_df["lemma_sequence"]]
+        self.size = len(self.token_sets)
+        self.lengths = [len(tokens) for tokens in self.token_sets]
+        self.average_length = (sum(self.lengths) / len(self.lengths)) if self.lengths else 0.0
+
+
+def build_baseline_stats(examples_df: pd.DataFrame, guard: TwinGuard) -> BaselineStats:
+    return BaselineStats(examples_df, guard)
+
+
+def _top_distinct(ranked: list[int], stats: BaselineStats, top_n: int) -> list[int]:
+    """First `top_n` positions of `ranked` (best first) with distinct canonical readings."""
+    chosen: list[int] = []
+    seen: set[str] = set()
+    for position in ranked:
+        key = stats.canonical[position]
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(position)
+        if len(chosen) >= top_n:
+            break
+    return chosen
+
+
+def overlap_ranking(
+    query_tokens: set[str],
+    stats: BaselineStats,
+    excluded: "set[int] | frozenset[int]" = frozenset(),
+    top_n: int = 3,
+) -> list[int]:
+    """Row positions of the best word-overlap (Jaccard) matches, best first.
+
+    The plain baseline: no weighting, no stage, no lemma, no suggestion layer. Ties go
+    to the earlier row, so the result is deterministic; at most one row per canonical
+    reading is returned (the app also groups identical readings); excluded positions
+    never appear.
+    """
+    if not query_tokens:
+        return []
+    candidates: set[int] = set()
+    for token in query_tokens:
+        candidates.update(stats.token_index.get(token, ()))
+    candidates.difference_update(excluded)
+    scored: list[tuple[float, int]] = []
+    for position in candidates:
+        row_tokens = stats.token_sets[position]
+        shared = len(query_tokens & row_tokens)
+        if shared:
+            scored.append((-shared / len(query_tokens | row_tokens), position))
+    scored.sort()
+    return _top_distinct([position for _, position in scored], stats, top_n)
+
+
+def bm25_ranking(
+    query_tokens: set[str],
+    stats: BaselineStats,
+    excluded: "set[int] | frozenset[int]" = frozenset(),
+    top_n: int = 3,
+) -> list[int]:
+    """Row positions of the best BM25 matches (k1=1.5, b=0.75), best first.
+
+    Binary term frequency (a token is in a row or it is not), idf from the whole
+    corpus document frequency, row length = number of distinct tokens. Only the
+    postings of the query's own tokens are touched. Same tie-break and de-duplication
+    as `overlap_ranking`.
+    """
+    if not query_tokens or not stats.size:
+        return []
+    scores: dict[int, float] = defaultdict(float)
+    for token in query_tokens:
+        postings = stats.token_index.get(token, ())
+        if not postings:
+            continue
+        df_t = len(postings)
+        idf = math.log(1.0 + (stats.size - df_t + 0.5) / (df_t + 0.5))
+        for position in postings:
+            if position in excluded:
+                continue
+            norm = 1.0 - BM25_B + BM25_B * stats.lengths[position] / (stats.average_length or 1.0)
+            scores[position] += idf * (BM25_K1 + 1.0) / (1.0 + BM25_K1 * norm)
+    ranked = sorted(scores, key=lambda position: (-scores[position], position))
+    return _top_distinct(ranked, stats, top_n)
+
+
+def candidate_lemmas_fast(
+    stats: BaselineStats,
+    reading: str,
+    excluded: "set[int] | frozenset[int]" = frozenset(),
+) -> set[str]:
+    """`_candidate_lemmas` over a pool given as 'whole corpus minus `excluded`'.
+
+    Same answer as scanning the pool for rows with the reading's canonical key, but
+    through the by-key table instead of a 130k-row `map(canonical_reading)` per call.
+    """
+    ids: set[str] = set()
+    for position in stats.by_canonical.get(canonical_reading(reading), ()):
+        if position not in excluded:
+            ids |= _lemma_ids(stats.lemma_sequences[position])
+    return ids
+
+
+def strict_useful(
+    is_exact: bool,
+    candidate_tokens: set[str],
+    candidate_lemmas: set[str],
+    expected_key_tokens: set[str],
+    expected_lemma_ids: set[str],
+) -> bool:
+    """A stricter 'useful', REPORTED ONLY (it does not replace the frozen v4 rule).
+
+    Exact; or token Jaccard >= 0.5 once the one-letter particles in STOP_TOKENS
+    (m n r s f k t w pw hr) are dropped from both sides; or the lemma-family branches
+    that v4 and v5 share. Under v4's 0.26 threshold two sentences that share only
+    `n` and `m` can count as a lead (audit A23); here they cannot.
+    """
+    if is_exact:
+        return True
+    if _overlap(expected_key_tokens - STOP_TOKENS, candidate_tokens - STOP_TOKENS) >= (
+        STRICT_TOKEN_THRESHOLD
+    ):
+        return True
+    shared = expected_lemma_ids & candidate_lemmas
+    if expected_lemma_ids and candidate_lemmas:
+        lemma_score = len(shared) / min(len(expected_lemma_ids), len(candidate_lemmas))
+        if len(shared) >= 2 and lemma_score >= 0.4:
+            return True
+    return len(expected_lemma_ids) <= 2 and len(shared) >= 1
+
+
+def rank_metrics(ranks: "list[int | None]") -> tuple[float, float]:
+    """(top-3 hit share, MRR) over per-query useful ranks (None = no hit in top 3)."""
+    total = len(ranks)
+    if not total:
+        return 0.0, 0.0
+    hits = sum(1 for rank in ranks if rank is not None and rank <= 3)
+    mrr = sum(1.0 / rank for rank in ranks if rank is not None) / total
+    return hits / total, mrr
+
+
+def margin_summary(
+    app_ranks: "list[int | None]", baseline_ranks: "list[int | None]", prefix: str
+) -> dict[str, float]:
+    """A baseline's numbers and the app's margin over them, as rounded summary values."""
+    app_top3, app_mrr = rank_metrics(app_ranks)
+    base_top3, base_mrr = rank_metrics(baseline_ranks)
+    return {
+        f"{prefix}_top3_useful": round(base_top3, 4),
+        f"{prefix}_mrr_value": round(base_mrr, 4),
+        f"margin_over_{prefix}_top3": round(app_top3 - base_top3, 4),
+        f"margin_over_{prefix}_mrr_value": round(app_mrr - base_mrr, 4),
+    }
+
+
 def _row_label(row: pd.Series) -> str:
     """The `source/text_id/sentence_id` label `suggestions._source_label` prints.
 
@@ -325,7 +527,7 @@ def _load_benchmark(benchmark_path: str = BENCHMARK_PATH) -> pd.DataFrame:
     return df
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run the competitive ambiguity benchmark. Paths are configurable so the "
@@ -333,9 +535,43 @@ def _parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--examples", default=EXAMPLES_PATH, help="Corpus CSV to search.")
-    parser.add_argument("--benchmark", default=BENCHMARK_PATH, help="Benchmark queries CSV.")
-    parser.add_argument("--results", default=RESULTS_PATH, help="Where to write per-query results.")
-    parser.add_argument("--failures", default=FAILURES_PATH, help="Where to write failing rows.")
+    parser.add_argument(
+        "--benchmark",
+        required=True,
+        help=(
+            "Benchmark queries CSV. Required: the old default was v1, whose targets "
+            "mostly have an edition twin in the corpus (audit A26). The release gate "
+            "is data/benchmarks/competitive_ambiguity_eval_queries_v4.csv."
+        ),
+    )
+    parser.add_argument(
+        "--results",
+        default=None,
+        help=(
+            "Where to write per-query results. Default: a fresh temporary directory "
+            "(printed), never a committed file."
+        ),
+    )
+    parser.add_argument(
+        "--failures",
+        default=None,
+        help="Where to write failing rows. Default: the same temporary directory.",
+    )
+    parser.add_argument(
+        "--exclude-twins",
+        type=float,
+        default=0.0,
+        metavar="OVERLAP",
+        help=(
+            "Audit A4. Besides the target row, also remove from every query's pool each "
+            "row whose word overlap (Jaccard on loose-form tokens) with the target is "
+            "at least OVERLAP, and each row with the same notation-folded reading "
+            "(another edition of the same sentence). 0 (default) keeps today's pool, "
+            "so the gate number is unchanged; 0.7 is the audit's recommendation. "
+            "Both numbers should be quoted: the default one includes free edition-copy "
+            "hits."
+        ),
+    )
     parser.add_argument(
         "--label",
         default="",
@@ -374,8 +610,9 @@ def _parse_args() -> argparse.Namespace:
         choices=["none", "auto", "declared"],
         default="auto",
         help=(
-            "Language-stage handling (item A). 'none' (default) reproduces today's "
-            "pooled retrieval exactly -- no StageResources is ever built. 'declared' "
+            "Language-stage handling (item A). 'auto' (default) infers the stage per "
+            "query, see below. 'none' reproduces the pre-item-A pooled retrieval "
+            "exactly -- no StageResources is ever built. 'declared' "
             "reads the benchmark's own `language_stage` column (see "
             "derive_v4_declared_stage for how that column was populated; a "
             "benchmark file with no such column declares no stage for any row) and "
@@ -386,13 +623,77 @@ def _parse_args() -> argparse.Namespace:
             "retrieval pass over the pooled pool, then retrieves the same way."
         ),
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = _parse_args()
+def _resolve_output_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    """--results / --failures, or files in a fresh temp directory when not given.
+
+    The old defaults were the committed result files, so a bare run overwrote
+    them (audit A26).
+    """
+    if args.results is not None and args.failures is not None:
+        return Path(args.results), Path(args.failures)
+    temp_dir = Path(tempfile.mkdtemp(prefix="competitive-eval-"))
+    print(f"No --results/--failures given; writing to {temp_dir}")
+    return (
+        Path(args.results) if args.results is not None else temp_dir / "results.csv",
+        Path(args.failures) if args.failures is not None else temp_dir / "failures.csv",
+    )
+
+
+def render_extra_summary(
+    total: int,
+    twin_threshold: float,
+    queries_with_twins: int,
+    twin_rows_removed: int,
+    app_ranks: "list[int | None]",
+    overlap_ranks: "list[int | None]",
+    bm25_ranks: "list[int | None]",
+    near_exact_hits: int,
+    strict_top3_hits: int,
+) -> str:
+    """The summary lines added by audit A4 and A23, as printable text.
+
+    Key names deliberately avoid the substrings verify_release greps for
+    (`top3_useful_family_accuracy:`, `mrr:`, `failures:`).
+    """
+    lines = [
+        f"twin_exclusion: {twin_threshold if twin_threshold > 0 else 'off'}",
+    ]
+    if twin_threshold > 0:
+        lines.append(f"queries_with_twins: {queries_with_twins}")
+        lines.append(f"twin_rows_removed: {twin_rows_removed}")
+    extra: dict[str, object] = {}
+    extra.update(margin_summary(app_ranks, overlap_ranks, "overlap_baseline"))
+    extra.update(margin_summary(app_ranks, bm25_ranks, "bm25_baseline"))
+    extra["top3_near_exact"] = round(near_exact_hits / total, 4) if total else 0.0
+    extra["top3_strict_useful"] = round(strict_top3_hits / total, 4) if total else 0.0
+    lines.extend(f"{key}: {value}" for key, value in extra.items())
+    return "\n".join(lines)
+
+
+def main(argv: "list[str] | None" = None) -> None:
+    args = _parse_args(argv)
+    results_path, failures_path = _resolve_output_paths(args)
     examples_df = load_examples_csv(args.examples)
     benchmark_df = _load_benchmark(args.benchmark)
+
+    # Twin guard (audit A4) and baseline tables (audit A23): corpus-wide token sets,
+    # token index and folded-reading groups, built once (about 5 s) and reused for
+    # every query. Built even when --exclude-twins is off, because the baselines run
+    # on the same pool.
+    guard = TwinGuard(examples_df)
+    baseline_stats = build_baseline_stats(examples_df, guard)
+    twin_threshold = args.exclude_twins
+    queries_with_twins = 0
+    twin_rows_removed = 0
+    app_useful_ranks: list[int | None] = []
+    overlap_ranks: list[int | None] = []
+    bm25_ranks: list[int | None] = []
+    strict_ranks: list[int | None] = []
+    near_exact_hits = 0
+    strict_top3_hits = 0
 
     # Item D's symptom metric needs the token annotation behind each suggestion; one
     # pass over the corpus, reused for every query.
@@ -416,7 +717,15 @@ def main() -> None:
 
     stages_used: list[str] = []
     for _, bench_row in benchmark_df.iterrows():
-        candidate_pool = _exclude_expected(examples_df, bench_row)
+        twin_positions: list[int] = []
+        if twin_threshold > 0:
+            twin_positions = [
+                position for position, _, _ in guard.twins(bench_row, twin_threshold)
+            ]
+            if twin_positions:
+                queries_with_twins += 1
+                twin_rows_removed += len(twin_positions)
+        candidate_pool = _exclude_expected(examples_df, bench_row, twin_positions)
         query_input = str(bench_row["query_input"])
         query_reading_order = (
             query_input
@@ -539,6 +848,69 @@ def main() -> None:
             if useful and useful_rank is None:
                 useful_rank = rank
 
+        # Fixed baselines on the SAME pool (audit A23): the target and, with
+        # --exclude-twins, its twins are out of reach for them too. Their query is the
+        # interpreted reading the app hands the suggestion layer, so a query-parsing
+        # quirk affects app and baselines alike and only the ranking differs.
+        excluded_positions = set(guard.target_positions(bench_row)) | set(twin_positions)
+        baseline_query_tokens = {
+            token for token in loose_reading_form(suggestion_query).split() if token
+        }
+        expected_canonical = canonical_reading(expected)
+
+        def baseline_rank(positions: list[int]) -> int | None:
+            for baseline_rank_value, position in enumerate(positions, start=1):
+                is_exact_here = baseline_stats.canonical[position] == expected_canonical
+                useful_here, _, _, _ = useful_decision(
+                    is_exact=is_exact_here,
+                    candidate_tokens=baseline_stats.token_sets[position],
+                    candidate_lemmas=candidate_lemmas_fast(
+                        baseline_stats,
+                        str(examples_df["transliteration_gold"].iat[position]),
+                        excluded_positions,
+                    ),
+                    expected_key_tokens=expected_key_tokens,
+                    expected_lemma_ids=expected_lemma_ids,
+                    token_threshold=token_threshold,
+                    rule=args.useful_rule,
+                )
+                if useful_here:
+                    return baseline_rank_value
+            return None
+
+        overlap_positions = overlap_ranking(
+            baseline_query_tokens, baseline_stats, excluded_positions
+        )
+        bm25_positions = bm25_ranking(baseline_query_tokens, baseline_stats, excluded_positions)
+        overlap_rank = baseline_rank(overlap_positions)
+        bm25_rank = baseline_rank(bm25_positions)
+        overlap_ranks.append(overlap_rank)
+        bm25_ranks.append(bm25_rank)
+        app_useful_ranks.append(useful_rank)
+
+        # Stricter rows for the app's own suggestions, reported only (see
+        # strict_useful): the first top-3 slot that is strict-useful, and whether any
+        # slot is a near-exact copy (token overlap >= 0.8 with the expected row).
+        strict_rank = None
+        for rank, candidate in enumerate(candidates, start=1):
+            if strict_useful(
+                is_exact=canonical_reading(candidate) == expected_canonical,
+                candidate_tokens=_tokens(loose_reading_form(candidate)),
+                candidate_lemmas=candidate_lemmas_fast(
+                    baseline_stats, candidate, excluded_positions
+                ),
+                expected_key_tokens=expected_key_tokens,
+                expected_lemma_ids=expected_lemma_ids,
+            ):
+                strict_rank = rank
+                break
+        strict_ranks.append(strict_rank)
+        if strict_rank is not None:
+            strict_top3_hits += 1
+        near_exact = any(float(score) >= NEAR_EXACT_THRESHOLD for score in token_scores)
+        if near_exact:
+            near_exact_hits += 1
+
         if exact_rank == 1:
             top1_exact_hits += 1
         if exact_rank is not None and exact_rank <= 3:
@@ -625,6 +997,18 @@ def main() -> None:
                 # its committed results apart from these additions.
                 "name_duplicate_slots": query_name_duplicates,
                 "notation_duplicate_slots": query_notation_duplicates,
+                # Appended after those two (audit A4, A23): see the module notes on
+                # twins and baselines. Every column above is unchanged by them.
+                "twin_exclusion": twin_threshold,
+                "twins_removed": len(twin_positions),
+                "overlap_baseline_useful_rank": overlap_rank if overlap_rank is not None else "",
+                "bm25_baseline_useful_rank": bm25_rank if bm25_rank is not None else "",
+                "strict_useful_rank": strict_rank if strict_rank is not None else "",
+                "top3_near_exact": near_exact,
+                "overlap_baseline_suggestions": " || ".join(
+                    str(examples_df["transliteration_gold"].iat[position])
+                    for position in overlap_positions
+                ),
             }
         )
 
@@ -682,8 +1066,21 @@ def main() -> None:
     for key, value in summary.items():
         print(f"{key}: {value}")
 
-    results_path = Path(args.results)
-    failures_path = Path(args.failures)
+    # Printed AFTER every key above: scripts/verify_release.py greps this output with
+    # an unanchored first-match re.search, so nothing new may precede or collide with
+    # top3_useful_family_accuracy / mrr / failures / corpus_rows / total_queries.
+    print(render_extra_summary(
+        total=total,
+        twin_threshold=twin_threshold,
+        queries_with_twins=queries_with_twins,
+        twin_rows_removed=twin_rows_removed,
+        app_ranks=app_useful_ranks,
+        overlap_ranks=overlap_ranks,
+        bm25_ranks=bm25_ranks,
+        near_exact_hits=near_exact_hits,
+        strict_top3_hits=strict_top3_hits,
+    ))
+
     results_path.parent.mkdir(parents=True, exist_ok=True)
     failures_path.parent.mkdir(parents=True, exist_ok=True)
     results_df.to_csv(results_path, index=False)
