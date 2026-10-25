@@ -159,23 +159,3 @@ class NgramIndex:
         query_vector = self._vectorizer.transform([str(query_text)]).astype(np.float64)
         dot = self._matrix.dot(query_vector.T).toarray().ravel()
         return dot / query_norm
-
-
-def tfidf_candidates(
-    df: pd.DataFrame,
-    query_mdc_norm: str,
-    index: NgramIndex | None = None,
-) -> pd.DataFrame:
-    """Character n-gram cosine similarity against `mdc_norm`.
-
-    Despite the module name there is no IDF term here; it is a plain cosine over
-    2-4 character n-grams, kept because it catches near-spellings that token
-    overlap misses.
-    """
-    out = df.copy()
-    if index is not None and len(index) == len(out):
-        out["tfidf_score"] = index.scores(query_mdc_norm)
-    else:
-        row_index = NgramIndex.build(out["mdc_norm"])
-        out["tfidf_score"] = row_index.scores(query_mdc_norm)
-    return out.sort_values("tfidf_score", ascending=False, kind="mergesort")

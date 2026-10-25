@@ -5,6 +5,7 @@
   "query_path": "app",
   "useful_rule": "v4",
   "expected_corpus_rows": 130472,
+  "expected_queries": 20,
   "top3_useful_floor": 0.90,
   "mrr_floor": 0.7917,
   "expert_pastes_floor": "8/8",

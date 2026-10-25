@@ -17,11 +17,19 @@ afterwards (`load_private_examples`), never merged into the public file.
 
     python scripts/check_standrews_urkiv_gate.py
     python scripts/check_standrews_urkiv_gate.py --stage none
+    python scripts/check_standrews_urkiv_gate.py --private-dir ~/projects/Egyptology-APP/data/private
+
+The private directory is `--private-dir`, else `PRIVATE_DATA_DIR` (the variable the app
+reads), else `data/private` next to this script — a worktree has no private rows of
+its own. The resolved directory and its row count are printed, and the script exits
+non-zero before any evaluation when no private row was loaded: a gate run without the
+St Andrews rows is "not run", never "passed" (pre-registration 2026-10-25, A2.2).
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -55,22 +63,40 @@ GATE_BENCHMARK = "PASTE_001"
 GATE_MARKER = "urkIV-001"
 
 
-def load_corpus() -> pd.DataFrame:
-    public = load_examples_csv(str(EXAMPLES_PATH))
-    private = load_private_examples(PRIVATE_DIR)
+def load_corpus(
+    private_dir: str | Path = PRIVATE_DIR,
+    examples_path: str | Path = EXAMPLES_PATH,
+) -> tuple[pd.DataFrame, int]:
+    """The public frame with the private rows appended, and the private row count."""
+    public = load_examples_csv(str(examples_path))
+    private = load_private_examples(private_dir)
     if private.empty:
-        return public
-    return pd.concat([public, private], ignore_index=True, sort=False)
+        return public, 0
+    return pd.concat([public, private], ignore_index=True, sort=False), len(private)
 
 
-def main() -> None:
+def parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=["none", "auto", "declared"], default="auto")
     parser.add_argument("--rank-k", type=int, default=0, help="0 = the whole corpus")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--private-dir",
+        default=os.environ.get("PRIVATE_DATA_DIR") or str(PRIVATE_DIR),
+        help="Directory of private CSVs (default: $PRIVATE_DATA_DIR, else data/private).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: "list[str] | None" = None) -> int:
+    args = parse_args(argv)
 
     started = time.time()
-    df = load_corpus()
+    private_dir = Path(args.private_dir).expanduser().resolve()
+    df, private_rows = load_corpus(private_dir)
+    print(f"private dir {private_dir}: {private_rows:,} private rows")
+    if private_rows == 0:
+        print("no private rows loaded — the St Andrews gate is NOT RUN")
+        return 1
     counts = df["source"].value_counts().to_dict()
     print(f"corpus {len(df):,} rows: {counts}")
 
@@ -166,7 +192,8 @@ def main() -> None:
         )
 
     print(f"\ndone in {time.time() - started:.1f}s")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
