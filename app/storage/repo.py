@@ -3,7 +3,13 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.storage.models import Annotation, EvaluationResult, Example
+from app.storage.models import Annotation, Example
+
+# There is no repository for `EvaluationResult` any more (Astra #17, 2026-10-25): the
+# `EvaluationRepo` that wrote it had no caller, and evaluations write CSVs under
+# data/benchmarks instead. The model stays registered (app/storage/bootstrap.py,
+# scripts/init_db.py) so `create_all` keeps the `evaluation_results` table: dropping a
+# table from a deployed database is a separate decision, made after inspecting its rows.
 
 
 def _coerce_bool(value: object) -> bool:
@@ -253,26 +259,3 @@ class AnnotationRepo:
             .order_by(Annotation.created_at.desc(), Annotation.id.desc())
         )
         return list(self.session.scalars(stmt).all())
-
-
-class EvaluationRepo:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add_result(
-        self,
-        example_id: int,
-        rank_of_gold: int,
-        top1_score: float,
-        top3_ids: str,
-    ) -> EvaluationResult:
-        row = EvaluationResult(
-            example_id=example_id,
-            rank_of_gold=rank_of_gold,
-            top1_score=top1_score,
-            top3_ids=top3_ids,
-        )
-        self.session.add(row)
-        self.session.commit()
-        self.session.refresh(row)
-        return row

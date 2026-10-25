@@ -32,6 +32,7 @@ BASELINE = {
     "top3_useful_floor": 0.90,
     "mrr_floor": 0.7917,
     "expert_pastes_floor": "8/8",
+    "expected_corpus_rows": 130472,
 }
 
 
@@ -141,8 +142,25 @@ def _eval_output(top3: float, mrr: float, pool: str, margin: float = 0.1) -> str
     )
 
 
-def _run_main(monkeypatch, tmp_path, baseline: dict, *argv: str, twin_top3=0.85, margin=0.1):
-    """verify_release.main with every subprocess replaced by canned output."""
+CORPUS_BYTES = b"source,hieroglyphs\nBBAW,A1\n"
+
+
+def _run_main(
+    monkeypatch, tmp_path, baseline: dict, *argv: str, twin_top3=0.85, margin=0.1,
+    benchmark_rows=20, corpus_rows=130472, queries=20,
+):
+    """verify_release.main with every subprocess replaced by canned output, the
+    benchmark directory and the corpus file pointed at small files under tmp_path."""
+    benchmark_dir = tmp_path / "benchmarks"
+    benchmark_dir.mkdir(exist_ok=True)
+    (benchmark_dir / "v4.csv").write_text(
+        "query_id,query\n" + "".join(f"Q{i},\"a\nb\"\n" for i in range(benchmark_rows)),
+        encoding="utf-8",
+    )
+    corpus = tmp_path / "examples.csv"
+    corpus.write_bytes(CORPUS_BYTES)
+    monkeypatch.setattr(vr, "BENCHMARK_DIR", benchmark_dir)
+    monkeypatch.setattr(vr, "CORPUS_PATH", corpus)
     path = tmp_path / "baseline.json"
     path.write_text(__import__("json").dumps(baseline), encoding="utf-8")
     commands: list[list[str]] = []
@@ -152,8 +170,11 @@ def _run_main(monkeypatch, tmp_path, baseline: dict, *argv: str, twin_top3=0.85,
         if "scripts/run_expert_paste_eval.py" in cmd:
             return 0, "passed 8/8", 0.0
         if "--exclude-twins" in cmd and cmd[cmd.index("--exclude-twins") + 1] != "0.0":
-            return 0, _eval_output(twin_top3, 0.75, "twin-controlled", margin), 0.0
-        return 0, _eval_output(0.90, 0.7917, "legacy"), 0.0
+            out = _eval_output(twin_top3, 0.75, "twin-controlled", margin)
+        else:
+            out = _eval_output(0.90, 0.7917, "legacy")
+        out = out.replace("corpus_rows: 130472", f"corpus_rows: {corpus_rows}")
+        return 0, out.replace("total_queries: 20", f"total_queries: {queries}"), 0.0
 
     monkeypatch.setattr(vr, "run", fake_run)
     code = vr.main(["--baseline", str(path), "--skip-tests", *argv])
@@ -309,3 +330,66 @@ def test_the_pure_check_fails_on_a_nan_floor_instead_of_passing() -> None:
         dict(BASELINE, margin_floors={"margin_over_bm25_baseline_top3": -0.5}),
         {"margin_over_bm25_baseline_top3": -0.4},
     )
+
+
+# ---------------------------------------------------------------------------
+# Astra #15 / pre-registration A5: the gate checks it evaluated the intended inputs
+# ---------------------------------------------------------------------------
+
+READY_BASELINE = dict(BASELINE, benchmark="v4.csv", twin_controlled=TWIN_BLOCK)
+
+
+def test_ready_inputs_pass_and_the_eval_is_pointed_at_the_hashed_corpus(monkeypatch, tmp_path, capsys):
+    code, commands = _run_main(monkeypatch, tmp_path, READY_BASELINE)
+    assert code == 0, capsys.readouterr().out
+    evals = [c for c in commands if "scripts/run_competitive_ambiguity_eval.py" in c]
+    assert {_flag(c, "--examples") for c in evals} == {str(tmp_path / "examples.csv")}
+    assert "not pinned" in capsys.readouterr().out
+
+
+def test_a_corpus_row_count_mismatch_fails(monkeypatch, tmp_path, capsys):
+    code, _ = _run_main(monkeypatch, tmp_path, READY_BASELINE, corpus_rows=130471)
+    assert code == 1
+    assert "corpus rows (legacy pool) 130471 != expected 130472" in capsys.readouterr().out
+
+
+def test_a_baseline_without_expected_corpus_rows_fails(monkeypatch, tmp_path, capsys):
+    baseline = {k: v for k, v in READY_BASELINE.items() if k != "expected_corpus_rows"}
+    code, _ = _run_main(monkeypatch, tmp_path, baseline)
+    assert code == 1
+    assert "expected_corpus_rows must be an integer" in capsys.readouterr().out
+
+
+def test_a_query_count_that_differs_from_the_benchmark_fails(monkeypatch, tmp_path, capsys):
+    """The eval answered fewer queries than the benchmark holds (or the file was
+    swapped under it): the denominator changed, so the average is not comparable."""
+    code, _ = _run_main(monkeypatch, tmp_path, READY_BASELINE, benchmark_rows=21)
+    assert code == 1
+    assert "query count (legacy pool) 20 != 21 rows in the benchmark" in capsys.readouterr().out
+
+
+def test_expected_queries_is_enforced_when_present(monkeypatch, tmp_path, capsys):
+    """Hard rows deleted from the benchmark itself: file and eval agree (18), the
+    baseline's pinned count (20) does not."""
+    baseline = dict(READY_BASELINE, expected_queries=20)
+    code, _ = _run_main(monkeypatch, tmp_path, baseline, benchmark_rows=18, queries=18)
+    assert code == 1
+    assert "benchmark has 18 queries, baseline expects 20" in capsys.readouterr().out
+
+
+def test_a_pinned_corpus_sha256_is_enforced(monkeypatch, tmp_path, capsys):
+    import hashlib
+
+    good = hashlib.sha256(CORPUS_BYTES).hexdigest()
+    assert _run_main(monkeypatch, tmp_path, dict(READY_BASELINE, expected_corpus_sha256=good))[0] == 0
+    capsys.readouterr()
+    code, _ = _run_main(monkeypatch, tmp_path, dict(READY_BASELINE, expected_corpus_sha256="0" * 64))
+    assert code == 1
+    assert f"corpus sha256 {good} != expected {'0' * 64}" in capsys.readouterr().out
+
+
+def test_an_absent_corpus_sha256_fails_only_when_required(monkeypatch, tmp_path, capsys):
+    assert _run_main(monkeypatch, tmp_path, READY_BASELINE)[0] == 0
+    code, _ = _run_main(monkeypatch, tmp_path, READY_BASELINE, "--require-corpus-sha256")
+    assert code == 1
+    assert "no expected_corpus_sha256" in capsys.readouterr().out

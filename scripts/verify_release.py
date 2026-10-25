@@ -33,6 +33,18 @@ A baseline without a `twin_controlled` block is NOT READY, because its number in
 free edition-copy hits; `--allow-legacy-gate` gates on the legacy pool instead, loudly
 labelled, until the pre-registered re-measure has set the twin-controlled floors.
 
+Input identity (Astra #15, pre-registration A5). A number is only comparable with its
+floor if it was measured on the same inputs, so these fail the gate, not just print:
+* `corpus_rows` from any competitive run differs from the baseline's
+  `expected_corpus_rows` (a baseline without that key is NOT READY);
+* the sha256 of data/processed/examples.csv (the file passed to the eval as
+  `--examples`) differs from `expected_corpus_sha256`. That key is set by the
+  measurement step, not by hand; while it is absent the hash is printed and the gate
+  does not fail on it, unless `--require-corpus-sha256` is passed (fail closed);
+* `total_queries` from any competitive run differs from the number of rows in the
+  benchmark CSV, or from `expected_queries` when the baseline names one — dropping hard
+  rows from the benchmark must not quietly raise the averages.
+
 Why the summary quotes top-3 *useful-family* accuracy and not exact match: the tool's
 job is to surface the right reading family with its evidence, not to reproduce an
 unseen sentence verbatim. See data/benchmarks/CORPUS_SCALING_REPORT.md.
@@ -41,6 +53,8 @@ unseen sentence verbatim. See data/benchmarks/CORPUS_SCALING_REPORT.md.
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import math
 import re
@@ -53,6 +67,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = PROJECT_ROOT / "data/benchmarks/release_baseline.json"
 BENCHMARK_DIR = PROJECT_ROOT / "data/benchmarks"
+# The corpus every competitive run is pointed at (`--examples`), and the file hashed
+# for `expected_corpus_sha256`: one path, so the hash is of what was evaluated.
+CORPUS_PATH = PROJECT_ROOT / "data/processed/examples.csv"
 
 # Equality with a floor must pass: a number measured at exactly the floor (0.90 == 0.90)
 # is fine, and only a genuine drop below it fails. This tolerance also absorbs the last
@@ -189,6 +206,77 @@ def check_release_floors(
     return failures
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def count_benchmark_rows(path: Path) -> int | None:
+    """Data rows in a benchmark CSV (quoted newlines respected); None if unreadable."""
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            return max(sum(1 for _ in csv.reader(handle)) - 1, 0)
+    except OSError:
+        return None
+
+
+def check_input_identity(
+    baseline: dict,
+    runs: "dict[str, dict]",
+    corpus_sha256: str | None,
+    benchmark_rows: int | None,
+    require_corpus_sha256: bool = False,
+) -> list[str]:
+    """Pure input check: one message per mismatch, empty when the inputs are the ones
+    the floors were set on. `runs` maps a label to a `parse_competitive` result;
+    `corpus_sha256` is None when the corpus file could not be read."""
+    failures: list[str] = []
+    expected_rows = baseline.get("expected_corpus_rows")
+    if isinstance(expected_rows, bool) or not isinstance(expected_rows, int):
+        failures.append(f"baseline expected_corpus_rows must be an integer, got {expected_rows!r}")
+    expected_queries = baseline.get("expected_queries")
+    if expected_queries is not None and (
+        isinstance(expected_queries, bool) or not isinstance(expected_queries, int)
+    ):
+        failures.append(f"baseline expected_queries must be an integer, got {expected_queries!r}")
+        expected_queries = None
+    if benchmark_rows is None:
+        failures.append("benchmark CSV could not be read to count its queries")
+    elif expected_queries is not None and benchmark_rows != expected_queries:
+        failures.append(
+            f"benchmark has {benchmark_rows} queries, baseline expects {expected_queries}"
+        )
+    for label, parsed in runs.items():
+        rows = parsed.get("corpus_rows")
+        if isinstance(expected_rows, int) and not isinstance(expected_rows, bool):
+            if not str(rows).isdigit():
+                failures.append(f"corpus rows ({label}) could not be measured")
+            elif int(rows) != expected_rows:
+                failures.append(f"corpus rows ({label}) {rows} != expected {expected_rows}")
+        queries = parsed.get("queries")
+        if not str(queries).isdigit():
+            failures.append(f"query count ({label}) could not be measured")
+        elif benchmark_rows is not None and int(queries) != benchmark_rows:
+            failures.append(
+                f"query count ({label}) {queries} != {benchmark_rows} rows in the benchmark"
+            )
+
+    expected_sha = baseline.get("expected_corpus_sha256")
+    if expected_sha is None:
+        if require_corpus_sha256:
+            failures.append("baseline has no expected_corpus_sha256 (--require-corpus-sha256)")
+    elif corpus_sha256 is None:
+        failures.append("corpus file could not be hashed")
+    elif str(expected_sha).strip().lower() != corpus_sha256:
+        failures.append(
+            f"corpus sha256 {corpus_sha256} != expected {str(expected_sha).strip().lower()}"
+        )
+    return failures
+
+
 def run(cmd: list[str], label: str) -> tuple[int, str, float]:
     started = time.monotonic()
     print(f"\n=== {label} ===\n$ {' '.join(cmd)}", flush=True)
@@ -277,6 +365,8 @@ def competitive_eval_command(
         str(results),
         "--failures",
         str(failures),
+        "--examples",
+        str(CORPUS_PATH),
     ]
 
 
@@ -332,6 +422,14 @@ def main(argv: "list[str] | None" = None) -> int:
             "twin_controlled block. Without it such a baseline is NOT READY (audit A4)."
         ),
     )
+    parser.add_argument(
+        "--require-corpus-sha256",
+        action="store_true",
+        help=(
+            "Fail when the baseline has no expected_corpus_sha256. Without it an absent "
+            "key only prints the measured hash; a present key is always enforced."
+        ),
+    )
     args = parser.parse_args(argv)
 
     baseline = load_baseline(Path(args.baseline))
@@ -363,6 +461,11 @@ def main(argv: "list[str] | None" = None) -> int:
             "pre-registered re-measure, or pass --allow-legacy-gate"
         )
     legacy_gates = twin_config is None
+    try:
+        corpus_sha256 = file_sha256(CORPUS_PATH)
+    except OSError:
+        corpus_sha256 = None
+    benchmark_rows = count_benchmark_rows(benchmark)
 
     with tempfile.TemporaryDirectory(prefix="verify-release-") as tmp:
         tmp_dir = Path(tmp)
@@ -425,6 +528,14 @@ def main(argv: "list[str] | None" = None) -> int:
 
     # Floor check on the gated numbers (a step that itself exited non-zero is already
     # in `failures`; this adds a failure when a step ran but under-performed).
+    runs = {"legacy pool": legacy}
+    if twin_config is not None:
+        runs["twin-controlled pool"] = gated
+    failures.extend(
+        check_input_identity(
+            baseline, runs, corpus_sha256, benchmark_rows, args.require_corpus_sha256
+        )
+    )
     floors = twin_config if twin_config is not None else baseline
     failures.extend(
         check_release_floors(
@@ -469,7 +580,10 @@ def main(argv: "list[str] | None" = None) -> int:
         f"(recorded {baseline.get('recorded_at', '?')} @ "
         f"{baseline.get('recorded_commit', '?')})\n"
         f"│ corpus rows      {gated['corpus_rows']}   (baseline {expected_rows})\n"
-        f"│ benchmark        {benchmark.name} ({gated['queries']} queries, target row excluded)\n"
+        f"│ corpus sha256    {corpus_sha256 or 'unreadable'}   (baseline "
+        f"{baseline.get('expected_corpus_sha256') or 'not pinned'})\n"
+        f"│ benchmark        {benchmark.name} ({gated['queries']} queries of "
+        f"{benchmark_rows if benchmark_rows is not None else '?'} rows, target row excluded)\n"
         f"│ run flags        {flags}\n"
         f"│ gate pool        {pool_line}\n"
         f"│ top-1 useful     {gated['top1']}\n"

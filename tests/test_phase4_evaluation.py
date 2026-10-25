@@ -32,7 +32,11 @@ from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
     main as build_benchmark_main,
 )
 from scripts.import_tla_dataset import content_id  # noqa: E402
-from scripts.migrate_example_ids import build_mapping  # noqa: E402
+from scripts.migrate_example_ids import (  # noqa: E402
+    apply_renames,
+    build_mapping,
+    is_applicable,
+)
 
 BENCHMARKS = PROJECT_ROOT / "data" / "benchmarks"
 
@@ -363,7 +367,10 @@ def test_content_ids_survive_a_skipped_row_where_positional_ids_do_not():
 
 
 class FakeExample:
-    def __init__(self, source_ref, hieroglyphs, transliteration, text_id, sentence_id):
+    def __init__(
+        self, source_ref, hieroglyphs, transliteration, text_id, sentence_id, source="TLA"
+    ):
+        self.source = source
         self.source_ref = source_ref
         self.hieroglyphs = hieroglyphs
         self.transliteration_gold = transliteration
@@ -371,24 +378,27 @@ class FakeExample:
         self.source_sentence_id = sentence_id
 
 
-def test_migration_maps_rows_by_content_not_position():
-    csv_df = pd.DataFrame(
+def _csv(*rows: tuple) -> pd.DataFrame:
+    """(source, source_ref, hieroglyphs, transliteration, text_id, sentence_id) rows."""
+    return pd.DataFrame(
         [
             {
-                "source_ref": "f.parquet#row=1",
-                "hieroglyphs": "A",
-                "transliteration_gold": "a",
-                "source_text_id": "TLA_EARLIER_AAAA",
-                "source_sentence_id": "SAAAA",
-            },
-            {
-                "source_ref": "f.parquet#row=2",
-                "hieroglyphs": "B",
-                "transliteration_gold": "b",
-                "source_text_id": "TLA_EARLIER_BBBB",
-                "source_sentence_id": "SBBBB",
-            },
+                "source": source,
+                "source_ref": ref,
+                "hieroglyphs": glyphs,
+                "transliteration_gold": translit,
+                "source_text_id": text_id,
+                "source_sentence_id": sentence_id,
+            }
+            for source, ref, glyphs, translit, text_id, sentence_id in rows
         ]
+    )
+
+
+def test_migration_maps_rows_by_content_not_position():
+    csv_df = _csv(
+        ("TLA", "f.parquet#row=1", "A", "a", "TLA_EARLIER_AAAA", "SAAAA"),
+        ("TLA", "f.parquet#row=2", "B", "b", "TLA_EARLIER_BBBB", "SBBBB"),
     )
     rows = [
         FakeExample("f.parquet#row=2", "B", "b", "TLA_EARLIER_002", "S002"),
@@ -396,7 +406,7 @@ def test_migration_maps_rows_by_content_not_position():
     ]
     plan = build_mapping(csv_df, rows)
     assert len(plan["renames"]) == 2
-    assert not plan["unmatched"] and not plan["ambiguous"]
+    assert is_applicable(plan)
     renamed = {old.source_text_id: new for old, new, _ in plan["renames"]}
     # Order in the database does not matter; content decides.
     assert renamed["TLA_EARLIER_001"] == "TLA_EARLIER_AAAA"
@@ -404,39 +414,123 @@ def test_migration_maps_rows_by_content_not_position():
 
 
 def test_migration_reports_unmatched_rows_rather_than_guessing():
-    csv_df = pd.DataFrame(
-        [
-            {
-                "source_ref": "f.parquet#row=1",
-                "hieroglyphs": "A",
-                "transliteration_gold": "a",
-                "source_text_id": "NEW_A",
-                "source_sentence_id": "S_A",
-            }
-        ]
-    )
+    csv_df = _csv(("TLA", "f.parquet#row=1", "A", "a", "NEW_A", "S_A"))
     rows = [FakeExample("f.parquet#row=99", "Z", "z", "OLD_Z", "S_Z")]
     plan = build_mapping(csv_df, rows)
     assert len(plan["unmatched"]) == 1
     assert not plan["renames"]
+    assert not is_applicable(plan)
 
 
 def test_migration_is_a_no_op_when_ids_already_match():
-    csv_df = pd.DataFrame(
-        [
-            {
-                "source_ref": "r1",
-                "hieroglyphs": "A",
-                "transliteration_gold": "a",
-                "source_text_id": "SAME",
-                "source_sentence_id": "S1",
-            }
-        ]
-    )
+    csv_df = _csv(("TLA", "r1", "A", "a", "SAME", "S1"))
     rows = [FakeExample("r1", "A", "a", "SAME", "S1")]
     plan = build_mapping(csv_df, rows)
     assert plan["unchanged"] == 1
     assert not plan["renames"]
+
+
+def test_rows_sharing_one_source_ref_are_unchanged_not_ambiguous():
+    """Astra #9: every BBAW row carries the same `source_ref`. Keyed on the reference
+    alone, unchanged BBAW rows were all "ambiguous" and blocked migrating TLA."""
+    shared = "bbaw_egyptian@hf"
+    csv_df = _csv(
+        ("BBAW", shared, "A", "a", "B1", "1"),
+        ("BBAW", shared, "A", "a", "B1", "2"),  # same text twice, as in the corpus
+        ("BBAW", shared, "C", "c", "B2", "1"),
+        ("TLA", "t#1", "D", "d", "TLA_NEW", "SNEW"),
+    )
+    rows = [
+        FakeExample(shared, "A", "a", "B1", "1", source="BBAW"),
+        FakeExample(shared, "A", "a", "B1", "2", source="BBAW"),
+        FakeExample(shared, "C", "c", "B2", "1", source="BBAW"),
+        FakeExample("t#1", "D", "d", "TLA_OLD", "SOLD"),
+    ]
+    plan = build_mapping(csv_df, rows, {"TLA"})
+    assert plan["unchanged"] == 3
+    assert [(old.source_text_id, new) for old, new, _ in plan["renames"]] == [("TLA_OLD", "TLA_NEW")]
+    assert is_applicable(plan)
+
+
+def test_an_unchanged_key_with_changed_text_is_not_unchanged():
+    """A positional id reused for a different sentence must not keep the annotation."""
+    csv_df = _csv(
+        ("TLA", "t#2", "B", "b", "T", "1"),
+        ("TLA", "t#1", "A", "a", "T", "2"),
+    )
+    rows = [FakeExample("t#1", "A", "a", "T", "1"), FakeExample("t#2", "B", "b", "T", "2")]
+    plan = build_mapping(csv_df, rows)
+    assert plan["unchanged"] == 0
+    assert sorted((o.source_sentence_id, n) for o, _, n in plan["renames"]) == [("1", "2"), ("2", "1")]
+    # A swap is a bijection: the targets are freed by the rows renamed away.
+    assert is_applicable(plan)
+
+
+def test_changed_rows_of_an_unselected_source_block_the_run():
+    csv_df = _csv(("BBAW", "", "A", "a", "B_NEW", "1"), ("TLA", "t", "D", "d", "T_NEW", "1"))
+    rows = [
+        FakeExample("", "A", "a", "B_OLD", "1", source="BBAW"),
+        FakeExample("t", "D", "d", "T_OLD", "1"),
+    ]
+    plan = build_mapping(csv_df, rows, {"TLA"})
+    assert [e.source for e in plan["not_selected"]] == ["BBAW"]
+    assert len(plan["renames"]) == 1
+    assert not is_applicable(plan)
+
+
+def test_matching_never_crosses_sources():
+    csv_df = _csv(("BBAW", "", "A", "a", "B_NEW", "1"))
+    rows = [FakeExample("", "A", "a", "T_OLD", "1", source="TLA")]
+    plan = build_mapping(csv_df, rows)
+    assert len(plan["unmatched"]) == 1 and not plan["renames"]
+
+
+def test_duplicate_text_among_changed_rows_is_ambiguous():
+    csv_df = _csv(("TLA", "", "A", "a", "N", "1"), ("TLA", "", "A", "a", "N", "2"))
+    rows = [FakeExample("", "A", "a", "O", "1"), FakeExample("", "A", "a", "O", "2")]
+    plan = build_mapping(csv_df, rows)
+    assert len(plan["ambiguous"]) == 2 and not plan["renames"]
+
+
+def test_a_new_key_held_by_a_row_that_stays_is_a_collision():
+    """Row X would be renamed onto (T, 1), which row Y — unmatched, so it keeps its key
+    — still holds: not a bijection, refuse."""
+    csv_df = _csv(("TLA", "x", "A", "a", "T", "1"))
+    rows = [FakeExample("x", "A", "a", "T", "9"), FakeExample("y", "Z", "z", "T", "1")]
+    plan = build_mapping(csv_df, rows)
+    assert len(plan["collisions"]) == 1
+    assert not is_applicable(plan)
+
+
+def test_apply_renames_survives_a_swap_under_the_unique_constraint():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.storage.db import Base
+    from app.storage.models import Example
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    # Every NOT NULL column without a default, filled with "".
+    blank = {
+        column.name: ""
+        for column in Example.__table__.columns
+        if not column.nullable and column.default is None and not column.primary_key
+        and column.name not in {"source", "source_text_id", "source_sentence_id",
+                                "hieroglyphs", "transliteration_gold"}
+    }
+    with Session(engine) as session:
+        first = Example(source="TLA", source_text_id="T", source_sentence_id="1",
+                        transliteration_gold="a", hieroglyphs="A", **blank)
+        second = Example(source="TLA", source_text_id="T", source_sentence_id="2",
+                         transliteration_gold="b", hieroglyphs="B", **blank)
+        session.add_all([first, second])
+        session.commit()
+        csv_df = _csv(("TLA", "", "B", "b", "T", "1"), ("TLA", "", "A", "a", "T", "2"))
+        plan = build_mapping(csv_df, [first, second], {"TLA"})
+        assert is_applicable(plan)
+        apply_renames(session, plan["renames"])
+        assert (first.source_sentence_id, second.source_sentence_id) == ("2", "1")
 
 
 # ---------- dead weight is gone ----------
@@ -451,12 +545,29 @@ def test_migration_is_a_no_op_when_ids_already_match():
         "data/benchmarks/phase3_eval_results.csv",
         "data/benchmarks/ambiguous_suggestion_eval_results.csv",
         "data/benchmarks/tuning_benchmark_80.csv",
+        # Astra #17: wrappers with no caller anywhere in app/, scripts/ or tests/.
+        "app/retrieval/exact.py",
+        "app/retrieval/fuzzy.py",
     ],
 )
 def test_dead_files_are_deleted(path):
     """Each of these either crashed on import, scored zero forever, or published a
     number the current corpus cannot reproduce."""
     assert not (PROJECT_ROOT / path).exists(), f"{path} should have been removed"
+
+
+def test_unused_interfaces_are_gone_but_the_evaluation_table_stays():
+    """Astra #17: `tfidf_candidates` and `EvaluationRepo` had no caller. The
+    `evaluation_results` table is still created, because dropping a deployed table is
+    a separate decision."""
+    import app.retrieval.tfidf as tfidf
+    import app.storage.bootstrap  # noqa: F401  (registers every model)
+    import app.storage.repo as repo
+    from app.storage.db import Base
+
+    assert not hasattr(tfidf, "tfidf_candidates")
+    assert not hasattr(repo, "EvaluationRepo")
+    assert "evaluation_results" in Base.metadata.tables
 
 
 def test_every_script_still_imports():
