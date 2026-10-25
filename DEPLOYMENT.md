@@ -592,9 +592,20 @@ TMP=$(mktemp -d)
 gzip -dc ~/egyptology-backups/egyptology-2026-09-05.db.gz > "$TMP/restored.db"
 
 # The file the service really opens: DATABASE_URL from the env file (set by the move
-# below), else the default inside the clone. A relative path is relative to the clone.
-LIVE_DB=$(sed -n 's|^DATABASE_URL=sqlite:///||p' ~/egyptology.env | tail -n 1)
-LIVE_DB=${LIVE_DB:-egyptology.db}
+# below), else the default inside the clone. Read exactly as app/core/config.py and
+# scripts/backup_db.sh read it: `sqlite:///<file>` or `sqlite+<driver>:///<file>`, any
+# `?query` dropped, a relative path relative to the clone. Any other non-empty URL
+# (Postgres, in-memory, a `file:` URI) leaves LIVE_DB empty and stops here, instead of
+# quietly pointing at the clone's default file.
+DB_URL=$(sed -n 's|^DATABASE_URL=||p' ~/egyptology.env | tail -n 1)
+LIVE_DB=
+if [[ -z "$DB_URL" ]]; then
+  LIVE_DB=egyptology.db
+elif [[ "$DB_URL" =~ ^sqlite(\+[A-Za-z0-9_]+)?:///(.*)$ ]]; then
+  LIVE_DB=${BASH_REMATCH[2]%%\?*}
+  case "$LIVE_DB" in :*|file:*) LIVE_DB= ;; esac
+fi
+: "${LIVE_DB:?DATABASE_URL in ~/egyptology.env is not a sqlite:///<file> URL - stop, do not restore}"
 case "$LIVE_DB" in /*) ;; *) LIVE_DB=~/egyptology/$LIVE_DB ;; esac
 echo "live database: $LIVE_DB"    # must match the 'database:' line in the service journal
 

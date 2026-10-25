@@ -8,6 +8,7 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -1813,6 +1814,29 @@ def test_a_deploy_killed_outright_blocks_the_next_run_and_keeps_the_records(depl
     assert deploy_box.run().returncode == 0
 
 
+def test_interrupting_a_deploy_that_waits_for_the_lock_keeps_the_other_runs_marker(deploy_box):
+    """Follow-up (Astra): the signal traps are installed before the lock is taken, and
+    the handler removed the INPROGRESS marker unconditionally, so a Ctrl-C on a run still
+    waiting for the lock deleted the marker of the deploy that holds it."""
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2")
+    lock = deploy_box.home / ".egyptology-deploy.lock"
+    marker = deploy_box.home / "egyptology-deploy.INPROGRESS"
+    holder = _Flock(lock)                                        # a deploy mid-change
+    marker.write_text("the running deploy's marker\n")
+    try:
+        waiting = deploy_box.start(DEPLOY_LOCK_WAIT="3")
+        time.sleep(1.0)                                          # it is waiting for the lock
+        waiting.send_signal(signal.SIGTERM)
+        out, err = waiting.communicate(timeout=60)
+    finally:
+        holder.release()
+    assert waiting.returncode == 1, out + err
+    assert marker.read_text() == "the running deploy's marker\n"
+    assert deploy_box.log() == []
+    assert not (deploy_box.home / "egyptology-last-good").exists()
+
+
 def test_a_successful_deploy_leaves_no_in_progress_marker(deploy_box):
     deploy_box.write("app.py", "v2\n")
     deploy_box.publish("v2")
@@ -1874,6 +1898,46 @@ def test_the_docs_name_the_deploy_checks_real_arguments():
     assert "egyptology-deploy.INPROGRESS" in doc and "tmux" in doc
 
 
+def _restore_live_db(env_text: str) -> subprocess.CompletedProcess:
+    doc = (PROJECT_ROOT / "DEPLOYMENT.md").read_text()
+    restore = doc[doc.index("### Restore"):doc.index("## Alerts")]
+    script = restore[restore.index("# The file the service really opens"):restore.index('echo "live database')]
+    home = tempfile.mkdtemp()
+    Path(home, "egyptology.env").write_text(env_text)
+    result = subprocess.run(
+        ["bash", "-c", script + 'printf %s "$LIVE_DB"'], env={**os.environ, "HOME": home},
+        capture_output=True, text=True,
+    )
+    result.home = home  # type: ignore[attr-defined]
+    return result
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("sqlite+pysqlite:////srv/data/egyptology.db", "/srv/data/egyptology.db"),
+        ("sqlite+pysqlite:///rel.db", "HOME/egyptology/rel.db"),
+        ("sqlite:////srv/data/egyptology.db?timeout=5", "/srv/data/egyptology.db"),
+        ("", "HOME/egyptology/egyptology.db"),
+    ],
+)
+def test_the_restore_reads_database_url_the_way_the_app_and_backup_do(url, expected):
+    """Follow-up (Astra): the restore's sed only knew `sqlite:///`, so a supported
+    `sqlite+pysqlite:///` URL fell back to the clone's default database."""
+    result = _restore_live_db(f"DATABASE_URL={url}\n")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected.replace("HOME", result.home)
+
+
+@pytest.mark.parametrize(
+    "url", ["postgresql://u:secret@host/db", "sqlite://", "sqlite:///:memory:", "sqlite:///file:x.db?mode=ro"]
+)
+def test_the_restore_refuses_a_database_url_it_cannot_restore(url):
+    result = _restore_live_db(f"DATABASE_URL={url}\n")
+    assert result.returncode != 0 and result.stdout == ""
+    assert "secret" not in result.stderr
+
+
 def test_the_restore_steps_use_the_database_the_service_really_opens():
     """Astra ops-2: after the move out of the clone, the restore still replaced
     ~/egyptology/egyptology.db, which the service no longer opens."""
@@ -1881,7 +1945,7 @@ def test_the_restore_steps_use_the_database_the_service_really_opens():
     restore = doc[doc.index("### Restore"):doc.index("## Alerts")]
     assert "~/egyptology/egyptology.db" not in restore
     assert 'cp "$TMP/restored.db" "$LIVE_DB"' in restore and 'for DB in "$LIVE_DB"' in restore
-    script = restore[restore.index("LIVE_DB=$("):restore.index('echo "live database')]
+    script = restore[restore.index("# The file the service really opens"):restore.index('echo "live database')]
     for env_line, expected in (
         ("DATABASE_URL=sqlite:////home/ledio/egyptology-data/egyptology.db\n", "/home/ledio/egyptology-data/egyptology.db"),
         ("# DATABASE_URL=sqlite:////elsewhere.db\n", "HOME/egyptology/egyptology.db"),

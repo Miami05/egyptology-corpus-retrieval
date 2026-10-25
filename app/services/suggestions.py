@@ -414,24 +414,29 @@ def _unfolded_tokens(text: str) -> str:
 _EDITORIAL_YOD = "\x02"
 
 
-def _mixed_candidate_tokens(value: object) -> list[tuple[str, str, bool]]:
-    """(token as written, its loose fold, editorial yod?) for a mixed-mode candidate.
+def _mixed_candidate_tokens(value: object) -> list[tuple[str, str, bool, int]]:
+    """(token as written, its loose fold, editorial yod?, whitespace word index) for
+    a mixed-mode candidate.
 
     The tokens are `unfolded_reading_form`'s, but a yod in round brackets — one the
     editor supplied, which the search key and the loose form drop
     (`PARENTHESISED_YOD_RE`) — is flagged, found on the notation *before* the brackets
     are removed, so it can still vanish for a loose query word. Splitting first made
     it a standalone `ꞽ` that no fold deletes (final audit, search-ranking-3: `n.t ḥtp`
-    against `n(.ꞽ).t ḥtp`).
+    against `n(.ꞽ).t ḥtp`). The word index records which written word each token came
+    from, so the yod is dropped only from a word compared loosely (follow-up: `ḥm.t n`
+    against `ḥm(.ꞽ).t n` became identical when every unmatched yod was dropped).
     """
     text = normalize_notation(_safe_str(value).replace("⸗", "="))
-    text = PARENTHESISED_YOD_RE.sub(f" {_EDITORIAL_YOD} ", text)
-    tokens: list[tuple[str, str, bool]] = []
-    for token in _unfolded_tokens(fold_strict_aliases(text)).split():
-        if token == _EDITORIAL_YOD:
-            tokens.append(("ꞽ", "", True))
-        else:
-            tokens.append((token, loose_reading_form(token), False))
+    text = PARENTHESISED_YOD_RE.sub(_EDITORIAL_YOD, text)
+    tokens: list[tuple[str, str, bool, int]] = []
+    for word_index, word in enumerate(text.split()):
+        word = word.replace(_EDITORIAL_YOD, f" {_EDITORIAL_YOD} ")
+        for token in _unfolded_tokens(fold_strict_aliases(word)).split():
+            if token == _EDITORIAL_YOD:
+                tokens.append(("ꞽ", "", True, word_index))
+            else:
+                tokens.append((token, loose_reading_form(token), False, word_index))
     return tokens
 
 
@@ -536,9 +541,10 @@ class QueryForms:
         if self.mode == "strict":
             return unfolded_reading_form(value)
         candidate_tokens = _mixed_candidate_tokens(value)
-        words = [word for word, _, _ in candidate_tokens]
-        folds = [folded for _, folded, _ in candidate_tokens]
-        editorial = [flag for _, _, flag in candidate_tokens]
+        words = [word for word, _, _, _ in candidate_tokens]
+        folds = [folded for _, folded, _, _ in candidate_tokens]
+        editorial = [flag for _, _, flag, _ in candidate_tokens]
+        word_of = [word_index for _, _, _, word_index in candidate_tokens]
         tokens = self.tokens
 
         def fits(index: int, slot: int) -> bool:
@@ -575,13 +581,21 @@ class QueryForms:
         chosen: list[str | None] = [None] * len(words)
         for slot, index in owner.items():
             chosen[index] = tokens[slot][0]
+        # How each written word was compared: the looseness of the query tokens its
+        # other tokens met (a word can meet both only if the query mixes them).
+        met: dict[int, set[bool]] = {}
+        for slot, index in owner.items():
+            met.setdefault(word_of[index], set()).add(tokens[slot][1])
         # An unmatched word: shown as the token form it duplicates, else as written.
-        # An unmatched editor-supplied yod is dropped, as the loose form drops it.
+        # An unmatched editor-supplied yod is dropped, as the loose form drops it, but
+        # only from a word compared loosely (its siblings met only ASCII query
+        # tokens); in a word compared as written it stays a letter, as the strict
+        # form keeps it.
         for index, (word, folded) in enumerate(zip(words, folds)):
             if chosen[index] is not None:
                 continue
             if editorial[index]:
-                chosen[index] = ""
+                chosen[index] = "" if met.get(word_of[index]) == {True} else word
             elif word in self.strict_words:
                 chosen[index] = word
             elif folded and folded in self.loose_words:

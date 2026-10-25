@@ -92,6 +92,22 @@ def test_mixed_editorial_yod_drops_for_a_loose_query_word():
     assert "same simplified query reading" in suggestion.evidence_summary
 
 
+def test_mixed_editorial_yod_kept_for_a_strict_query_word():
+    """Follow-up (Astra): the yod is dropped only inside a word compared loosely.
+    `ḥm.t` is typed in Unicode, so `ḥm(.ꞽ).t` is a different spelling of it and must
+    not become the identical simplified reading (confidence 0.625 → 0.904)."""
+    forms = QueryForms.build("ḥm.t n", "ḥm.t n")
+    assert forms.mode == "mixed"
+    assert forms.candidate("ḥm(.ꞽ).t n") != forms.query_form
+    (suggestion,) = _top("ḥm.t n", "ḥm(.ꞽ).t n")
+    assert "same simplified query reading" not in suggestion.evidence_summary
+    assert suggestion.confidence_score < 0.9
+    # The loose word in the same query still loses its editorial yod.
+    forms = QueryForms.build("n.t ḥtp ḥm.t", "n.t ḥtp ḥm.t")
+    assert forms.candidate("n(.ꞽ).t ḥtp ḥm.t") == forms.query_form
+    assert forms.candidate("n(.ꞽ).t ḥtp ḥm(.ꞽ).t") != forms.query_form
+
+
 @pytest.mark.parametrize(
     "query, candidate, shown",
     [
