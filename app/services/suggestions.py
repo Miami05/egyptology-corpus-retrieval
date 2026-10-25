@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from dataclasses import replace as dataclasses_replace
@@ -293,9 +294,40 @@ def loose_reading_form(value: object) -> str:
     return normalize_mdc(text)
 
 
-def char_ngram_similarity(left: object, right: object) -> float:
-    left_text = f" {loose_reading_form(left)} "
-    right_text = f" {loose_reading_form(right)} "
+def has_egyptological_letters(text: object) -> bool:
+    """Whether `text` contains a non-ASCII letter or a combining mark (ꜣ ꜥ ꞽ ḥ ḏ u̯ …).
+
+    A query typed in plain ASCII/MdC has none, and may mean any of the diacritic
+    letters it folds together. A query that does contain one named its consonants, so
+    the lossy ASCII fold must not be used to call a different consonant a match (A54).
+    """
+    return any(
+        not char.isascii() and (char.isalpha() or unicodedata.category(char).startswith("M"))
+        for char in nfc(_safe_str(text))
+    )
+
+
+def unfolded_reading_form(value: object) -> str:
+    """`loose_reading_form` without the lossy letter fold: markers become spaces, but
+    every letter stays as written (ꜣ ≠ ꜥ, ḥ ≠ h), with the same plural and weak-consonant
+    notation folds as `strict_reading_key`. Used instead of the loose form for a query
+    that itself contains Egyptological letters (A54), so `n.t` and `n(.t)` still share
+    words while `ꜥḥꜥ` and `ꜣḥꜥ` do not.
+    """
+    text = fold_plural_marker(nfc(_safe_str(value)).lower().replace("⸗", "="))
+    text = fold_weak_consonant_marker(text)
+    text = STRICT_DROP_RE.sub("", LOOSE_MARKER_RE.sub(" ", text))
+    return normalize_whitespace(text)
+
+
+def char_ngram_similarity(left: object, right: object, fold: bool = True) -> float:
+    """Cosine similarity of character 2-4-grams. `fold=False` compares the letters as
+    written (`unfolded_reading_form`) instead of the lossy ASCII fold."""
+    form = loose_reading_form if fold else unfolded_reading_form
+    left_form = form(left)
+    right_form = form(right)
+    left_text = f" {left_form} "
+    right_text = f" {right_form} "
     if not left_text.strip() or not right_text.strip():
         return 0.0
     left_counts: Counter[str] = Counter()
@@ -350,6 +382,7 @@ def _evidence_summary(
     query_reading_order: str,
     candidate_transliteration: str,
     query_hieroglyphs: str = "",
+    loose_ok: bool = True,
 ) -> str:
     bits: list[str] = []
     if query_hieroglyphs:
@@ -366,14 +399,17 @@ def _evidence_summary(
             bits.append(f"sign groups cover {best_coverage:.0%} of the query, in order")
     candidate_key = canonical_reading(candidate_transliteration)
     query_key = canonical_reading(query_mdc)
-    candidate_loose = loose_reading_form(candidate_transliteration)
-    query_loose = loose_reading_form(query_mdc)
+    # For a query with Egyptological letters the "loose" forms below keep every
+    # letter (`unfolded_reading_form`), so a different consonant is never "shared".
+    form = loose_reading_form if loose_ok else unfolded_reading_form
+    candidate_loose = form(candidate_transliteration)
+    query_loose = form(query_mdc)
 
     if query_key and candidate_key == query_key:
         bits.append("same normalized query reading")
     elif query_loose and candidate_loose == query_loose:
         bits.append("same simplified query reading")
-    elif query_key and char_ngram_similarity(query_key, candidate_key) >= 0.72:
+    elif query_key and char_ngram_similarity(query_key, candidate_key, fold=loose_ok) >= 0.72:
         bits.append("near simplified query reading")
 
     query_reading_norm = normalize_sign_sequence(query_reading_order)
@@ -396,7 +432,10 @@ def _evidence_summary(
     if query_tokens and candidate_tokens:
         shared = sorted(query_tokens & candidate_tokens)
         if shared:
-            shown = ", ".join(unfold_shared_tokens(shared, candidate_transliteration)[:8])
+            if loose_ok:
+                shown = ", ".join(unfold_shared_tokens(shared, candidate_transliteration)[:8])
+            else:
+                shown = ", ".join(shared[:8])  # already the letters as written
             bits.append(f"shared transliteration tokens: {shown}")
 
     lemma_sets = [
@@ -427,6 +466,12 @@ def _evidence_summary(
     return "; ".join(bits)
 
 
+def pool_absolute_evidence(evidence: list[float]) -> float:
+    """The factor that scales every confidence in one result pool: the strongest
+    absolute match any candidate has (1.0 for an empty pool, never above 1)."""
+    return max(0.0, min(1.0, max(evidence, default=1.0)))
+
+
 def suggest_top_readings(
     retrieval_results: pd.DataFrame,
     query_mdc: str,
@@ -450,6 +495,15 @@ def suggest_top_readings(
     now leave the denominator (mirroring combine_scores), and glyph queries get
     their own similarity and exactness signals in the vacated slots.
 
+    That mean is *relative*: `relative_score` and `mean_score` (0.36 of the mass) are
+    divided by the pool's own best score, so they are 1.0 for any one-row pool and
+    set a floor of about 0.4 on a candidate with almost no overlap (A21). The
+    displayed confidence is therefore the relative value times the pool's
+    absolute evidence, the strongest live absolute match (token overlap, character
+    similarity, exactness, glyph coverage, reading-order overlap) of any candidate.
+    It is one factor for the whole pool, so it rescales every confidence alike and
+    cannot change the order: candidates are still sorted on the relative value.
+
     `debug_signals`, when a list is passed, receives one dict per candidate group
     with this layer's *own* per-term breakdown (each live signal's weight, raw
     value and weighted contribution, plus the weight mass and the confidence). It
@@ -457,6 +511,12 @@ def suggest_top_readings(
     back from it, no branch depends on it, and with the default `None` not a single
     statement of the ranking path changes.
     """
+    # The lossy ASCII fold may only stand in for letters the user did not type: it
+    # is decided on the query as typed, before the ASCII-to-Unicode resolution
+    # below, which would otherwise make every ASCII query look Unicode (A54). For a
+    # hieroglyph query the text signals are not live, so it keeps the old path.
+    loose_ok = bool(query_hieroglyphs) or not has_egyptological_letters(query_mdc)
+
     # A Manuel de Codage or ASCII-digraph query is not a reading, and this layer
     # compares readings as strings of sounds. Resolve it to the transliteration it
     # was understood as first (`htp dji nswt` → `htp ḏi nswt`), so "same simplified
@@ -475,9 +535,11 @@ def suggest_top_readings(
 
     results["candidate_key"] = results["candidate_transliteration"].map(canonical_reading)
     rows: list[dict] = []
+    debug_start = len(debug_signals) if debug_signals is not None else 0
     max_row_score = max(float(value) for value in results["final_score"].fillna(0.0))
     query_key = canonical_reading(query_mdc) if not query_hieroglyphs else ""
-    query_loose = loose_reading_form(query_mdc) if not query_hieroglyphs else ""
+    reading_form = loose_reading_form if loose_ok else unfolded_reading_form
+    query_loose = reading_form(query_mdc) if not query_hieroglyphs else ""
     query_reading_norm = normalize_sign_sequence(query_reading_order)
     query_glyph_groups = query_hieroglyphs.split()
     surplus_penalty = effective_surplus_penalty(
@@ -526,7 +588,7 @@ def suggest_top_readings(
         }
 
         if text_live:
-            candidate_loose = loose_reading_form(best_candidate)
+            candidate_loose = reading_form(best_candidate)
             translit_overlap = max(
                 token_overlap_score(query_key, candidate_key, surplus_penalty),
                 token_overlap_score(query_loose, candidate_loose, surplus_penalty),
@@ -537,7 +599,7 @@ def suggest_top_readings(
                 translit_overlap = float(
                     group["idf_overlap_score"].fillna(0.0).astype(float).max()
                 )
-            char_similarity = char_ngram_similarity(query_key, candidate_key)
+            char_similarity = char_ngram_similarity(query_key, candidate_key, fold=loose_ok)
             exact_or_near_bonus = 1.0 if candidate_key == query_key else 0.0
             if exact_or_near_bonus == 0.0 and query_loose == candidate_loose:
                 exact_or_near_bonus = 0.85
@@ -581,6 +643,23 @@ def suggest_top_readings(
         candidate_score = weighted / weight_mass if weight_mass > 0 else 0.0
         confidence = max(0.0, min(0.99, candidate_score))
 
+        # The strongest absolute (not pool-relative) match this candidate has on
+        # any signal live for the query; 1.0 when none is live (nothing to measure).
+        absolute = [
+            value
+            for name, (_, value) in signals.items()
+            if name
+            in (
+                "translit_overlap",
+                "char_similarity",
+                "exact_or_near",
+                "glyph_similarity",
+                "glyph_exact",
+                "reading_similarity",
+            )
+        ]
+        evidence = max(absolute) if absolute else 1.0
+
         if debug_signals is not None:
             debug_signals.append(
                 {
@@ -604,6 +683,7 @@ def suggest_top_readings(
             {
                 "candidate_transliteration": best["candidate_transliteration"],
                 "confidence_score": round(confidence, 3),
+                "evidence": evidence,
                 "supporting_example_count": support_count,
                 "supporting_sources": [
                     _source_label(row) for _, row in distinct.head(5).iterrows()
@@ -614,13 +694,23 @@ def suggest_top_readings(
                     query_reading_order=query_reading_order,
                     candidate_transliteration=best["candidate_transliteration"],
                     query_hieroglyphs=query_hieroglyphs,
+                    loose_ok=loose_ok,
                 ),
             }
         )
 
-    # Descending by confidence then support; ties break by transliteration in
-    # ordinary alphabetical order (they used to break reverse-alphabetically, an
-    # accident of a single reverse=True over the whole key).
+    # Descending by the *relative* confidence then support; ties break by
+    # transliteration in ordinary alphabetical order (they used to break
+    # reverse-alphabetically, an accident of a single reverse=True over the whole
+    # key). The absolute-evidence factor is applied after sorting, so it can never
+    # reorder anything (A21).
+    pool_evidence = pool_absolute_evidence([row["evidence"] for row in rows])
+    if debug_signals is not None:
+        for entry in debug_signals[debug_start:]:
+            relative = entry["confidence_score"]
+            entry["relative_confidence"] = relative
+            entry["pool_evidence"] = pool_evidence
+            entry["confidence_score"] = round(min(0.99, relative * pool_evidence), 3)
     rows.sort(
         key=lambda row: (
             -row["confidence_score"],
@@ -628,4 +718,9 @@ def suggest_top_readings(
             row["candidate_transliteration"],
         )
     )
-    return [ReadingSuggestion(**row) for row in rows[:top_n]]
+    suggestions = []
+    for row in rows[:top_n]:
+        row = {key: value for key, value in row.items() if key != "evidence"}
+        row["confidence_score"] = round(min(0.99, row["confidence_score"] * pool_evidence), 3)
+        suggestions.append(ReadingSuggestion(**row))
+    return suggestions

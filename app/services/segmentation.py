@@ -48,9 +48,11 @@ from app.data.normalizer import normalize_hieroglyphs, quadrat_hints
 from app.services.boundary_model import BoundaryModel, fit_boundary_model
 from app.services.reading_model import ReadingModel
 
-# Groups longer than this are never proposed by the segmenter (they may still be
-# pasted with explicit spaces). 10 glyphs covers 99.8% of corpus group tokens; the
-# longest attested group is 27 glyphs and there are 20 groups above 14.
+# Unattested spans longer than this are never proposed by the segmenter (they may
+# still be pasted with explicit spaces). 10 glyphs covers 99.8% of corpus group
+# tokens. A span that IS an attested/lexicon group is proposed at any length (see
+# `Segmenter._long_lengths`): the corpus holds 2,218 attested groups of 11 to 41
+# glyphs, and without that the 18-sign 'wsr-mꜣꜥ.t-rꜥ-mry-ꞽmn' came back in 3 pieces.
 MAX_GROUP_GLYPHS = 10
 
 
@@ -254,6 +256,17 @@ class Segmenter:
         self.total = sum(self.group_counts.values())
         self.vocabulary = len(self.group_counts) + len(self.lexicon_groups)
         self._log_prob_cache: dict[str, float] = {}
+        # Lengths of known groups beyond the window above, so `segment` can offer
+        # those (and only those) as candidates at any length (audit A22). Longest
+        # first, so the candidate starts come out in ascending order like the window.
+        self._long_lengths: list[int] = sorted(
+            {
+                len(group)
+                for group in (*self.group_counts, *self.lexicon_groups)
+                if len(group) > self.max_group_glyphs
+            },
+            reverse=True,
+        )
         # Built only when the term is switched on, so a default segmenter costs
         # exactly what it cost before item C and behaves identically.
         self.boundary_model: BoundaryModel | None = boundary_model
@@ -343,7 +356,17 @@ class Segmenter:
         for j in range(1, n + 1):
             top = float("-inf")
             arg = -1
-            for i in range(max(0, j - self.max_group_glyphs), j):
+            starts = range(max(0, j - self.max_group_glyphs), j)
+            if self._long_lengths:
+                # Known groups longer than the window: one set lookup per length.
+                long_starts = [
+                    j - length
+                    for length in self._long_lengths
+                    if j - length >= 0 and self.is_known(stream[j - length : j])
+                ]
+                if long_starts:
+                    starts = [*long_starts, *starts]
+            for i in starts:
                 prefix_score = best[i][0]
                 if prefix_score == float("-inf"):
                     continue

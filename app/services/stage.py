@@ -294,6 +294,28 @@ class StageResources:
     # pooled frame (see build_stage_resources), the mass it competes against
     # never shrinks, so there is nothing left to scale.
     lexicon_weight_factor: float = 1.0
+    # Rows labelled with this stage's own name whose hieroglyph groups and readings
+    # align one to one (the test `ReadingModel.fit` uses). `reading_model` is also
+    # fitted on every unlabelled row, so `sentences_seen` cannot tell whether the
+    # stage has any hieroglyph rows of its own; this can (A3). None = unknown (the
+    # stage=None resources, hand-built ones): never skips a stage.
+    own_aligned_rows: int | None = None
+
+
+def count_own_aligned_rows(df: pd.DataFrame, target: str) -> int:
+    """Labelled-`target` rows of `df` with as many hieroglyph groups as readings.
+
+    Vectorised (column-wise split, no row loop). Rows without hieroglyphs do not
+    count, matching `ReadingModel.fit`, which treats them as text-only.
+    """
+    if "language_stage" not in df.columns:
+        return 0
+    own = df.loc[df["language_stage"].map(normalize_stage) == target]
+    if own.empty:
+        return 0
+    signs = own["hieroglyphs_norm"].fillna("").astype(str).str.split().str.len()
+    readings = own["transliteration_gold"].fillna("").astype(str).str.split().str.len()
+    return int(((signs > 0) & (signs == readings)).sum())
 
 
 def build_stage_resources(
@@ -410,6 +432,7 @@ def build_stage_resources(
         segmenter=segmenter,
         sign_index=build_sign_index(df),
         lexicon_weight_factor=1.0,
+        own_aligned_rows=None if target is None else count_own_aligned_rows(df, target),
     )
 
 
@@ -454,11 +477,15 @@ def choose_stage_by_likelihood(
     by the number of sign groups in that (shared) segmentation. The winner is a
     plain argmax over these per-sign likelihoods: no tunable threshold.
 
-    Two guards: (1) a stage whose reading model was fitted on zero aligned rows
-    (`reading_model.sentences_seen == 0` — e.g. Demotic, which this corpus holds
-    as text-only rows with no hieroglyphs to align) has nothing to score with and
-    is skipped rather than scored as if it had an opinion. (2) a near-tie between
-    the top two candidates (within 1e-9) is not trusted to decide a language —
+    Two guards: (1) a stage with nothing of its own to score with is skipped
+    rather than scored as if it had an opinion: either its reading model was
+    fitted on zero aligned rows (`reading_model.sentences_seen == 0`), or no
+    labelled row of that stage has aligned hieroglyphs (`own_aligned_rows == 0`).
+    The second check is needed because a stage's reading model is also fitted on
+    every unlabelled row, so for Demotic (text-only in this corpus) `sentences_seen`
+    is never 0 and the model was just the "unspecified rows" model, which won
+    for 47 of 200 Earlier and 24 of 200 Late held-out pastes (audit A3). (2) a
+    near-tie between the top two candidates (within 1e-9) is not trusted to decide a language —
     ties fall back to `None`, so the caller uses the pooled/label-based path
     instead of a coin flip.
 
@@ -484,6 +511,11 @@ def choose_stage_by_likelihood(
             # Degenerate: no aligned rows to fit a reading model on (this corpus
             # holds Demotic as text-only), so this stage has no likelihood to
             # offer and must not be scored as though it did.
+            continue
+        if resources.own_aligned_rows == 0:
+            # The stage subset also holds every unlabelled row, so `sentences_seen`
+            # above cannot see that this stage has no hieroglyph rows of its own
+            # (Demotic here). Its model is then a pooled one, not this stage's.
             continue
         _predictions, reading_score = resources.reading_model.predict_sequence_scored(
             groups, use_lexicon=False
