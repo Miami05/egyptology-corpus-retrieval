@@ -188,7 +188,11 @@ def with_licence_notice(frame: pd.DataFrame) -> pd.DataFrame:
 # 'AES text: <name>' (audit A32), and every AES row's source_ref carries the
 # upstream text id ('AES/<corpus>#text=<id>&sentence=...'), which is the same for
 # all sentences of one papyrus. Rows imported before A32 have only the latter.
-_AES_TEXT_NAME_RE = re.compile(r"(?:^|;\s*)AES text:\s*([^;]+)")
+# The name runs to the importer's next field ('; upstream text id:') or the end, not
+# to the first ';', because an upstream name may contain one ('oDeM 1234; recto').
+_AES_TEXT_NAME_RE = re.compile(
+    r"(?:^|;\s*)AES text:\s*(.+?)\s*(?:;\s*upstream text id:|$)"
+)
 _AES_UPSTREAM_TEXT_RE = re.compile(r"#text=([^&]+)")
 
 

@@ -1038,6 +1038,17 @@ def test_text_label_names_the_aes_text_and_keeps_the_id():
     assert text_label(row) == "pBerlin 3022 (Sinuhe B) (AES_2DF6EC0096C3)"
 
 
+def test_aes_text_name_keeps_a_semicolon_inside_the_name():
+    """The importer joins note bits with '; ' and writes 'AES text:' after the
+    others, so a name with its own ';' must not be cut there (Opus nit, round 1)."""
+    from app.ui.review_common import aes_text_name
+
+    notes = "AES date: NK; editor: X; AES text: oDeM 1234; recto; upstream text id: ABC"
+    assert aes_text_name(pd.Series({**_AES_ROW, "grammar_notes": notes})) == "oDeM 1234; recto"
+    notes = "AES date: NK; AES text: oDeM 1234; recto"
+    assert aes_text_name(pd.Series({**_AES_ROW, "grammar_notes": notes})) == "oDeM 1234; recto"
+
+
 def test_text_label_falls_back_to_the_upstream_id_for_rows_imported_before_a32():
     from app.ui.review_common import text_label
 
