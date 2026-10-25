@@ -9,7 +9,8 @@ lemma id that has at least one English gloss.
 Licence: Wikidata's structured data, the Lexeme namespace included, is CC0
 (https://www.wikidata.org/wiki/Wikidata:Licensing: "All data in Wikidata has a CC0
 license."). No attribution is legally required; the output keeps lexeme and sense ids
-as provenance and the site credits "Wikidata contributors" as a courtesy.
+as provenance. Nothing in the app displays the glosses yet; when something does, it
+should credit "Wikidata contributors" as a courtesy.
 
 Politeness. Two steps, so the network is touched once:
     --fetch      pages through query.wikidata.org/sparql (LIMIT 10000, a few requests,
@@ -161,6 +162,8 @@ def main() -> None:
     out = Path(args.output).resolve()
     if out == EXAMPLES.resolve():
         sys.exit("refusing to overwrite examples.csv")
+    if out == Path(args.examples).resolve():
+        sys.exit("refusing to overwrite the --examples input")
     raw_dir = Path(args.raw_dir)
     if args.fetch:
         fetch(raw_dir)

@@ -116,3 +116,41 @@ def test_translation_disagreement_is_quarantined(tmp_path: Path) -> None:
     assert links.empty
     assert candidates["link_status"].tolist() == ["quarantine_translation_mismatch", "review_no_translation"]
     assert stats["bbaw_rows_quarantine_translation_mismatch"] == 1
+
+
+def test_limited_run_proposes_no_links(tmp_path: Path) -> None:
+    """--limit drops files before uniqueness is judged, so a sentence shared with a
+    skipped file would look unique. A partial run must not propose links."""
+    write_raw(tmp_path, {
+        "oraec1": record(AED, [["nb≡f", "jr,t", "nfr"]], ["His lord made good."]),
+        "oraec2": record("A" * 26, [["nb≡f", "jr,t", "nfr"]], ["His lord made good."]),
+    })
+    corpus = pd.DataFrame({
+        "source": ["BBAW"], "source_sentence_id": ["B1"], "source_ref": ["bbaw"],
+        "transliteration_gold": ["nb=f ꞽr.t nfr"], "translation": ["His lord made good."],
+    })
+    _, full_links, _, full_stats = build(tmp_path, corpus)
+    assert full_links.empty and full_stats["bbaw_rows_ambiguous"] == 1
+    _, links, candidates, _ = build(tmp_path, corpus, limit=1)
+    assert links.empty and candidates.empty
+
+
+def test_main_refuses_output_collisions(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+
+    from scripts import import_oraec_metadata as mod
+
+    examples = tmp_path / "examples.csv"
+    examples.write_text("source\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "build", lambda *a, **k: (_ for _ in ()).throw(AssertionError("built")))
+    cases = [
+        ["--output", str(examples)],
+        ["--output", str(tmp_path / "m.csv"), "--bbaw-links", str(tmp_path / "m.csv")],
+        ["--output", str(tmp_path / "m.csv"), "--bbaw-link-candidates", str(examples)],
+    ]
+    for extra in cases:
+        monkeypatch.setattr(sys, "argv", ["x", "--raw-dir", str(tmp_path), "--examples", str(examples), *extra])
+        with pytest.raises(SystemExit) as info:
+            mod.main()
+        assert "refusing" in str(info.value) or "different files" in str(info.value)
+    assert examples.read_text(encoding="utf-8") == "source\n"

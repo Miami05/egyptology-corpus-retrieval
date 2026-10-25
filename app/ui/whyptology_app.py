@@ -281,6 +281,12 @@ LICENCE_LINK = (
     'rel="noopener">CC&nbsp;BY-SA&nbsp;4.0</a>'
 )
 
+UNICODE_CREDIT = (
+    "Sign descriptions in code tooltips: Unicode® Unikemet 18.0.0, © 1991-2026 "
+    'Unicode, Inc., <a href="https://www.unicode.org/license.txt" target="_blank" '
+    'rel="noopener">Unicode License V3</a> (full notice in DATA-LICENSE.md).'
+)
+
 # CC BY-SA 4.0 §3(a)(1)(A)(iv) requires a notice referring to the disclaimer of
 # warranties; §5 is that disclaimer. Linked to the legal code, not the deed, because
 # the deed is a summary and does not itself carry the §5 text.
@@ -382,6 +388,10 @@ def corpus_credit_html(df: pd.DataFrame) -> str:
         # can be shown. Not a CORPUS_CREDITS entry: that dict is keyed by `source`.
         if {"AES", "BBAW"} & set(public_sources):
             credit += " " + ORAEC_CREDIT + " " + TRISMEGISTOS_CREDIT
+        # Sign-code tooltips quote Unikemet descriptions (a Unicode Data File), so
+        # its notice is named wherever those tooltips can appear.
+        if sign_reference():
+            credit += " " + UNICODE_CREDIT
         parts.append(credit)
     parts.extend(_private_source_credit_html(source) for source in private_sources)
     return " ".join(parts)

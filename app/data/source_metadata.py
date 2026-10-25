@@ -52,6 +52,7 @@ LINE_NOT_RECORDED = "line not recorded"
 # made any other way is not one this display has been checked against.
 ACCEPTED_MATCH_METHOD = "unique sentence dedup_key + translation"
 MIN_KEY_WORDS = 3
+TEXT_LICENCE = "CC BY-SA 4.0"  # the licence the app labels every ORAEC citation with
 BIB_SHORT_MAX = 160
 
 AES_TEXT_RE = re.compile(r"#text=([^&\s]+)")
@@ -197,12 +198,17 @@ def load_text_citations(metadata_path: Path) -> dict[str, TextCitation]:
         "date",
         "trismegistos_id",
         "text_authors",
+        "text_licence",
     ]
     frame = pd.read_csv(metadata_path, dtype=str, keep_default_na=False, usecols=columns)
     texts: dict[str, TextCitation] = {}
     for row in frame.itertuples(index=False):
         oraec_id = str(row.oraec_id).strip()
         if not ORAEC_ID_RE.match(oraec_id):
+            continue
+        # Every ORAEC citation is shown under "CC BY-SA 4.0"; a text the importer
+        # recorded under any other licence must not borrow that claim.
+        if str(row.text_licence).strip() != TEXT_LICENCE:
             continue
         tm_id = str(row.trismegistos_id).strip()
         texts[oraec_id] = TextCitation(

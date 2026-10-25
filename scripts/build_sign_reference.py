@@ -169,6 +169,8 @@ def main() -> None:
     out = Path(args.output).resolve()
     if out == EXAMPLES.resolve():
         sys.exit("refusing to overwrite examples.csv")
+    if out == Path(args.examples).resolve():
+        sys.exit("refusing to overwrite the --examples input")
 
     unikemet = parse_unikemet(Path(args.unikemet).read_text(encoding="utf-8"))
     jsesh = parse_jsesh(Path(args.jsesh).read_bytes())
