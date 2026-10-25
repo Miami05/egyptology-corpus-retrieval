@@ -38,6 +38,9 @@ class ScoreWeights:
     # they beat the previous values (top-3 useful-family 0.675 -> 0.725, MRR
     # 0.592 -> 0.617). IDF overlap carries the most weight because rare shared
     # tokens identify a parallel far better than ubiquitous particles do.
+    # Provenance (audit A26): that 80-query tuning benchmark was never committed, so
+    # this tuning cannot be re-run and its holdout gain (+2 queries) cannot be
+    # checked. Treat these values as fixed by hand, not as reproducible output.
     fuzzy: float = 0.35
     tfidf: float = 0.18
     overlap: float = 0.10

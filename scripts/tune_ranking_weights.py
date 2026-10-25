@@ -7,6 +7,16 @@ tool, exactly the way the near-duplicate leak did. So the benchmark is split by
 index, weights are chosen using only the tune half, and the headline number comes
 from the holdout half, scored once.
 
+Provenance warning (audit A26): this script CANNOT reproduce the shipped weights. The
+comment in app/retrieval/scorer.py cites a 40-query tune / 40-query holdout split of
+an 80-query benchmark; that file was never committed (and
+tests/test_phase4_evaluation.py::test_dead_files_are_deleted forbids it under the
+name tuning_benchmark_80.csv). The 20-query benchmarks in the repo give a 10/10 split
+whose "holdout" number is meaningless, so the script refuses benchmarks under
+--min-queries unless --allow-small is given. Do not use its output to justify the
+shipped values. Its pool also drops the target's edition twins by default
+(--twin-threshold), so it does not optimise against free hits.
+
 Speed: the per-signal columns (fuzzy, tfidf, overlap, idf overlap, ...) do not
 depend on the weights, so they are computed once per query and cached. Evaluating a
 weight configuration is then a weighted sum over cached columns.
@@ -17,6 +27,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import sys
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -35,10 +46,13 @@ from app.services.suggestions import (
     loose_reading_form,
     suggest_top_readings,
 )
+from scripts.eval_guards import DEFAULT_TWIN_THRESHOLD, TwinGuard
 
 EXAMPLES_PATH = "data/processed/examples.csv"
-BENCHMARK_PATH = "data/benchmarks/competitive_ambiguity_eval_queries.csv"
-OUTPUT_PATH = "data/benchmarks/ranking_weight_tuning.csv"
+# No default benchmark and no default output file any more (audit A26): the old
+# defaults were the contaminated v1 benchmark and the committed
+# data/benchmarks/ranking_weight_tuning.csv, which every bare run overwrote.
+MIN_QUERIES = 40
 
 # Signals that are always dead on the current corpus are not worth sweeping; they
 # are kept in the weight object so a richer corpus can switch them back on.
@@ -67,8 +81,15 @@ def _overlap(left: set[str], right: set[str]) -> float:
 def build_query_cache(
     examples_df: pd.DataFrame,
     benchmark_df: pd.DataFrame,
+    guard: "TwinGuard | None" = None,
+    twin_threshold: float = 0.0,
 ) -> list[dict]:
-    """Score every candidate once per query and keep the signal columns."""
+    """Score every candidate once per query and keep the signal columns.
+
+    With a `guard` and a positive `twin_threshold`, every row that is a twin of the
+    query's target (word overlap >= threshold, or the same notation-folded reading)
+    leaves the pool along with the target, so the tuner cannot reward free hits.
+    """
     cache: list[dict] = []
     signal_columns = list(WEIGHT_COLUMNS.values())
 
@@ -77,12 +98,14 @@ def build_query_cache(
             str(bench["expected_source_text_id"]),
             str(bench["expected_source_sentence_id"]),
         )
-        pool = examples_df[
-            ~(
-                (examples_df["source_text_id"].astype(str) == expected_key[0])
-                & (examples_df["source_sentence_id"].astype(str) == expected_key[1])
-            )
-        ].copy()
+        keep = ~(
+            (examples_df["source_text_id"].astype(str) == expected_key[0])
+            & (examples_df["source_sentence_id"].astype(str) == expected_key[1])
+        ).to_numpy()
+        if guard is not None and twin_threshold > 0:
+            for position, _, _ in guard.twins(bench, twin_threshold):
+                keep[position] = False
+        pool = examples_df.loc[keep, :].copy()
 
         query = str(bench["query_input"])
         reading_order = (
@@ -262,15 +285,62 @@ def suggestion_configs() -> list[tuple[str, SuggestionWeights]]:
     return configs
 
 
-def main() -> None:
+def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--examples", default=EXAMPLES_PATH)
-    parser.add_argument("--benchmark", default=BENCHMARK_PATH)
-    parser.add_argument("--output", default=OUTPUT_PATH)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--benchmark",
+        required=True,
+        help="Benchmark queries CSV (required; there is no safe default).",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Where to write the tuning table. Default: a fresh temporary directory.",
+    )
+    parser.add_argument(
+        "--min-queries",
+        type=int,
+        default=MIN_QUERIES,
+        help="Refuse benchmarks with fewer queries than this (default 40).",
+    )
+    parser.add_argument(
+        "--allow-small",
+        action="store_true",
+        help="Run on a benchmark smaller than --min-queries anyway (the holdout is then noise).",
+    )
+    parser.add_argument(
+        "--twin-threshold",
+        type=float,
+        default=DEFAULT_TWIN_THRESHOLD,
+        help=(
+            "Drop every twin of a query's target (word overlap >= this, or the same "
+            "notation-folded reading) from the pool. 0 turns it off."
+        ),
+    )
+    return parser.parse_args(argv)
 
-    examples_df = load_examples_csv(args.examples)
+
+def _resolve_output(args: argparse.Namespace) -> Path:
+    if args.output is not None:
+        return Path(args.output)
+    temp_dir = Path(tempfile.mkdtemp(prefix="ranking-tuning-"))
+    print(f"No --output given; writing to {temp_dir}")
+    return temp_dir / "ranking_weight_tuning.csv"
+
+
+def main(argv: "list[str] | None" = None) -> None:
+    args = _parse_args(argv)
     benchmark_df = pd.read_csv(args.benchmark).fillna("")
+    if len(benchmark_df) < args.min_queries and not args.allow_small:
+        raise SystemExit(
+            f"{args.benchmark} has {len(benchmark_df)} queries, fewer than "
+            f"--min-queries {args.min_queries}: a half/half split of that is too small "
+            "for the holdout number to mean anything. Pass --allow-small to run anyway."
+        )
+    output_path = _resolve_output(args)
+    examples_df = load_examples_csv(args.examples)
+    guard = TwinGuard(examples_df) if args.twin_threshold > 0 else None
 
     # Deterministic split: even rows tune, odd rows are held out.
     tune_df = benchmark_df.iloc[::2].reset_index(drop=True)
@@ -281,8 +351,8 @@ def main() -> None:
     )
 
     print("Caching per-query signals (the slow part, done once)...")
-    tune_cache = build_query_cache(examples_df, tune_df)
-    holdout_cache = build_query_cache(examples_df, holdout_df)
+    tune_cache = build_query_cache(examples_df, tune_df, guard, args.twin_threshold)
+    holdout_cache = build_query_cache(examples_df, holdout_df, guard, args.twin_threshold)
 
     configs = candidate_configs()
     print(f"Evaluating {len(configs)} weight configurations on the tune split...")
@@ -346,7 +416,6 @@ def main() -> None:
     )
     holdout_best = holdout_both
 
-    output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(output_path, index=False)
     print(f"\nSaved tuning table to {output_path}")

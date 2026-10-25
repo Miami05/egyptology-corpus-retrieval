@@ -14,14 +14,29 @@ Three systems are compared on the same held-out sentences:
 
 A gain over most-frequent is the evidence that *context* resolves multivalence, which
 is the claim the project rests on.
+
+Honest defaults (audit A24, A56). Duplicate exclusion is on: held-out sentences whose
+exact sign string is in training are dropped (as before, when the flag was given) and
+so are those with a sign-group Jaccard >= `--near-duplicate-overlap` (0.8) to some
+training sentence. And the Helsinki lexicon is built from AES and Ramses word lists
+covering all Ramses splits, so for test rows from those sources the lexicon reads back
+the test sentence's own counts: with the lexicon on, rows from
+`--lexicon-exclude-test-sources` (default Ramses,AES) are removed from the TEST split
+only (they stay in training). Per-source lexicon-assisted accuracy is written to
+`--by-source-results`. Even so, do not quote a lexicon-on number as a held-out result
+until whole texts are held out and a lexicon variant is built without them. Results go
+to NEW `*_v2.csv` files; the committed reading_model_eval*.csv are the legacy record.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,10 +46,19 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.data.loader import load_examples_csv
 from app.services.lexicon import load_lexicon
 from app.services.reading_model import train_reading_model
+from scripts.build_competitive_ambiguity_benchmark import build_token_index
+from scripts.eval_guards import twin_rows
 
 EXAMPLES_PATH = "data/processed/examples.csv"
-RESULTS_PATH = "data/benchmarks/reading_model_eval.csv"
-ERRORS_PATH = "data/benchmarks/reading_model_errors.csv"
+# NEW names on purpose (audit A24, A56): the committed reading_model_eval*.csv were
+# measured with duplicates in and the lexicon leaking, and stay as the legacy record.
+RESULTS_PATH = "data/benchmarks/reading_model_eval_v2.csv"
+ERRORS_PATH = "data/benchmarks/reading_model_errors_v2.csv"
+BY_SOURCE_PATH = "data/benchmarks/reading_model_eval_by_source_v2.csv"
+NEAR_DUPLICATE_OVERLAP = 0.8
+LEXICON_EXCLUDE_TEST_SOURCES = "Ramses,AES"
+# Sources whose lexicon-assisted numbers are not held-out (see the module docstring).
+LEXICON_TAINTED_SOURCES = {"Ramses", "AES", "BBAW"}
 
 
 def aligned_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -44,11 +68,118 @@ def aligned_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df[mask].copy()
 
 
-def main() -> None:
+def parse_source_list(text: str) -> set[str]:
+    """'Ramses, AES' -> {'Ramses', 'AES'}; empty string -> empty set."""
+    return {part.strip() for part in str(text).split(",") if part.strip()}
+
+
+def near_duplicate_mask(test: pd.DataFrame, train: pd.DataFrame, overlap: float) -> np.ndarray:
+    """True for each test sentence with a training sentence at sign-group Jaccard >= `overlap`."""
+    if overlap <= 0 or test.empty or train.empty:
+        return np.zeros(len(test), dtype=bool)
+    train_sets = [set(str(value).split()) for value in train["hieroglyphs_norm"]]
+    index = build_token_index(train_sets)
+    mask = np.zeros(len(test), dtype=bool)
+    for position, value in enumerate(test["hieroglyphs_norm"]):
+        mask[position] = bool(twin_rows(set(str(value).split()), train_sets, index, overlap))
+    return mask
+
+
+@dataclass
+class SplitResult:
+    train: pd.DataFrame
+    test: pd.DataFrame
+    exact_duplicates: int
+    near_duplicates: int
+    excluded_for_lexicon: int
+
+
+def select_test_rows(
+    subset: pd.DataFrame,
+    test_fraction: float,
+    exclude_duplicates: bool,
+    near_duplicate_overlap: float,
+    lexicon_on: bool,
+    lexicon_exclude_sources: "set[str]",
+) -> SplitResult:
+    """The deterministic split (every k-th sentence held out) and what is dropped from test.
+
+    Order: split; count test sentences whose exact sign string is in training
+    (`exact_duplicates`, reported whether or not they are dropped); with duplicate
+    exclusion on, drop them and then drop sentences whose sign groups are within
+    `near_duplicate_overlap` of a training sentence (`near_duplicates`, the ones that
+    are not exact copies); finally, with the lexicon on, drop test sentences from
+    `lexicon_exclude_sources` (`excluded_for_lexicon`). Training is never touched.
+    """
+    test = subset.iloc[:: int(1 / test_fraction)]
+    train = subset.drop(test.index)
+    train_sign_strings = set(train["hieroglyphs_norm"].astype(str))
+    leaked_mask = test["hieroglyphs_norm"].astype(str).isin(train_sign_strings)
+    exact = int(leaked_mask.sum())
+    near = 0
+    if exclude_duplicates:
+        test = test[~leaked_mask]
+        near_mask = near_duplicate_mask(test, train, near_duplicate_overlap)
+        near = int(near_mask.sum())
+        test = test[~near_mask]
+    excluded = 0
+    if lexicon_on and lexicon_exclude_sources:
+        in_excluded = test["source"].astype(str).isin(lexicon_exclude_sources)
+        excluded = int(in_excluded.sum())
+        test = test[~in_excluded]
+    return SplitResult(train, test, exact, near, excluded)
+
+
+def by_source_records(size: int, per_source: "dict[str, Counter]") -> list[dict]:
+    """One row per source: the pooled counters split by where the test sentence came from."""
+    rows = []
+    for source, tally in sorted(per_source.items()):
+        lexicon = tally["lexicon_predictions"]
+        fallback = tally["fallback_predictions"]
+        ambiguous = tally["ambiguous_instances"]
+        rows.append(
+            {
+                "corpus_sentences": size,
+                "source": source,
+                "test_sentences": tally["test_sentences"],
+                "test_sign_instances": tally["sign_instances"],
+                "unseen_signs": tally["unseen"],
+                "lexicon_predictions": lexicon,
+                "lexicon_correct": tally["lexicon_correct"],
+                "acc_lexicon": round(tally["lexicon_correct"] / (lexicon or 1), 4),
+                "fallback_predictions": fallback,
+                "fallback_correct": tally["fallback_correct"],
+                "acc_fallback": round(tally["fallback_correct"] / (fallback or 1), 4),
+                "ambiguous_instances": ambiguous,
+                "ambiguous_context_correct": tally["ambiguous_context_correct"],
+                "acc_ambiguous_context": round(
+                    tally["ambiguous_context_correct"] / (ambiguous or 1), 4
+                ),
+            }
+        )
+    return rows
+
+
+def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--examples", default=EXAMPLES_PATH)
     parser.add_argument("--results", default=RESULTS_PATH)
     parser.add_argument("--errors", default=ERRORS_PATH)
+    parser.add_argument(
+        "--by-source-results",
+        default=BY_SOURCE_PATH,
+        help="Per-source lexicon / fallback / ambiguous accuracy (audit A24).",
+    )
+    parser.add_argument(
+        "--lexicon-exclude-test-sources",
+        default=LEXICON_EXCLUDE_TEST_SOURCES,
+        help=(
+            "Comma-separated sources removed from the TEST split when the lexicon is on "
+            "(they stay in training): the lexicon is built from AES and Ramses word lists "
+            "over all Ramses splits, so for those rows it reads back the test sentence. "
+            "Empty string = the old behaviour. Ignored with --no-lexicon."
+        ),
+    )
     parser.add_argument(
         "--no-lexicon",
         action="store_true",
@@ -77,45 +208,77 @@ def main() -> None:
     )
     parser.add_argument(
         "--exclude-duplicates",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Drop held-out sentences whose exact sign string also occurs in training. "
-            "Without this, a formulaic corpus lets the model score by memorisation."
+            "On by default (audit A56). Drop held-out sentences whose exact sign string "
+            "also occurs in training, and (--near-duplicate-overlap) near-copies. "
+            "Without this, a formulaic corpus lets the model score by memorisation. "
+            "--no-exclude-duplicates restores the old default."
         ),
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--near-duplicate-overlap",
+        type=float,
+        default=NEAR_DUPLICATE_OVERLAP,
+        help=(
+            "With duplicate exclusion on: also drop held-out sentences whose sign-group "
+            "Jaccard with some training sentence is at least this. 0 = off (the old "
+            "exact-only rule)."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: "list[str] | None" = None) -> None:
+    args = _parse_args(argv)
 
     full = aligned_rows(load_examples_csv(args.examples))
     print(f"aligned sentences available: {len(full)}")
 
     summary_rows: list[dict] = []
     error_rows: list[dict] = []
+    by_source_rows: list[dict] = []
+    lexicon_on = not args.no_lexicon
+    lexicon_exclude = parse_source_list(args.lexicon_exclude_test_sources) if lexicon_on else set()
 
     for raw_size in [int(s) for s in args.sizes.split(",")]:
         size = len(full) if raw_size == 0 else min(raw_size, len(full))
         subset = full.head(size)
         # Deterministic split: every 5th sentence is held out. No shuffling, so the
         # split is reproducible and the same sentences are held out at every size.
-        test = subset.iloc[:: int(1 / args.test_fraction)]
-        train = subset.drop(test.index)
-        if train.empty or test.empty:
-            continue
-
+        #
         # This corpus is heavily formulaic (Pyramid Text spells recur), so a large
         # share of held-out sentences have an identical twin in training. Accuracy on
-        # those is memorisation, not prediction, so they are optionally dropped and
-        # the clean figure is reported alongside.
-        train_sign_strings = set(train["hieroglyphs_norm"].astype(str))
-        leaked_mask = test["hieroglyphs_norm"].astype(str).isin(train_sign_strings)
-        leaked_count = int(leaked_mask.sum())
-        if args.exclude_duplicates:
-            test = test[~leaked_mask]
-            if test.empty:
-                continue
+        # those is memorisation, not prediction, so they are dropped by default (exact
+        # copies, then near-copies) and the lexicon-leaking sources leave the test split
+        # when the lexicon is on: see select_test_rows.
+        split = select_test_rows(
+            subset,
+            args.test_fraction,
+            args.exclude_duplicates,
+            args.near_duplicate_overlap,
+            lexicon_on,
+            lexicon_exclude,
+        )
+        train, test = split.train, split.test
+        if train.empty or test.empty:
+            continue
+        leaked_count = split.exact_duplicates
+        if lexicon_on:
+            tainted = sorted(
+                set(test["source"].astype(str)) & LEXICON_TAINTED_SOURCES
+            )
+            if tainted:
+                print(
+                    f"  WARNING: lexicon is on and the test split still holds "
+                    f"{', '.join(tainted)} rows: lexicon-assisted numbers for those rows "
+                    "are not held-out."
+                )
 
         # The lexicon is the variable under test here: held-out groups the training
         # split never saw are exactly where it is consulted.
-        model = train_reading_model(train, None if args.no_lexicon else load_lexicon())
+        model = train_reading_model(train, load_lexicon() if lexicon_on else None)
         ambiguous = model.ambiguous_signs
 
         totals = {
@@ -148,7 +311,13 @@ def main() -> None:
             "ctx_ambiguous_composed": 0,
         }
 
+        # Audit A24: the pooled lexicon accuracy hides which source is reading itself
+        # back, so the same counts are also kept per source.
+        per_source: dict[str, Counter] = {}
+
         for _, row in test.iterrows():
+            tally = per_source.setdefault(str(row["source"]), Counter())
+            tally["test_sentences"] += 1
             signs = str(row["hieroglyphs_norm"]).split()
             gold = str(row["transliteration_gold"]).split()
             if not signs or len(signs) != len(gold):
@@ -197,26 +366,34 @@ def main() -> None:
                 signs, gold, predictions, baseline, left_only
             ):
                 totals["all"] += 1
+                tally["sign_instances"] += 1
                 if not prediction.was_seen:
                     totals["unseen"] += 1
+                    tally["unseen"] += 1
                     # A fallback reading is the new capability: the group itself was
                     # never attested, so previously nothing could be proposed at all.
                     if prediction.is_fallback:
                         totals["fallback"] += 1
+                        tally["fallback_predictions"] += 1
                         if prediction.predicted == truth:
                             correct["fallback"] += 1
+                            tally["fallback_correct"] += 1
                     # A lexicon reading: the group is unattested here but attested in
                     # the Helsinki AES+Ramses word lists. Scored separately so the two
                     # ways of reading an unseen group can be compared directly.
                     elif prediction.is_lexicon:
                         totals["lexicon"] += 1
+                        tally["lexicon_predictions"] += 1
                         if prediction.predicted == truth:
                             correct["lexicon"] += 1
+                            tally["lexicon_correct"] += 1
                     continue
                 if sign in ambiguous:
                     totals["ambiguous"] += 1
+                    tally["ambiguous_instances"] += 1
                     if prediction.predicted == truth:
                         correct["ctx_ambiguous"] += 1
+                        tally["ambiguous_context_correct"] += 1
                     if base == truth:
                         correct["freq_ambiguous"] += 1
                     if left.predicted == truth:
@@ -305,6 +482,14 @@ def main() -> None:
         row_out["right_context_gain"] = round(
             row_out["acc_ambiguous_context"] - row_out["acc_ambiguous_left_only"], 4
         )
+        # Appended last (audit A24, A56), so every column above keeps its name.
+        row_out["near_duplicate_test_sentences"] = split.near_duplicates
+        row_out["near_duplicate_overlap"] = (
+            args.near_duplicate_overlap if args.exclude_duplicates else 0.0
+        )
+        row_out["lexicon_test_sources_excluded"] = ",".join(sorted(lexicon_exclude))
+        row_out["test_sentences_excluded_for_lexicon"] = split.excluded_for_lexicon
+        by_source_rows.extend(by_source_records(size, per_source))
         summary_rows.append(row_out)
         print(
             f"  {size:>6} sentences | amb types {len(ambiguous):>4} | "
@@ -333,9 +518,14 @@ def main() -> None:
     summary = pd.DataFrame(summary_rows)
     Path(args.results).parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(args.results, index=False)
+    by_source = pd.DataFrame(by_source_rows)
+    Path(args.by_source_results).parent.mkdir(parents=True, exist_ok=True)
+    by_source.to_csv(args.by_source_results, index=False)
     print("\nFull table:")
     print(summary.to_string(index=False))
-    print(f"\nSaved to {args.results}")
+    print("\nPer source (lexicon-assisted numbers are not held-out for AES, Ramses, BBAW):")
+    print(by_source.to_string(index=False))
+    print(f"\nSaved to {args.results} and {args.by_source_results}")
 
     if error_rows:
         errors = pd.DataFrame(error_rows)
