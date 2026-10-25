@@ -36,8 +36,10 @@ Conventions in the source files (verified 2026-09-01):
                     ḥ into h.
 
 Usage:
-    python scripts/import_helsinki_lexicon.py            # writes data/processed/helsinki_lexicon.csv
-    python scripts/import_helsinki_lexicon.py --limit 500  # smoke run
+    python scripts/import_helsinki_lexicon.py --output /tmp/lexicon.csv               # a rebuild to compare
+    python scripts/import_helsinki_lexicon.py --output /tmp/lexicon.csv --limit 500   # smoke run
+    python scripts/import_helsinki_lexicon.py --output data/processed/helsinki_lexicon.csv --replace-tracked-lexicon
+        # ^ deliberate: replaces the tracked file (see audit A38)
 """
 
 from __future__ import annotations
@@ -162,10 +164,18 @@ def build(limit: int = 0, force: bool = False) -> tuple[pd.DataFrame, dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output", default=str(OUTPUT_PATH))
+    # No default: the tracked lexicon is what the 0.2 weight and the Urk. IV gate were
+    # tuned on (DATA-LICENSE.md, audit A38), so a bare run must not replace it.
+    parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=0, help="Spellings per source (0 = all).")
     parser.add_argument("--force-download", action="store_true")
+    parser.add_argument(
+        "--replace-tracked-lexicon", action="store_true",
+        help=f"Allow --output to be the tracked {OUTPUT_PATH.name} (a deliberate rebuild).",
+    )
     args = parser.parse_args()
+    if Path(args.output).resolve() == OUTPUT_PATH.resolve() and not args.replace_tracked_lexicon:
+        sys.exit(f"refusing to overwrite the tracked {OUTPUT_PATH.name} without --replace-tracked-lexicon")
     frame, report = build(limit=args.limit, force=args.force_download)
     frame.to_csv(args.output, index=False)
     for key, value in report.items():

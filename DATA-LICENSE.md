@@ -666,7 +666,8 @@ from four SPARQL requests to <https://query.wikidata.org/> (Egyptian lexemes wit
 P12188, "Thesaurus Linguae Aegyptiae lemma ID", and their English sense glosses).
 Wikidata's licensing page (<https://www.wikidata.org/wiki/Wikidata:Licensing>) states:
 "All data in Wikidata has a CC0 license." No attribution is required; the file keeps
-lexeme and sense ids and the site credits it as a courtesy:
+lexeme and sense ids. The app does not display these glosses yet; when it does, it
+will credit them as a courtesy:
 
 > English glosses: Wikidata contributors, Egyptian lexemes,
 > <https://www.wikidata.org/>, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
@@ -757,5 +758,8 @@ The Demotic dataset (`tla-demotic-v18-premium`, CC BY-SA 4.0) **is** part of
 `examples.csv`: 11,996 rows, cited above and in the app's attribution. It carries no
 hieroglyphic writings, so it adds transliteration evidence but no sign evidence. A
 deployment that leaves rows out (`CORPUS_SOURCES_EXCLUDE`, for instance `Ramses,Demotic`)
-credits only the corpora it actually loads, but this file describes the full
-`examples.csv`, and any copy of that file must carry every citation above.
+drops a source's credit only when no row of that source is loaded: Ramses, AES and BBAW
+are credited only when present, while the TLA credit is one citation that always names
+the Earlier, Late and Demotic corpora together, even if some of them are excluded. This
+file describes the full `examples.csv`, and any copy of that file must carry every
+citation above.

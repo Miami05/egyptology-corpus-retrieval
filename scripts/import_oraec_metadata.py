@@ -232,7 +232,10 @@ def build(
 
     proposed = []
     ambiguous = 0
-    for sid, key, tr in zip(bbaw["source_sentence_id"], bbaw_keys, bbaw_tr):
+    # A partial run (`limit`) cannot judge uniqueness: a sentence shared with a file it
+    # skipped would look owned by one text. So it proposes no BBAW links at all.
+    link_rows = [] if limit else zip(bbaw["source_sentence_id"], bbaw_keys, bbaw_tr)
+    for sid, key, tr in link_rows:
         owners = key_owner.get(key, set())
         if len(owners) == 1:
             oid = next(iter(owners))
@@ -304,12 +307,18 @@ def main() -> None:
     parser.add_argument("--bbaw-links", default="")
     parser.add_argument("--bbaw-link-candidates", default="")
     parser.add_argument("--examples", default=str(EXAMPLES))
-    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--limit", type=int, default=0,
+                        help="Debug: read only the first N JSON files; no BBAW links are proposed.")
     args = parser.parse_args()
     out = Path(args.output).resolve()
-    for target in (args.output, args.bbaw_links, args.bbaw_link_candidates):
-        if target and Path(target).resolve() == EXAMPLES.resolve():
+    targets = [Path(t).resolve() for t in (args.output, args.bbaw_links, args.bbaw_link_candidates) if t]
+    for target in targets:
+        if target == EXAMPLES.resolve():
             sys.exit("refusing to overwrite examples.csv")
+        if target == Path(args.examples).resolve():
+            sys.exit("refusing to overwrite the --examples input")
+    if len(set(targets)) != len(targets):
+        sys.exit("--output, --bbaw-links and --bbaw-link-candidates must be different files")
     corpus = pd.read_csv(
         args.examples, dtype=str, keep_default_na=False,
         usecols=["source", "source_sentence_id", "source_ref", "transliteration_gold", "translation"],

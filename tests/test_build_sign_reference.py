@@ -66,3 +66,26 @@ def test_unikemet_qoph_kept_upstream_and_normalised_to_tla_q() -> None:
     row = build(uk, {}, collections.Counter(), set()).iloc[0]
     assert row["unikemet_value"] == "ḳꜣb"  # verbatim upstream
     assert row["unikemet_value_tla"] == "qꜣb"
+
+
+def test_main_refuses_to_overwrite_its_examples_input(tmp_path: Path, monkeypatch) -> None:
+    """The guard used to cover only the repository examples.csv, not --examples."""
+    import pytest
+
+    from scripts import build_sign_reference as mod
+    from scripts import fetch_wikidata_lemma_glosses as wd
+    from scripts import import_ud_egyptian_pc as ud
+
+    custom = tmp_path / "corpus.csv"
+    custom.write_text("hieroglyphs\n", encoding="utf-8")
+    argvs = [
+        (mod, ["--unikemet", "u", "--jsesh", "j"]),
+        (wd, ["--raw-dir", str(tmp_path)]),
+        (ud, ["--raw-dir", str(tmp_path)]),
+    ]
+    for module, extra in argvs:
+        monkeypatch.setattr(sys, "argv", ["x", *extra, "--examples", str(custom), "--output", str(custom)])
+        with pytest.raises(SystemExit) as info:
+            module.main()
+        assert "--examples" in str(info.value), module.__name__
+    assert custom.read_text(encoding="utf-8") == "hieroglyphs\n"

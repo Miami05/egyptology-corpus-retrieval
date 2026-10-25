@@ -434,6 +434,8 @@ def main() -> None:
     out = Path(args.output).resolve()
     if out == EXAMPLES.resolve():
         sys.exit("refusing to overwrite examples.csv")
+    if out == Path(args.examples).resolve():
+        sys.exit("refusing to overwrite the --examples input")
 
     rows = convert(Path(args.raw_dir))
     corpus = pd.read_csv(

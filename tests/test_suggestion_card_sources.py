@@ -73,7 +73,7 @@ def _text(html_fragment: str) -> str:
 
 
 def _metadata_dir(tmp_path: Path, texts: list[dict], links: list[dict]) -> Path:
-    rows = [{**{c: "" for c in METADATA_COLUMNS}, **t} for t in texts]
+    rows = [{**{c: "" for c in METADATA_COLUMNS}, "text_licence": "CC BY-SA 4.0", **t} for t in texts]
     pd.DataFrame(rows, columns=METADATA_COLUMNS).to_csv(tmp_path / "source_metadata_oraec.csv", index=False)
     pd.DataFrame(links, columns=LINK_COLUMNS).to_csv(
         tmp_path / "source_metadata_oraec_bbaw_links.csv", index=False
@@ -625,3 +625,31 @@ def test_the_word_table_shows_a_sign_code_as_a_plain_label_not_markup(app_module
     row = pd.Series({"transliteration_gold": "ꞽw nfr", "hieroglyphs": "𓇋𓅱 <g>Ff1</g>𓄤"})
     signs = list(app_module.token_analysis(row)["Sign"])
     assert signs == ["𓇋𓅱", "[code Ff1]𓄤"]
+
+
+# ---------- final audit (data-licence) ----------
+
+
+def test_text_under_another_licence_is_not_cited_as_cc_by_sa(tmp_path):
+    """Every ORAEC citation renders as "CC BY-SA 4.0", so a text the importer kept
+    under another licence must not be loaded at all."""
+    directory = _metadata_dir(
+        tmp_path,
+        [
+            {"oraec_id": "oraec1", "aed_text_id": "T1", "title": "Open"},
+            {"oraec_id": "oraec2", "aed_text_id": "T2", "title": "Closed", "text_licence": "CC-BY-NC-SA-4.0"},
+            {"oraec_id": "oraec3", "aed_text_id": "T3", "title": "Blank", "text_licence": ""},
+        ],
+        [],
+    )
+    texts = load_text_citations(directory / "source_metadata_oraec.csv")
+    assert set(texts) == {"oraec1"}
+
+
+def test_unicode_notice_is_credited_where_sign_tooltips_can_appear():
+    import app.ui.whyptology_app as w
+
+    assert sign_reference()  # the committed sign_reference.csv feeds the tooltips
+    credit = w.corpus_credit_html(pd.DataFrame({"source": ["TLA"]}))
+    assert "Unicode License V3" in credit and "Unicode, Inc." in credit
+    assert "https://www.unicode.org/license.txt" in credit
