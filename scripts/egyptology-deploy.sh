@@ -31,6 +31,13 @@
 #   6. a rollback that itself fails exits 2 with a MANUAL block and leaves
 #      ~/egyptology-deploy.FAILED; every later run refuses to start while that file
 #      exists, so a rerun cannot overwrite the records the MANUAL steps point at
+#   7. an interrupted run (HUP when the ssh session drops, INT from Ctrl-C, TERM) while
+#      step 4 is changing things rolls back exactly like a failure in 4 (after a HUP its
+#      output goes to ~/egyptology-deploy.interrupted.log). ~/egyptology-deploy.INPROGRESS
+#      is written before step 4 and removed when the run ends cleanly, so a run that died
+#      without that chance (SIGKILL, power loss) leaves it behind, and every later run
+#      refuses to start while it exists: a rerun would otherwise record the half-deployed
+#      state as "last good" (final ops audit)
 #
 # One deploy at a time: a kernel lock (flock) on ~/.egyptology-deploy.lock is held for
 # the whole run, and a second run while it is held exits 1 without touching anything.
@@ -65,6 +72,11 @@ LAST_GOOD_UNITS="$HOME_DIR/egyptology-last-good-units"
 # Left by a rollback that failed (exit 2); while it exists no deploy runs. Delete it by
 # hand once the MANUAL steps are done.
 FAILED_MARKER="$HOME_DIR/egyptology-deploy.FAILED"
+# Exists from the first live change until the run ends cleanly (step 7 above).
+INPROGRESS_MARKER="$HOME_DIR/egyptology-deploy.INPROGRESS"
+INTERRUPT_LOG="$HOME_DIR/egyptology-deploy.interrupted.log"
+# 1 while apply_new_tree runs, so a signal knows whether there is anything to roll back.
+APPLYING=0
 LOCK_FILE="$HOME_DIR/.egyptology-deploy.lock"
 # The interpreter that takes the kernel lock (the box has no promise of the flock CLI).
 # Ubuntu's own python3, not the app venv: a deploy must be able to lock while the venv
@@ -82,6 +94,8 @@ HEALTH_INTERVAL="${HEALTH_INTERVAL:-2}"
 INSTALL_UNITS="${INSTALL_UNITS:-0}"
 STOP_BEFORE_UPDATE="${STOP_BEFORE_UPDATE:-0}"
 BASE_PYTHON="${BASE_PYTHON:-}"
+# Where the running service's environment is read from (tests point it elsewhere).
+PROC_DIR="${PROC_DIR:-/proc}"
 
 # The paste the deploy check runs (expert paste query 1, the same one the unit's
 # warm-up uses). It must render at least one result card: `class="suggestion-card"` is
@@ -92,6 +106,10 @@ BASE_PYTHON="${BASE_PYTHON:-}"
 # no result at all (warm_streamlit.py also ignores <style> blocks, as a second layer).
 PASTE_001="𓆓𓂧 𓆑𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏼 𓂋𓍿 𓀀 𓏼𓎟𓏏"
 EXPECT_TEXT='class="suggestion-card"'
+# The title of the notice app/ui/whyptology_app.py shows when the database cannot be
+# reached. The app still searches and draws result cards then, so without this a deploy
+# whose code or environment broke annotation storage would pass the check.
+REJECT_TEXT='Read-only mode.'
 
 # Read KEY=value lines into the environment WITHOUT executing them. systemd takes
 # the file literally (a REVIEWER_KEY passphrase may hold spaces, `$` or `&`), and a
@@ -160,7 +178,19 @@ wait_healthy() {
 verify_app() {
   wait_healthy || return 1
   "$VENV/bin/python" "$CHECKER" --url "$APP_URL" --timeout 180 \
-    --expect-text "$EXPECT_TEXT" --query "$PASTE_001"
+    --expect-text "$EXPECT_TEXT" --reject-text "$REJECT_TEXT" --query "$PASTE_001"
+}
+
+# True (0) only when the RUNNING service process has Streamlit's file watcher off
+# (STREAMLIT_SERVER_FILE_WATCHER_TYPE=none in its environment). A unit file installed
+# later, or a daemon-reload, does not change a process that is already running, so the
+# first deploy onto a service started without the setting must stop it before the tree
+# changes, or a visitor's rerun reloads changed modules into the old process (A40).
+running_without_file_watcher() {
+  local pid
+  pid="$(systemctl --user show egyptology.service -p MainPID --value 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ && -r "$PROC_DIR/$pid/environ" ]] || return 1
+  tr '\0' '\n' < "$PROC_DIR/$pid/environ" | grep -x 'STREAMLIT_SERVER_FILE_WATCHER_TYPE=none' >/dev/null
 }
 
 # --- release venvs (audit A12, A40, A45) ------------------------------------------
@@ -433,6 +463,11 @@ apply_new_tree() {
       echo "deploy: stopping the service before the files change"
       systemctl --user stop egyptology.service || return 1
       STOPPED_AT=$SECONDS
+    elif ! running_without_file_watcher; then
+      echo "deploy: the running service was not started with STREAMLIT_SERVER_FILE_WATCHER_TYPE=none"
+      echo "deploy:   (or its environment cannot be read) — stopping it before the files change"
+      systemctl --user stop egyptology.service || return 1
+      STOPPED_AT=$SECONDS
     fi
     git -C "$REPO" merge --ff-only "$AFTER" 9>&- || return 1
   fi
@@ -553,8 +588,47 @@ cleanup() {
   fi
 }
 
+# Roll back to $BEFORE; on success exit 1, otherwise write the FAILED marker and exit 2.
+# Signals are ignored from here on: a second Ctrl-C must not cut a rollback short.
+roll_back_and_exit() {
+  trap '' HUP INT TERM
+  APPLYING=0
+  if rollback "$BEFORE"; then
+    rm -f "$INPROGRESS_MARKER"
+    exit 1
+  fi
+  {
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git -C "$REPO" rev-parse --short "$BEFORE") -> $(git -C "$REPO" rev-parse --short "$AFTER"), the rollback failed"
+    cat "$SCRATCH/manual.txt" 2>/dev/null || true
+  } > "$FAILED_MARKER"
+  rm -f "$INPROGRESS_MARKER"
+  echo "deploy: wrote $FAILED_MARKER; no deploy runs until it is deleted" >&2
+  exit 2
+}
+
+# HUP (the ssh session dropped), INT (Ctrl-C), TERM. Before any live change there is
+# nothing to undo; during one, the same rollback as a failure. After a HUP the terminal
+# is gone, so everything from here on goes to $INTERRUPT_LOG.
+on_signal() {
+  trap '' HUP INT TERM PIPE
+  set +e
+  if [[ "$1" == HUP ]]; then
+    exec >>"$INTERRUPT_LOG" 2>&1
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): the session hung up"
+  fi
+  echo "deploy: interrupted by SIG$1" >&2
+  if [[ "$APPLYING" == "1" ]]; then
+    roll_back_and_exit
+  fi
+  rm -f "$INPROGRESS_MARKER"
+  exit 1
+}
+
 main() {
   trap cleanup EXIT
+  trap 'on_signal HUP' HUP
+  trap 'on_signal INT' INT
+  trap 'on_signal TERM' TERM
   take_deploy_lock
   # Only now, under the lock: a run that was waiting while another failed its rollback
   # must see the marker that run wrote before it released the lock.
@@ -563,6 +637,15 @@ main() {
       echo "deploy: an earlier rollback failed ($FAILED_MARKER) — refusing to run, so the records"
       echo "deploy:   the MANUAL steps read ($LAST_GOOD, $LAST_GOOD_VENV, $LAST_GOOD_UNITS) stay as they are."
       echo "deploy:   Follow the MANUAL block from that run (also in the file), then delete the file."
+    } >&2
+    exit 1
+  fi
+  if [[ -e "$INPROGRESS_MARKER" ]]; then
+    {
+      echo "deploy: an earlier deploy was cut off while it changed the service ($INPROGRESS_MARKER)"
+      echo "deploy:   and never rolled back — refusing to run, so the records of what ran before it"
+      echo "deploy:   ($LAST_GOOD, $LAST_GOOD_VENV, $LAST_GOOD_UNITS) are not overwritten. Recover by"
+      echo "deploy:   hand with the steps in the file (DEPLOYMENT.md, \"Manual recovery\"), then delete it."
     } >&2
     exit 1
   fi
@@ -627,17 +710,25 @@ main() {
     exit 1
   fi
 
+  # From here until the run ends cleanly, a run that dies without the chance to roll
+  # back leaves this behind, and no later run starts while it exists.
+  {
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER") was cut off before it finished. On the box:"
+    echo "  systemctl --user stop egyptology.service"
+    echo "  # unit files: if $LAST_GOOD_UNITS exists, put back its copies, delete the ones listed in"
+    echo "  # $LAST_GOOD_UNITS/ADDED, then: systemctl --user daemon-reload"
+    echo "  git -C $REPO reset --hard $BEFORE"
+    echo "  ln -sfn \"\$(cat $LAST_GOOD_VENV)\" $VENV"
+    echo "  systemctl --user start egyptology.service"
+    echo "  # check the app, then allow deploys again:"
+    echo "  rm $INPROGRESS_MARKER"
+  } > "$INPROGRESS_MARKER"
+  APPLYING=1
   if ! apply_new_tree; then
-    if rollback "$BEFORE"; then
-      exit 1
-    fi
-    {
-      echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER"), the rollback failed"
-      cat "$SCRATCH/manual.txt" 2>/dev/null || true
-    } > "$FAILED_MARKER"
-    echo "deploy: wrote $FAILED_MARKER; no deploy runs until it is deleted" >&2
-    exit 2
+    roll_back_and_exit
   fi
+  APPLYING=0
+  rm -f "$INPROGRESS_MARKER"
 
   prune_releases
   # Refresh the operational copy of this script from the repo. Never in place: the
