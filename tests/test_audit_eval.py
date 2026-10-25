@@ -45,7 +45,14 @@ from scripts.build_competitive_ambiguity_benchmark import (  # noqa: E402
     _token_set,
     build_token_index,
 )
-from scripts.eval_guards import TwinGuard, jaccard, twin_rows  # noqa: E402
+from scripts.eval_guards import (  # noqa: E402
+    TwinGuard,
+    assert_text_groups_disjoint,
+    jaccard,
+    ramses_official_split,
+    text_group_keys,
+    twin_rows,
+)
 
 
 def _corpus_available() -> bool:
@@ -183,15 +190,35 @@ def test_target_tokens_fall_back_to_expected_key_tokens_when_the_row_is_absent()
         "competitive_ambiguity_eval_queries_name_v1.csv",
     ],
 )
-def test_benchmark_key_tokens_equal_the_corpus_rows_own_token_set(real_corpus, benchmark_file):
+def test_benchmark_key_tokens_drift_from_the_corpus_only_as_reviewed(real_corpus, benchmark_file):
     """The twin guard takes target tokens from the corpus row, not from the benchmark's
-    expected_key_tokens (only a fallback), and for these sets the two are identical."""
+    expected_key_tokens (only a fallback). The frozen column and today's normaliser
+    may drift apart only as recorded in KNOWN_KEY_TOKEN_DRIFT; any other difference
+    (a new normaliser change, a regenerated benchmark) fails here and must be reviewed.
+    The benchmark files themselves are never rewritten (historical results stay
+    reproducible); the eval reports the drift per query instead."""
     _, guard = real_corpus
     bench = pd.read_csv(BENCHMARKS / benchmark_file).fillna("")
+    drift: dict[str, str] = {}
     for _, row in bench.iterrows():
-        positions = guard.target_positions(row)
-        assert positions, f"{row['benchmark_id']} is not in the corpus"
-        assert set(str(row["expected_key_tokens"]).split()) == guard.token_sets[positions[0]]
+        assert guard.target_positions(row), f"{row['benchmark_id']} is not in the corpus"
+        text = ce.format_token_drift(*ce.key_token_drift(row, guard))
+        if text:
+            drift[str(row["benchmark_id"])] = text
+    assert drift == KNOWN_KEY_TOKEN_DRIFT.get(benchmark_file, {})
+
+
+# Reviewed 2026-10-25 on the merged audit-fixes tree (retrieval-core A17 deletes `{…}`
+# superfluous text from the search and loose keys). Each entry: the frozen
+# expected_key_tokens against today's loose tokens of the target row, `-` only in the
+# frozen column, `+` only today. All three are the intended A17 semantics.
+KNOWN_KEY_TOKEN_DRIFT = {
+    "competitive_ambiguity_eval_queries_holdout_2026-09-05.csv": {
+        "HOLD_001": "+nn",  # n{t}n.t: the superfluous t goes, nn.t remains
+        "HOLD_008": "-i",  # {=ꞽ}: the superfluous pronoun is no longer a token
+        "HOLD_026": "-kh",  # wḫꜣ{ḫ}: the superfluous ḫ is no longer a token
+    },
+}
 
 
 @needs_corpus
@@ -713,7 +740,9 @@ def test_tuner_refuses_a_small_benchmark_unless_allowed(tmp_path):
     assert "--allow-small" in str(raised.value.code)
 
 
-def test_resolving_defaults_leaves_committed_outputs_untouched():
+def test_resolving_default_paths_leaves_committed_outputs_untouched():
+    """Path resolution only: no evaluator runs here. The run-level guarantee is
+    test_a_default_competitive_run_writes_nothing_under_data below."""
     before = {name: _fingerprint(name) for name in COMMITTED_OUTPUTS if (BENCHMARKS / name).exists()}
     assert before, "the committed result files should exist"
     ce._resolve_output_paths(ce._parse_args(["--benchmark", "x.csv"]))
@@ -999,3 +1028,320 @@ def test_proposal_quotes_no_unregistered_margin():
     text = (PROJECT_ROOT / "docs" / "test-set-proposal-2026-10-11.md").read_text(encoding="utf-8")
     assert "margin over plain word overlap is" not in text
     assert "pre-registered" in text
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (2026-10-25): review findings on the eval branch
+# ---------------------------------------------------------------------------
+
+
+def test_a_default_competitive_run_writes_nothing_under_data(tmp_path, capsys, monkeypatch):
+    """A26 (review nit): a real, tiny evaluator run with no --results/--failures. Every
+    file it writes is recorded, so a hardcoded committed path would fail here, not
+    only a wrong default in argparse."""
+    corpus = _write_corpus(tmp_path, TWIN_CORPUS)
+    bench = _write_benchmark(tmp_path)
+    before = {name: _fingerprint(name) for name in COMMITTED_OUTPUTS if (BENCHMARKS / name).exists()}
+    written: list[Path] = []
+    original = pd.DataFrame.to_csv
+
+    def recording_to_csv(self, path_or_buf=None, *args, **kwargs):
+        if path_or_buf is not None and not hasattr(path_or_buf, "write"):
+            written.append(Path(path_or_buf).resolve())
+        return original(self, path_or_buf, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", recording_to_csv)
+    ce.main(["--examples", str(corpus), "--benchmark", str(bench), "--stage", "none"])
+    assert len(written) == 2, written  # results and failures, nothing else
+    data_dir = (PROJECT_ROOT / "data").resolve()
+    assert all(not path.is_relative_to(data_dir) for path in written), written
+    assert {name: _fingerprint(name) for name in before} == before
+
+
+@pytest.mark.parametrize("bad", ["70", "-0.1", "1.5", "nan", "x"])
+def test_exclude_twins_refuses_a_threshold_outside_0_to_1(bad, capsys):
+    with pytest.raises(SystemExit) as raised:
+        ce._parse_args(["--benchmark", "x.csv", "--exclude-twins", bad])
+    assert raised.value.code == 2
+    assert "--exclude-twins" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("good, value", [("0", 0.0), ("0.7", 0.7), ("1", 1.0)])
+def test_exclude_twins_accepts_off_and_thresholds(good, value):
+    assert ce._parse_args(["--benchmark", "x.csv", "--exclude-twins", good]).exclude_twins == value
+
+
+def test_summary_labels_the_pool_as_legacy_or_twin_controlled(tmp_path, capsys):
+    """A4/A23 (review blocker, eval side): a run says which kind of number it is."""
+    _, off = _run_eval(tmp_path, capsys, tag="off")
+    _, on = _run_eval(tmp_path, capsys, "--exclude-twins", "0.7", tag="on")
+    assert "pool: legacy" in off and "pool: twin-controlled" not in off
+    assert "pool: twin-controlled" in on and "pool: legacy" not in on
+    for out in (off, on):
+        for pattern in VERIFY_RELEASE_PATTERNS.values():
+            first = re.search(pattern, out)
+            assert first is not None
+            assert first.start() < out.index("pool:")
+
+
+def test_key_token_drift_is_reported_per_query_and_in_the_summary(tmp_path, capsys):
+    """A55/A17: the frozen expected_key_tokens disagree with today's tokens of the
+    target row; the run says so instead of silently scoring against stale tokens."""
+    corpus = _write_corpus(tmp_path, TWIN_CORPUS)
+    bench_path = _write_benchmark(tmp_path)
+    bench = pd.read_csv(bench_path)
+    bench.loc[0, "expected_key_tokens"] = "htp di nsw wsir nb anx pl"  # a stale `pl`
+    bench.to_csv(bench_path, index=False)
+    capsys.readouterr()
+    ce.main(
+        [
+            "--examples", str(corpus), "--benchmark", str(bench_path),
+            "--results", str(tmp_path / "r.csv"), "--failures", str(tmp_path / "f.csv"),
+            "--stage", "none",
+        ]
+    )
+    out = capsys.readouterr().out
+    results = pd.read_csv(tmp_path / "r.csv").fillna("")
+    guard = TwinGuard(load_examples_csv(str(corpus)))
+    current = guard.token_sets[guard.target_positions(bench.iloc[0])[0]]
+    recorded = set(bench.loc[0, "expected_key_tokens"].split())
+    want = ce.format_token_drift(recorded - current, current - recorded)
+    assert "-pl" in want.split()
+    assert results.loc[0, "key_token_drift"] == want
+    assert "key_token_drift_queries: 1" in out
+    assert list(results.columns)[-1] == "key_token_drift"
+
+
+def test_key_token_drift_is_empty_for_an_absent_target():
+    df = _frame(["htp nsw"])
+    row = pd.Series(
+        {"expected_source_text_id": "nope", "expected_source_sentence_id": "nope", "expected_key_tokens": "zz"}
+    )
+    assert ce.key_token_drift(row, TwinGuard(df)) == (set(), set())
+    assert ce.format_token_drift({"b", "a"}, {"c"}) == "-a -b +c"
+
+
+def _reference_bm25(query: set[str], readings: list[str], excluded: set[int]) -> dict[int, float]:
+    """Textbook Okapi BM25 written out independently (k1 1.5, b 0.75)."""
+    docs = [r.split() for r in readings]
+    n = len(docs)
+    average = sum(len(d) for d in docs) / n
+    out: dict[int, float] = {}
+    for position, doc in enumerate(docs):
+        if position in excluded:
+            continue
+        score = 0.0
+        for token in query:
+            tf = doc.count(token)
+            if not tf:
+                continue
+            df_t = sum(1 for d in docs if token in d)
+            idf = np.log(1 + (n - df_t + 0.5) / (df_t + 0.5))
+            score += idf * tf * 2.5 / (tf + 1.5 * (0.25 + 0.75 * len(doc) / average))
+        if score:
+            out[position] = score
+    return out
+
+
+def test_bm25_counts_repeated_tokens_like_conventional_bm25():
+    """A23 (review): binary BM25 scored `htp nsw` and `htp htp nsw nsw` identically
+    (same distinct tokens), so the earlier row won the tie. Conventional BM25 gives
+    the repeated row tf 2 at length 4, which wins at this average length."""
+    readings = ["htp nsw", "htp htp nsw nsw"]
+    stats, _ = _stats(readings)
+    assert stats.lengths == [2, 4]
+    assert ce.bm25_ranking({"htp"}, stats, top_n=2) == [1, 0]
+
+
+def test_bm25_scores_equal_a_textbook_implementation_on_random_corpora():
+    rng = random.Random(11)
+    for trial in range(15):
+        readings = [
+            " ".join(rng.choice(WORDS[:8]) for _ in range(rng.randint(1, 6)))
+            for _ in range(rng.randint(5, 30))
+        ]
+        stats, _ = _stats(readings)
+        query = set(rng.sample(WORDS[:8], rng.randint(1, 3)))
+        excluded = set(rng.sample(range(len(readings)), 1))
+        got = ce.bm25_scores(query, stats, excluded)
+        want = _reference_bm25(query, readings, excluded)
+        assert set(got) == set(want), trial
+        for position, score in want.items():
+            assert got[position] == pytest.approx(score), (trial, position)
+
+
+def _compare_frame(ids, threshold, **overrides) -> pd.DataFrame:
+    frame = pd.DataFrame(
+        {
+            "benchmark_id": ids,
+            "query_input": [f"q{i}" for i in ids],
+            "query_type": ["simplified_transliteration"] * len(ids),
+            "expected_transliteration": [f"e{i}" for i in ids],
+            "expected_source_text_id": [f"T{i}" for i in ids],
+            "expected_source_sentence_id": [f"S{i}" for i in ids],
+            "stage_mode": ["auto"] * len(ids),
+            "twin_exclusion": [threshold] * len(ids),
+            "useful_family_rank": [1] * len(ids),
+            "exact_rank": [""] * len(ids),
+            "suggestions": ["a"] * len(ids),
+        }
+    )
+    for column, value in overrides.items():
+        frame[column] = value
+    return frame
+
+
+def test_compare_accepts_a_matching_pair():
+    compare_twin_scores.validate_pair(_compare_frame(["B1", "B2"], 0.0), _compare_frame(["B2", "B1"], 0.7))
+
+
+@pytest.mark.parametrize(
+    "twins_in, twins_out, message",
+    [
+        # The reviewer's scenario: a failing query missing from one run.
+        (_compare_frame(["B1", "B2"], 0.0), _compare_frame(["B1"], 0.7), "different queries"),
+        (_compare_frame(["B1", "B1"], 0.0), _compare_frame(["B1"], 0.7), "repeats"),
+        (
+            _compare_frame(["B1"], 0.0),
+            _compare_frame(["B1"], 0.7, query_input=["other"]),
+            "query_input differs",
+        ),
+        (
+            _compare_frame(["B1"], 0.0),
+            _compare_frame(["B1"], 0.7, expected_source_sentence_id=["S9"]),
+            "expected_source_sentence_id differs",
+        ),
+        (_compare_frame(["B1"], 0.0), _compare_frame(["B1"], 0.7, stage_mode=["none"]), "stage_mode"),
+        (_compare_frame(["B1"], 0.7), _compare_frame(["B1"], 0.7), "not off"),
+        (_compare_frame(["B1"], 0.0), _compare_frame(["B1"], 0.0), "not in (0, 1]"),
+        (
+            _compare_frame(["B1", "B2"], 0.0),
+            _compare_frame(["B1", "B2"], 0.7, twin_exclusion=[0.7, 0.8]),
+            "not constant",
+        ),
+    ],
+)
+def test_compare_refuses_mismatched_pairs(twins_in, twins_out, message):
+    with pytest.raises(ValueError, match=re.escape(message)):
+        compare_twin_scores.validate_pair(twins_in, twins_out, "v4")
+
+
+def test_compare_main_refuses_a_pair_with_a_dropped_query(tmp_path):
+    twins_in, twins_out = tmp_path / "in.csv", tmp_path / "out.csv"
+    _compare_frame(["B1", "B2"], 0.0).to_csv(twins_in, index=False)
+    _compare_frame(["B1"], 0.7).to_csv(twins_out, index=False)
+    metrics, changes = tmp_path / "m.csv", tmp_path / "c.csv"
+    with pytest.raises(ValueError, match="different queries"):
+        compare_twin_scores.main(
+            ["--pair", "v4", str(twins_in), str(twins_out),
+             "--metrics-output", str(metrics), "--changes-output", str(changes)]
+        )
+    assert not metrics.exists() and not changes.exists()
+
+
+# A56 (review): text-level split
+
+AES_REF = "AES/sawlit#text={text}&sentence={sentence}"
+
+
+def _text_frame() -> pd.DataFrame:
+    """Rows with real text identities: two AES texts of three sentences, Ramses rows
+    naming their official split, and TLA/BBAW rows with none."""
+    rows = [
+        ("AES", "AES_1", "s1", AES_REF.format(text="TXTA", sentence="1")),
+        ("TLA", "TLA_EARLIER_001", "S001", "x#row=1"),
+        ("AES", "AES_2", "s2", AES_REF.format(text="TXTA", sentence="2")),
+        ("AES", "AES_3", "s3", AES_REF.format(text="TXTB", sentence="3")),
+        ("Ramses", "RAMSES_A", "S_test_1", "ramses-trl 2019-09-01 test line 1"),
+        ("Ramses", "RAMSES_B", "S_train_2", "ramses-trl 2019-09-01 train line 2"),
+        ("Ramses", "RAMSES_C", "S_val_3", "ramses-trl 2019-09-01 val line 3"),
+        ("BBAW", "bbaw_egyptian_2018", "B1", "phiwi/bbaw_egyptian"),
+        ("BBAW", "bbaw_egyptian_2018", "B2", "phiwi/bbaw_egyptian"),
+        ("AES", "AES_4", "s4", AES_REF.format(text="TXTA", sentence="4")),
+        ("AES", "AES_5", "s5", AES_REF.format(text="TXTB", sentence="5")),
+        ("TLA", "TLA_EARLIER_002", "S002", "x#row=2"),
+    ]
+    frame = pd.DataFrame(rows, columns=["source", "source_text_id", "source_sentence_id", "source_ref"])
+    signs = [[_glyph(10 * i + k) for k in range(3)] for i in range(len(frame))]
+    frame["hieroglyphs_norm"] = [" ".join(group) for group in signs]
+    frame["transliteration_gold"] = [" ".join(f"r{i}{k}" for k in range(3)) for i in range(len(frame))]
+    return frame
+
+
+def test_text_group_keys_use_the_aes_text_id_and_fall_back_to_the_sentence():
+    keys = text_group_keys(_text_frame())
+    assert keys[0] == keys[2] == keys[9] == "AES:text:TXTA"
+    assert keys[3] == keys[10] == "AES:text:TXTB"
+    # BBAW shares one source_text_id but has no text identity: each row is its own group.
+    assert keys[7] != keys[8]
+    assert len(set(keys)) == len(keys) - 3
+
+
+def test_ramses_official_split_is_read_from_source_ref():
+    assert ramses_official_split("Ramses", "ramses-trl 2019-09-01 test line 7") == "test"
+    assert ramses_official_split("Ramses", "ramses-trl 2019-09-01 val line 7") == "val"
+    assert ramses_official_split("Ramses", "something else") is None
+    assert ramses_official_split("TLA", "ramses-trl 2019-09-01 test line 7") is None
+
+
+def test_text_split_keeps_every_text_on_one_side_and_uses_the_ramses_split():
+    frame = _text_frame()
+    split = rm.select_test_rows(frame, 0.5, False, 0.0, False, set(), split_by="text")
+    test_ids = set(split.test["source_sentence_id"])
+    # Group ordinals (first appearance, Ramses rows aside): TXTA 0, TLA_001 1, TXTB 2,
+    # B1 3, B2 4, TLA_002 5 -> every 2nd group: TXTA, TXTB, B2.
+    assert test_ids == {"s1", "s2", "s4", "s3", "s5", "B2", "S_test_1"}
+    assert "S_train_2" in set(split.train["source_sentence_id"])
+    assert "S_val_3" in set(split.train["source_sentence_id"])
+    train_keys = set(text_group_keys(split.train))
+    assert train_keys.isdisjoint(text_group_keys(split.test))
+
+
+def test_sentence_split_leaks_a_text_across_the_split_and_the_check_catches_it():
+    """Why the text split exists: the old every-k-th split puts TXTA on both sides."""
+    frame = _text_frame()
+    old = rm.select_test_rows(frame, 0.5, False, 0.0, False, set(), split_by="sentence")
+    with pytest.raises(ValueError, match="both train and test"):
+        assert_text_groups_disjoint(old.train, old.test)
+
+
+def test_text_split_equals_the_old_split_when_no_row_has_a_text_identity():
+    frame = _split_frame()  # no source_ref: every sentence is its own group
+    for exclude in (False, True):
+        old = rm.select_test_rows(frame, 0.2, exclude, 0.8, False, set(), split_by="sentence")
+        new = rm.select_test_rows(frame, 0.2, exclude, 0.8, False, set(), split_by="text")
+        assert list(new.test.index) == list(old.test.index)
+        assert list(new.train.index) == list(old.train.index)
+
+
+def test_reading_eval_defaults_to_the_text_split():
+    assert rm._parse_args([]).split == "text"
+    assert rm._parse_args(["--split", "sentence"]).split == "sentence"
+    with pytest.raises(ValueError):
+        rm.select_test_rows(_split_frame(), 0.2, False, 0.0, False, set(), split_by="nope")
+
+
+def test_sign_pool_drops_the_targets_own_text_only_when_asked():
+    frame = _text_frame()
+    same_text = se.SignDuplicateGuard(frame, 0.0, same_text=True)
+    assert same_text.removals(0) == {2, 9}  # the other TXTA sentences
+    assert same_text.removals(7) == set()  # BBAW: no text identity
+    legacy = se.SignDuplicateGuard(frame, 0.0)
+    assert legacy.removals(0) == set()
+    args = se._parse_args([])
+    assert args.exclude_same_text is True
+    assert se._parse_args(["--no-exclude-same-text"]).exclude_same_text is False
+
+
+# A25 (review): the proposal records the decisions and does not claim the fix
+
+
+def test_test_set_proposal_records_the_decisions_and_keeps_a25_open():
+    text = (PROJECT_ROOT / "docs" / "test-set-proposal-2026-10-11.md").read_text(encoding="utf-8")
+    assert re.search(r"^## Decisions", text, flags=re.MULTILINE)
+    assert "A25 stays OPEN" in text
+    assert "n = 200" in text and "stratified and seeded" in text
+    assert "data/private/" in text and "gitignored" in text
+    # load_private_examples globs data/private/*.csv, so the doc must forbid a top-level file.
+    assert "never as a top-level CSV" in text
+    assert "until after the first report" in text

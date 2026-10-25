@@ -14,6 +14,7 @@ cap, so the counts agree with `build_competitive_ambiguity_benchmark`.
 
 from __future__ import annotations
 
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -44,6 +45,18 @@ def jaccard(left: set[str], right: set[str]) -> float:
 def corpus_token_sets(df: pd.DataFrame) -> list[set[str]]:
     """One token set per corpus row, positionally aligned with `df`."""
     return [_token_set(loose_reading_form(value)) for value in df["transliteration_gold"]]
+
+
+def corpus_token_lists(df: pd.DataFrame) -> list[list[str]]:
+    """One token LIST per corpus row (repeats kept), positionally aligned with `df`.
+
+    The same tokens as `corpus_token_sets`; the list form is what a term-frequency
+    ranker (the BM25 baseline, audit A23) needs.
+    """
+    return [
+        [token for token in loose_reading_form(value).split() if token.strip()]
+        for value in df["transliteration_gold"]
+    ]
 
 
 def twin_rows(
@@ -107,7 +120,8 @@ class TwinGuard:
     """Corpus-wide structures for twin lookup, built once per eval run (about 4 s)."""
 
     def __init__(self, df: pd.DataFrame) -> None:
-        self.token_sets = corpus_token_sets(df)
+        self.token_lists = corpus_token_lists(df)
+        self.token_sets = [set(tokens) for tokens in self.token_lists]
         self.token_index = build_token_index(self.token_sets)
         self.keys = folded_keys(df)
         self.folded_groups = folded_key_groups(self.keys)
@@ -171,3 +185,107 @@ def twins_of_target(
     return [
         (position, scores[position], position in folded) for position in sorted(scores)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Text identity for text-level splits (audit A56).
+#
+# A held-out sentence whose sibling sentences from the same text sit in training is
+# not held out in the sense that matters: names, formulae and spellings recur inside a
+# text. Only some sources carry a trustworthy text identity:
+#
+#   AES     source_ref holds the real text id (`...#text=<id>&sentence=<id>`; 696
+#           texts over 9,823 aligned sentences on 2026-10-25).
+#   Ramses  every row has its own hashed source_text_id, but source_ref names
+#           Rosmorduc's official split (`ramses-trl <date> train|val|test line N`),
+#           which is the split the audit asks for.
+#   TLA     source_text_id is per sentence (TLA_EARLIER_001, ...): no text identity.
+#   BBAW    one source_text_id (`bbaw_egyptian_2018`) for every row: no text identity.
+#
+# Rows without a text identity fall back to the sentence as its own group, which is
+# exactly the old sentence-level split. That is a stated limitation, not a fix;
+# `SENTENCE_LEVEL_SOURCES` lets the evals print it.
+# ---------------------------------------------------------------------------
+
+AES_TEXT_RE = re.compile(r"[#&]text=([^&#\s]+)")
+RAMSES_SPLIT_RE = re.compile(r"^ramses-trl\s+\S+\s+(train|val|test)\s+line\s+\d+")
+SENTENCE_LEVEL_SOURCES = ("TLA", "BBAW")
+
+
+def _column(df: pd.DataFrame, name: str) -> list[str]:
+    if name not in df.columns:
+        return [""] * len(df)
+    return ["" if pd.isna(value) else str(value) for value in df[name]]
+
+
+def text_group_keys(df: pd.DataFrame) -> list[str]:
+    """A text-identity key per row, positionally: rows sharing a key are one text.
+
+    AES rows use the text id from source_ref. Every other row, and an AES row whose
+    source_ref has no text id, is its own group, keyed by source, text id and sentence
+    id. Ramses' official split is not a grouping; `ramses_official_split` reads it.
+    """
+    keys: list[str] = []
+    for label, source, text_id, sentence_id, ref in zip(
+        df.index,
+        _column(df, "source"),
+        _column(df, "source_text_id"),
+        _column(df, "source_sentence_id"),
+        _column(df, "source_ref"),
+    ):
+        match = AES_TEXT_RE.search(ref) if source == "AES" else None
+        if match:
+            keys.append(f"AES:text:{match.group(1)}")
+        elif text_id or sentence_id:
+            keys.append(f"{source}:sentence:{text_id}:{sentence_id}")
+        else:
+            # No ids at all (synthetic frames): the row, by its index label so the key
+            # survives slicing into train and test, is its own group.
+            keys.append(f"{source}:row:{label}")
+    return keys
+
+
+def ramses_official_split(source: object, source_ref: object) -> "str | None":
+    """'train', 'val' or 'test' for a Ramses row whose source_ref names it, else None."""
+    if str(source) != "Ramses":
+        return None
+    match = RAMSES_SPLIT_RE.match(str(source_ref or ""))
+    return match.group(1) if match else None
+
+
+def text_level_test_mask(df: pd.DataFrame, test_fraction: float) -> list[bool]:
+    """Which rows of `df` are held out under the text-level split (True = test).
+
+    * A Ramses row that names an official split is test iff that split is `test`
+      (`train` and `val` train), so Rosmorduc's split is used as published.
+    * Every other row: its text group (`text_group_keys`) is held out when the group's
+      ordinal, in order of first appearance, is a multiple of int(1 / test_fraction).
+      A whole group always lands on one side.
+
+    When every group is a single sentence and no row names a Ramses split, this is
+    exactly the old `iloc[::k]` split, so TLA and BBAW are held out as before.
+    """
+    step = int(1 / test_fraction)
+    ordinals: dict[str, int] = {}
+    mask: list[bool] = []
+    for key, source, ref in zip(
+        text_group_keys(df), _column(df, "source"), _column(df, "source_ref")
+    ):
+        official = ramses_official_split(source, ref)
+        if official is not None:
+            mask.append(official == "test")
+            continue
+        if key not in ordinals:
+            ordinals[key] = len(ordinals)
+        mask.append(ordinals[key] % step == 0)
+    return mask
+
+
+def assert_text_groups_disjoint(train: pd.DataFrame, test: pd.DataFrame) -> None:
+    """Raise ValueError when any text group has sentences on both sides of a split."""
+    shared = set(text_group_keys(train)) & set(text_group_keys(test))
+    if shared:
+        raise ValueError(
+            f"{len(shared)} text group(s) are in both train and test, "
+            f"e.g. {sorted(shared)[0]}"
+        )

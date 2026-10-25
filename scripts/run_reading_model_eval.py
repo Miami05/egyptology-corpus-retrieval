@@ -24,8 +24,13 @@ the test sentence's own counts: with the lexicon on, rows from
 `--lexicon-exclude-test-sources` (default Ramses,AES) are removed from the TEST split
 only (they stay in training). Per-source lexicon-assisted accuracy is written to
 `--by-source-results`. Even so, do not quote a lexicon-on number as a held-out result
-until whole texts are held out and a lexicon variant is built without them. Results go
-to NEW `*_v2.csv` files; the committed reading_model_eval*.csv are the legacy record.
+until a lexicon variant is built without the held-out texts. Results go to NEW
+`*_v2.csv` files; the committed reading_model_eval*.csv are the legacy record.
+
+Text-level split (audit A56, `--split text`, the default): AES sentences are held out
+by whole text (the text id in source_ref) and Ramses by Rosmorduc's official test
+split; TLA and BBAW rows carry no text identity in this corpus, so they are still split
+by sentence. That limitation is printed with every run.
 """
 
 from __future__ import annotations
@@ -47,7 +52,12 @@ from app.data.loader import load_examples_csv
 from app.services.lexicon import load_lexicon
 from app.services.reading_model import train_reading_model
 from scripts.build_competitive_ambiguity_benchmark import build_token_index
-from scripts.eval_guards import twin_rows
+from scripts.eval_guards import (
+    SENTENCE_LEVEL_SOURCES,
+    assert_text_groups_disjoint,
+    text_level_test_mask,
+    twin_rows,
+)
 
 EXAMPLES_PATH = "data/processed/examples.csv"
 # NEW names on purpose (audit A24, A56): the committed reading_model_eval*.csv were
@@ -59,6 +69,10 @@ NEAR_DUPLICATE_OVERLAP = 0.8
 LEXICON_EXCLUDE_TEST_SOURCES = "Ramses,AES"
 # Sources whose lexicon-assisted numbers are not held-out (see the module docstring).
 LEXICON_TAINTED_SOURCES = {"Ramses", "AES", "BBAW"}
+# How held-out sentences are chosen (audit A56): 'text' keeps every sentence of a text
+# on one side (see scripts/eval_guards.text_level_test_mask), 'sentence' is the old
+# every-k-th-sentence split.
+SPLIT_MODES = ("text", "sentence")
 
 
 def aligned_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -101,8 +115,14 @@ def select_test_rows(
     near_duplicate_overlap: float,
     lexicon_on: bool,
     lexicon_exclude_sources: "set[str]",
+    split_by: str = "sentence",
 ) -> SplitResult:
-    """The deterministic split (every k-th sentence held out) and what is dropped from test.
+    """The deterministic split and what is dropped from test.
+
+    `split_by="sentence"` holds out every k-th sentence (the old split, still this
+    function's default so earlier callers are unchanged); `"text"` holds out whole
+    texts where the source has a text identity and Ramses' official test split, and
+    raises if any text group ends up on both sides (audit A56).
 
     Order: split; count test sentences whose exact sign string is in training
     (`exact_duplicates`, reported whether or not they are dropped); with duplicate
@@ -111,8 +131,16 @@ def select_test_rows(
     are not exact copies); finally, with the lexicon on, drop test sentences from
     `lexicon_exclude_sources` (`excluded_for_lexicon`). Training is never touched.
     """
-    test = subset.iloc[:: int(1 / test_fraction)]
-    train = subset.drop(test.index)
+    if split_by == "text":
+        held_out = np.array(text_level_test_mask(subset, test_fraction), dtype=bool)
+        test = subset[held_out]
+        train = subset[~held_out]
+        assert_text_groups_disjoint(train, test)
+    elif split_by == "sentence":
+        test = subset.iloc[:: int(1 / test_fraction)]
+        train = subset.drop(test.index)
+    else:
+        raise ValueError(f"split_by must be one of {SPLIT_MODES}, not {split_by!r}")
     train_sign_strings = set(train["hieroglyphs_norm"].astype(str))
     leaked_mask = test["hieroglyphs_norm"].astype(str).isin(train_sign_strings)
     exact = int(leaked_mask.sum())
@@ -197,6 +225,17 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
         help="Share of aligned sentences held out for testing.",
     )
     parser.add_argument(
+        "--split",
+        choices=list(SPLIT_MODES),
+        default="text",
+        help=(
+            "Audit A56. 'text' (default) holds out whole texts: AES by its text id, "
+            "Ramses by Rosmorduc's official test split; TLA and BBAW rows carry no text "
+            "identity, so each of their sentences is its own group (a stated "
+            "limitation). 'sentence' is the old every-k-th-sentence split."
+        ),
+    )
+    parser.add_argument(
         "--composed",
         action="store_true",
         help=(
@@ -235,6 +274,12 @@ def main(argv: "list[str] | None" = None) -> None:
 
     full = aligned_rows(load_examples_csv(args.examples))
     print(f"aligned sentences available: {len(full)}")
+    if args.split == "text":
+        print(
+            "split: whole texts (AES text id, Ramses official test split); "
+            f"{', '.join(SENTENCE_LEVEL_SOURCES)} have no text identity and are split "
+            "by sentence"
+        )
 
     summary_rows: list[dict] = []
     error_rows: list[dict] = []
@@ -245,8 +290,9 @@ def main(argv: "list[str] | None" = None) -> None:
     for raw_size in [int(s) for s in args.sizes.split(",")]:
         size = len(full) if raw_size == 0 else min(raw_size, len(full))
         subset = full.head(size)
-        # Deterministic split: every 5th sentence is held out. No shuffling, so the
-        # split is reproducible and the same sentences are held out at every size.
+        # Deterministic split (--split): whole texts by default, every 5th sentence
+        # with --split sentence. No shuffling, so the split is reproducible and the
+        # same sentences are held out at every size.
         #
         # This corpus is heavily formulaic (Pyramid Text spells recur), so a large
         # share of held-out sentences have an identical twin in training. Accuracy on
@@ -260,6 +306,7 @@ def main(argv: "list[str] | None" = None) -> None:
             args.near_duplicate_overlap,
             lexicon_on,
             lexicon_exclude,
+            split_by=args.split,
         )
         train, test = split.train, split.test
         if train.empty or test.empty:
@@ -489,6 +536,7 @@ def main(argv: "list[str] | None" = None) -> None:
         )
         row_out["lexicon_test_sources_excluded"] = ",".join(sorted(lexicon_exclude))
         row_out["test_sentences_excluded_for_lexicon"] = split.excluded_for_lexicon
+        row_out["split"] = args.split
         by_source_rows.extend(by_source_records(size, per_source))
         summary_rows.append(row_out)
         print(
