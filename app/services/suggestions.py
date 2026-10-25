@@ -26,6 +26,7 @@ from app.data.normalizer import (
 )
 from app.retrieval.scorer import (
     effective_surplus_penalty,
+    reading_order_score,
     token_overlap_score,
     tokenize_query,
 )
@@ -598,17 +599,20 @@ def _evidence_summary(
 
     query_reading_norm = normalize_sign_sequence(query_reading_order)
     if query_reading_norm:
-        reading_scores = [
-            token_overlap_score(
-                query_reading_norm,
-                _safe_str(row.get("normalized_reading_order_norm"))
-                or normalize_sign_sequence(_safe_str(row.get("normalized_reading_order"))),
-            )
+        candidate_readings = [
+            _safe_str(row.get("normalized_reading_order_norm"))
+            or normalize_sign_sequence(_safe_str(row.get("normalized_reading_order")))
             for _, row in group.iterrows()
         ]
-        if max(reading_scores or [0.0]) >= 0.92:
+        # "Same" means the same sign sequence, in order (audit item 6): this used
+        # to be a set overlap >= 0.92, which called `A B` and `B A` the same.
+        query_sequence = tokenize_query(query_reading_norm)
+        if any(tokenize_query(value) == query_sequence for value in candidate_readings):
             bits.append("same normalized reading order")
-        elif max(reading_scores or [0.0]) > 0.0:
+        elif any(
+            reading_order_score(query_reading_norm, value) > 0.0
+            for value in candidate_readings
+        ):
             bits.append("similar normalized reading order")
 
     query_tokens = set(tokenize_query(query_loose or query_key))
@@ -830,7 +834,7 @@ def suggest_top_readings(
 
         if reading_live:
             reading_similarity = max(
-                token_overlap_score(
+                reading_order_score(
                     query_reading_norm,
                     _safe_str(row.get("normalized_reading_order_norm"))
                     or normalize_sign_sequence(
