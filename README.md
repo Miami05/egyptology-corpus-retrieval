@@ -199,6 +199,20 @@ each is understood and scheduled in [ROADMAP.md](ROADMAP.md):
 - ~~No Unicode variant folding~~ — fixed (Phase 0): text is NFC-normalised and the
   plural-strokes variants U+133E5/U+133FC fold together. Other visually identical
   pairs can be added to `SIGN_VARIANTS` in `app/data/normalizer.py` as they are found.
+- **The search key merges letters an Egyptologist keeps apart** (open, flagged by an
+  expert reviewer 2026-09-07). To let plain ASCII hit the corpus, `search_fold` writes
+  ꜣ and ꜥ both as `a`, ḫ and ẖ both as `kh`, and ḥ and h both as `h` — for every
+  notation, including Unicode and Manuel de Codage input that distinguishes them.
+  Words affected sit in 49%, 19% and 43% of corpus sentences respectively (`pꜣ`/`pꜥ`,
+  `ḫr`/`ẖr`, `ḥr`/`hr`). Folding ꞽ/i/j/y together is fine; folding these is not. The fix
+  (keep the distinctions whenever the input carries them) is pre-registered as
+  Experiment 3 in ROADMAP.md and not yet run; whether a plain-ASCII mode survives at all
+  is an open decision. Until then, the top-3 can be won by a lookalike that differs only
+  in one of these letters.
+- **The segmenter's gains are measured on corpus text, not on inscriptions.** Boundaries
+  between top-level sign groups predict word boundaries in every corpus we have, but
+  the people who encoded those corpora knew the words when they grouped the signs, so
+  the figures above say nothing yet about how scribes grouped signs on the wall.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for hosting, the database step that makes annotations
 persist, the transliteration font, and the responsive-testing gotcha.

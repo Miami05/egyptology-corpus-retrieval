@@ -2663,3 +2663,116 @@ support. Caveat carried forward: `canonical_reading` feeds the benchmark builder
 any set built after tonight must say so in its provenance. **Day closed: B, C1, C1c, D′ live;
 C1b and D nulls recorded; C2 parked with a miss classification. Next: reviewers' answers →
 Nederhof mail → ranking work only with expert evidence; housekeeping (shared test fixture).**
+
+## Nederhof's fifth mail — expert round 2 answered, 2026-09-06
+
+Sheet returned (`data/benchmarks/expert_round_2_answers_nederhof_2026-09-06.csv`; write-up
+`docs/expert-round-2-nederhof-2026-09-06.md`). Ticks 3 for / 2 against the ordering change; free
+text 2 for / 3 against, and the HOLD_010 tick contradicts its own sentence ("Clearly line 1 of
+Before is more relevant" — that is the displaced row). Cases 3 and 4 say the demotions cost wanted
+readings, so under the pre-registered condition **CFG-C is dropped; the default stays** (it was
+never changed). His main point was not about ordering: the "Typed" strings on the cards are the
+builder's folded search keys (`kh`, ꜣ/ꜥ→`a`, stop tokens dropped, eight tokens), not anything a
+reader types, and he judged the exercise by them. Two follow-ups: relabel the query on any future
+sheet in a notation readers recognise; and measure whether merging ꜣ/ꜥ in `search_fold` costs rank
+(775 folded word keys merge ꜣ/ꜥ-distinct spellings; 52% of rows carry one, via `pꜣ`/`tꜣ`/`nꜣ`) —
+candidate: merge only for plain-ASCII input. Pre-registration required; nothing built. Reply owed.
+
+## Nederhof's sixth mail — Case 4 confirmed; the fold answered; Experiment 3 pre-registered, 2026-09-07
+
+Reply to Email 9. Write-up appended to `docs/expert-round-2-nederhof-2026-09-06.md`.
+
+- **Case 4 confirmed** against the change ("the 'current order' is better … none of the phrases
+  in the 'proposed order' are useful"); final tally by his words 2 for / 3 against; CFG-C stays
+  dropped, nothing ambiguous left in the verdict.
+- **The fold.** He chose neither option offered. Aleph/ayin and ḫ/ẖ (MdC `A`/`a`, `x`/`X`) must
+  never be merged; i/j/y may be; users should be held to Unicode or MdC. Re-measured on the public
+  corpus (token-level method, recorded in the write-up): merging keys ꜣ/ꜥ 681 (49% of rows), ḫ/ẖ
+  242 (19%), ḥ/h 638 (43%). **Decision owed by Ledio, not a benchmark:** keep plain ASCII as a
+  lossy fallback, or read every all-ASCII input as MdC as he asks. Experiment 3 below measures the
+  mechanism either way and is not run.
+- **Group boundaries:** expected, but an open question about inscriptions as opposed to corpora
+  whose encoders knew the words. Our B/C1c gains are claims about corpus text only. He avoids
+  "quadrat" (misnomer); say "top-level group" to him and in new user-facing text.
+- **Reply:** Email 10 drafted in `docs/outreach-messages.md`, short; sendable now, or after the
+  ASCII decision if Ledio wants to report it.
+
+### Experiment 3 — the notation-faithful search key — pre-registered 2026-09-07, NOT RUN
+
+**Question.** When the input distinguishes ꜣ/ꜥ, ḫ/ẖ and ḥ/h (Unicode or MdC), does keeping those
+distinctions in the search key raise top-3 useful and MRR on queries written in that notation,
+without lowering the rank-1 count, while every plain-ASCII query behaves byte-identically? Expert
+evidence for running it: Nederhof's sixth mail. Frozen before any code:
+
+0. **Faithful query variants, and a kill switch (no ranker code).** For all 100 queries (v4 20,
+   held-out 1 20, LE-v1 30, NAME-v1 30) derive a Unicode-notation query from
+   `expected_transliteration` with the builder's recipe minus the fold (loose form → strip light
+   endings → drop stop tokens → first eight). Check `search_fold(faithful) == query_input` for
+   every query; print the count that differ and either repair the recipe or record the residue
+   with ids. Then count the faithful queries that contain at least one token whose folded key is
+   a merging key from the table above (the queries that *can* move). If that count is **0 on
+   every set**, stop: these sets cannot show the effect, write the null, and the next step is a
+   set built for it, not a ranker change. Baseline for the faithful sets under today's fold is by
+   construction the committed numbers (v4 0.90, held-out 1 0.75, LE-v1 0.8667, NAME-v1 as
+   committed); print them anyway from the run.
+1. **Build held-out 2 and held-out 3** exactly as Experiment 2's step 1 specified (20 each, fixed
+   twin guard, disjoint by row and by `source_text_id`, BBAW ±20 window; build log reports rows
+   removed per rule), each with faithful and folded query columns. Held-out 2 selects; held-out 3
+   is sealed until step 4. (Neither was built in Experiment 2; its pre-check failed first.)
+2. **Mechanism, two candidate configurations, written down here.** The index gains a faithful key
+   per token alongside today's folded key. For a query whose notation is `unicode` or `mdc`,
+   *F-a*: a query token may only match a candidate token whose faithful key it equals (lossy-only
+   matches are not matches at all, in retrieval and in the re-rank); *F-b*: retrieval is
+   unchanged, and only the re-rank's query-token-overlap term counts faithful matches. For a
+   query whose notation is `ascii` (or hieroglyphs), both configurations are today's code path
+   and every result column must be identical. Selection by rule on held-out 2 faithful only:
+   top-3 and MRR both ≥ baseline, rank-1 count not lower, at least one strictly higher; among
+   qualifiers, highest MRR. None → null result, nothing ships.
+3. **Report** on the faithful variants of v4, held-out 1, LE-v1, NAME-v1, held-out 2: top-3
+   useful, MRR, rank-1 count, per-query signed rank change of the first useful candidate.
+   Hard gates: the stored folded-ASCII queries of all four sets produce results identical to the
+   committed files in every column; `run_expert_paste_eval.py` 8/8; segmentation byte-identical.
+4. **Confirm before promoting.** Open held-out 3 once for the selected configuration only: pass
+   iff top-3 and MRR ≥ baseline there and rank-1 not lower. Then it becomes the default, the
+   README's notation table is updated, and the result goes to Nederhof. Fail → default stays,
+   failed confirmation reported, held-out 3 spent.
+
+Out of scope, on purpose: `strict_reading_key` (D′ owns it), the display, the plain-ASCII policy
+(Ledio's decision, taken separately; if he adopts "all-ASCII is MdC", `_pick_notation` changes
+and the README rows change, and *that* is measured only for not breaking the paste gate and the
+committed numbers, since no benchmark query is a plain-ASCII user), renaming `quadrat` in code.
+
+### What to do next, in order (written 2026-09-07 after the sixth mail)
+
+1. **Ledio decides the plain-ASCII question.** Recommendation: follow Nederhof — read every
+   all-ASCII input as MdC (`a` ayin, `A` aleph, `x` ḫ, `X` ẖ, `H` ḥ), drop the `kh`/`sh`/`dj`
+   digraph convention and the README's "plain ASCII" row. The alternative (keep ASCII as a marked
+   lossy fallback) is legitimate but must be said to him plainly.
+2. **Send Email 10** with the decision in place of "I lean to it". Its one question (were the
+   St Andrews groupings taken from the facsimiles without reference to word division?) decides how
+   the C1c as-rendered result may be described.
+3. **Experiment 3, step 0 only** — faithful query variants for the 100 queries, fold-back check,
+   count of queries that can move. Worktree, no ranker code. Zero movers on every set → null,
+   and the next step is a set built for the effect, not a ranker change.
+4. **If step 0 passes:** build held-out 2 and 3 (Experiment 2's recipe), run F-a and F-b, select
+   on held-out 2 by rule, confirm on held-out 3, hard gates (stored ASCII sets byte-identical,
+   paste 8/8, segmentation identical). Ship only through step 4; then update the README notation
+   table and tell Nederhof.
+5. **Commit the paperwork first** — round-2 CSV and write-up, this ROADMAP section, the outreach
+   file, README and the three caveats — so the pre-registration has a hash older than any run.
+6. **Later:** his St Andrews answer into the C1c and sign-function write-ups; "top-level group" in
+   new user-facing text; Camilla's and Sophie's sheets recorded alongside his (they overturn the
+   CFG-C decision only if both contradict him on Cases 3 and 4); housekeeping (shared session
+   fixture) unchanged from the 2026-09-06 close.
+
+## Promised to Nederhof, 2026-10-11 (Email 10, sent)
+
+Not built yet; measure before switching on, on queries written in a reader's notation
+(not the folded key).
+
+- Input is read as Unicode or as MdC; every all-ASCII input is read as MdC
+  (a = ꜥ, A = ꜣ, x = ḫ, X = ẖ). ꜣ/ꜥ and ḫ/ẖ stay distinct in the search.
+- i and j fold together; y stays separate unless the measurements give a reason.
+- Use "top-level group", never "quadrat", in new user-facing text.
+- Waiting on his answer: were the St Andrews groupings taken from the facsimile without
+  reference to word division? Goes into the C1c and sign-function write-ups.

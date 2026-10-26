@@ -534,3 +534,15 @@ recorded in the code:
 * Retrieval and ranking: no change.
 * The lattice's pasted-space restriction (`len(span) > 1 and any(i < b < j for b in
   hints)`) — left alone, as instructed; it is a separate pre-registered experiment.
+
+---
+
+**Caveat added 2026-09-07 (Nederhof, sixth mail).** The gain above rests on the observation
+that boundaries between top-level sign groups predict word boundaries. He calls that expected,
+and points out that transcriptions in lexicographically oriented corpora are themselves shaped
+by knowledge of word boundaries, so whether the *arrangement of signs into groups* on the
+inscription is influenced by word division is an open question about inscriptions, not one
+these corpora can answer. Read every number in this report as a result about corpus text
+(BBAW, TLA, AES, Ramses, St Andrews as encoded); none of it is a claim about scribal practice.
+He also avoids the word "quadrat" as a misnomer; his term is "top-level group". Code and this
+report keep `quadrat` as an identifier.

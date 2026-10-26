@@ -480,3 +480,15 @@ Deviations from the wording of the task, all recorded above: the fuzz case is se
 `random` rather than `hypothesis` (not installed); the St Andrews memorisation guard
 drops one line instead of asserting; and a bug in the BBAW control synthesiser was
 found and fixed mid-step, with both the before and after precision reported.
+
+---
+
+**Caveat added 2026-09-07 (Nederhof, sixth mail).** The gain above rests on the observation
+that boundaries between top-level sign groups predict word boundaries. He calls that expected,
+and points out that transcriptions in lexicographically oriented corpora are themselves shaped
+by knowledge of word boundaries, so whether the *arrangement of signs into groups* on the
+inscription is influenced by word division is an open question about inscriptions, not one
+these corpora can answer. Read every number in this report as a result about corpus text
+(BBAW, TLA, AES, Ramses, St Andrews as encoded); none of it is a claim about scribal practice.
+He also avoids the word "quadrat" as a misnomer; his term is "top-level group". Code and this
+report keep `quadrat` as an identifier.
