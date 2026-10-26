@@ -398,3 +398,34 @@ their non-zero exits, as does a paste result below 8/8.
 * Step 1 (the full pytest suite) is run as part of attempt 2 with its full output kept in
   `$R/pytest.txt`, and every step's start time, end time and exit code is recorded in
   `$R/run_log.txt`.
+
+---
+
+## Addendum: runtime observed 2026-10-26
+
+Addendum only — nothing above this line is edited (A2.9: a pre-registration is appended to,
+never rewritten). This records what the run actually cost, against the "Expected" column of
+the A3 run-order table. It changes no rule and no verdict.
+
+Attempt 2 spanned about **15 h 33 min** of wall clock: steps 0–9 ran 02:23:19 → 14:57:59
+(about 12 h 35 min, including roughly 15 minutes of dead time across the 08:11–08:26
+interruption), and step 11 ran 15:15:26 → 17:55:57 (2 h 41 min). Per-step figures are in
+`docs/remeasure-results-2026-10-26-attempt2.md` ("Durations") and in `$R/run_log.txt`.
+
+Where the estimates were wrong, in one place:
+
+* **Steps 5–7, the 15 competitive runs: "~6–7 min each (LE-v1 ~9.5)" → about 11 h 40 min in
+  total** (02:37:06 → 14:19:03). Individual runs varied by more than an order of magnitude,
+  e.g. `holdout_T_none` 11,742 s and `le_v1_L_auto` 11,782 s against roughly 5 minutes for
+  the same run in attempt 1. This is the whole of the overrun.
+* **Step 11, "~10 min" → 9,631 s (2 h 41 min)**, for the same reason: it re-runs the
+  evaluations.
+* Steps 0–4, 8 and 9 were at or near their estimates (pytest 553 s; the Urk. IV gate 69 s
+  and 48 s; stage routing 2,335 s against "unknown").
+
+**Cause: suspected, not measured.** Attempt 1 ran the identical 15 runs in about 2 hours and
+every per-query CSV from attempt 2 was byte-identical to attempt 1's, so the slowdown is not
+a code, data or configuration difference. Machine contention or thermal throttling on this
+Mac is the suspicion; nothing was instrumented to confirm it, and no measurement was taken
+at the time. Future estimates for this run set on this machine should carry that spread
+(roughly 2 h to 12 h for the same 15 runs) rather than a single figure.
