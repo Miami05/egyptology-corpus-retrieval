@@ -1,16 +1,17 @@
 # The Whyptology service: Streamlit on 127.0.0.1:8502, a systemd USER unit of `ledio`.
 #
 # COPIED FROM THE BOX ON 2026-10-26 (`cat ~/.config/systemd/user/egyptology.service` over
-# ssh, read-only). This file now equals the installed unit byte for byte once the
-# commented-out block at the end is left out. Audit A46's guess markers are all gone:
-# nothing in this file is reconstructed any more.
+# ssh, read-only). This file equals the installed unit directive for directive: only
+# comments differ (this header and the commented-out block at the end). Audit A46's
+# guess markers are all gone: nothing in this file is reconstructed any more.
 #
-# NOT INSTALLED YET. Four settings the repo had before this reconciliation are real,
-# wanted changes that the box has never run. They are kept below as a commented-out
-# block rather than dropped, so the next `INSTALL_UNITS=1 ~/egyptology-deploy.sh` is a
-# deliberate decision and not a silent one: OnFailure=egyptology-notify@%n.service (A42),
-# Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none (A40), MemoryMax=6G, and Type=simple
-# (the default for this unit anyway, so it is documentation rather than a change).
+# NOT INSTALLED YET. Three settings in this unit are real, wanted changes that the box has
+# never run: OnFailure=egyptology-notify@%n.service (A42),
+# Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none (A40) and MemoryMax=6G. With the
+# backup unit's EnvironmentFile= line they are the four pending settings DEPLOYMENT.md
+# lists. They are kept below as a commented-out block rather than dropped, so the next
+# `INSTALL_UNITS=1 ~/egyptology-deploy.sh` is a deliberate decision and not a silent one.
+# The block also spells out Type=simple, the default for this unit, as documentation.
 #
 # Settings that carry secrets or differ per host live in /home/ledio/egyptology.env,
 # which overrides the Environment= lines here.

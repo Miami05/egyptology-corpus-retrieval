@@ -18,11 +18,15 @@
 #      installed into, so a failing pip leaves the tree, the venv and the service as
 #      they were. A commit whose dependencies did not change reuses the live venv
 #   4. fast-forward the tree (STOP_BEFORE_UPDATE=1 stops the service first; default 0,
-#      no public downtime: the unit's STREAMLIT_SERVER_FILE_WATCHER_TYPE=none stops the
-#      running process from RELOADING what it already loaded, but a module or page it has
-#      not imported yet is read from the new tree if a visitor reaches it in the window
-#      between this merge and the stop below, corpus sync included. That risk was
-#      accepted with the default), helpers, unit files, corpus sync with the NEW venv,
+#      which keeps serving ONLY when the running process was started with
+#      STREAMLIT_SERVER_FILE_WATCHER_TYPE=none: that stops it from RELOADING what it
+#      already loaded, but a module or page it has not imported yet is read from the new
+#      tree if a visitor reaches it in the window between this merge and the stop below,
+#      corpus sync included. That risk was accepted with the default. The INSTALLED unit
+#      does not set the variable yet (checked 2026-10-26; the line is pending in
+#      deploy/systemd/egyptology.service), so until it is installed and the service
+#      restarted, every deploy stops the service before the merge), helpers, unit files,
+#      corpus sync with the NEW venv,
 #      then stop, point ~/venvs/egyptology at the new venv, start, and a real check that
 #      the app renders a result
 #   5. any failure in 4: stop (and refuse to go on unless the service is really down),
@@ -365,12 +369,28 @@ install_helpers() {
 }
 
 # The unit files are versioned in deploy/systemd/. They are installed only when asked
-# (INSTALL_UNITS=1): they were reconstructed from prose, so the first install should
-# follow a diff against the live ones, not a blind overwrite.
+# (INSTALL_UNITS=1), so adopting a unit change is a decision, never a side effect of a
+# deploy. Since 2026-10-26 the repo copies equal the installed units directive for
+# directive (read off the box); they add a header comment and a commented-out block of
+# settings the box does not run yet. So two files count as the same when their directive
+# lines are equal: comment lines (`#` or `;`) and blank lines are ignored, as systemd
+# ignores them. A comment-only difference is neither reported nor installed.
 #
 # Before a unit is overwritten its current version is saved in $LAST_GOOD_UNITS, and a
 # unit that did not exist is listed in $LAST_GOOD_UNITS/ADDED, so restore_units can put
 # back exactly what was there (audit A12/A46).
+unit_directives() {
+  [[ -f "$1" ]] || return 1
+  sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' -e '/^[#;]/d' "$1"
+}
+
+same_unit_directives() {
+  local repo_lines live_lines
+  repo_lines="$(unit_directives "$1")" || return 1
+  live_lines="$(unit_directives "$2")" || return 1
+  [[ "$repo_lines" == "$live_lines" ]]
+}
+
 install_units() {
   local src="$REPO/deploy/systemd" file name installed=0 differs=0
   if [[ ! -d "$src" ]]; then
@@ -380,7 +400,7 @@ install_units() {
   for file in "$src"/*.service "$src"/*.timer; do
     [[ -f "$file" ]] || continue
     name="$(basename "$file")"
-    if cmp -s "$file" "$UNIT_DIR/$name"; then
+    if same_unit_directives "$file" "$UNIT_DIR/$name"; then
       continue
     fi
     if [[ "$INSTALL_UNITS" == "1" ]]; then

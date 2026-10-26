@@ -9,9 +9,12 @@
 #
 # Both also come from the environment (DB_PATH, BACKUP_DIR), and both have
 # defaults that match the server layout in DEPLOYMENT.md. When DB_PATH is not given
-# and DATABASE_URL is set (the unit reads it from egyptology.env, the same place the
-# app does), the file named there is backed up, so the app and the backup cannot
-# disagree about where the database is. The URL forms are the ones
+# and DATABASE_URL is set, the file named there is backed up. The backup unit only sees
+# DATABASE_URL once it reads egyptology.env (the same place the app does): the installed
+# unit does NOT do that yet (checked 2026-10-26; `EnvironmentFile=` is pending in
+# deploy/systemd/egyptology-backup.service), so on the box today this falls back to the
+# default path. Install that line before setting DATABASE_URL (DEPLOYMENT.md, "Moving the
+# database out of the clone"), or the app and the backup disagree about the database. The URL forms are the ones
 # app/core/config.py's resolve_database_url treats as a file: `sqlite:///path` and
 # `sqlite+<driver>:///path`, a relative path anchored at the clone (REPO_DIR). Any
 # other DATABASE_URL (Postgres, in-memory, a `file:` URI) is refused with exit 1

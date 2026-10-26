@@ -1,7 +1,7 @@
 # The nightly database backup (scripts/backup_db.sh), started by egyptology-backup.timer.
 #
-# COPIED FROM THE BOX ON 2026-10-26 (read-only ssh). Equals the installed unit once the
-# commented-out block at the end is left out. The audit A46 guess markers are gone.
+# COPIED FROM THE BOX ON 2026-10-26 (read-only ssh). Equals the installed unit directive
+# for directive: only comments differ (this header and the commented-out block at the end). The audit A46 guess markers are gone.
 #
 # NOT INSTALLED YET, kept below rather than dropped: OnFailure=egyptology-notify@%n.service
 # (A42) and EnvironmentFile=-/home/ledio/egyptology.env. The second one matters more than

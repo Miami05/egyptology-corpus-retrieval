@@ -16,7 +16,7 @@ answers at the old `streamlit.app` address is unmaintained.
 | `/home/ledio/venvs/egyptology-releases/` | release venvs, one per dependency change: the one serving and the one it replaced (the rollback target); older ones are removed after a successful deploy |
 | `/home/ledio/egyptology-private` | `PRIVATE_DATA_DIR`: non-redistributed CC BY-NC-SA rows (St Andrews). Outside the clone so `git pull` never touches it. Copy files in with `scp`. |
 | `/home/ledio/egyptology-backups` | nightly `egyptology-YYYY-MM-DD.db.gz` snapshots, 30-day retention, plus `monthly/` (the first snapshot of every month, kept for ever). Written by the timer below |
-| `/home/ledio/egyptology.env` | secrets and per-host settings, `chmod 600`, read by the service, the backup and the deploy script. Template: `deploy/systemd/egyptology.env.example` |
+| `/home/ledio/egyptology.env` | secrets and per-host settings, `chmod 600`, read by the service and the deploy script. **Not read by the backup job today**: the installed backup unit has no `EnvironmentFile=` line (checked 2026-10-26; pending, see "The unit files"). Template: `deploy/systemd/egyptology.env.example` |
 | `/home/ledio/egyptology-deploy.sh` | the one-command update; refreshed from `scripts/egyptology-deploy.sh` by every successful deploy |
 | `/home/ledio/egyptology-last-good`, `-last-good-venv`, `-last-good-units/` | what was running when the latest deploy **started**: the commit, the venv directory, and copies of any unit files that deploy replaced (plus `ADDED`, the units it added). Written before anything changes, so they are the right target for a manual rollback even after a failed first deploy |
 | `/home/ledio/bin` | operational copies of `scripts/backup_db.sh` and `scripts/warm_streamlit.py`, refreshed from the clone by the deploy script. Outside the clone so a systemd unit never points into a tree an update is rewriting |
@@ -64,12 +64,16 @@ In order, the script:
    the package). The live venv is never installed into, so a failing pip leaves the tree,
    the venv and the running service untouched (exit 1). A commit whose dependency files did
    not change reuses the live venv and builds nothing;
-4. fast-forwards the tree **with the service still running** (default
-   `STOP_BEFORE_UPDATE=0`, no public downtime; the unit's
-   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` stops the running process reloading what it has
-   already loaded, audit A40, but a module or page it has not imported yet is read from the
-   new tree if a visitor reaches it between the merge and the stop, corpus import included
-   — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first instead). The setting only
+4. fast-forwards the tree, with the service still running **only if** it was started with
+   `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` (default `STOP_BEFORE_UPDATE=0`). **Today it
+   never is**: the installed unit does not carry that line (checked 2026-10-26; it is
+   pending in `deploy/systemd/egyptology.service`, see "The unit files"), so until the line
+   is installed and the service restarted, **every deploy stops the service before the
+   merge** and has the longer downtime. Once installed, the setting stops the running
+   process reloading what it has already loaded (audit A40), but a module or page it has not
+   imported yet is read from the new tree if a visitor reaches it between the merge and the
+   stop, corpus import included — an accepted risk; `STOP_BEFORE_UPDATE=1` stops it first
+   instead. The setting only
    protects a process **started** with it: unless the running service's own environment
    (`/proc/<MainPID>/environ`) shows `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none`, the script
    stops the service before the merge, whatever `STOP_BEFORE_UPDATE` says. Installing the
@@ -201,13 +205,13 @@ first, then the environment. Set per host, never in code.
 | `ANNOTATIONS_DURABLE` | `1` (in the unit) | SQLite on a real disk persists; turns off the "not stored durably" warning and the read-only gating |
 | `PRIVATE_DATA_DIR` | `/home/ledio/egyptology-private` (in the unit) | where NC rows are read from; empty dir = none. Since 2026-09-05 the files there are served **only to sessions that presented `REVIEWER_KEY`** — see the next section |
 | `REVIEWER_KEY` | set by Ledio | passphrase that unlocks annotation saving **and the private NC rows**; unset = annotation saving off for everyone and *nobody* gets the private rows (`ALLOW_OPEN_ANNOTATIONS=1` reopens saving, for local development only) |
-| `DATABASE_URL` | unset today; `sqlite:////home/ledio/egyptology-data/egyptology.db` after the move below | unset = `egyptology.db` in the project root (a relative SQLite path is anchored at the project root, not the current folder, since 2026-10); a `postgres://` URL switches engines with no code change. Every process prints `database: <path> (from ...)` to stderr at start, so the journal says which file the app opened. The backup script reads this variable too |
+| `DATABASE_URL` | unset today; `sqlite:////home/ledio/egyptology-data/egyptology.db` after the move below | unset = `egyptology.db` in the project root (a relative SQLite path is anchored at the project root, not the current folder, since 2026-10); a `postgres://` URL switches engines with no code change. Every process prints `database: <path> (from ...)` to stderr at start, so the journal says which file the app opened. The backup script reads this variable too, **but only once its unit reads the env file**, which the installed one does not yet |
 | `NTFY_TOPIC` | set by Ledio in the env file | the ntfy.sh topic the failure notifications go to. It works like a password and the repo is public, so it is only ever in `egyptology.env` |
-| `HEALTHCHECK_URL` | set by Ledio in the env file | a Healthchecks (healthchecks.io) heartbeat URL; `backup_db.sh` pings it on success and `<url>/fail` on failure, so a night with no ping raises an alert. A heartbeat only: it does not probe the website |
+| `HEALTHCHECK_URL` | set by Ledio in the env file | a Healthchecks (healthchecks.io) heartbeat URL; `backup_db.sh` pings it on success and `<url>/fail` on failure, so a night with no ping raises an alert. A heartbeat only: it does not probe the website. **Not seen by the backup job today** (its unit reads no env file), so no heartbeat is sent |
 | `OFFSITE_PRUNE` | unset (= 1) | `0` stops the backup script deleting old files off-site (use once the B2 key cannot delete) |
 | `ALLOW_ANNOTATION_DROP` | unset | `1`, for one manual run only, accepts a backup that has fewer annotations than the previous one |
-| `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` | deploy script, not the service | `INSTALL_UNITS=1 ~/egyptology-deploy.sh` copies `deploy/systemd/*` into `~/.config/systemd/user`; `STOP_BEFORE_UPDATE=1` stops the service before the file swap (default `0`: it keeps serving until the venv switch) |
-| `STREAMLIT_SERVER_FILE_WATCHER_TYPE` | `none` (in the unit) | stops the running app reloading modules when a deploy rewrites the tree |
+| `INSTALL_UNITS` / `STOP_BEFORE_UPDATE` | deploy script, not the service | `INSTALL_UNITS=1 ~/egyptology-deploy.sh` copies `deploy/systemd/*` into `~/.config/systemd/user`; `STOP_BEFORE_UPDATE=1` stops the service before the file swap (default `0`: it keeps serving until the venv switch, but only when the running service was started with `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none`, which the installed unit does not set yet, so today every deploy stops it first). `INSTALL_UNITS=1` installs only units whose directive lines differ; a comment-only difference is neither reported nor installed |
+| `STREAMLIT_SERVER_FILE_WATCHER_TYPE` | **unset on the box today**; `none` once the pending unit line is installed (see "The unit files") | stops the running app reloading modules when a deploy rewrites the tree. Until it is set, every deploy stops the service before the merge |
 | `DEFAULT_STAGE` | unset (= `auto`) | `auto` / `all` / a stage name; Auto builds one extra resource set per stage it uses |
 | `CORPUS_SOURCES_EXCLUDE` | unset | comma-separated values to drop at load; each token matches a row's `source` **or** its `language_stage` (so `Demotic` drops the TLA Demotic rows, and `Late Egyptian` would drop Ramses too) — how a 1 GB host would stay on the 78k subset |
 | `MOVED_TO_URL` | unset | renders the "this app has moved" banner on a superseded deployment |
@@ -517,7 +521,10 @@ files, and B2 Object Lock if the bucket allows it. Then neither the box nor a ba
 
 **Heartbeat.** With `HEALTHCHECK_URL` set (a Healthchecks heartbeat check, in `egyptology.env`) the
 script pings it on success and `<url>/fail` on any failure, so a night where the timer never
-fired also raises an alert, which `OnFailure=` cannot catch.
+fired also raises an alert, which `OnFailure=` cannot catch. **Not live today** (checked
+2026-10-26): the installed backup unit has no `EnvironmentFile=` line, so the job never sees
+`HEALTHCHECK_URL` and sends no ping. It goes live when the pending
+`EnvironmentFile=-/home/ledio/egyptology.env` line is installed (see "The unit files").
 
 **Rehearse a restore once a month** from the off-site copy: `rclone copy`, `gzip -t`,
 decompress, then run the counting snippet under "Restore". Matching counts are the point.
@@ -641,10 +648,11 @@ the copy deleted.
 
 ## Alerts (audit A42)
 
-Three layers, because each one misses something the next catches. **Layer 1 is designed but
-not live** (checked 2026-10-26): neither installed unit has an `OnFailure=` line and
-`egyptology-notify@.service` is not on the box, so a failed service or backup sends nothing
-today. See "The unit files".
+Three layers, because each one misses something the next catches. **No layer is live
+today** (checked 2026-10-26). Layer 1: neither installed unit has an `OnFailure=` line and
+`egyptology-notify@.service` is not on the box, so a failed service or backup sends nothing.
+Layer 2: the installed backup unit reads no env file, so `backup_db.sh` never sees
+`HEALTHCHECK_URL` and sends no heartbeat. Layer 3: not set up. See "The unit files".
 
 | What | Catches | Misses |
 |---|---|---|
@@ -683,7 +691,9 @@ default; `PYTHONUNBUFFERED=1` is set; `EnvironmentFile` has the tolerant `-` pre
 backup service has a `Documentation=` line and `Environment=RETENTION_DAYS=30`, and the
 timer's `RandomizedDelaySec=300` spelling was right.
 
-**Four settings in the repo are NOT installed on the box.** They are real, wanted changes,
+**Four settings in the repo are NOT installed on the box** (the same four are named in
+the unit files' headers; `Type=simple` also sits in the service's commented-out block, but
+it is the default for that unit, so it is documentation rather than a pending change). They are real, wanted changes,
 not drift, and they are kept in the files as commented-out blocks so adopting them is a
 decision rather than a side effect of the next `INSTALL_UNITS=1` run:
 
@@ -699,7 +709,9 @@ is no live version to copy it from. `systemd-analyze verify` has still not been 
 files.
 
 The deploy script installs them only with `INSTALL_UNITS=1` (copy, `daemon-reload`); without
-it, it just says when they differ. Run `systemctl --user enable --now egyptology-backup.timer`
+it, it just says when they differ. "Differ" means their directive lines differ: comment and
+blank lines are ignored, so the repo copies' header and commented-out block do not trigger
+the message, and uncommenting a pending line does. Run `systemctl --user enable --now egyptology-backup.timer`
 if the timer was not already enabled, and `systemctl --user list-timers` afterwards.
 
 ## Moving the database out of the clone (audit A43)
@@ -710,7 +722,17 @@ since the last 03:30 backup. Since this change a relative `DATABASE_URL` is reso
 the project root (not the folder a command is run from), and every process prints which file
 it opened, so a script run from the home folder can no longer silently create a second,
 empty database. Moving the file out of the clone is a manual step, in a quiet window, in
-this order:
+this order.
+
+**Hard precondition: install the backup unit's env file line first.** The installed
+`egyptology-backup.service` has no `EnvironmentFile=` (checked 2026-10-26), so the nightly
+job never sees `DATABASE_URL`. If the database moves before that line is installed, the job
+keeps backing up the old `/home/ledio/egyptology/egyptology.db` copy (which this guide says
+to keep for a week) and every new annotation goes unbacked, with no error. So first add
+`EnvironmentFile=-/home/ledio/egyptology.env` to the backup unit's `[Service]` section
+(the commented-out line in `deploy/systemd/egyptology-backup.service`), install it
+(`INSTALL_UNITS=1`, or by hand plus `systemctl --user daemon-reload`), and check with
+`systemctl --user cat egyptology-backup.service`. Only then:
 
 ```bash
 ssh ledio@vela-optiplex-3070
@@ -726,8 +748,10 @@ systemctl --user start egyptology.service
 journalctl --user -u egyptology.service | grep 'database:'   # shows the new path
 ```
 
-Keep a copy of the old file for a week. `backup_db.sh` and the deploy script's corpus import
-read `DATABASE_URL` from the same env file, so all three agree on the path.
+Keep a copy of the old file for a week. With the precondition above in place, `backup_db.sh`
+and the deploy script's corpus import read `DATABASE_URL` from the same env file as the app,
+so all three agree on the path. After the first night, check that
+`journalctl --user -u egyptology-backup.service` names the new path.
 
 ## What needs sudo (the owner, or Ledio with the password)
 

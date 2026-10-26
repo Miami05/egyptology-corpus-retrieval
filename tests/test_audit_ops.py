@@ -1610,6 +1610,52 @@ def test_unit_files_are_only_installed_when_asked(deploy_box):
     assert _calls_matching(deploy_box, "systemctl --user daemon-reload")
 
 
+def test_a_unit_that_differs_only_in_comments_is_neither_reported_nor_installed(deploy_box):
+    """Review round 2026-10-26: the repo units gained a header and a commented-out block
+    the box does not have, so a byte-for-byte `cmp` reported every unit as differing on
+    every deploy, which turned the warning into noise."""
+    unit_dir = deploy_box.home / ".config" / "systemd" / "user"
+    unit_dir.mkdir(parents=True)
+    live = "  [Service]\n\nExecStart=/bin/true   \n"
+    (unit_dir / "egyptology.service").write_text(live)
+    deploy_box.write(
+        "deploy/systemd/egyptology.service",
+        "# header copied from the box\n[Service]\nExecStart=/bin/true\n\n# NOT INSTALLED\n; MemoryMax=6G\n",
+    )
+    deploy_box.write("app.py", "v2\n")
+    deploy_box.publish("v2: comments only in the unit")
+    plain = deploy_box.run()
+    assert plain.returncode == 0, plain.stdout + plain.stderr
+    assert "unit files differ" not in plain.stdout
+    forced = deploy_box.run(INSTALL_UNITS="1")
+    assert forced.returncode == 0, forced.stdout + forced.stderr
+    assert (unit_dir / "egyptology.service").read_text() == live
+    assert not _calls_matching(deploy_box, "daemon-reload")
+
+
+def test_a_unit_whose_directives_differ_is_still_reported(deploy_box):
+    unit_dir = deploy_box.home / ".config" / "systemd" / "user"
+    unit_dir.mkdir(parents=True)
+    (unit_dir / "egyptology.service").write_text("# same comment\n[Service]\nExecStart=/bin/false\n")
+    plain = deploy_box.run()
+    assert plain.returncode == 0, plain.stdout + plain.stderr
+    assert "unit files differ" in plain.stdout
+
+
+def test_the_reconciled_repo_units_compare_equal_to_their_directive_lines(tmp_path):
+    """The repo copies equal the box once comments are ignored; the deploy comparison must
+    therefore call the box's comment-free text the same unit."""
+    for name in ("egyptology.service", "egyptology-backup.service", "egyptology-backup.timer"):
+        repo = PROJECT_ROOT / "deploy" / "systemd" / name
+        live = tmp_path / name
+        live.write_text("\n".join(
+            line for line in repo.read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith(("#", ";"))
+        ) + "\n")
+        result = _source_and_run(f'same_unit_directives "{repo}" "{live}"')
+        assert result.returncode == 0, (name, result.stderr)
+
+
 def test_a_rollback_restores_the_unit_files_from_before_the_deploy(deploy_box):
     """Regression for the A12/A46 review: new units stayed installed after a rollback."""
     unit_dir = deploy_box.home / ".config" / "systemd" / "user"
@@ -1662,9 +1708,11 @@ def _parse_unit(name: str) -> dict[str, dict[str, list[str]]]:
 
 
 # The three installed units were read off the box on 2026-10-26 (read-only ssh) and the
-# repo copies were made equal to them, directive for directive. These tests pin what is
-# really running, so a later drift between repo and box shows up as a failing test rather
-# than as a surprise during INSTALL_UNITS=1.
+# repo copies were made equal to them, directive for directive. These tests pin the repo
+# files to the values read off the box on that date. They cannot see the box: a later
+# change made on the box is caught only by re-reading it (DEPLOYMENT.md, "The unit files"),
+# and the deploy script's directive comparison reports it on the next deploy. They also
+# assert selected directives, not complete directive equality.
 RECONCILED_UNITS = ("egyptology.service", "egyptology-backup.service", "egyptology-backup.timer")
 
 # Settings the repo wants but the box has never run. They live in the unit files as

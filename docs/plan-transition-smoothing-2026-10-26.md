@@ -311,3 +311,225 @@ competitive sets cannot see this change.
    contexts below some count threshold?
 5. Should `c2_transition_only` be the shipping candidate by default, on the grounds that it is
    the smallest change that addresses the traced failure?
+
+---
+
+## Revision 1 — review round (Opus + Astra), 2026-10-26
+
+**Still a DRAFT. Still NOT RUN and NOT APPROVED.** This document is treated as append-only:
+the text above is left exactly as reviewed, and this revision **supersedes** it wherever
+the two disagree. Each item below names the section it replaces. A later approval must
+point at this revision, not at §§1–7 alone. Nothing here is a result; every number below
+is either arithmetic or a constant fixed in advance.
+
+Where the two reviews disagreed on a judgement call, the more conservative option was
+taken; each such case is marked **(conservative choice)**.
+
+### R1. The defect, restated (replaces §1 "For a previous reading seen exactly once")
+
+The degeneracy is not specific to contexts seen once. For **any** context h with exactly
+one distinct successor (V_obs(h) = 1), whatever its count N(h):
+
+```
+(N + 0.1) / (N + 0.1 · 1) = 1.0   for every N ≥ 1
+```
+
+so the observed successor is free (0.0 nats) and every other successor costs
+log(0.1 / (N + 0.1)). The defect is therefore **V_obs(h) = 1**, and every report of it is
+broken down by N(h) in the bands **N = 1, N = 2–3, N ≥ 4**. A context with V_obs(h) ≥ 2 is
+not degenerate in this sense, though its normaliser still shrinks with V_obs.
+
+### R2. Stage routing is changed by every arm (replaces the §1 paragraph on `_emission`)
+
+The §1 premise that only `_emission` feeds stage routing is **wrong**.
+`choose_stage_by_likelihood` (`app/services/stage.py`) ranks stages on the full Viterbi path
+score from `ReadingModel.predict_sequence_scored`, which includes the transition term and
+both sign-context terms, i.e. exactly the terms every arm changes. Its docstring also relies
+on each term being normalised by its own local count, "so it does not grow with corpus
+size"; a backoff to a corpus-wide unigram distribution breaks that property and would bias
+routing by corpus size, which is the Late Egyptian failure that docstring describes.
+
+**Rule (conservative choice; Opus offered this or a hard gate, Astra asked for disclosure
+plus per-stage likelihoods):** in every arm, stage routing is computed with the **`off`
+estimator**. The arms change only the final decode, after the stage is chosen. Consequences,
+all pre-registered:
+
+* the routing decision must be **identical** to `off` on every line in every arm; any
+  difference is a harness defect and a hard FAIL of rule (f′) below;
+* in addition, for diagnosis only, the per-stage likelihoods each arm's estimator *would*
+  produce are computed and reported beside the `off` ones and the per-stage coverage, so the
+  routing effect of each estimator is on the record for a later routing experiment;
+* a shipped arm would ship with routing still on the `off` estimator. Moving routing to a new
+  estimator is a separate pre-registration (with `run_stage_routing_eval` as its gate).
+
+### R3. Candidates (replaces §2 C1, C2, C3 and "Arms")
+
+**C1 is dropped before any run (conservative choice).** Opus: with |R| in the tens of
+thousands the transition term swamps the emission term at the fixed weights, and |R| is
+corpus-size dependent, so the failure is predictable. Astra would keep it as a dev candidate
+with fixed weights. Dropping it reduces the number of arms chosen among on dev and removes an
+arm whose failure is predictable from arithmetic. It is listed here so the exclusion is on
+the record.
+
+Shared definitions, fixed now, for the **stage model being decoded** (fitted on the training
+partition only):
+
+* **Support.** R is the set of distinct non-empty readings appearing anywhere in the fitted
+  model's counts (`sign_reading`, `reading_bigram` keys and successors, and the two sign-
+  context tables). A candidate reading not in R — a lexicon-only reading, a composed reading,
+  anything else — is **out of vocabulary (OOV)** and is scored through the OOV bucket below,
+  never dropped.
+* **Unigram (terminating level).** With c(r) the reading's count and N_tot = Σ c(r):
+  `P_uni(r) = (c(r) + k) / (N_tot + k · (|R| + 1))`, k = `SMOOTHING` = 0.1, the `+1` being one
+  OOV bucket; every OOV reading gets `k / (N_tot + k · (|R| + 1))`. Never zero.
+* **The unreadable sentinel `''` is outside all of this.** In every arm, a transition
+  **into** `''` and a transition **out of** `''` keep the value the current code gives them
+  (the `off` formula), and `UNREADABLE_EMISSION` is unchanged. Under a unigram backoff a path
+  through an unreadable group would otherwise become far more expensive, which would move
+  the A53 balance and the PASTE_008-type comparison.
+* **Unseen contexts.** In every arm, a context with N(h) = 0 (BOUNDARY included) keeps the
+  current value `log(SMOOTHING)`. Only contexts with N(h) ≥ 1 change.
+* **Lower-order distribution, per function.**
+  * `_transition` (h = previous reading): `P_lower(r) = P_uni(r)`.
+  * `_sign_context` (h = previous sign, sign) and `_next_sign_context` (h = sign, next sign):
+    `P_lower(r) = P_sign(r | sign)`, the current sign's reading distribution, itself
+    interpolated by Witten–Bell with the unigram:
+    `P_sign(r | s) = λ_s · c(s, r)/N(s) + (1 − λ_s) · P_uni(r)`, λ_s = N(s)/(N(s) + V_obs(s));
+    a sign with N(s) = 0 gives `P_sign = P_uni`. (Unigram reading frequency is the wrong
+    lower order for a sign context: the natural backoff is P(reading | sign).)
+
+**C2 — Witten–Bell.** For N(h) ≥ 1:
+`P(r | h) = λ(h) · c(h, r)/N(h) + (1 − λ(h)) · P_lower(r)`, λ(h) = N(h)/(N(h) + V_obs(h)).
+Correction of §2: a context seen once with one successor gets λ = 1/2, so that successor
+scores **0.5 + 0.5 · P_lower(r)**, not "at most half" — slightly more than half. The
+degenerate 1.0 still cannot occur, because P_lower(r) < 1.
+
+**C3 — absolute discounting, interpolated.** For N(h) ≥ 1:
+`P(r | h) = max(c(h, r) − d, 0)/N(h) + (d · V_obs(h)/N(h)) · P_lower_C3(r | h)`.
+
+* **d (Ney):** `d = n₁ / (n₁ + 2·n₂)`, where n₁ and n₂ are the numbers of **bigram types**
+  (h, r) — pairs, not contexts — with count exactly 1 and exactly 2 in that function's table
+  of the fitted model (correction of §2's wording). One d per function per fitted model,
+  computed at fit time and written to the run log. **Fallback:** if n₁ + 2·n₂ = 0, or d is
+  not in the open interval (0, 1), d = 0.5, and the fallback is logged.
+* **Lower order, two levels, terminating:** `P_lower_C3(r | h)` is the **pooled** model's C3
+  estimate for the same h when the pooled model has N_pooled(h) ≥ 1, computed with the pooled
+  model's own d and with the function's P_lower above taken from the pooled model; otherwise
+  (pooled N(h) = 0) it is the function's P_lower from the stage model. The pooled level never
+  recurses into another pooled level, so the chain ends at P_uni. When the model being
+  decoded *is* the pooled model, the first level is skipped.
+
+**Arms (final):** `off`, `c2`, `c3`, `c2_transition_only` (C2 on `_transition` alone; the
+two sign-context functions keep the `off` formula). `c2_plus_emission` stays defined and
+not run (§2). The §7 question 1 answer stands as revised: holding `_emission` out is right,
+but not for the §1 reason (see R2); at each position the candidates are limited to readings
+the sign actually has, so a degenerate emission estimator does not make the transition fix
+unmeasurable.
+
+### R4. Dev stage (replaces §4 "Dev" and fixes §4 "Test")
+
+* **Seed:** `20261026`, a single `numpy.random.default_rng(20261026)` used for the draw only.
+* **Draw:** from the **training** partition of the test split below (after that split is
+  made), stratified by `source` at **10%** per source, so the dev source mix equals the
+  training source mix. Sources with a text identity (AES by text id, Ramses by its official
+  split's text grouping, St Andrews is not in the public corpus and is not used) are drawn as
+  **whole texts**; TLA and BBAW, which have no text identity, are drawn as **single
+  sentences**, the same stated limitation the test split has.
+* **Hygiene, inherited from the test split:** dev rows from the lexicon-leaking sources
+  (Ramses, AES) are removed from dev **when the lexicon is on** (they stay in
+  training-minus-dev), exactly as `select_test_rows` does for test; dev rows whose exact sign
+  string occurs in training-minus-dev, and rows with sign-group Jaccard ≥ 0.8 to a
+  training-minus-dev row, are dropped. The counts dropped at each step are reported.
+* **Manifest:** the dev row ids, with the seed and this procedure, are written to a manifest
+  whose sha256 is recorded in the final pre-registration before any dev decode.
+* **Minimum counts, checked before any dev decode:** ≥ 2,000 dev positions in total and
+  ≥ 100 dev positions in the R5 population (V_obs = 1 by gold previous reading). If either is
+  missed, the draw rate becomes **20%** once, same seed, recorded. If still missed, the
+  experiment **stops** and is reported as not runnable at this corpus size; no other remedy.
+* **Selection metric:** overall dev reading accuracy (positions, all sources pooled), with a
+  paired bootstrap 95% CI per arm against every other arm (10,000 resamples over dev texts —
+  TLA/BBAW sentences each their own group — seed `20261026`).
+* **Exactly one primary arm leaves dev.** It is the arm with the highest dev accuracy,
+  **except** that `c2_transition_only` is the primary arm whenever its dev accuracy lies
+  within the paired 95% CI of the best arm (the smallest change that addresses the traced
+  failure wins ties; both reviews asked for this as a pre-registered tie-break, not as a
+  default after the fact). If no arm's dev accuracy exceeds `off`'s, there is no primary
+  arm, the test split is **not** opened, and the result is "no candidate survived dev".
+* The primary arm, the dev numbers that chose it and every elimination are committed
+  **before** the test split is touched.
+
+**Test (fixes §4 "Test").** `select_test_rows` has no defaults for most arguments, so they
+are named here: `test_fraction = 0.2`, `exclude_duplicates = True`,
+`near_duplicate_overlap = 0.8`, `lexicon_on = True`, `lexicon_exclude_sources = {"Ramses",
+"AES"}`, `split_by = "text"` — the CLI defaults of `run_kri_fixes_eval.py` /
+`run_reading_model_eval.py` at the time of writing, restated so they cannot drift. The
+manifest sha256 pin of §4 stands.
+
+**The test run is confirmatory for the primary arm only.** The other arms are decoded and
+reported for the record, but no other arm can be shipped from this run, whatever its test
+numbers.
+
+### R5. Pass rules (replaces §5 rules (c), (d), (f), (g) and clarifies the retry rule)
+
+**Retry rule (clarifies §5 intro).** A hard-gate FAIL may be re-run on a new commit only to
+fix a **harness or procedural fault** (a crash, a wrong path, a violated hygiene assertion).
+The fix may not change any estimator, P_lower, d, arm, constant, split, primary arm or
+threshold. A re-run never authorises tuning against a test set that has already been seen;
+if the primary arm fails a gate on test, the result is "it failed".
+
+**(c′) Overall test accuracy — hard, primary.** PASS iff the **lower bound of the paired
+bootstrap 95% CI** of acc(primary) − acc(`off`) is **> 0** (10,000 resamples over test texts,
+TLA/BBAW sentences each their own group, seed `20261026`). The point estimate alone is not
+enough **(conservative choice**: Opus asked for the gate to be a statement about the CI;
+requiring the CI to exclude zero, rather than merely to sit around it, is the stricter
+reading). Paired per-position counts (primary-better / `off`-better / unchanged) are
+reported beside it.
+
+**(d′) Mechanism positions — reported; the claim rule of §5 (d) stands.** The population is
+fixed **by the gold data, not by any arm's decode**, so it is the same set of positions for
+every arm: test positions i ≥ 1 whose **gold** previous reading h has V_obs(h) = 1 in the
+fitted training model, reported in the bands N(h) = 1, 2–3, ≥ 4. For each arm: accuracy at
+position i **and** at its predecessor i − 1 (the suspect transition can reward a wrong
+reading at the preceding position), with paired counts against `off` at both. Reported
+separately, as a diagnostic only: the share of positions where the arm's own decoded path
+passes through a V_obs = 1 context. Secondary diagnostic, pre-declared, never gated: the
+same report for contexts with V_obs(h) = 2 and N(h) ≤ 3. Low-n guard: a band with fewer than
+30 positions is reported and never used for a claim in either direction.
+
+**(e) Boundary errors** — unchanged.
+
+**(f′) Stage routing — hard.** Under R2 routing uses the `off` estimator in every arm, so the
+chosen stage must equal `off`'s on every line of the test split and of the expert pastes;
+any difference FAILs. Reported beside it: the per-stage likelihoods each arm's estimator
+would produce, and the per-stage attested coverage, line by line where the hypothetical
+choice would differ.
+
+**(g′) Competitive sets — hard, sanity only.** `release_baseline.json`'s floors apply **only
+to the configuration that file specifies**: v4 (`competitive_ambiguity_eval_queries_v4.csv`),
+`--stage auto --query-path app`, legacy pool floors 0.90 / 0.7917, and twin-controlled pool
+(`--exclude-twins 0.7 --expected-tokens current`) floors 0.80 / 0.70. Every other comparison
+is a **frozen per-set comparison** against the attempt-2 numbers in
+`docs/remeasure-results-2026-10-26-attempt2.md`, with stage, token mode and pool pinned per
+row and **0 top-3 answers lost**:
+
+| Set | Pool | Tokens | Stage | Attempt-2 top-3 / MRR |
+| --- | --- | --- | --- | --- |
+| held-out 1 | legacy | current | auto | 0.75 / 0.6667 |
+| held-out 1 | twins 0.7 | current | auto | 0.75 / 0.6667 |
+| LE-v1 | legacy | current | auto | 0.8667 / 0.8000 |
+| LE-v1 | twins 0.7 | current | auto | 0.8667 / 0.80 |
+
+(Held-out 1's measured 0.75 / 0.6667 is already below the v4 floors, so applying those floors
+to it would fail an unchanged decoder; that is why §5 (g) is replaced.) The §5 (g) sentence
+that these sets do not exercise the decoder stays mandatory in the results note.
+
+Rules (a), (b), (e), (h) and (i) of §5 stand unchanged.
+
+### R6. Answers to the §7 questions, as adopted
+
+1. Hold `_emission` out — yes, for the reason in R3, with routing separated per R2.
+2. Drop C1 before any run — R3 **(conservative choice)**.
+3. 10% stratified by source, with the minimum counts and the one-step 20% fallback of R4.
+4. Gold-defined V_obs = 1 contexts in N bands, primary; V_obs = 2, N ≤ 3 secondary — R5 (d′).
+5. Not a default after the fact: the pre-registered tie-break of R4 makes
+   `c2_transition_only` primary when it is within the dev CI of the best arm.
