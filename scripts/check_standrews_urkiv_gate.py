@@ -28,8 +28,16 @@ St Andrews rows is "not run", never "passed" (pre-registration 2026-10-25, A2.2)
 The gate is measured on one pinned row (`GATE_SENTENCE_ID`), not on any row of the text:
 the text marker `urkIV-001` matches all 159 sentences of Urk. IV 1 (final eval, 2026-10-25).
 The script ends with `GATE: PASS` or `GATE: FAIL (...)` and exits 0 only on PASS — every
-paste check passes and the pinned row ranks 1 among the St Andrews rows; a missing or
-changed pinned row also exits non-zero.
+paste check passes and the pinned row is present exactly once with its expected reading;
+a missing or changed pinned row exits non-zero.
+
+**The St Andrews rank does not gate** (pre-registration addendum A7, 2026-10-26). Every
+St Andrews row has an empty `hieroglyphs` column (the importer could not derive word-level
+alignment from quadrat groups), and `retrieve_top_k` drops rows with no shared sign
+evidence from a hieroglyph query (`app/services/retrieval.py:165`), so no St Andrews row
+can enter the pool PASTE_001 is ranked in. The rank is printed — a number or
+"not retrieved" — and reported, never judged. Attempt 1 of the 2026-10-25 regression run
+failed on the old rank criterion and stays failed.
 """
 
 from __future__ import annotations
@@ -91,15 +99,18 @@ def check_gate_row(df: pd.DataFrame) -> str | None:
     return None
 
 
-def gate_verdict(passed: int, total: int, standrews_rank: int | None) -> list[str]:
-    """The reasons the gate fails (empty = PASS)."""
+def gate_verdict(passed: int, total: int) -> list[str]:
+    """The reasons the gate fails (empty = PASS).
+
+    Only the paste checks are judged here; `check_gate_row` has already failed the run
+    if the pinned row is missing or no longer carries its expected reading. The pinned
+    row's rank among the St Andrews rows is reported by `main`, not gated (A7,
+    2026-10-26: no St Andrews row can enter a hieroglyph paste's retrieval pool, so the
+    old "rank 1" criterion was unreachable by construction).
+    """
     reasons = []
     if total == 0 or passed != total:
         reasons.append(f"paste checks {passed}/{total}")
-    if standrews_rank is None:
-        reasons.append(f"{GATE_SENTENCE_ID} not retrieved")
-    elif standrews_rank != 1:
-        reasons.append(f"St Andrews rank {standrews_rank}, not 1")
     return reasons
 
 
@@ -216,6 +227,8 @@ def main(argv: "list[str] | None" = None) -> int:
         print(f"  rank among {label}: {rank}")
         if frame is standrews:
             standrews_rank = rank
+    reported_rank = "not retrieved" if standrews_rank is None else str(standrews_rank)
+    print(f"  rank among St Andrews rows: {reported_rank} (reported, not gated — A7)")
     if not urk.empty:
         top = urk.iloc[0]
         print(f"  row: {top['transliteration_gold']}")
@@ -238,7 +251,7 @@ def main(argv: "list[str] | None" = None) -> int:
             f"({suggestion.confidence_score:.4f})"
         )
 
-    reasons = gate_verdict(passed, len(results), standrews_rank)
+    reasons = gate_verdict(passed, len(results))
     print("\nGATE: " + ("PASS" if not reasons else f"FAIL ({'; '.join(reasons)})"))
     print(f"done in {time.time() - started:.1f}s")
     return 0 if not reasons else 1

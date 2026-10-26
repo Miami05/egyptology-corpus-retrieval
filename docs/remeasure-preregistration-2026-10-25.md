@@ -299,3 +299,102 @@ Found by the final audit (Astra search-ranking-4, cross-verified by Opus).
 Rule A2.3 (no Earlier/Late paste routed to Demotic) is judged on the router as merged.
 Whether to change the coverage definition or add the abstention is decided after (A), with
 its own pre-registration.
+
+## A7 — Specification correction (2026-10-26, after attempt 1)
+
+Written after attempt 1 of (A) ran and failed, before any step of attempt 2 ran. This
+section **amends** rule A2.2 for attempt 2 onward. The original A2.2 text above is left
+exactly as it was written and is not edited: it is the rule attempt 1 was judged against,
+and attempt 1 stays **FAILED** under it. Nothing here relabels attempt 1 as passed,
+partially passed or "n/a".
+
+### What was wrong with A2.2
+
+A2.2 required that, with the private rows loaded, "the St Andrews row for Camilla's line
+is rank 1 among St Andrews rows". That criterion is **unreachable by construction**, not
+by any defect of the fixes under test:
+
+* All **7,659** St Andrews rows have an empty `hieroglyphs` column. The importer leaves it
+  empty deliberately: St Andrews gives quadrat groups, and a quadrat is not a word, so no
+  word-level sign/reading alignment can be derived (`docs/standrews-attribution.md`, memory
+  note "St Andrews uses Hannig conventions").
+* `retrieve_top_k` keeps, for a hieroglyph query, only rows with sign evidence
+  (`glyph_overlap_score`, `glyph_idf_overlap_score` or `glyph_exact_bonus` > 0) —
+  `app/services/retrieval.py:165–179`, from f75b807 (2026-08-29).
+* PASTE_001 is a hieroglyph paste. Therefore no St Andrews row can ever enter its
+  retrieval pool, and the pinned row can never have a rank, let alone rank 1. Attempt 1
+  measured exactly that: pool 27,917 rows of 138,131, **0 St Andrews rows**.
+* The historical gate never claimed otherwise. `docs/format-hints-2026-09-06.md` (~421)
+  records a green gate that is 8/8 pastes only, and `docs/sign-function-2026-09-06.md`
+  (~486) records the same run as "PASTE_001 retrieval pool 27,917, **0 St Andrews rows in
+  the pool**". Before aa4bbad the script printed the rank and judged nothing.
+
+### How the criterion got in
+
+* `a39efe9` (rev. 1) first wrote "rank 1 among St Andrews rows" into A2.2.
+* `f4ee069` (rev. 2) kept it.
+* `aa4bbad` (rev. 2.1 / final eval) made the script pin one row and **exit non-zero**
+  unless it ranks 1, turning a printed diagnostic into a pass condition.
+
+It was written from the script's printed output, not from a check that the quantity can
+exist. That is the pre-registration error this section corrects.
+
+### Amended A2.2 (attempt 2 onward)
+
+**A2.2′ Urk. IV / St Andrews gate.** With the private rows loaded — the script prints the
+resolved directory and a private row count **> 0**; a count of 0 is "not run", never
+"passed" — all of the following must hold:
+
+1. **8/8** expert paste checks pass in `--stage auto` **and** in `--stage declared`, with
+   the private rows present. (PASTE_001–004 are among the 8.)
+2. The pinned row `S_urkIV-001_urkIV-001Tr_0003` is present in the corpus **exactly once**
+   and carries its expected folded reading (`ḏd =ꞽ n =ṯn rmṯ nbt`, compared after
+   `search_fold`). A missing, duplicated or changed pinned row fails the gate: it means
+   a re-import renumbered the sentences and the gate is measuring a different line.
+3. The pinned row's **rank among St Andrews rows is reported, not gated** — a number, or
+   "not retrieved" when it is not in the pool. "not retrieved" is the expected reading of
+   the corpus as it stands and is not a failure.
+
+The script exits non-zero for (1) and (2) and for a zero private row count, and never for
+(3).
+
+**A gold-transliteration query must not be substituted to make the paste gate pass.**
+Feeding the gate the known transliteration of Camilla's line instead of her hieroglyphs
+would retrieve St Andrews rows and produce a flattering rank, but it would no longer be
+the paste path the gate exists to check. Whether the corpus contains a usable parallel
+for a *text* query is a different question; if it is ever asked it gets its own
+pre-registered check, its own script path and its own name — it is never folded into
+A2.2′.
+
+### Command block for A2.2′ (supersedes the gate block in A1 for attempt 2 onward)
+
+A1's `bash` blocks are left unedited; this block replaces its single gate invocation:
+
+```bash
+for M in auto declared; do
+  $PY scripts/check_standrews_urkiv_gate.py --private-dir "$PRIV" --stage $M \
+      > $R/urkiv_standrews_$M.txt 2>&1
+done
+```
+
+### Script change this amendment requires
+
+`scripts/check_standrews_urkiv_gate.py`: `gate_verdict` judges the paste checks only. The
+St Andrews rank is printed as `rank among St Andrews rows: N (reported, not gated — A7)`
+or `rank among St Andrews rows: not retrieved (reported, not gated — A7)`. The pinned-row
+presence and folded-reading check (`check_gate_row`) and the zero-private-rows check keep
+their non-zero exits, as does a paste result below 8/8.
+
+### Attempt 2
+
+* Attempt 2 re-runs **all** of (A), every step, on the commit that carries this
+  amendment. No subset re-run, no reuse of an attempt-1 number (A2.9).
+* Attempt 1's directory is renamed `~/egyptology-runs/remeasure-2026-10-25-attempt1` and
+  kept; attempt 2 writes to `~/egyptology-runs/remeasure-2026-10-25`.
+* Attempt 1's results note, `docs/remeasure-results-2026-10-25.md`, keeps its verdict
+  (NOT SHIPPABLE, A2.2 FAIL). Attempt 2 gets its own note.
+* The rule-8 release floors are derived from **attempt 2's** measured numbers only.
+  Attempt 1's indicative 0.80 / 0.70 are not carried over.
+* Step 1 (the full pytest suite) is run as part of attempt 2 with its full output kept in
+  `$R/pytest.txt`, and every step's start time, end time and exit code is recorded in
+  `$R/run_log.txt`.
