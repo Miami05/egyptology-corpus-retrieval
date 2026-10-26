@@ -3033,8 +3033,8 @@ Not built yet; measure before switching on, on queries written in a reader's not
    (`docs/kri-fixes-preregistration-2026-10-26.md`); merge and deploy only if every gated rule passes.
 2. **Experiment 3 — notation-faithful search key** (pre-registered 2026-09-07 above, NOT RUN), next.
    Before step 0, re-scope it against what shipped since: audit fix A54 (in `3465478`) already
-   matches the words of a Unicode query that carry an Egyptological letter strictly in the
-   suggestion re-rank (ASCII-only words stay loose), which overlaps configuration F-b. The re-scope is written as a dated addendum to the Experiment 3 section,
+   matches Unicode queries strictly per token in the suggestion re-rank, which overlaps
+   configuration F-b. The re-scope is written as a dated addendum to the Experiment 3 section,
    never an edit of it, and is reviewed by Opus and Astra before step 0 runs. On a confirmed pass, the
    result goes to Nederhof together with the invitation to test the live tool (his own St Andrews
    texts through the reviewer key).
