@@ -1,7 +1,12 @@
-# Post-fix regression run (A), attempt 1 — results, 2026-10-25/26
+# Post-fix regression run (A), **attempt 1** — results, 2026-10-25/26
 
-Run of part (A) of `docs/remeasure-preregistration-2026-10-25.md` (rev. 2.1 + A6), as
-written. Nothing in the code, the benchmarks or the rules was changed during the run.
+Run of part (A) of `docs/remeasure-preregistration-2026-10-25.md` (rev. 2.1 + A6).
+Nothing in the code, the benchmarks or the rules was changed during the run. The run was
+**not** carried out exactly as written: see the protocol deviation below.
+
+**This note was corrected on 2026-10-26** after an independent review (Astra) of its
+mechanism claims. The corrections change explanations, labels and sourcing only — no
+measured number and no verdict was changed. Attempt 2 is a separate note.
 
 **Verdict: NOT SHIPPABLE as measured — rule A2.2 (Urk. IV / St Andrews half) FAILED.**
 Every other rule that has a pass condition passed (A2.1, A2.3, A2.5, A2.6). Under A2.9 this
@@ -10,15 +15,18 @@ the pre-registration, and a full re-run of (A) on the new pinned commit, with th
 directory kept as `…-attempt1`. Step 11 (release floors) was **not run** (it requires every
 A2 rule to pass).
 
-On how the run continued after the failure: A2.9 says "stop" on any failure. The lead's
-instruction for this run was to stop the failing step, record it, and continue only with
-steps that do not depend on it. Steps 5–9 do not depend on the gate, so they were run on
-the same commit to give the next attempt a complete picture. They are **not** a substitute
-for the full re-run A2.9 requires; no number here is a final (A) number.
+**Protocol deviation (stated, not excused).** A2.9 says: on any failure, **stop**.
+Steps 5–9 were run anyway, after A2.2 had already failed, on the lead's instruction to
+record the failure and continue with steps that do not depend on it. That is a deviation
+from A2.9, not a reading of it. Everything measured in steps 5–9 is therefore
+**diagnostic only**: it is kept to give the next attempt a complete picture, it is not a
+(A) result, and it does not reduce what attempt 2 has to re-run.
 
-All result files are in `R = ~/egyptology-runs/remeasure-2026-10-25` (outside the repo and
-iCloud). Private St Andrews rows were read from `~/projects/Egyptology-APP/data/private`
-and never copied; the gate log stays in `$R`.
+All result files of this attempt are in
+`R = ~/egyptology-runs/remeasure-2026-10-25-attempt1` (outside the repo and iCloud; it was
+written as `~/egyptology-runs/remeasure-2026-10-25` during the run and renamed before
+attempt 2, as A2.9 requires). Private St Andrews rows were read from
+`~/projects/Egyptology-APP/data/private` and never copied; the gate log stays in `$R`.
 
 ## Step 0 — pinned state (recorded before step 1)
 
@@ -36,6 +44,10 @@ and never copied; the gate log stays in `$R`.
 Run once by the lead on 478929e before this run: **1459 passed, 7 skipped, 0 failed**
 (10 min 28 s). Not re-run here (A3 says "once"). The lead also measured paste auto 8/8.
 
+**Sourcing:** this figure and that timing are **reported by the lead; no raw transcript
+was retained in `$R`**. Nothing in the attempt-1 directory reproduces them. Attempt 2 runs
+the suite itself and keeps the full output in `$R/pytest.txt`.
+
 ## Rules, one by one
 
 | Rule | Result | Numbers | Source in `$R` |
@@ -43,7 +55,7 @@ Run once by the lead on 478929e before this run: **1459 passed, 7 skipped, 0 fai
 | A2.1 Paste | **PASS** | auto 8/8, declared 8/8; none 3/8 (reported; was 3/8) | `paste_{auto,declared,none}.txt/.csv` |
 | A2.2 Urk. IV gate | **FAIL** | pastes PASS (see below); St Andrews pinned row **not retrieved** | `urkiv_standrews_auto.txt` (+ paste files) |
 | A2.3 Stage routing | **PASS** | Earlier → Demotic 0/200, Late → Demotic 0/200 | `routing_summary.txt`, `routing.csv` |
-| A2.4 Margin not tuned | **RECORDED** (no pass rule) | margin still 1e-9; app vs A2.4 recomputation differs 1/400 (app coverage), 20/400 (own-row coverage) | `routing_summary.txt`, `routing.csv` |
+| A2.4 Margin not tuned | **RECORDED** (no pass rule) | margin still 1e-9; app vs the **normalised A2.4 replay** differs 1/400 (app coverage), 20/400 (own-row coverage) — comparisons with the replay, not isolated policy effects | `routing_summary.txt`, `routing.csv` |
 | A2.5 No unexplained loss | **PASS** | 0 queries lost committed → L on v4, held-out 1, LE-v1; 0 lost L → C; paste changes all traced | `{v4,holdout,le_v1}_{L,C}_auto.csv` |
 | A2.6 Twin effect only where twins are | **PASS** | every C → T change is on a query with a twin; inventory unchanged | `twin_compare.txt`, `twin_changes.csv`, `known_twins_now.csv` |
 | A2.7 App vs word overlap | **REPORTED** (no verdict) | pooled T-auto 58/70 vs overlap 59/70, BM25 62/70 | `{v4,holdout,le_v1}_T_auto.csv` |
@@ -63,8 +75,13 @@ Paste changes against the committed `data/benchmarks/expert_paste_eval_results.c
 | --- | --- | --- |
 | 001–006, 008 | Demotic no longer in the per-stage likelihoods | A3 stage guard: Demotic has no own aligned hieroglyph rows, so it is not scored |
 | 001–007 | top confidence lower (e.g. 0.626 → 0.313, 0.642 → 0.425) | A21: confidence is per-candidate absolute, the 0.4–0.5 floor is gone |
-| 008 | stage Demotic → Earlier Egyptian; per-sign log-likelihood −8.14 → −10.54 | A3 (Demotic skipped) + A53 (an unreadable group now pays a penalty instead of a free emission); both stages read nothing, equal coverage 0, Earlier wins on ℓ by 0.15 > 1e-9 — the A2.4 rule |
+| 008 | stage Demotic → Earlier Egyptian; per-sign log-likelihood of the **chosen** stage −7.962 → −10.541 | A3 (Demotic skipped) + A53 (an unreadable group now pays a penalty instead of a free emission); both remaining stages read nothing, equal coverage 0, Earlier wins on ℓ by 0.152 > 1e-9 — the A2.4 rule |
 | 007 (`ẖnm`, NFD) | top suggestion `ḫnm =tw` → `ẖnm-ms` | A54: a Unicode query is matched with strict per-token Unicode, so the exact `ẖ` reading outranks the loose `ḫ` one |
+
+PASTE_008's full likelihood dicts, so the two numbers are not confused: committed
+`Earlier Egyptian=-8.143; Late Egyptian=-8.295; Demotic=-7.962` (chosen: **Demotic**,
+−7.962; −8.143 is the **Earlier**-model score, not the chosen one); this run
+`Earlier Egyptian=-10.541; Late Egyptian=-10.693` (chosen: **Earlier**, −10.541).
 
 Mechanisms are read off the result rows and the fix descriptions; they were not
 instrumented one fix at a time.
@@ -89,12 +106,20 @@ alignment), and `retrieve_top_k` keeps, for a hieroglyph query, only rows with s
 evidence (`glyph_overlap_score`, `glyph_idf_overlap_score` or `glyph_exact_bonus` > 0,
 `app/services/retrieval.py:165–179`). That filter dates from f75b807 (2026-08-29), and the
 gate's retrieval call is the same as on `main`; what is new is that the script now pins
-one row and exits non-zero (A5 change 1, final eval). So this looks like the gate
+one row and exits non-zero (A5 change 1, final eval, `aa4bbad`). So this is the gate
 measuring something the hieroglyph-paste path has never been able to do, rather than a
-regression from tonight's fixes — but that is an inference, not a measurement, and the
-earlier "Urk. IV gate pass" was not re-run on the old code to confirm it. Either way the
-rule as pre-registered is not met. Deciding whether to change the rule (addendum) or the
-code is left to the lead.
+regression from tonight's fixes.
+
+**Resolved on 2026-10-26** (added in this correction, after an independent review). The
+criterion is unreachable by construction, and the historical record confirms the
+hieroglyph paste never retrieved a St Andrews row: `docs/sign-function-2026-09-06.md`
+(~486) records the same gate as green with "PASTE_001 retrieval pool 27,917, **0 St
+Andrews rows in the pool**", and `docs/format-hints-2026-09-06.md` (~421) shows a green
+gate that is 8/8 pastes only. "rank 1 among St Andrews rows" entered the pre-registration
+at `a39efe9`, was kept at `f4ee069` and became a non-zero exit at `aa4bbad`. The
+pre-registration addendum **A7 (2026-10-26)** amends A2.2 accordingly: the rank is
+reported, not gated; the pinned row's presence and reading still gate. **This attempt
+stays FAILED under A2.2 as written**; A7 applies to attempt 2 onward.
 
 ### A2.3 Stage routing — PASS
 
@@ -116,13 +141,27 @@ are an unpaired reference only.
 
 The margin is still 1e-9 (`app/services/stage.py:582`); nothing was tuned.
 
-* **App vs A2.4 recomputed with the app's own coverage: 1/400 differ.** In that paste the
-  app abstained with no stage scored, while the script's recomputation scored Earlier and
-  Late (coverage 0 each) and would pick Earlier. The script recomputes from the normalised
-  paste, while the app routes the raw paste with format hints; the app's empty score dict
-  is consistent with the early `return None, {}` in `choose_stage_by_likelihood` when the
-  as-pasted string yields no groups. This is a difference in what the two calls are given,
-  not in the decision policy. Not instrumented further.
+**What the two figures below compare.** The script's "A2.4 recomputation" is a **replay
+on the normalised sign string**: it calls `choose_stage_by_likelihood(normalize_hieroglyphs(
+query), …)` directly, while the app is called with the raw `hieroglyphs` value through
+`resolve_auto_stage` (`scripts/run_stage_routing_eval.py:195–213`). So **1/400** and
+**20/400** are differences between the app and that normalised replay. They are *not*
+isolated measurements of the decision policy: a difference can come from the input the
+two calls are given, from the coverage definition, or from the policy, and only the
+20/400 figure is attributable to a definition (A6.2) with any confidence.
+
+* **App vs the replay with the app's own coverage: 1/400 differ** — one paste, TLA row
+  `TLA_EARLIER_3918` / `S3918`. **CONFIRMED mechanism, and it is not the decision policy.**
+  That row's raw `hieroglyphs` value is `<g>D94</g><g>R3W</g>`: Gardiner-code markup with
+  no character in the Unicode Egyptian Hieroglyphs block, so `contains_hieroglyphs(raw)` is
+  **false** and `resolve_auto_stage` (`app/services/retrieval.py:220`) takes its
+  **text-query branch** — a pooled first-pass retrieval followed by `infer_stage` — instead
+  of the hieroglyph router. That branch returns no stage here and, by design, an **empty**
+  likelihood dict ("empty for a text query", same docstring), which is why this row's
+  `score_*` columns in `routing.csv` are blank: the CSV writes the *app's* scores, not the
+  replay's. The replay, given the normalised string, scored Earlier and Late (coverage 0
+  each) and resolved to Earlier. (Earlier was not wrong about the row, which is Earlier
+  Egyptian; the app simply abstained.) Not instrumented further.
 * **A6.1 (no abstention at zero coverage with one eligible stage):** confirmed in the code
   (a single ranked candidate is returned whatever its coverage). Measured incidence in
   this sample: **0/400** — 399 pastes had two scored stages (Earlier, Late), 1 had none;
@@ -151,18 +190,61 @@ Rank changes inside the top 3 (not losses, listed so the MRR moves are explained
 
 | Query | Rank | Fix and mechanism |
 | --- | --- | --- |
-| COMP_022 | 3 → 2 (committed → L) | A21: candidates 2 and 3 had tied confidence 0.555 / 0.555; with absolute confidence they no longer tie and the useful row comes first |
+| COMP_022 | 3 → 2 (committed → L) | **A21 is ruled out** (see below). Mechanism **plausible, not isolated**: the two candidates' *relative* confidences changed because their retrieval signals changed — A51 (per-stage IDF on the Late Egyptian subset's own row count) and/or A17 and the other `normalizer.py` search-key folds, which change corpus document frequencies |
 | HOLD_008 | 3 → 2 (committed → L) | A17: the row `{wn} ={ꞽ} 〈wn〉 Ppy pn …` no longer matches on its superfluous `{…}` text and drops out of the top 3 |
 | HOLD_008 | 2 → 3 (L → C) | A17 + A55 token mode: the current expected tokens drop the `{=ꞽ}` token, so candidate 2's overlap falls 0.263 → 0.211, below the threshold; the third row is still useful |
 | LE_005 | 1 → 2 (committed → L) | the two top rows were tied at confidence 0.561; the row sharing the rare word `qbḥ` now ranks first. Most likely A51 (Late Egyptian IDF on the stage subset's own row count gives rare content words their weight back); the useful row is second. Mechanism inferred, not isolated |
 
-Other changes: v4 COMP_011 stage_used Late Egyptian → pooled (A3/A53 coverage-first stage
-choice), rank unchanged. Shown suggestion lists changed committed → L in v4 9 queries,
-held-out 5, LE-v1 2 (the rank changes above included); the others keep their useful rank
-(A21 confidence order, A17/A54 matching).
+**Why A21 cannot be the COMP_022 mechanism.** The per-candidate absolute-evidence factor
+is applied at `app/services/suggestions.py:1063–1067`, *after* `rows.sort(...)` at
+:1055–1061 and after the `rows[:top_n]` slice. The sort key is the **relative**
+confidence; the code comment at :1047 states this. A21 therefore rescales the displayed
+numbers (0.555 → 0.273 / 0.302) and can never reorder candidates. The sort key, including
+its alphabetical tie-break, is unchanged from the merge-base `27c1a7b`. Since the
+displayed order changed, the two *relative* confidences must themselves have changed —
+and for this ASCII query they are read off retrieval (`translit_overlap` from
+`idf_overlap_score`, plus `relative_score`/`mean_score` from `final_score`), not off the
+suggestion layer's string handling. A54 is inert here (no Egyptological letters in the
+query) and A17 does not change either candidate's comparison key (neither contains
+`{…}`). Which retrieval-side fix moved the numbers — A51's stage-subset IDF, the folds'
+effect on document frequencies, or both — was **not isolated**: separating them needs an
+instrumented re-run, which this attempt did not do.
 
-**UNEXPLAINED losses: none.** **UNEXPLAINED changes: none that move a rank**; LE_005's
-mechanism is the most likely one, not a proven one.
+**COMP_011 (v4): stage_used Late Egyptian → pooled — corrected mechanism.** The earlier
+attribution to A3/A53 was wrong. COMP_011's query (`akh pl sn ti pl iri sn mrr pl sn ta
+djr hka`) is **ASCII transliteration**, so it never reaches the hieroglyph coverage-first
+router: the harness's `--stage auto` branch does a pooled first-pass `retrieve_top_k` and
+then `infer_stage` (`scripts/run_competitive_ambiguity_eval.py:881–891`); it never calls
+`resolve_auto_stage` or `choose_stage_by_likelihood` (0 occurrences in that file), and the
+app's own `resolve_auto_stage` takes the likelihood router only `if contains_hieroglyphs(
+query)` (`app/services/retrieval.py:220`). `infer_stage` itself is **byte-identical**
+between `27c1a7b` and HEAD. "pooled" here is `stage_used == ""`, i.e. `infer_stage`
+returned `None`.
+*Mechanism: path CONFIRMED, trigger PLAUSIBLE.* Confirmed: the pooled first pass returned
+a different top-10 whose labelled-stage mix no longer clears `infer_stage`'s share/lift
+guards. Plausible, not isolated: the search-key folds moved that neighbourhood — the new
+rank-2 suggestion is `hp =sn pw n mrr{.t} =sn` (BBAW B016189), whose evidence summary
+names the shared token `mrr{.t}`, a match only possible once A17 deletes `{…}` from the
+search key; it is the only `mrr{` row in the corpus and was absent from the committed
+top 3. Which fold flipped the guard was not instrumented.
+
+Other changes: shown suggestion lists changed committed → L in v4 9 queries, held-out 5,
+LE-v1 2 (the rank changes above included); the others keep their useful rank.
+
+### Mechanism status of every change above
+
+**UNEXPLAINED top-3 losses: zero** — no query that the committed run answered within the
+top 3 fails to do so in L or C. That is the A2.5 pass condition and it is met. Separately,
+the *explanations* for the changes that did happen are of three different qualities:
+
+| Status | Changes |
+| --- | --- |
+| **CONFIRMED** (traced in code or data) | PASTE_001–006, 008 Demotic dropped from the likelihoods (A3 stage guard); PASTE_001–007 confidence rescaled (A21, `suggestions.py:1063–1067`); PASTE_007 `ḫnm =tw` → `ẖnm-ms` (A54 strict per-token Unicode on an NFD query); HOLD_008 3 → 2 committed → L (A17: the `{…}` row no longer matches on its superfluous text); HOLD_008 2 → 3 L → C (A55 token mode drops `{=ꞽ}`, overlap 0.263 → 0.211); COMP_011 is routed by `infer_stage`, not the coverage router |
+| **PLAUSIBLE** (consistent, not isolated) | COMP_022 3 → 2 (retrieval signals changed: A51 and/or the search-key folds); LE_005 1 → 2 (A51, Late Egyptian IDF restoring weight to the rare word `qbḥ`); COMP_011's specific trigger (A17's `{…}` deletion changing the first pass); PASTE_008's stage flip attributing the ℓ change to A53's unreadable-group penalty |
+| **UNRESOLVED** | Which of A51 and the folds moved COMP_022's retrieval numbers; which fold flipped COMP_011's `infer_stage` guard. Both need an instrumented re-run and neither moves a query out of the top 3 |
+
+No change in any of the three rows is an unexplained **loss**; the UNRESOLVED row is about
+attribution between named fixes, not about unaccounted behaviour.
 
 ### A2.6 Twin effect only where twins are — PASS
 
@@ -171,12 +253,32 @@ mechanism is the most likely one, not a proven one.
 committed inventory decides. `compare_twin_scores.py` (exit 0) accepted all three pairs and
 lists C → T changes only on queries with twins:
 
+**This list covers useful-rank and suggestion changes only** — it is what
+`compare_twin_scores.py` writes to `twin_changes.csv`:
+
 * v4: COMP_001 (useful rank 1 → miss), COMP_004, COMP_017, COMP_018 (suggestions only);
   twin queries are COMP_001, 002, 004, 010, 017, 018, 022.
 * held-out 1: HOLD_022, HOLD_025 (suggestions only); twins HOLD_017, 022, 023, 025.
 * LE-v1: LE_020, 023, 028, 040 (suggestions only); twins LE_001, 020, 023, 028, 040.
 
-Changes on clean queries: **0**.
+Other C → T outcome changes, found by diffing the C-auto and T-auto result CSVs column by
+column (they are not in `twin_changes.csv`, which does not track these fields). **A2.6
+still passes: every one of them is on a query with `twins_removed > 0`.**
+
+| Query | Field | C-auto → T-auto | Twins removed |
+| --- | --- | --- | --- |
+| COMP_018 | `exact_rank`, `top3_exact_hit` | 2 → not found, True → False | 2 |
+| COMP_017 | `overlap_baseline_useful_rank`, `bm25_baseline_useful_rank` | 1 → 2 (both) | 1 |
+| COMP_010 | `overlap_baseline_suggestions` | baseline list changed; app rank 2 unchanged | 1 |
+| HOLD_017 | `stage_used`, `confidence_scores` | pooled (`""`) → Earlier Egyptian; 0.376/0.288/0.296 → 0.376/0.289/0.298 | 8 |
+| LE_020, LE_023 | baseline useful ranks / `overlap_baseline_suggestions` | see `twin_compare.txt` | 2 each |
+
+HOLD_017 is the only one where the **app's** stage choice moves: removing 8 twins changes
+the pooled first pass, so `infer_stage` now clears its guards for Earlier Egyptian where
+it previously abstained. Its useful rank is 1 before and after.
+
+Changes on clean queries (`twins_removed == 0`): **0**. The `twin_exclusion` column
+differs on every row — that is the control setting itself (0 vs 0.7), not an outcome.
 
 Twin-controlled numbers (T-auto / T-declared / T-none, top-3 useful, MRR): v4 0.85 / 0.75,
 0.85 / 0.7417, 0.85 / 0.7417; held-out 1 0.75 / 0.6667 in all three modes; LE-v1 0.8667 /
@@ -217,24 +319,27 @@ anyway). For the next attempt, the floors rule 8 would give from this run's v4 T
 
 ## Run log
 
-| Step | Command | Exit | Time |
-| --- | --- | --- | --- |
-| 0 | record sha / hash / env, row count, `--help` checks | — | 23:59 |
-| 1 | pytest (lead, before the run) | 0 | 10 min 28 s |
-| 2 | `list_benchmark_twins.py` | 0 | 11 s |
-| 3 | paste auto / declared / none | 0 / 0 / 1 (3/8 expected) | 56 s / 34 s / 21 s |
-| 4 | Urk. IV St Andrews gate | **1 (FAIL)** | 74 s |
-| 5–7 | 15 competitive runs (T×3, C, L per set) | all 0 | 00:04 → 02:03 (`competitive_progress.log`) |
-| 8 | `compare_twin_scores.py` | 0 | seconds |
-| 9 | stage routing | 0 | 110 s |
-| 10 | this note | — | — |
-| 11 | floors + `verify_release.py` | not run | — |
+| Step | Command | Exit | Time | Source of the time |
+| --- | --- | --- | --- | --- |
+| 0 | record sha / hash / env, row count, `--help` checks | — | 23:59 (start) | file mtimes in `$R` |
+| 1 | pytest (lead, before the run) | 0 | 10 min 28 s | **reported by the lead; no raw transcript retained** |
+| 2 | `list_benchmark_twins.py` | 0 | 11 s | **reported by the lead; no raw transcript retained** |
+| 3 | paste auto / declared / none | 0 / 0 / 1 (3/8 expected) | 56 s / 34 s / 21 s | **reported by the lead; no raw transcript retained** (the `paste_*.txt` files carry no duration) |
+| 4 | Urk. IV St Andrews gate | **1 (FAIL)** | **71.1 s** (script-internal) | `urkiv_standrews_auto.txt`, last line `done in 71.1s` |
+| 5–7 | 15 competitive runs (T×3, C, L per set) | all 0 | 00:04 → 02:03 | `competitive_progress.log` timestamps |
+| 8 | `compare_twin_scores.py` | 0 | seconds (not timed) | — |
+| 9 | stage routing | 0 | **107.7 s** script-internal / **110 s** wall | `routing_summary.txt` (`done in 107.7s`) and `routing_exit.txt` (`routing exit 0 secs 110`) |
+| 10 | this note | — | — | — |
+| 11 | floors + `verify_release.py` | not run | — | — |
 
-Wall time of steps 0–9: 23:59 → 02:06 (about 2 h 7 min), plus the lead's 10.5-minute
-pytest. One heavy process at a time throughout.
+The earlier "74 s" for step 4 had no source and is withdrawn: the only recorded figure is
+the script's own 71.1 s, and no wall-clock measurement of that step was kept.
+
+Wall time of steps 0–9: 23:59 → 02:06 (about 2 h 7 min, from `$R` file mtimes), plus the
+lead's reported 10.5-minute pytest. One heavy process at a time throughout.
 
 ## Attempts
 
 | Attempt | Directory | Outcome |
 | --- | --- | --- |
-| 1 | `~/egyptology-runs/remeasure-2026-10-25` (to be renamed `…-attempt1` before attempt 2) | A2.2 FAIL (St Andrews row not retrieved); all other pass rules PASS |
+| 1 | `~/egyptology-runs/remeasure-2026-10-25-attempt1` (written as `…-2026-10-25`, renamed before attempt 2) | **A2.2 FAIL** (St Andrews row not retrieved); all other pass rules PASS. Stays FAILED: the A7 amendment (2026-10-26) applies to attempt 2 onward and does not relabel this attempt |
