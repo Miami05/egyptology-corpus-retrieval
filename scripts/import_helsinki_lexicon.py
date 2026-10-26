@@ -36,14 +36,17 @@ Conventions in the source files (verified 2026-09-01):
                     ḥ into h.
 
 Usage:
-    python scripts/import_helsinki_lexicon.py            # writes data/processed/helsinki_lexicon.csv
-    python scripts/import_helsinki_lexicon.py --limit 500  # smoke run
+    python scripts/import_helsinki_lexicon.py --output /tmp/lexicon.csv               # a rebuild to compare
+    python scripts/import_helsinki_lexicon.py --output /tmp/lexicon.csv --limit 500   # smoke run
+    python scripts/import_helsinki_lexicon.py --output data/processed/helsinki_lexicon.csv --replace-tracked-lexicon
+        # ^ deliberate: replaces the tracked file (see audit A38)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.request
 from collections import Counter, defaultdict
@@ -60,7 +63,13 @@ from scripts.import_bbaw_egyptian import sign_for_code  # noqa: E402
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "helsinki_lexicon"
 OUTPUT_PATH = PROJECT_ROOT / "data" / "processed" / "helsinki_lexicon.csv"
-BASE_URL = "https://raw.githubusercontent.com/MaReTEgyptologists/TranslitModels/main/Models/"
+# Pinned to the commit the local copies were taken from (main as of 2023-06-01), so a
+# re-download cannot silently change the counts.
+BASE_REVISION = "c612a91407bddf8d546beedaf46edd5190a67eef"
+BASE_URL = (
+    "https://raw.githubusercontent.com/MaReTEgyptologists/TranslitModels/"
+    f"{BASE_REVISION}/Models/"
+)
 # The combined file is deliberately not used: it loses which corpus a count came
 # from, and the two halves have different provenance (see module docstring).
 SOURCES = {
@@ -70,10 +79,14 @@ SOURCES = {
 
 # The two halves do NOT write the yod the same way — verified on the raw files:
 #   AES     M17 → "=y", D21 → "yr" (ꞽr), G43 → "wy" (wꞽ); j never occurs, y 16,451×.
-#           So `y` IS the yod, and `i` is the weak radical i̯ (as in "ywi" = ꞽwi̯).
+#           So `y` IS the yod, and `i` is the weak radical i̯ (as in "ywi" = ꞽwi̯), also
+#           written `i` + U+032F 188×. The corpus's own `strict_reading_key` folds i̯
+#           into ꞽ, so both spellings become `ꞽ` here; left as `i`, "špsi" and "špsꞽ"
+#           were two lexicon readings with split counts (229 groups).
 #   Ramses  M17 → "i", M17 M17 → "y"; `i`/`j` are the yod and `y` is the double reed.
 # One shared table would have merged 𓀀 "=y" (AES) and "=i" (Ramses) as two readings.
 MDC_LETTERS = {"A": "ꜣ", "a": "ꜥ", "H": "ḥ", "x": "ḫ", "X": "ẖ", "S": "š", "T": "ṯ", "D": "ḏ", "Q": "q"}
+WEAK_RADICAL_RE = re.compile("i\u032f?")  # AES `i` / `i̯`
 YOD_BY_SOURCE = {
     "AES": {"y": "ꞽ", "Y": "ꞽ", "J": "ꞽ"},
     "Ramses": {"i": "ꞽ", "j": "ꞽ", "I": "ꞽ", "J": "ꞽ"},
@@ -106,7 +119,11 @@ def reading_to_corpus_convention(mdc: str, source: str) -> str:
     conversion would turn ḥ into h.
     """
     table = {**MDC_LETTERS, **YOD_BY_SOURCE[source]}
-    text = "".join(table.get(char, char) for char in nfc(mdc).strip())
+    text = nfc(mdc).strip()
+    if source == "AES":
+        # Before the table: `i` + U+032F must not leave a stray combining mark behind.
+        text = WEAK_RADICAL_RE.sub("ꞽ", text)
+    text = "".join(table.get(char, char) for char in text)
     return text.lower()
 
 
@@ -147,10 +164,18 @@ def build(limit: int = 0, force: bool = False) -> tuple[pd.DataFrame, dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output", default=str(OUTPUT_PATH))
+    # No default: the tracked lexicon is what the 0.2 weight and the Urk. IV gate were
+    # tuned on (DATA-LICENSE.md, audit A38), so a bare run must not replace it.
+    parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=0, help="Spellings per source (0 = all).")
     parser.add_argument("--force-download", action="store_true")
+    parser.add_argument(
+        "--replace-tracked-lexicon", action="store_true",
+        help=f"Allow --output to be the tracked {OUTPUT_PATH.name} (a deliberate rebuild).",
+    )
     args = parser.parse_args()
+    if Path(args.output).resolve() == OUTPUT_PATH.resolve() and not args.replace_tracked_lexicon:
+        sys.exit(f"refusing to overwrite the tracked {OUTPUT_PATH.name} without --replace-tracked-lexicon")
     frame, report = build(limit=args.limit, force=args.force_download)
     frame.to_csv(args.output, index=False)
     for key, value in report.items():

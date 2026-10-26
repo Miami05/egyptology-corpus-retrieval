@@ -38,6 +38,7 @@ from app.services.segmentation import (
     glyph_stream,
 )
 from app.services.sign_functions import load_sign_functions
+from tests.test_audit_services import has_long_known_span
 
 EXAMPLES = "data/processed/examples.csv"
 
@@ -146,6 +147,10 @@ def test_boundary_term_off_is_byte_identical_to_the_old_objective(plain, corpus)
         if len(gold) < 2:
             continue
         pasted = scramble(gold, rng)
+        # A22 deliberately changes rows with a known group longer than the window;
+        # this test pins the *old* objective, so it only covers the other rows.
+        if has_long_known_span(segmenter, pasted):
+            continue
         assert segmenter.segment(pasted).groups == reference_segment(segmenter, pasted)
         checked += 1
     assert checked >= 400, checked

@@ -1,0 +1,18 @@
+# The nightly database backup (scripts/backup_db.sh), started by egyptology-backup.timer.
+#
+# Reconstructed from DEPLOYMENT.md, not copied from the box (audit A46); lines that had
+# to be guessed are marked `# GUESSED:`. The script finds the database through
+# DATABASE_URL in egyptology.env (the same place the app reads it) or falls back to
+# /home/ledio/egyptology/egyptology.db.
+
+[Unit]
+Description=Whyptology nightly database backup
+OnFailure=egyptology-notify@%n.service
+
+[Service]
+Type=oneshot
+# Per-host settings: DATABASE_URL, HEALTHCHECK_URL, OFFSITE_PRUNE, ... (optional file).
+EnvironmentFile=-/home/ledio/egyptology.env
+Environment=OFFSITE_TARGET=b2:egyptology-backups-ledio
+ExecStart=/home/ledio/bin/backup_db.sh
+# GUESSED: no TimeoutStartSec (the default for a oneshot is infinity; a nightly run takes seconds).

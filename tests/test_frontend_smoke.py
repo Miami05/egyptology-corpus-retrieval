@@ -58,8 +58,8 @@ def test_home_links_have_working_query_parameter_destinations() -> None:
 
 
 def test_sidebar_navigation_works_after_arriving_via_a_deep_link() -> None:
-    """The hero buttons open ?view=... in a new tab, so that is how most visitors
-    arrive. The sidebar has to keep working from there.
+    """Shared ?view=... links are how many visitors arrive (the Home buttons used to
+    be such links too, until audit A61). The sidebar has to keep working from there.
 
     Regression guard: the ?view= handler runs on every rerun, so leaving the
     parameter in the URL overwrote whatever the sidebar buttons set and pinned the

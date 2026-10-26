@@ -121,8 +121,8 @@ def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Shared normalisation for any frame with the `examples.csv` schema.
 
     Used by both `load_examples_csv` (the public, redistributed corpus) and
-    `load_private_examples` (gitignored, non-commercial corpora) so the two never
-    drift apart: a private row must be searchable and readable exactly like a
+    `load_private_examples` (the gitignored, non-commercial St Andrews corpus) so the
+    two never drift apart: a private row must be searchable and readable exactly like a
     public one, just kept out of the database, exports and API.
     """
     for col in REQUIRED_COLUMNS:
@@ -138,9 +138,13 @@ def _normalize_corpus_frame(df: pd.DataFrame) -> pd.DataFrame:
     # value were folded by a slightly different rule (ẖ → h there, ẖ → kh here),
     # so the same word indexed differently depending on which corpus it came from.
     # The column is still displayed and still used where no transliteration exists.
+    # Only there: a transliteration whose fold is empty (wholly superfluous `{…}`
+    # text, A17) has a reading with nothing to search, and the stored column would
+    # bring the deleted text back (`{m} ={tn}` with mdc `m tn` was indexed `m tn`).
     folded = df["transliteration_gold"].astype(str).map(search_fold)
     stored = df["mdc"].astype(str).map(normalize_mdc)
-    df["mdc_norm"] = folded.where(folded.str.strip() != "", stored)
+    has_reading = df["transliteration_gold"].astype(str).str.strip() != ""
+    df["mdc_norm"] = folded.where(has_reading, stored)
     df["sign_sequence_norm"] = (
         df["sign_sequence"].astype(str).map(normalize_sign_sequence)
     )
@@ -201,9 +205,11 @@ def load_examples_csv(path: str) -> pd.DataFrame:
 def load_private_examples(directory: str | Path) -> pd.DataFrame:
     """Load every `*.csv` under `directory` as private, non-redistributed corpus rows.
 
-    These are the NC-licensed corpora (Ramses, the St Andrews texts) that can never
-    enter `data/processed/examples.csv` — CC BY-SA is share-alike and cannot carry
-    NC material. `directory` is expected to be gitignored (see `.gitignore` and
+    This is where the NC-licensed St Andrews texts live: they can never enter
+    `data/processed/examples.csv`, because CC BY-SA is share-alike and cannot carry
+    NC material. (Ramses used to be private too, but is a public CC BY-SA corpus in
+    `examples.csv` since the rights holders' grant of 2026-09-04; a Ramses row in this
+    directory would be a duplicate.) `directory` is expected to be gitignored (see `.gitignore` and
     `test_private_data_dir_is_gitignored`); nothing here writes to it or reads
     anywhere else, and the caller is responsible for keeping the result away from
     the database, exports and the API — see `app/ui/whyptology_app.py` for where the
@@ -237,7 +243,7 @@ def load_private_examples(directory: str | Path) -> pd.DataFrame:
         if "source" not in frame.columns or blank.any():
             raise ValueError(
                 f"{path} has one or more rows with an empty 'source' column; every "
-                "private row must be attributed to a named corpus (e.g. 'Ramses', "
+                "private row must be attributed to a named private corpus (e.g. "
                 "'StAndrews')"
             )
         logger.info("loaded %d private rows from %s", len(frame), path.name)

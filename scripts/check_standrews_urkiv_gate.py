@@ -17,11 +17,33 @@ afterwards (`load_private_examples`), never merged into the public file.
 
     python scripts/check_standrews_urkiv_gate.py
     python scripts/check_standrews_urkiv_gate.py --stage none
+    python scripts/check_standrews_urkiv_gate.py --private-dir ~/projects/Egyptology-APP/data/private
+
+The private directory is `--private-dir`, else `PRIVATE_DATA_DIR` (the variable the app
+reads), else `data/private` next to this script — a worktree has no private rows of
+its own. The resolved directory and its row count are printed, and the script exits
+non-zero before any evaluation when no private row was loaded: a gate run without the
+St Andrews rows is "not run", never "passed" (pre-registration 2026-10-25, A2.2).
+
+The gate is measured on one pinned row (`GATE_SENTENCE_ID`), not on any row of the text:
+the text marker `urkIV-001` matches all 159 sentences of Urk. IV 1 (final eval, 2026-10-25).
+The script ends with `GATE: PASS` or `GATE: FAIL (...)` and exits 0 only on PASS — every
+paste check passes and the pinned row is present exactly once with its expected reading;
+a missing or changed pinned row exits non-zero.
+
+**The St Andrews rank does not gate** (pre-registration addendum A7, 2026-10-26). Every
+St Andrews row has an empty `hieroglyphs` column (the importer could not derive word-level
+alignment from quadrat groups), and `retrieve_top_k` drops rows with no shared sign
+evidence from a hieroglyph query (`app/services/retrieval.py:165`), so no St Andrews row
+can enter the pool PASTE_001 is ranked in. The rank is printed — a number or
+"not retrieved" — and reported, never judged. Attempt 1 of the 2026-10-25 regression run
+failed on the old rank criterion and stays failed.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -51,28 +73,87 @@ QUERIES_PATH = PROJECT_ROOT / "data" / "benchmarks" / "expert_paste_queries.csv"
 GATE_BENCHMARK = "PASTE_001"
 # His division of Urk. IV 1: `<2> Dd=f` and `<@6>Dd=j n=Tn rmT nbt` are two body
 # blocks, so no single St Andrews row carries the whole of the expert's line. The
-# second block is the row the gate is measured on.
-GATE_MARKER = "urkIV-001"
+# second block is the row the gate is measured on, pinned by its sentence id: the text
+# marker `urkIV-001` alone matches every one of the text's 159 sentences.
+GATE_SOURCE = "StAndrews"
+GATE_SENTENCE_ID = "S_urkIV-001_urkIV-001Tr_0003"
+# The pinned row's reading, compared after `search_fold`, so a re-import that renumbers
+# the sentences fails loudly instead of measuring a different line.
+GATE_READING = "ḏd =ꞽ n =ṯn rmṯ nbt"
 
 
-def load_corpus() -> pd.DataFrame:
-    public = load_examples_csv(str(EXAMPLES_PATH))
-    private = load_private_examples(PRIVATE_DIR)
+def is_gate_row(frame: pd.DataFrame) -> pd.Series:
+    """Mask of the pinned St Andrews row for Camilla's line."""
+    return (frame["source"].astype(str) == GATE_SOURCE) & (
+        frame["source_sentence_id"].astype(str) == GATE_SENTENCE_ID
+    )
+
+
+def check_gate_row(df: pd.DataFrame) -> str | None:
+    """None when exactly one pinned row exists with the expected reading, else why not."""
+    rows = df.loc[is_gate_row(df)]
+    if len(rows) != 1:
+        return f"{len(rows)} rows with source_sentence_id {GATE_SENTENCE_ID} (expected 1)"
+    if search_fold(str(rows.iloc[0]["transliteration_gold"])) != search_fold(GATE_READING):
+        return f"{GATE_SENTENCE_ID} no longer carries the expected reading"
+    return None
+
+
+def gate_verdict(passed: int, total: int) -> list[str]:
+    """The reasons the gate fails (empty = PASS).
+
+    Only the paste checks are judged here; `check_gate_row` has already failed the run
+    if the pinned row is missing or no longer carries its expected reading. The pinned
+    row's rank among the St Andrews rows is reported by `main`, not gated (A7,
+    2026-10-26: no St Andrews row can enter a hieroglyph paste's retrieval pool, so the
+    old "rank 1" criterion was unreachable by construction).
+    """
+    reasons = []
+    if total == 0 or passed != total:
+        reasons.append(f"paste checks {passed}/{total}")
+    return reasons
+
+
+def load_corpus(
+    private_dir: str | Path = PRIVATE_DIR,
+    examples_path: str | Path = EXAMPLES_PATH,
+) -> tuple[pd.DataFrame, int]:
+    """The public frame with the private rows appended, and the private row count."""
+    public = load_examples_csv(str(examples_path))
+    private = load_private_examples(private_dir)
     if private.empty:
-        return public
-    return pd.concat([public, private], ignore_index=True, sort=False)
+        return public, 0
+    return pd.concat([public, private], ignore_index=True, sort=False), len(private)
 
 
-def main() -> None:
+def parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=["none", "auto", "declared"], default="auto")
     parser.add_argument("--rank-k", type=int, default=0, help="0 = the whole corpus")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--private-dir",
+        default=os.environ.get("PRIVATE_DATA_DIR") or str(PRIVATE_DIR),
+        help="Directory of private CSVs (default: $PRIVATE_DATA_DIR, else data/private).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: "list[str] | None" = None) -> int:
+    args = parse_args(argv)
 
     started = time.time()
-    df = load_corpus()
+    private_dir = Path(args.private_dir).expanduser().resolve()
+    df, private_rows = load_corpus(private_dir)
+    print(f"private dir {private_dir}: {private_rows:,} private rows")
+    if private_rows == 0:
+        print("no private rows loaded — the St Andrews gate is NOT RUN")
+        return 1
     counts = df["source"].value_counts().to_dict()
     print(f"corpus {len(df):,} rows: {counts}")
+    problem = check_gate_row(df)
+    if problem is not None:
+        print(f"GATE: FAIL ({problem})")
+        return 1
 
     lexicon = load_lexicon()
     cache: dict[str | None, StageResources] = {}
@@ -134,8 +215,9 @@ def main() -> None:
     )
     pool = pool.reset_index(drop=True)
     standrews = pool[pool["source"] == "StAndrews"]
-    urk = standrews[standrews["source_ref"].astype(str).str.contains(GATE_MARKER)]
+    urk = standrews[is_gate_row(standrews)]
     print(f"  St Andrews rows in the pool: {len(standrews):,}")
+    standrews_rank: int | None = None
     for label, frame in (("all rows", pool), ("St Andrews rows only", standrews)):
         if urk.empty:
             print(f"  rank among {label}: not retrieved in the top {rank_k:,}")
@@ -143,6 +225,10 @@ def main() -> None:
         best = urk.index[0]
         rank = int(frame.index.get_indexer([best])[0]) + 1
         print(f"  rank among {label}: {rank}")
+        if frame is standrews:
+            standrews_rank = rank
+    reported_rank = "not retrieved" if standrews_rank is None else str(standrews_rank)
+    print(f"  rank among St Andrews rows: {reported_rank} (reported, not gated — A7)")
     if not urk.empty:
         top = urk.iloc[0]
         print(f"  row: {top['transliteration_gold']}")
@@ -165,8 +251,11 @@ def main() -> None:
             f"({suggestion.confidence_score:.4f})"
         )
 
-    print(f"\ndone in {time.time() - started:.1f}s")
+    reasons = gate_verdict(passed, len(results))
+    print("\nGATE: " + ("PASS" if not reasons else f"FAIL ({'; '.join(reasons)})"))
+    print(f"done in {time.time() - started:.1f}s")
+    return 0 if not reasons else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

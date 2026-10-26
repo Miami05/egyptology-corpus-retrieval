@@ -127,7 +127,7 @@ guard is what stops a redeploy from overwriting live annotations.
 
 ```bash
 python3.12 -m venv ~/venvs/egyptology          # 3.12: the pins have no 3.14 wheels
-~/venvs/egyptology/bin/pip install -r requirements.txt
+~/venvs/egyptology/bin/pip install -r requirements.txt   # the app; requirements-dev.txt adds pytest and the importers' tools
 ~/venvs/egyptology/bin/python -m streamlit run app/ui/whyptology_app.py
 ```
 
@@ -144,11 +144,19 @@ python scripts/run_expert_paste_eval.py          # real hieroglyph pastes, exits
 python scripts/run_competitive_ambiguity_eval.py \
   --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
 python scripts/verify_release.py   # tests + both evaluations, one summary, non-zero on failure
+# NOT READY until release_baseline.json has a twin_controlled block (audit A4); until the
+# pre-registered re-measure sets it, --allow-legacy-gate gates on the legacy pool, labelled
 ```
 
-The competitive benchmark is the reportable one: its rows are guaranteed to have no
-near-identical twin anywhere in the corpus, so excluding the target does not hand the
-answer back. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
+The competitive benchmark is the reportable one, but its targets are *not* free of
+near-identical twins: on the 130,472-row corpus, 7 of v4's 20 targets have another row
+at word overlap ≥ 0.7 (Jaccard on loose-form tokens) or with the same notation-folded
+reading, 2 of them at ≥ 0.9 (inventory: `data/benchmarks/known_twins_2026-10-12.csv`).
+Excluding only the target can therefore hand the answer back through such an edition
+twin. `--exclude-twins 0.7` also removes every such row from each query's pool and gives
+the twin-controlled number; the default (`0`) keeps the legacy pool, and every run's
+summary says which pool it measured (`pool: legacy` or `pool: twin-controlled`). The
+v4 figures below are legacy-pool numbers. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
 folds to `i`) and the searchable corpus changed twice the same day — so their numbers
 no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 was
 cut on the 78,412-row corpus, where it scores 0.95 top-3 useful. Since Ramses and Demotic
@@ -160,9 +168,11 @@ and one whose useful parallels are Late Egyptian formula rows that are now retri
 temporary path when run through
 `verify_release.py` or the test suite, so a release check never dirties `data/benchmarks`.
 
-Annotation saving can be limited to reviewers by setting `reviewer_key` in Streamlit
-secrets (or the `REVIEWER_KEY` environment variable). With no key set the app is
-fully open, which is the default for local use. The same key also gates the private,
+Annotation saving is limited to reviewers who present the key set as `reviewer_key` in
+Streamlit secrets (or the `REVIEWER_KEY` environment variable). With no key set, saving
+fails closed: it is switched off for everyone, so an empty key can never turn the shared
+database into a public form. For local development only, `ALLOW_OPEN_ANNOTATIONS=1`
+reopens saving without a key. Reading, searching and browsing never need the key. The same key also gates the private,
 non-commercial corpus rows (the St Andrews texts, kept out of this repository): a
 session sees them only after unlocking, and with no key configured they are never
 loaded for anyone — see the "reviewer-key gate" section of [DEPLOYMENT.md](DEPLOYMENT.md). If the database is unreachable the

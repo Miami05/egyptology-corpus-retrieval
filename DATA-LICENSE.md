@@ -30,8 +30,8 @@ Unicode 5.2 hieroglyphs" below.
 The corpus is derived from raw-data publications of the Thesaurus Linguae Aegyptiae
 (TLA) project, each released under
 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) and listed at
-<https://aaew.bbaw.de/daten-veroeffentlichungen> — the two actually imported are cited
-below. **The TLA *website*, `thesaurus-linguae-aegyptiae.de`, is not itself under a CC
+<https://aaew.bbaw.de/daten-veroeffentlichungen> — the three actually imported
+(Earlier Egyptian, Late Egyptian and Demotic) are cited below. **The TLA *website*, `thesaurus-linguae-aegyptiae.de`, is not itself under a CC
 licence.** Its licences page states: "You can copy and quote individual data sets of
 this website for academic research purposes, but not entire sub-corpora or larger sets
 (> 10 website pages)"
@@ -89,11 +89,60 @@ only worked via a 307 redirect.)
 }
 ```
 
+The corpus also contains the **Demotic** TLA corpus (11,996 rows, `language_stage =
+Demotic`), whose official citation is:
+
+> Thesaurus Linguae Aegyptiae, Demotic sentences, corpus v18, premium,
+> <https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/tla-demotic-v18-premium>,
+> v1.1, 2/16/2024, ed. by Tonio Sebastian Richter & Daniel A. Werning on behalf of the
+> Berlin-Brandenburgische Akademie der Wissenschaften and Hans-Werner Fischer-Elfert &
+> Peter Dils on behalf of the Sächsische Akademie der Wissenschaften zu Leipzig.
+
+Licensed under CC BY-SA 4.0 (the dataset card's licence field reads `cc-by-sa-4.0`).
+Citation text and BibTeX copied from the dataset card, checked 2026-10-12.
+
+```bibtex
+@misc{tlaDemoticV18premium,
+ editor = {{Berlin-Brandenburgische Akademie der Wissenschaften} and {Sächsische Akademie der Wissenschaften zu Leipzig} and Richter, Tonio Sebastian and Werning, Daniel A. and Hans-Werner Fischer-Elfert and Peter Dils},
+ year = {2024},
+ title = {Thesaurus Linguae Aegyptiae, Demotic sentences, corpus v18, premium},
+ url = {https://huggingface.co/datasets/thesaurus-linguae-aegyptiae/tla-demotic-v18-premium},
+ location = {Berlin},
+ organization = {{Berlin-Brandenburgische Akademie der Wissenschaften} and {Sächsische Akademie der Wissenschaften zu Leipzig}},
+}
+```
+
 ## Indication of changes (required by CC BY-SA 4.0 §3(a)(1)(B))
 
 `data/processed/examples.csv` is **not** verbatim TLA data. The TLA sentences were
 transformed by `scripts/import_tla_dataset.py` and `scripts/build_examples_from_real.py`
-as follows:
+as follows. (`build_examples_from_real.py` only produced the first, TLA-only seed of
+12,772 rows. The later TLA corpora, BBAW and Ramses were added by their own importer's
+`--append` (`import_tla_dataset.py`, `import_bbaw_egyptian.py`, `import_ramses.py`);
+`import_aes_relannis.py` has no `--append`; it writes the AES rows to a separate file
+(default `data/processed/aes_rows.csv`), from which they were added to the corpus.
+Re-running `build_examples_from_real.py` now requires `--output` and refuses to
+overwrite a corpus that holds other sources. Empty genre/period fields are written as
+`unknown`.)
+
+The downloads are pinned to the Hub commits the corpus was built from, because the
+`TLA_EARLIER_n` / `TLA_LATE_n` ids are positions in the dataset and would silently
+shift if an upstream edit inserted a sentence: Earlier Egyptian
+`a7ba9e9d1a74a9a0f919b024ba84dd6d643b2966`, Late Egyptian
+`8af85941783ba575d5a8985c80c688f948c50040`, Demotic
+`c02baaaddaf0e2b6b9d128874df23c655eedfe7c` (`scripts/download_all_sources.py`); BBAW
+`phiwi/bbaw_egyptian` `f9dde1200348af9b531e8fd09096bd9f9ddfeb34`; Helsinki
+TranslitModels `c612a91407bddf8d546beedaf46edd5190a67eef`.
+
+A pin does not show which snapshot a file already on disk holds, so
+`download_all_sources.py` also records each TLA dataset's expected *content* checksum
+(row count plus a sha256 over its rows in order; the parquet bytes themselves differ
+between pandas/pyarrow versions) and checks it for files that already exist as well as
+for fresh downloads. A mismatch stops the script and nothing is written. The recorded
+values were computed on 2026-10-25 from the local `data/raw` parquets and agreed with
+the pinned snapshots' `train.jsonl` in the Hugging Face cache: Earlier Egyptian
+12,773 rows, Late Egyptian 3,606, Demotic 13,383. Moving the TLA Earlier/Late ids to
+content-based `--stable-ids` (with `scripts/migrate_example_ids.py`) is still open.
 
 - Selected a subset of sentences and reshaped them into one row per sentence with the
   column schema in `app/data/schema.py`.
@@ -111,6 +160,15 @@ as follows:
   and the Late Egyptian corpus (3,601 rows, after dropping 5 sentences already
   present verbatim), giving 16,373 rows. Rows carry their originating corpus in
   `language_stage` and an id prefix (`TLA_EARLIER_*` / `TLA_LATE_*`).
+- **Added the Demotic corpus** (2026-09-04, commit 651ee91): 11,996 rows, imported
+  with `import_tla_dataset.py --script-type Demotic --language-stage Demotic
+  --id-prefix TLA_DEMOTIC` (id prefix `TLA_DEMOTIC_*`), appended to the existing corpus
+  with duplicates dropped (the source has 13,383 sentences). The Demotic dataset has no
+  hieroglyphs column, so these rows carry none and take no part in the sign
+  statistics; `script_type` reads `Demotic`. Its dates are mapped to a Roman Period
+  range (−30..395), and rows dated beyond it read `Undated range (a to b)` rather than
+  a guess. The suffix-pronoun marker is unified as described below. With this the TLA
+  part of `examples.csv` is 28,369 rows (Earlier 12,772, Late 3,601, Demotic 11,996).
 - **Unified the suffix-pronoun marker.** The Earlier corpus writes it `=` (11,671
   occurrences), the Late corpus `⸗` (4,390). They denote the same morpheme. All
   imported rows now use `=`. Without this the same sentence read `n =tn` or `n ⸗tn`
@@ -156,11 +214,19 @@ findspot in `grammar_notes`, and its AES text and sentence identifiers in `sourc
 - **Language stage left unclaimed** (`Unspecified (AES)`): AES does not state one per
   sentence and deriving it from a coarse era label would be a guess.
 - Sentences already present from a TLA corpus were dropped (5,001 of them).
+- **Repeats kept.** A sentence that recurs in several AES (or TLA) texts stays one row
+  per occurrence, while the Ramses importer collapses repeats to one row, so how often
+  a reading is attested still depends partly on its source (audit A36). This is
+  deferred on purpose: choosing one policy changes the attestation counts and the
+  ranking for every source at once, so it needs the owner's decision and a full
+  benchmark rerun, not an importer tweak. The AES importer now reports its repeats
+  and glyph twins so the size of the effect is visible.
 
 ## Fourth corpus: the BBAW 2018 snapshot (`phiwi/bbaw_egyptian`)
 
-`data/processed/examples.csv` also contains 5,369 sentences imported by
-`scripts/import_bbaw_egyptian.py` from the Hugging Face dataset `phiwi/bbaw_egyptian`
+`data/processed/examples.csv` also contains 52,216 sentences imported by
+`scripts/import_bbaw_egyptian.py` (5,369 with aligned hieroglyphs, plus 46,847
+text-only rows added with `--include-text-only` in commit e031452) from the Hugging Face dataset `phiwi/bbaw_egyptian`
 (<https://huggingface.co/datasets/phiwi/bbaw_egyptian>), licensed CC BY-SA 4.0:
 > Teilauszug der Datenbank des Vorhabens *"Strukturen und Transformationen des
 > Wortschatzes der ägyptischen Sprache"*, Berlin-Brandenburgische Akademie der
@@ -193,17 +259,31 @@ no identifiers of its own; `source_ref` names the dataset. Licensed CC BY-SA 4.0
   row of the export and 13,646 were already present in this corpus (matched on a
   yod- and case-insensitive reading, or on identical signs), and one sentence whose
   whole reading is the interjection `ꞽ` was dropped because no transliteration query
-  can reach it. The 65,226 rows without hieroglyphs
-  are not imported by default (`--include-text-only` exists for them).
+  can reach it. The 65,226 rows without hieroglyphs are not imported by default; the
+  46,847 of them that were not already in the corpus were added in a second pass with
+  `--include-text-only`. Those rows carry a transliteration and a translation but no
+  hieroglyphs, so they take part in the transliteration search and contribute no sign
+  evidence.
 - **Metadata not claimed.** The export states no period, genre or language stage per
   sentence, so those columns read `unknown` / `Unspecified (BBAW)` rather than a guess.
+- **Lacunae in the transliteration (partly fixed).** The BBAW and Ramses importers now
+  drop a row whose transliteration has a gap anywhere: `//` inside a word (`ꞽmn-m-//`)
+  or a bracket holding only gap filler (`[]`, `[...]`, `[---]`, `[…]`), or an
+  underscore, which BBAW uses for a lost sign (`[_]`, `[___]`, `[⸮_?]`, `nꜣ _ n`; in
+  the raw export 827 of the 867 `[_]` rows with hieroglyphs have `//` there), text-only
+  rows included. The rows already in `examples.csv` were imported before that rule:
+  2,089 BBAW rows (24 with a bracket or `//`, 2,065 with an underscore) and 133 Ramses
+  rows still carry such a marker and can be offered as an attested reading. 22 AES
+  rows also carry an underscore gap; the AES importer has no transliteration-lacuna
+  rule yet. They are removed in a separate, reviewed data clean-up, not by re-running
+  `--append` (which skips rows that are already present).
 
 ## Fifth corpus: the Ramses Transliteration Corpus (`source = Ramses`)
 
-`data/processed/examples.csv` does not yet contain Ramses rows — they are withheld for
-a modelling reason unrelated to licensing (see the roadmap notes) — but the licence
-position for them is settled and recorded here so the import can proceed without a
-further licence review.
+`data/processed/examples.csv` contains **40,064 Ramses rows** (`source = Ramses`,
+`language_stage = Late Egyptian`), added in commit 651ee91 on 2026-09-04 under the
+CC BY-SA 4.0 grant described below: 27,937 of them aligned with hieroglyphs, 12,127
+text-only (a transliteration and translation, no hieroglyphs).
 
 > the Ramses transliteration corpus V. 2019-09-01, University of Liège/Projet Ramses
 
@@ -229,14 +309,20 @@ under CC BY-SA 4.0 for this project's use, they answered: **"Yes, no problem for
 us!"** They separately confirmed the pre-existing private, non-commercial arrangement
 with: "Perfect. Green light from our side."
 
-**Ramses rows may therefore enter `data/processed/examples.csv` under CC BY-SA 4.0,
-with the attribution above.** The non-commercial handling described under
+**Ramses rows are therefore in `data/processed/examples.csv` under CC BY-SA 4.0, with
+the attribution above.** The non-commercial handling described under
 "Non-commercial corpora kept out of this repository" below no longer applies to
 Ramses — it now applies only to St Andrews.
 
 **Convention caveat:** the Ramses transliteration is *normalised to the expected
 grammatical form*, not the attested spelling on the object — record that on import in
 `grammar_notes` and do not treat it as a diplomatic transcription.
+
+**Period not claimed.** The archive does not date its sentences (Saite documents are
+among them), so `scripts/import_ramses.py` now writes `period = unknown`, as the BBAW
+rows do. The 40,064 Ramses rows already in `examples.csv` were imported before that
+change and still read `New Kingdom` until the corpus is relabelled; read that value as
+"not dated", not as a dating.
 
 ## Sign-reading lexicon: the Helsinki "Transliteration Model" word lists (CC BY 4.0)
 
@@ -260,8 +346,8 @@ carries and how often. The underlying corpora, which must be credited with them:
   statistics as CC BY 4.0; on 2026-09-04 Projet Ramses granted this project the corpus
   under **CC BY-SA 4.0** by email ("Yes, no problem for us!", archived in
   `docs/permission-requests.md`), which covers the Ramses-derived rows here
-  (`source` = `Ramses`, 50,647 rows, plus 4,402 `AES+Ramses`). The lexicon file therefore
-  stays public in full.
+  (lexicon rows, not corpus rows: `source` = `Ramses` in 50,647 lexicon rows, plus 4,402
+  `AES+Ramses`). The lexicon file therefore stays public in full.
 
 The app uses the lexicon only for sign groups this corpus does not attest, labels every
 such reading as "lexicon N× — no sentence in this corpus", and never counts it as an
@@ -273,10 +359,16 @@ attestation of this corpus.
   `<g>CODE</g>` placeholders), then normalised like the corpus.
 - Transliterations converted from Manuel de Codage ASCII to the corpus's Unicode
   convention. The two files write the yod differently and were converted with their
-  own rules: AES `y` → ꞽ (its `i` is the weak radical), Ramses `i`/`j` → ꞽ (its `y` is
+  own rules: AES `y` → ꞽ (its `i`/`i̯` is the weak radical, which the importer now also
+  folds to ꞽ, as the corpus's reading key does), Ramses `i`/`j` → ꞽ (its `y` is
   the double reed). Capitalised proper names lower-cased after conversion.
 - Counts for the same (group, reading) summed across the two files, with the
   contributing source(s) recorded per row.
+- **Committed file not yet regenerated (audit A38, deferred).** `helsinki_lexicon.csv`
+  predates the weak-radical fold above, so a few AES readings still appear as both
+  `…i` and `…ꞽ` with split counts. Regenerating it is deferred because the lexicon
+  weight was tuned on the current file (0.2; 0.39 broke the Urk. IV gate) and the
+  unseen-group accuracy has to be re-measured on the new one before it ships.
 
 ## Non-commercial corpora kept out of this repository
 
@@ -303,7 +395,8 @@ never receives a private row, whatever is in the directory.
 
 (The Ramses Transliteration Corpus used to be documented here too. It moved to "Fifth
 corpus: the Ramses Transliteration Corpus" above on 2026-09-04, once its rights
-holders granted CC BY-SA 4.0 directly for this project's use.)
+holders granted CC BY-SA 4.0 directly for this project's use; only St Andrews is
+still private.)
 
 ### St Andrews Corpus of Ancient Egyptian texts (`source = StAndrews`)
 
@@ -428,6 +521,157 @@ inventory can always tell which half a class came from; the file is separate fro
 five classes plus `unk`. Note that Nederhof writes the Gardiner variants lower-case
 (`Z3a`, `V31a`, `N35a`) and the supplement upper-case; nothing joins on that column.
 
+## Open-data additions of 2026-10-25 (separate files, not in `examples.csv`)
+
+Four sources were downloaded and converted on **2026-10-25**. None of them changes
+`data/processed/examples.csv`; each lands in its own file under `data/processed/`, and
+whether any UD row joins the corpus is a separate decision. Licences were re-read from
+the publishers' own files on that date.
+
+### UD_Egyptian-PC — Pyramid Texts treebank (CC BY-SA 4.0)
+
+`data/processed/ud_egyptian_pc_candidates.csv`, built by
+`scripts/import_ud_egyptian_pc.py` from
+<https://github.com/UniversalDependencies/UD_Egyptian-PC> (UD v2.18). The README's
+metadata block states **"License: CC BY-SA 4.0"** and `LICENSE.txt` states "The
+treebank is licensed under the Creative Commons License Attribution-ShareAlike 4.0
+International."
+
+> Pyramid Texts sentences: UD_Egyptian-PC (Universal Dependencies v2.18), University of
+> Jaén — Roberto Antonio Díaz Hernández, with Bruno Guillaume and Daniel Zeman;
+> <https://github.com/UniversalDependencies/UD_Egyptian-PC>; licensed under
+> [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Changes were made.
+
+Changes made: the Tübingen transcription converted to the TLA convention by an explicit
+table (s→z, ś→s, č→ṯ, ṭ→d, č̣→ḏ, ḳ→q, ⸗→=; `˹ ˺`→`⸢ ⸣`), unwritten (supplied)
+suffix pronouns glued to their word as TLA writes them while supplied or restored whole
+words stay separate words, multiword ranges taken as one word, `|` line dividers
+dropped, the `Hiero=` grouping (`:`, `()`) removed to plain signs (rows whose signs
+include an unknown-sign marker such as `UC_No`, or a word without signs, are left
+text-only and flagged in `glyphs_incomplete` / `alignment_issue`), overlap flags against
+the corpus added, and a `citation` column (PT spell, Sethe §, witness, edition) added. Every row keeps its UD `sent_id` and
+TLA sentence ids.
+
+### ORAEC text metadata (CC BY-SA 4.0, with CC0 Trismegistos mapping)
+
+`data/processed/source_metadata_oraec.csv` (one row per linked text: title, date, find
+place, object type, location, inventory numbers, bibliography, hierarchical path,
+Trismegistos id), `data/processed/source_metadata_oraec_bbaw_links.csv` (accepted BBAW
+sentence → ORAEC text links) and `data/processed/source_metadata_oraec_bbaw_link_candidates.csv`
+(proposed links that were *not* accepted, for review only), built by `scripts/import_oraec_metadata.py` from
+<https://github.com/oraec/corpus_raw_data>. Its README's licence table gives
+`oraec1.json .. oraec13026.json` and `oraec_hierarchical_path.tsv` as **cc-by-sa-4.0**
+and `mapping_oraec_trismegistos.csv` as **cc0 | ORAEC**; each JSON's own `credits`
+block repeats `"license": "cc-by-sa-4.0"` with its author. Files the table does not
+list (`mapping_oraec_karnak.tsv`, `mapping_oraec_lemmata_karnak.tsv`) were not used.
+
+> Text metadata: ORAEC, corpus_raw_data (<https://github.com/oraec/corpus_raw_data>),
+> from the AED/AES publications of the Berlin-Brandenburg Academy's "Strukturen und
+> Transformationen des Wortschatzes der ägyptischen Sprache" (database excerpt of
+> January 2018); authors: Burkhard Backes, Susanne Beck, Marc Brose, Adelheid
+> Burkhardt, Roberto A. Díaz Hernández, Peter Dils, Roland Enmarch, Frank Feder, Heinz
+> Felber, Silke Grallert, Stefan Grunert, Ingelore Hafemann, Anne Herzberg, John M.
+> Iskander, Ines Köhler, Renata Landgrafova, Verena Lepper, Lutz Popko, Alexander
+> Schütze, Stephan Seidlmayer, Gunnar Sperveslage, Susanne Töpfer, Doris Topmann,
+> Altägyptisches Wörterbuch; [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+> Trismegistos text ids: ORAEC mapping, CC0. Changes were made.
+
+Changes made: fields flattened to one row per text, labels joined with ` | `, duplicate
+inventory numbers collapsed, joined to our AES rows by AED-TEI text id and to our BBAW
+rows by unique sentence match — accepted only when the match key has at least three
+words and the row's translation equals the ORAEC sentence's after whitespace
+normalisation; shorter or disagreeing matches go to the candidates file; every row names the source JSON, its per-text author
+(`text_authors`) and licence, and the Trismegistos columns name their own file and CC0.
+
+Displayed on the suggestion cards and the Source tab (`app/data/source_metadata.py`,
+`app/ui/source_display.py`): HTML entities decoded, whitespace collapsed, `N = …`
+thesaurus placeholders dropped, the first bibliography entry shown (at most 160
+characters), the Trismegistos link built from the numeric id, and the text's author
+named per card (the generic "AED authors" where the stored author string is a broken
+join). Unencoded `<g>…</g>` sign codes in the corpus rows are shown as marked boxes with
+the code in a tooltip, never replaced by a Unicode sign.
+
+### Sign reference: Unicode Unikemet 18.0 (Unicode License V3) and JSesh (CC BY 4.0)
+
+`data/processed/sign_reference.csv`, built by `scripts/build_sign_reference.py` — one
+row per Unikemet code point (catalogue number, Gardiner/JSesh code, description,
+function, value), with JSesh's sign values, variants and tags joined on the JSesh code.
+
+Unikemet (<https://www.unicode.org/Public/18.0.0/ucd/Unikemet.txt>) is a Unicode Data
+File; Unicode's terms (<https://www.unicode.org/terms_of_use.html>) state: "All Unicode
+Data Files and Unicode Software are subject to the terms and conditions of the free and
+open-source Unicode License v3". That licence requires its notice to appear with copies
+or in associated documentation, so it is reproduced here in full:
+
+> UNICODE LICENSE V3
+>
+> COPYRIGHT AND PERMISSION NOTICE
+>
+> Copyright © 1991-2026 Unicode, Inc.
+>
+> NOTICE TO USER: Carefully read the following legal agreement. BY
+> DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+> SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+> TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+> DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of data files and any associated documentation (the "Data Files") or
+> software and any associated documentation (the "Software") to deal in the
+> Data Files or Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, and/or sell
+> copies of the Data Files or Software, and to permit persons to whom the
+> Data Files or Software are furnished to do so, provided that either (a)
+> this copyright and permission notice appear with all copies of the Data
+> Files or Software, or (b) this copyright and permission notice appear in
+> associated Documentation.
+>
+> THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+> KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+> THIRD PARTY RIGHTS.
+>
+> IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+> BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+> OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+> WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+> ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+> FILES OR SOFTWARE.
+>
+> Except as contained in this notice, the name of a copyright holder shall
+> not be used in advertising or otherwise to promote the sale, use or other
+> dealings in these Data Files or Software without prior written
+> authorization of the copyright holder.
+
+The JSesh README (<https://github.com/rosmord/jsesh>) states: "the file
+`jsesh/src/main/resources/jsesh/glyphs/resources/signs_description.xml` is licensed
+under [CC-BY](https://creativecommons.org/licenses/by/4.0/)." Only that XML is used.
+**JSesh fonts are under separate terms and nothing from them is used or redistributed.**
+
+> Sign data: Unicode® Unikemet 18.0.0, © 1991-2026 Unicode, Inc., Unicode License V3;
+> JSesh `signs_description.xml`, Serge Rosmorduc and JSesh contributors,
+> <https://github.com/rosmord/jsesh>, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+> Changes were made.
+
+Changes made: Unikemet's tagged lines pivoted to columns, values kept verbatim, plus a
+`unikemet_value_tla` column that writes Unikemet's `ḳ` as TLA's `q`; JSesh's Manuel-de-Codage
+values converted to the corpus's TLA letters (raw values kept in `jsesh_values_mdc`);
+corpus and Nederhof-table membership columns added. Every row names its sources in a
+`source` column.
+
+### English lemma glosses from Wikidata (CC0)
+
+`data/processed/lemma_glosses_en.csv`, built by `scripts/fetch_wikidata_lemma_glosses.py`
+from four SPARQL requests to <https://query.wikidata.org/> (Egyptian lexemes with
+P12188, "Thesaurus Linguae Aegyptiae lemma ID", and their English sense glosses).
+Wikidata's licensing page (<https://www.wikidata.org/wiki/Wikidata:Licensing>) states:
+"All data in Wikidata has a CC0 license." No attribution is required; the file keeps
+lexeme and sense ids. The app does not display these glosses yet; when it does, it
+will credit them as a courtesy:
+
+> English glosses: Wikidata contributors, Egyptian lexemes,
+> <https://www.wikidata.org/>, [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+
 ## Every copy of the data in this repository
 
 CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
@@ -441,6 +685,10 @@ CC BY-SA 4.0 applies to each of these, not only to `examples.csv`:
 | `data/processed/helsinki_lexicon.csv` | sign-group → reading counts (see "Sign-reading lexicon" above) | CC BY 4.0 upstream, wrapped **CC BY-SA 4.0** here[^lexicon] |
 | `data/processed/sign_functions.csv` | sign → function inventory (see "Sign functions" above) | **CC BY 4.0**, Mark-Jan Nederhof — *not* CC BY-SA[^signfunctions] |
 | `data/processed/sign_functions_supplement.csv` | 13 rows for 11 signs Nederhof's Unicode 5.2 list does not cover (see "This project's supplement" above) | CC BY-SA 4.0, this project, after the Gardiner sign list |
+| `data/processed/ud_egyptian_pc_candidates.csv` | candidate Pyramid Texts rows from UD_Egyptian-PC (not in the corpus) | CC BY-SA 4.0, UD_Egyptian-PC |
+| `data/processed/source_metadata_oraec.csv`, `source_metadata_oraec_bbaw_links.csv`, `source_metadata_oraec_bbaw_link_candidates.csv` | ORAEC text metadata linked to AES/BBAW rows | CC BY-SA 4.0, ORAEC/AED authors; Trismegistos columns CC0 |
+| `data/processed/sign_reference.csv` | Unikemet 18.0 + JSesh sign reference | Unicode License V3 (notice above) + **CC BY 4.0**, JSesh |
+| `data/processed/lemma_glosses_en.csv` | English glosses per TLA lemma id | **CC0**, Wikidata |
 
 Exports produced by the app and by `scripts/export_reviewed.py` carry a `licence`
 column repeating the attribution, because a file that leaves the repository loses
@@ -506,8 +754,12 @@ Attribution must reach the person viewing the data, not only this file. The app
 displays the attribution in the sidebar. Do not remove it, and do not present the
 corpus as this project's own work.
 
-The Demotic dataset referenced in `scripts/download_all_sources.py`
-(`tla-demotic-v18-premium`) is also CC BY-SA 4.0. It is downloaded but is **not** part
-of `examples.csv`: it carries no hieroglyphic writings (0 of 13,383 rows), so it
-cannot support the sign-based reading this tool provides. If you build it in, add its
-citation here too.
+The Demotic dataset (`tla-demotic-v18-premium`, CC BY-SA 4.0) **is** part of
+`examples.csv`: 11,996 rows, cited above and in the app's attribution. It carries no
+hieroglyphic writings, so it adds transliteration evidence but no sign evidence. A
+deployment that leaves rows out (`CORPUS_SOURCES_EXCLUDE`, for instance `Ramses,Demotic`)
+drops a source's credit only when no row of that source is loaded: Ramses, AES and BBAW
+are credited only when present, while the TLA credit is one citation that always names
+the Earlier, Late and Demotic corpora together, even if some of them are excluded. This
+file describes the full `examples.csv`, and any copy of that file must carry every
+citation above.

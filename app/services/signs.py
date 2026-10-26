@@ -6,12 +6,16 @@ across the corpus and show the sentences behind each one.
 
 It also separates two things that look identical in a naive count:
 
-  editorial variation - `n.t` vs `n(.ꞽ).t`, the same reading with different bracketing
-                        of unwritten signs
-  distinct readings   - `sw` ("he") vs `nswt` ("king") for 𓇓𓅱, genuinely different words
+  one search form     - readings the simplified search form (`loose_reading_form`)
+                        treats as one: `n.t` vs `n(.ꞽ).t` (bracketing), but also
+                        `stḫ` vs `stẖ` and anything else differing only in ꜣ/ꜥ, ḥ/h,
+                        ḫ/ẖ — distinct consonants, not editorial variants
+  distinct readings   - `sw` ("he") vs `nswt` ("king") for 𓇓𓅱, different words even
+                        in that simplified form
 
-Only the second is the multivalence problem worth solving, so the two are reported
-separately rather than being added together.
+The grouping is unchanged; only its name is. It used to be called "editorial
+variation", which claimed `stḫ`/`stẖ` were the same reading differently bracketed
+(Astra #4). `SEARCH_FOLD_LABEL` is the wording the explorer shows.
 """
 
 from __future__ import annotations
@@ -22,6 +26,10 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from app.services.suggestions import loose_reading_form
+
+# What `distinct_readings` collapses, in the explorer's words. Not "editorial
+# variants": the fold also merges distinct consonants (ḫ/ẖ, ꜣ/ꜥ, ḥ/h).
+SEARCH_FOLD_LABEL = "spellings the simplified search treats as one"
 
 
 @dataclass
@@ -42,7 +50,7 @@ class SignReadings:
 
     @property
     def is_multivalent(self) -> bool:
-        """More than one reading even after collapsing editorial bracketing."""
+        """More than one reading even in the simplified search form (see module doc)."""
         return self.distinct_count > 1
 
     def is_well_attested_multivalent(self, min_support: int = 3) -> bool:
@@ -59,7 +67,11 @@ class SignReadings:
 
     @property
     def editorial_variants_only(self) -> int:
-        """Readings that differ only by editorial marks."""
+        """Literal readings merged away by the simplified search form.
+
+        Brackets and editorial marks, but also distinct consonants (`stḫ`/`stẖ`), so
+        the name overstates: these are not all editorial variants (Astra #4).
+        """
         return self.literal_count - self.distinct_count
 
 

@@ -72,12 +72,25 @@ data/raw/bbaw_egyptian/
 data/raw/helsinki_lexicon/
 data/raw/ramses/
 data/raw/standrews/
+data/raw/ud_egyptian_pc/
+data/raw/oraec/
+data/raw/unikemet/
+data/raw/jsesh/
+data/raw/wikidata/
 
 # Importer side outputs; the corpus itself is examples.csv
 data/processed/bbaw_rows.csv
 
-# Non-commercial corpora (Ramses, the St Andrews texts): CC BY-SA is share-alike
-# and cannot carry NC material, so these never enter examples.csv or the public
-# repository. Loaded at runtime from PRIVATE_DATA_DIR (default data/private/); see
+# Non-commercial corpus (the St Andrews texts): CC BY-SA is share-alike and cannot
+# carry NC material, so it never enters examples.csv or the public repository. (Ramses
+# is not private any more: it is in examples.csv under a CC BY-SA grant, see
+# DATA-LICENSE.md.) Loaded at runtime from PRIVATE_DATA_DIR (default data/private/); see
 # app/data/loader.py:load_private_examples and DATA-LICENSE.md.
 data/private/
+
+# Personal and employer exports (ChatGPT export, work files) must never reach this
+# public repository, and `git add .` would take everything under 100 MB. Keep such
+# folders outside the project; these rules are only a guard.
+extracted-data-*/
+extracted-data-*.zip
+outputs/

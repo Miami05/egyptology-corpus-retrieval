@@ -65,6 +65,7 @@ def resolve_stage(
     stage_mode: str,
     row: pd.Series,
     get_resources,
+    use_format_hints: bool = True,
 ) -> tuple[str | None, bool, dict[str, float] | None]:
     """Which stage's resources this row should be read/segmented/retrieved with.
 
@@ -79,13 +80,19 @@ def resolve_stage(
     that function's per-stage per-sign audit dict for a glyph query (for the
     per-paste table `main` prints below), `None` for 'none'/'declared' and empty
     for a text query in 'auto' mode (no likelihoods computed there).
+
+    `use_format_hints` must be the value the row is then decoded with
+    (`not args.no_format_hints`), so the `--no-format-hints` arm also chooses its
+    stage on the hint-free segmentation it decodes.
     """
     if stage_mode == "none":
         return None, False, None
     if stage_mode == "declared":
         return normalize_stage(row.get("language_stage", "")), False, None
 
-    stage, inferred, scores = resolve_auto_stage(str(row["query_input"]), get_resources)
+    stage, inferred, scores = resolve_auto_stage(
+        str(row["query_input"]), get_resources, use_format_hints=use_format_hints
+    )
     return stage, inferred, scores
 
 
@@ -241,11 +248,12 @@ def main() -> None:
         choices=["none", "auto", "declared"],
         default="auto",
         help=(
-            "Language-stage handling (item A). 'none' (default) reproduces today's "
-            "pooled reading/segmentation/retrieval exactly. 'declared' reads each "
-            "row's own language_stage column. 'auto' resolves a hieroglyph paste by "
-            "per-stage reading likelihood and a text query by a first retrieval pass "
-            "over the pooled resources (app.services.retrieval.resolve_auto_stage)."
+            "Language-stage handling (item A). 'auto' (default) resolves a hieroglyph "
+            "paste by per-stage reading likelihood and a text query by a first "
+            "retrieval pass over the pooled resources "
+            "(app.services.retrieval.resolve_auto_stage). 'none' reproduces the "
+            "pooled reading/segmentation/retrieval. 'declared' reads each row's own "
+            "language_stage column."
         ),
     )
     args = parser.parse_args()
@@ -291,7 +299,9 @@ def main() -> None:
 
     rows = []
     for _, row in queries.iterrows():
-        stage, inferred, scores = resolve_stage(args.stage, row, get_resources)
+        stage, inferred, scores = resolve_stage(
+            args.stage, row, get_resources, use_format_hints=not args.no_format_hints
+        )
         resources = get_resources(stage)
         rows.append(
             evaluate_row(

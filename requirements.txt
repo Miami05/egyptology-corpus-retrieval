@@ -1,3 +1,8 @@
+# The app's own dependencies, top-level pins only. The server builds each release venv
+# from requirements.lock (a full `pip freeze` of a tested server venv) when the commit
+# has one, and from this file otherwise, with every package not named here held at the
+# running venv's version (scripts/egyptology-deploy.sh, DEPLOYMENT.md "Rollback"). A lock
+# must agree with every pin below, or the deploy stops.
 fastapi==0.116.1
 uvicorn==0.35.0
 streamlit==1.49.0
@@ -22,9 +27,3 @@ python-dotenv==1.1.1
 # (crash inside Streamlit's script thread, so it takes the whole app down).
 # 21.0.0 is stable. Do not unpin without re-testing the Corpus explorer twice.
 pyarrow==21.0.0
-
-# Test suite (tests/): pytest tests/ -q
-pytest==9.1.1
-# Only needed to regenerate data/raw from the upstream Hugging Face datasets
-# (scripts/download_all_sources.py); the app itself never imports it.
-datasets>=2.19,<3

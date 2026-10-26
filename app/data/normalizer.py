@@ -7,8 +7,9 @@ import zlib
 WHITESPACE_RE = re.compile(r"\s+")
 # `=` (and the Egyptological `⸗`) mark a suffix pronoun. They separate tokens.
 SUFFIX_MARKER_RE = re.compile(r"[=\u2e17]")
-# An editorially supplied yod: `(ꞽ)`, `(.ꞽ)`, `(j)`, `(.j)` — see normalize_transliteration.
-PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjı]\)")
+# An editorially supplied yod: `(ꞽ)`, `(.ꞽ)`, `(j)`, `(.j)`, and the ASCII `(i)`, `(.i)` a
+# typist without special keys writes — see normalize_transliteration.
+PARENTHESISED_YOD_RE = re.compile(r"\(\.?[ꞽjıi]\)")
 NON_ALNUM_KEEP_COLON_RE = re.compile(r"[^a-z0-9:_\-\s]")
 MULTI_COLON_RE = re.compile(r":+")
 # The plural marker: TLA rows write `.PL` (2,842 tokens), AES/BBAW rows write `.pl`
@@ -20,11 +21,102 @@ MULTI_COLON_RE = re.compile(r":+")
 # sequence. Case-insensitive so `.PL` matches directly (callers may run this before
 # lowercasing); `.PL.t` never occurs in the corpus, so no interaction to handle.
 PLURAL_MARKER_RE = re.compile(r"(?:\.w)?\.pl(?![^\W\d_])", re.IGNORECASE)
+# Brackets around either half of the plural notation: `šms(.w).pl` (74 corpus rows),
+# `šms.w(.pl)` (8), `šms(.w)(.pl)`, and `nb(.pl)` (271). PLURAL_MARKER_RE cannot see a
+# `.w` across a `)`, so the fold used to add a second one (`šms.w.w`, indexed `shmsww`).
+# `fold_plural_marker` first unbrackets `(.pl)` and then drops a bracketed `.w` that
+# stands right before `.pl`, so all four spellings fold to `šms.w`. Only `.w`: `(.t).pl`
+# and `(ꞽ).pl` are another morpheme plus the plural, and a stem-final `w` outside the
+# brackets (`nw(.w).pl` → `nw.w`) is kept.
+BRACKETED_PLURAL_PL_RE = re.compile(r"\(\.pl\)(?![^\W\d_])", re.IGNORECASE)
+BRACKETED_PLURAL_W_RE = re.compile(r"\(\.?w\)(?=\.pl(?![^\W\d_]))", re.IGNORECASE)
+# `{…}` marks text the editor considers superfluous (BBAW; also the St Andrews
+# convention, see scripts/import_standrews.py): written on the monument, not part of the
+# reading, so it is deleted from the search key. See `drop_superfluous_text`.
+SUPERFLUOUS_RE = re.compile(r"\{[^{}]*\}")
+# The one exception, `{{…}}`: in this corpus only BBAW rows use it (148 rows, e.g.
+# `{{pꜣ}} {{pri̯}} {{[ꞽri̯.n]}}`), always around whole words of captions and additions
+# that are read as text. That is an observation of the committed data, not a documented
+# BBAW convention (checked 2026-10-25; no source documentation found), so the rule is
+# deliberately narrow: exactly two braces on each side with no brace inside.
+DOUBLE_BRACED_RE = re.compile(r"\{\{([^{}]*)\}\}")
+# A `/` between two digits is a fraction (`1/2`, `1/64`). Deleting it made `1/2` the
+# whole number `12`. `_` survives NON_ALNUM_KEEP_COLON_RE and is not a token split, so
+# `1_2` stays one token that no whole number can equal.
+FRACTION_SLASH_RE = re.compile(r"(?<=\d)/(?=\d)")
 
 
 def fold_plural_marker(value: str) -> str:
-    """Fold the `.PL`/`.pl` plural marker to `.w`, the phonemic plural ending."""
+    """Fold the `.PL`/`.pl` plural marker to `.w`, the phonemic plural ending.
+
+    Brackets around either half are resolved first (`šms(.w).pl`, `šms.w(.pl)`,
+    `šms(.w)(.pl)` → `šms.w`; see BRACKETED_PLURAL_PL_RE), so the search key and the
+    strict reading key both see one plural ending, never `.w.w`.
+    """
+    value = BRACKETED_PLURAL_PL_RE.sub(".pl", value)
+    value = BRACKETED_PLURAL_W_RE.sub("", value)
     return PLURAL_MARKER_RE.sub(".w", value)
+
+
+def drop_superfluous_text(value: str) -> str:
+    """Delete editorially superfluous `{…}` text, nested braces included.
+
+    `nb{.t}` → `nb`, `ḏd.n={f}` → `ḏd.n=`, `{a{b}c}` → ``. `{{…}}` is the one exception
+    (see DOUBLE_BRACED_RE): its braces are removed and its words kept. A text that is
+    superfluous from end to end (3 BBAW rows, `{m} ={tn} {ꞽs} {ḫ}`) comes back empty on
+    purpose: it has no reading to search, only a raw text to display (A17). An unbalanced
+    brace is left for `normalize_mdc` to delete.
+    """
+    while True:
+        # Unwrap `{{…}}` before every pass, so `{{šꜥ{f}.t}}` loses the inner `{f}`
+        # first and then keeps `šꜥ.t` instead of being read as two nested `{…}`.
+        dropped = SUPERFLUOUS_RE.sub("", DOUBLE_BRACED_RE.sub(r"\1", value))
+        if dropped == value:
+            return value
+        value = dropped
+
+
+# Stand in for a deleted character / a deleted space in `superfluous_kept_words`;
+# never in a reading.
+_DELETED = "\x00"
+_DELETED_SPACE = "\x01"
+_DELETED_SPACES_RE = re.compile(_DELETED_SPACE + "+")
+
+
+def _blank(text: str) -> str:
+    return "".join(_DELETED_SPACE if char.isspace() else _DELETED for char in text)
+
+
+def superfluous_kept_words(value: str) -> list[str]:
+    """`drop_superfluous_text` per whitespace word: one entry per word of `value`,
+    holding what survives of it (`''` when the whole word was superfluous).
+
+    A caller that treats words one at a time (the suggestion layer decides loose or
+    strict matching per typed word, A54) cannot run `drop_superfluous_text` on each
+    word: `{n nswt}` split at the space is `{n` and `nswt}`, two unbalanced braces
+    that delete nothing. This runs the same rules over the whole text with the
+    deleted characters blanked in place, so the word boundaries, and with them the
+    alignment to another word list, survive. `''.join` of the kept words, spaced,
+    equals `drop_superfluous_text(value)` up to whitespace.
+
+    A deleted span that spans a space joins what survives on either side into one
+    word, as `drop_superfluous_text` does (`h{a b}tp` → `htp`, not `h tp`): the joined
+    word is the entry of the first raw word it came from, and the others are `''`.
+    """
+    while True:
+        masked = DOUBLE_BRACED_RE.sub(
+            lambda m: _blank("{{") + m.group(1) + _blank("}}"), value
+        )
+        masked = SUPERFLUOUS_RE.sub(lambda m: _blank(m.group(0)), masked)
+        if masked == value:
+            break
+        value = masked
+    kept: list[str] = []
+    for chunk in value.split():
+        parts = _DELETED_SPACES_RE.split(chunk)
+        kept.append("".join(parts).replace(_DELETED, ""))
+        kept.extend("" for _ in parts[1:])
+    return kept
 
 
 # TLA's weak-consonant marker, the combining inverted breve below (U+032F): `i̯` and
@@ -51,6 +143,40 @@ def fold_weak_consonant_marker(value: str) -> str:
     return WEAK_CONSONANT_MARKER_RE.sub(
         lambda match: _WEAK_CONSONANT_FOLD[match.group(1).lower()], text
     )
+
+
+# Variant spellings of an Egyptological letter, mapped to the *canonical letter* (not
+# to ASCII) so they follow whatever the later ꜣ/ꜥ/ꞽ folds do. `ʿ` (U+02BF) is a common
+# substitute for the ayin ꜥ, `ȝ`/`Ȝ` (U+021D/U+021C) for the aleph ꜣ, `ỉ`/`Ỉ` for the yod
+# ꞽ. The corpus holds none of them (0 rows), so this only touches queries; before it
+# they fell through to normalize_mdc and were deleted (`ʿnḫ` → `nkh`, `ỉr` → `r`).
+_LETTER_VARIANTS = str.maketrans({"ʿ": "ꜥ", "ȝ": "ꜣ", "Ȝ": "Ꜣ", "ỉ": "ꞽ", "Ỉ": "Ꞽ"})
+
+
+def fold_letter_variants(value: str) -> str:
+    """`ʿ ȝ ỉ` → `ꜥ ꜣ ꞽ`: one letter, two encodings. Lossless — no two different
+    consonants are merged — so the strict reading key uses it as well as the search
+    key (A16/A54)."""
+    return value.translate(_LETTER_VARIANTS)
+
+
+# The yod's other encodings and two letter variants that the *search* key folds
+# (`normalize_transliteration`: `ꞽ j ı ı͗ i` → `i`, `ḳ` → `q`, `ṱ` → `t`), mapped to one
+# letter instead of to ASCII. They are one letter in different editions' conventions
+# (Hannig/Leipzig and the St Andrews data write `j`, ASCII typists and Ramses `i`,
+# BBAW `ı͗`; Nederhof accepts merging i/j), so mapping them together merges no two
+# consonants: ꜣ/ꜥ, ḥ/h, ḫ/ẖ, ṯ/t and ḏ/d all stay distinct. Not part of
+# `normalize_notation`: the search key keeps its own order of folds (its bracketed-yod
+# rule matches `(ı)` but not `(ı͗)`), and the grouping key is left as it is.
+_YOD_ALIASES = str.maketrans({"ı": "ꞽ", "j": "ꞽ", "i": "ꞽ", "ḳ": "q", "ṱ": "t"})
+
+
+def fold_strict_aliases(value: str) -> str:
+    """`j ı ı͗ i` → `ꞽ`, `ḳ` → `q`, `ṱ` → `t` on already-normalised (NFC, lower-case)
+    text whose weak-consonant marker `i̯` was folded first. Used by the strict
+    comparison form in app.services.suggestions, so a query letter the search key
+    accepts is never a different letter there (final audit, search-ranking-1)."""
+    return value.replace("ı\u0357", "ꞽ").translate(_YOD_ALIASES)
 
 # ---------------------------------------------------------------------------
 # Hieroglyph character classes
@@ -379,7 +505,9 @@ def quadrat_hints(value: object) -> tuple[list[str], frozenset[int]]:
 
 
 def normalize_text(value: str) -> str:
-    value = nfc(value).lower().strip()
+    # Compose again after lowercasing: capital H̱ has no precomposed codepoint, so it is
+    # `H` + U+0331 until `.lower()` makes it `h` + U+0331, which only NFC turns into ẖ.
+    value = nfc(nfc(value).lower()).strip()
     return normalize_whitespace(value)
 
 
@@ -391,6 +519,7 @@ def normalize_mdc(value: str) -> str:
     # than vanish: deleting it turned `ḏd=f` into the single token `djdf`, which
     # matches nothing. The corpus side is unaffected — no stored value contains `=`.
     value = SUFFIX_MARKER_RE.sub(" ", value)
+    value = FRACTION_SLASH_RE.sub("_", value)
     value = NON_ALNUM_KEEP_COLON_RE.sub("", value)
     value = MULTI_COLON_RE.sub(":", value)
     return normalize_whitespace(value)
@@ -398,6 +527,25 @@ def normalize_mdc(value: str) -> str:
 
 def normalize_sign_sequence(value: str) -> str:
     return normalize_whitespace(normalize_text(value))
+
+
+def normalize_notation(value: str) -> str:
+    """The *lossless* notation normalisation every transliteration comparison shares.
+
+    NFC + lower case, superfluous `{…}` text deleted (`drop_superfluous_text`), TLA's
+    weak-consonant marker folded (`i̯` → `ꞽ`, `u̯` → `w`), variant letter encodings
+    mapped to the canonical letter (`ʿ ȝ ỉ` → `ꜥ ꜣ ꞽ`) and the plural notation folded
+    to `.w`. Every consonant stays as written (ꜣ ≠ ꜥ, ḥ ≠ h), so the strict comparison
+    in app.services.suggestions builds on this (adding `fold_strict_aliases` for the
+    yod encodings and `ḳ`/`ṱ`), and `normalize_transliteration` adds the lossy ASCII
+    fold on top. Together they make sure a query letter the search key accepts can
+    never be one the suggestion layer silently treats as a different letter.
+    """
+    value = normalize_text(value)
+    value = drop_superfluous_text(value)
+    value = fold_weak_consonant_marker(value)
+    value = fold_letter_variants(value)
+    return fold_plural_marker(value)
 
 
 def normalize_transliteration(value: str) -> str:
@@ -416,11 +564,11 @@ def normalize_transliteration(value: str) -> str:
     match. `ꞽ`, `j`, dotless `ı` (+ its combining half ring U+0357) all become `i`;
     `ṱ` becomes `t` and `ḳ` becomes `q` for the same reason.
 
-    The `.PL`/`.pl` plural marker is folded to `.w` (see `fold_plural_marker`) right
-    after lowercasing, before the yod rule below.
+    Before any of that the text goes through `normalize_notation`, the lossless part
+    that the suggestion layer shares: superfluous `{…}` text is deleted, the
+    weak-consonant marker, the variant letters ʿ ȝ ỉ and the plural notation are folded.
     """
-    value = normalize_text(value)
-    value = fold_plural_marker(value)
+    value = normalize_notation(value)
     # `n(.ꞽ).t`, `(ꞽ)r(.ꞽ)-pꜥ.t`: a yod in round brackets is one the editor supplied,
     # not one written on the wall. It is dropped so `n.t` and `n(.ꞽ).t` stay one
     # search key — which they always were, because the old fold deleted every yod;

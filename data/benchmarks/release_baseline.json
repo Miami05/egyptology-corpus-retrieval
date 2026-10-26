@@ -5,10 +5,24 @@
   "query_path": "app",
   "useful_rule": "v4",
   "expected_corpus_rows": 130472,
+  "expected_corpus_sha256": "44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2",
+  "expected_queries": 20,
   "top3_useful_floor": 0.90,
   "mrr_floor": 0.7917,
   "expert_pastes_floor": "8/8",
   "recorded_at": "2026-09-05",
   "recorded_commit": "3d38721",
-  "recorded_note": "Merged-tree gates 2026-09-05 (ROADMAP 'Items 2,3,4 — done'): v4 0.90 / MRR 0.7917 in --stage auto --query-path app, misses COMP_007 and COMP_014; expert paste 8/8."
+  "recorded_note": "Merged-tree gates 2026-09-05 (ROADMAP 'Items 2,3,4 — done'): v4 0.90 / MRR 0.7917 in --stage auto --query-path app, misses COMP_007 and COMP_014; expert paste 8/8.",
+  "twin_controlled": {
+    "_comment": "Pre-registration 2026-10-25 rule A2.8, measured in attempt 2 of the post-fix regression run (docs/remeasure-results-2026-10-26-attempt2.md). These are REGRESSION TOLERANCES on a development set the ranking was tuned on, not a validation or accuracy claim: the twin control at 0.7 removes near-duplicate edition copies from the pool, but the queries are still generated from corpus rows. Floors are the measured v4 T-auto numbers minus 0.05, clamped to [0.01, 1].",
+    "exclude_twins": 0.7,
+    "expected_tokens": "current",
+    "top3_useful_floor": 0.80,
+    "mrr_floor": 0.70,
+    "measured_top3_useful": 0.85,
+    "measured_mrr": 0.75,
+    "recorded_at": "2026-10-26",
+    "recorded_commit": "3e29304",
+    "recorded_note": "Attempt 2 of (A) on 3e29304 (pre-registration rev. 2.1 + A6 + A7): v4 T-auto top-3 useful 0.85, MRR 0.75, 3 failures, --exclude-twins 0.7 --expected-tokens current --stage auto --query-path app. Every per-query CSV was byte-identical to attempt 1."
+  }
 }

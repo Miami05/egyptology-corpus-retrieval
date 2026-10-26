@@ -1,10 +1,16 @@
 # Committed deploy config. Secrets live in .streamlit/secrets.toml, which is
-# gitignored — set those in the Streamlit Cloud dashboard instead.
+# gitignored; on the server they come from ~/egyptology.env (see DEPLOYMENT.md).
 
 [server]
 # The corpus CSV is ~8 MB; keep uploads modest so a bad request cannot exhaust
 # the container's memory.
 maxUploadSize = 20
+
+[client]
+# Public site: the browser gets a generic "this app has encountered an error"
+# message instead of a traceback with server paths. The full traceback still goes
+# to the service journal (and the terminal when running locally).
+showErrorDetails = "none"
 
 [browser]
 gatherUsageStats = false

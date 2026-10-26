@@ -2,43 +2,427 @@
 # Update the Egyptology service from GitHub. Touches only /home/ledio.
 #
 # Canonical copy. The operational script the server runs lives at
-# /home/ledio/egyptology-deploy.sh; this file is the source of truth for it.
-# Install with:
+# /home/ledio/egyptology-deploy.sh; this file is the source of truth for it. A
+# successful deploy refreshes that copy from the repo (the new copy takes effect
+# on the NEXT run, never mid-run). The very first time, and any time the old copy
+# is too old to know this, install it by hand:
 #   scp scripts/egyptology-deploy.sh ledio@vela-optiplex-3070:egyptology-deploy.sh
 # See DEPLOYMENT.md.
+#
+# Order, and why (audit A12, A40, A41, A45, A46, A11):
+#   1. refuse to run on a dirty clone or a non-fast-forward upstream, touching nothing
+#   2. record what is running NOW (commit, venv) in ~/egyptology-last-good*, before
+#      anything changes, so a manual recovery always has the right target
+#   3. build the TARGET commit's dependencies into a NEW release venv beside the live
+#      one (from requirements.lock when the commit has one). The live venv is never
+#      installed into, so a failing pip leaves the tree, the venv and the service as
+#      they were. A commit whose dependencies did not change reuses the live venv
+#   4. fast-forward the tree (STOP_BEFORE_UPDATE=1 stops the service first; default 0,
+#      no public downtime: the unit's STREAMLIT_SERVER_FILE_WATCHER_TYPE=none stops the
+#      running process from RELOADING what it already loaded, but a module or page it has
+#      not imported yet is read from the new tree if a visitor reaches it in the window
+#      between this merge and the stop below, corpus sync included. That risk was
+#      accepted with the default), helpers, unit files, corpus sync with the NEW venv,
+#      then stop, point ~/venvs/egyptology at the new venv, start, and a real check that
+#      the app renders a result
+#   5. any failure in 4: stop (and refuse to go on unless the service is really down),
+#      restore the units, the tree and the venv link, start, and re-run the same check;
+#      the old release venv is kept for exactly this
+#   6. a rollback that itself fails exits 2 with a MANUAL block and leaves
+#      ~/egyptology-deploy.FAILED; every later run refuses to start while that file
+#      exists, so a rerun cannot overwrite the records the MANUAL steps point at
+#   7. an interrupted run (HUP when the ssh session drops, INT from Ctrl-C, TERM) while
+#      step 4 is changing things rolls back exactly like a failure in 4 (after a HUP its
+#      output goes to ~/egyptology-deploy.interrupted.log). ~/egyptology-deploy.INPROGRESS
+#      is written before step 4 and removed when the run ends cleanly, so a run that died
+#      without that chance (SIGKILL, power loss) leaves it behind, and every later run
+#      refuses to start while it exists: a rerun would otherwise record the half-deployed
+#      state as "last good" (final ops audit)
+#
+# One deploy at a time: a kernel lock (flock) on ~/.egyptology-deploy.lock is held for
+# the whole run, and a second run while it is held exits 1 without touching anything.
+# The FAILED marker is checked only once the lock is held, so a run that started while
+# another was failing its rollback still sees the marker that run wrote.
+#
+# Knobs (environment): INSTALL_UNITS=1 copies deploy/systemd/* into the user unit
+# folder (default: only warn when they differ), STOP_BEFORE_UPDATE=0|1 (default 0),
+# BASE_PYTHON (the interpreter that creates release venvs; default the live venv's),
+# LOCK_PYTHON (takes the deploy lock; default python3), DEPLOY_LOCK_WAIT (seconds to wait
+# for another deploy's lock; default 0).
+# Tests point DEPLOY_HOME, HEALTH_URL, HEALTH_TRIES and HEALTH_INTERVAL elsewhere.
 set -euo pipefail
 
-REPO=/home/ledio/egyptology
-VENV=/home/ledio/venvs/egyptology
+HOME_DIR="${DEPLOY_HOME:-/home/ledio}"
+REPO="$HOME_DIR/egyptology"
+# What the unit runs. Since the release-venv deploy this is a symlink to one directory in
+# $RELEASES; on a box that still has the original real directory, the first deploy that
+# switches venvs moves it into $RELEASES (while the service is stopped).
+VENV="$HOME_DIR/venvs/egyptology"
+RELEASES="$HOME_DIR/venvs/egyptology-releases"
+# Written into each release venv once its install succeeded: the dependency spec it was
+# built from, so a deploy with the same spec reuses it instead of building another.
+SPEC_MARKER=".egyptology-deps"
+BIN_DIR="$HOME_DIR/bin"
+ENV_FILE="$HOME_DIR/egyptology.env"
+# What was running when the latest deploy started, written before anything changes:
+# the commit, the venv directory, and the unit files the deploy replaced or added.
+LAST_GOOD="$HOME_DIR/egyptology-last-good"
+LAST_GOOD_VENV="$HOME_DIR/egyptology-last-good-venv"
+LAST_GOOD_UNITS="$HOME_DIR/egyptology-last-good-units"
+# Left by a rollback that failed (exit 2); while it exists no deploy runs. Delete it by
+# hand once the MANUAL steps are done.
+FAILED_MARKER="$HOME_DIR/egyptology-deploy.FAILED"
+# Exists from the first live change until the run ends cleanly (step 7 above).
+INPROGRESS_MARKER="$HOME_DIR/egyptology-deploy.INPROGRESS"
+INTERRUPT_LOG="$HOME_DIR/egyptology-deploy.interrupted.log"
+# 1 while apply_new_tree runs, so a signal knows whether there is anything to roll back.
+APPLYING=0
+LOCK_FILE="$HOME_DIR/.egyptology-deploy.lock"
+# The interpreter that takes the kernel lock (the box has no promise of the flock CLI).
+# Ubuntu's own python3, not the app venv: a deploy must be able to lock while the venv
+# is broken. DEPLOY_LOCK_WAIT: seconds to wait for another deploy (default 0, give up).
+LOCK_PYTHON="${LOCK_PYTHON:-python3}"
+DEPLOY_LOCK_WAIT="${DEPLOY_LOCK_WAIT:-0}"
+SCRATCH=""
+UNIT_DIR="$HOME_DIR/.config/systemd/user"
+DEPLOY_COPY="$HOME_DIR/egyptology-deploy.sh"
 CORPUS_CSV=data/processed/examples.csv
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8502/_stcore/health}"
+APP_URL="${HEALTH_URL%/_stcore/health}"
+HEALTH_TRIES="${HEALTH_TRIES:-30}"
+HEALTH_INTERVAL="${HEALTH_INTERVAL:-2}"
+INSTALL_UNITS="${INSTALL_UNITS:-0}"
+STOP_BEFORE_UPDATE="${STOP_BEFORE_UPDATE:-0}"
+BASE_PYTHON="${BASE_PYTHON:-}"
+# Where the running service's environment is read from (tests point it elsewhere).
+PROC_DIR="${PROC_DIR:-/proc}"
 
-cd "$REPO"
+# The paste the deploy check runs (expert paste query 1, the same one the unit's
+# warm-up uses). It must render at least one result card: `class="suggestion-card"` is
+# the attribute app/ui/whyptology_app.py writes on every card, so renaming the class
+# means changing it here too, or every deploy will be rolled back as "never rendered a
+# result". The attribute, not the bare class name: the theme stylesheet the app injects
+# on every page contains `.suggestion-card {`, so the bare name would match a page with
+# no result at all (warm_streamlit.py also ignores <style> blocks, as a second layer).
+PASTE_001="𓆓𓂧 𓆑𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏼 𓂋𓍿 𓀀 𓏼𓎟𓏏"
+EXPECT_TEXT='class="suggestion-card"'
+# The title of the notice app/ui/whyptology_app.py shows when the database cannot be
+# reached. The app still searches and draws result cards then, so without this a deploy
+# whose code or environment broke annotation storage would pass the check.
+REJECT_TEXT='Read-only mode.'
 
-BEFORE="$(git rev-parse HEAD)"
-git pull --ff-only
-AFTER="$(git rev-parse HEAD)"
+# Read KEY=value lines into the environment WITHOUT executing them. systemd takes
+# the file literally (a REVIEWER_KEY passphrase may hold spaces, `$` or `&`), and a
+# shell `source` would run or mangle those.
+load_env_file() {
+  local file="$1" line key value
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    if [[ -z "$line" || "$line" == \#* || "$line" != *=* ]]; then
+      continue
+    fi
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      continue
+    fi
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    if [[ ${#value} -ge 2 ]]; then
+      case "$value" in
+        \"*\") value="${value:1:${#value}-2}" ;;
+        \'*\') value="${value:1:${#value}-2}" ;;
+      esac
+    fi
+    export "$key=$value"
+  done < "$file"
+}
 
-if [[ "$BEFORE" == "$AFTER" ]]; then
-  echo "deploy: already at $(git log -1 --format=%h) — nothing pulled"
-else
-  echo "deploy: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER")"
-fi
+# True (0) when the corpus CSV differs between two commits, or when that cannot be
+# told. `git diff --quiet` answers for that one path: 0 same, 1 different, anything
+# else is an error and counts as "changed", because the sync is cheap and idempotent.
+# (The old `git diff --name-only | grep -qx` form lost the race: grep exits at the
+# first match, git gets SIGPIPE, and under pipefail the `if` read that as "no match",
+# so a deploy with a big diff silently skipped the import.)
+corpus_changed() {
+  local rc=0
+  git -C "$REPO" diff --quiet "$1" "$2" -- "$CORPUS_CSV" || rc=$?
+  [[ $rc -ne 0 ]]
+}
 
-"$VENV"/bin/pip install -q -r requirements.txt
+wait_healthy() {
+  local i
+  for i in $(seq 1 "$HEALTH_TRIES"); do
+    sleep "$HEALTH_INTERVAL"
+    if curl -fsS -o /dev/null "$HEALTH_URL"; then
+      echo "healthy on ${APP_URL##*:} after ~$((i * HEALTH_INTERVAL))s at $(git -C "$REPO" log -1 --format=%h)"
+      return 0
+    fi
+  done
+  echo "deploy: service did not answer after ~$((HEALTH_TRIES * HEALTH_INTERVAL))s — last 30 journal lines:" >&2
+  journalctl --user -u egyptology.service -n 30 --no-pager >&2 || true
+  return 1
+}
 
-# Operational copies of the repo scripts, kept outside the clone so a systemd
-# unit never points into a tree that a failed or half-finished pull is rewriting.
-# The repo is the canonical version; this loop is what keeps the two in step.
+# "Healthy" only proves Streamlit answers; a crashing app answers too. This opens a
+# real session, runs the paste, and fails unless a result card was drawn and no
+# exception element was shown (scripts/warm_streamlit.py, audit A11).
+# The checker is the TARGET commit's copy, saved to $CHECKER before anything changed, and
+# the rollback runs the same one: an older commit's warm_streamlit.py may not know
+# --expect-text, and a rollback must not be judged by a weaker check than the deploy.
+# Known limit: in a rollback it runs on the OLD venv. A future checker that needs a newer
+# Streamlit than that venv has would fail to import there, and a rollback that worked
+# would still end in MANUAL (exit 2); the MANUAL block is then the safe answer anyway.
+verify_app() {
+  wait_healthy || return 1
+  "$VENV/bin/python" "$CHECKER" --url "$APP_URL" --timeout 180 \
+    --expect-text "$EXPECT_TEXT" --reject-text "$REJECT_TEXT" --query "$PASTE_001"
+}
+
+# True (0) only when the RUNNING service process has Streamlit's file watcher off
+# (STREAMLIT_SERVER_FILE_WATCHER_TYPE=none in its environment). A unit file installed
+# later, or a daemon-reload, does not change a process that is already running, so the
+# first deploy onto a service started without the setting must stop it before the tree
+# changes, or a visitor's rerun reloads changed modules into the old process (A40).
+running_without_file_watcher() {
+  local pid
+  pid="$(systemctl --user show egyptology.service -p MainPID --value 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ && -r "$PROC_DIR/$pid/environ" ]] || return 1
+  tr '\0' '\n' < "$PROC_DIR/$pid/environ" | grep -x 'STREAMLIT_SERVER_FILE_WATCHER_TYPE=none' >/dev/null
+}
+
+# --- release venvs (audit A12, A40, A45) ------------------------------------------
+
+# The directory the service's venv path resolves to now: the symlink's target, or the
+# path itself on a box that still has the original real directory there.
+current_venv() {
+  if [[ -L "$VENV" ]]; then
+    readlink "$VENV"
+  else
+    echo "$VENV"
+  fi
+}
+
+# "name==version" for every exact pin in a pip requirements file, the name normalised the
+# way pip compares names (lower case, runs of - _ . as one -) and extras dropped.
+# Comments, options (-r, -c, --hash ...) and line continuations are skipped.
+pins() {
+  awk '{
+    sub(/#.*/, ""); gsub(/[[:space:]\\]/, "")
+    if ($0 == "" || substr($0, 1, 1) == "-") next
+    sub(/;.*/, "")
+    if (!match($0, /==/)) next
+    name = substr($0, 1, RSTART - 1); version = substr($0, RSTART + 2)
+    sub(/\[.*\]/, "", name); name = tolower(name); gsub(/[-_.]+/, "-", name)
+    print name "==" version
+  }' "$1"
+}
+
+# Every requirement name in a requirements file, normalised like pins().
+requirement_names() {
+  awk '{
+    sub(/#.*/, ""); gsub(/[[:space:]]/, "")
+    if ($0 == "" || substr($0, 1, 1) == "-") next
+    if (!match($0, /^[A-Za-z0-9._-]+/)) next
+    name = tolower(substr($0, 1, RLENGTH)); gsub(/[-_.]+/, "-", name)
+    print name
+  }' "$1"
+}
+
+# Saves the target commit's dependency files into $SCRATCH and decides how the release
+# venv is built. With requirements.lock (the full `pip freeze` of a tested venv) that is
+# installed as is, after checking it agrees with every pin in requirements.txt: a lock
+# left behind by a requirements.txt change must stop the deploy, not quietly win.
+# Without a lock, requirements.txt is installed with every package it does NOT name held
+# at the version the running venv has (constraints from `pip freeze`), so a deploy that
+# changes nothing about dependencies cannot upgrade protobuf or tornado underneath the app.
+prepare_dependency_spec() {
+  local missing
+  git show "$AFTER:requirements.txt" > "$SCRATCH/requirements.txt" || return 1
+  if git cat-file -e "$AFTER:requirements.lock" 2>/dev/null; then
+    git show "$AFTER:requirements.lock" > "$SCRATCH/requirements.lock" || return 1
+    missing="$(comm -23 <(pins "$SCRATCH/requirements.txt" | sort -u) <(pins "$SCRATCH/requirements.lock" | sort -u))"
+    if [[ -n "$missing" ]]; then
+      echo "deploy: requirements.lock disagrees with requirements.txt — regenerate the lock; nothing touched. Pins missing from the lock:" >&2
+      sed 's/^/deploy:   /' <<<"$missing" >&2
+      return 1
+    fi
+    DEPS_MODE=lock
+    { echo "# requirements.lock"; cat "$SCRATCH/requirements.lock"; } > "$SCRATCH/deps-spec"
+  else
+    DEPS_MODE=requirements
+    { echo "# requirements.txt, no lock"; cat "$SCRATCH/requirements.txt"; } > "$SCRATCH/deps-spec"
+  fi
+}
+
+# The constraints for a build without a lock (see prepare_dependency_spec).
+# A failed `pip freeze` is fatal: without it nothing is held, and the build would quietly
+# resolve every transitive dependency afresh, which is exactly what this guards against.
+write_constraints() {
+  : > "$SCRATCH/constraints.txt"
+  if ! "$PREVIOUS_VENV/bin/pip" freeze > "$SCRATCH/frozen.txt"; then
+    echo "deploy: could not list the running venv's packages (pip freeze failed), so they cannot be held at their versions" >&2
+    return 1
+  fi
+  requirement_names "$SCRATCH/requirements.txt" > "$SCRATCH/names.txt"
+  pins "$SCRATCH/frozen.txt" \
+    | awk -F'==' 'NR == FNR { named[$0] = 1; next } !($1 in named)' "$SCRATCH/names.txt" - \
+    > "$SCRATCH/constraints.txt"
+}
+
+# Sets NEW_VENV: the live venv when it was built from the same spec, otherwise a new
+# directory in $RELEASES, built and installed here. Never touches the live venv. The
+# marker is written last, so a half-built venv is never mistaken for a finished one.
+build_release_venv() {
+  local current
+  current="$(current_venv)"
+  if [[ -f "$current/$SPEC_MARKER" ]] && cmp -s "$SCRATCH/deps-spec" "$current/$SPEC_MARKER"; then
+    echo "deploy: dependencies unchanged — keeping the venv $current"
+    NEW_VENV="$current"
+    return 0
+  fi
+  mkdir -p "$RELEASES" || return 1
+  NEW_VENV="$RELEASES/$(git rev-parse --short "$AFTER")-$(date +%Y%m%d%H%M%S)-$$"
+  BUILT_VENV="$NEW_VENV"
+  echo "deploy: building a release venv from $([[ $DEPS_MODE == lock ]] && echo requirements.lock || echo requirements.txt) at $NEW_VENV"
+  "${BASE_PYTHON:-$current/bin/python}" -m venv "$NEW_VENV" || return 1
+  if [[ "$DEPS_MODE" == lock ]]; then
+    "$NEW_VENV/bin/pip" install -q -r "$SCRATCH/requirements.lock" || return 1
+  else
+    echo "deploy: no requirements.lock in this commit — packages requirements.txt does not pin stay at the running venv's versions"
+    write_constraints || return 1
+    if ! "$NEW_VENV/bin/pip" install -q -r "$SCRATCH/requirements.txt" -c "$SCRATCH/constraints.txt"; then
+      # Usually a held-back package the new pins do not fit (a newer streamlit that needs
+      # a newer protobuf, say). Say how to get past it, rather than only "failed".
+      echo "deploy: hint — without a lock, packages requirements.txt does not pin are held at the running versions" >&2
+      echo "deploy:   ($SCRATCH/constraints.txt), and a new pin may need a newer one. Commit a requirements.lock" >&2
+      echo "deploy:   built from a tested venv, or pin that package in requirements.txt." >&2
+      return 1
+    fi
+  fi
+  cp "$SCRATCH/deps-spec" "$NEW_VENV/$SPEC_MARKER" || return 1
+}
+
+# Points $VENV at $1. Called only while the service is stopped. A box that still has the
+# original real directory at $VENV gets it moved into $RELEASES first (once), and every
+# record that named it is updated, so a rollback can still point back at it.
+point_venv_at() {
+  local target="$1" legacy
+  if [[ "$target" == "$VENV" && -d "$VENV" && ! -L "$VENV" ]]; then
+    return 0                       # the original directory, and it is still there
+  fi
+  if [[ -d "$VENV" && ! -L "$VENV" ]]; then
+    mkdir -p "$RELEASES" || return 1
+    legacy="$RELEASES/original-$(date +%Y%m%d%H%M%S)"
+    mv "$VENV" "$legacy" || return 1
+    echo "deploy: moved the original venv to $legacy"
+    [[ "$PREVIOUS_VENV" == "$VENV" ]] && PREVIOUS_VENV="$legacy"
+    [[ "$target" == "$VENV" ]] && target="$legacy"
+    [[ "$(cat "$LAST_GOOD_VENV" 2>/dev/null)" == "$VENV" ]] && write_file "$LAST_GOOD_VENV" "$legacy"
+  fi
+  if [[ "$(current_venv)" != "$target" ]]; then
+    ln -sfn "$target" "$VENV" || return 1
+    echo "deploy: $VENV -> $target"
+  fi
+}
+
+# After a success: keep the venv now serving and the one it replaced (the rollback
+# target); remove every other release venv. They are about 0.8 GB each.
+prune_releases() {
+  local dir live
+  live="$(current_venv)"
+  for dir in "$RELEASES"/*; do
+    [[ -d "$dir" ]] || continue
+    if [[ "$dir" == "$live" || "$dir" == "$PREVIOUS_VENV" ]]; then
+      continue
+    fi
+    rm -rf "$dir" && echo "deploy: removed the old release venv $dir"
+  done
+}
+
+write_file() {
+  printf '%s\n' "$2" > "$1.tmp" && mv -f "$1.tmp" "$1"
+}
+
+# Operational copies of the repo scripts, kept outside the clone so a systemd unit never
+# points into a tree that a failed or half-finished update is rewriting. The repo is the
+# canonical version; this loop is what keeps the two in step.
 # Skipped rather than fatal when a script is not in this commit: these were first
 # installed by hand, and a deploy of an older commit must not be the thing that
 # takes the backup timer or the warm-up down.
-for script in backup_db.sh warm_streamlit.py; do
-  if [[ -f "$REPO/scripts/$script" ]]; then
-    install -m 755 "$REPO/scripts/$script" "/home/ledio/bin/$script"
-  else
-    echo "deploy: scripts/$script not in this commit — keeping /home/ledio/bin/$script"
+install_helpers() {
+  local script
+  mkdir -p "$BIN_DIR" || return 1
+  for script in backup_db.sh warm_streamlit.py; do
+    if [[ -f "$REPO/scripts/$script" ]]; then
+      install -m 755 "$REPO/scripts/$script" "$BIN_DIR/$script" || return 1
+    else
+      echo "deploy: scripts/$script not in this commit — keeping $BIN_DIR/$script"
+    fi
+  done
+}
+
+# The unit files are versioned in deploy/systemd/. They are installed only when asked
+# (INSTALL_UNITS=1): they were reconstructed from prose, so the first install should
+# follow a diff against the live ones, not a blind overwrite.
+#
+# Before a unit is overwritten its current version is saved in $LAST_GOOD_UNITS, and a
+# unit that did not exist is listed in $LAST_GOOD_UNITS/ADDED, so restore_units can put
+# back exactly what was there (audit A12/A46).
+install_units() {
+  local src="$REPO/deploy/systemd" file name installed=0 differs=0
+  if [[ ! -d "$src" ]]; then
+    echo "deploy: no deploy/systemd in this commit — leaving the installed units alone"
+    return 0
   fi
-done
+  for file in "$src"/*.service "$src"/*.timer; do
+    [[ -f "$file" ]] || continue
+    name="$(basename "$file")"
+    if cmp -s "$file" "$UNIT_DIR/$name"; then
+      continue
+    fi
+    if [[ "$INSTALL_UNITS" == "1" ]]; then
+      mkdir -p "$UNIT_DIR" "$LAST_GOOD_UNITS" || return 1
+      if [[ -e "$UNIT_DIR/$name" ]]; then
+        cp -p "$UNIT_DIR/$name" "$LAST_GOOD_UNITS/$name" || return 1
+      else
+        echo "$name" >> "$LAST_GOOD_UNITS/ADDED" || return 1
+      fi
+      UNITS_CHANGED=1
+      install -m 644 "$file" "$UNIT_DIR/$name" || return 1
+      echo "deploy: installed unit $name"
+      installed=1
+    else
+      differs=1
+    fi
+  done
+  if [[ $installed -eq 1 ]]; then
+    systemctl --user daemon-reload || return 1
+  fi
+  if [[ $differs -eq 1 ]]; then
+    echo "deploy: unit files differ from the installed ones; review, then run with INSTALL_UNITS=1"
+  fi
+  return 0
+}
+
+# Undo install_units: the saved versions go back, units this deploy added are removed.
+restore_units() {
+  local file name
+  [[ "$UNITS_CHANGED" == "1" ]] || return 0
+  if [[ -f "$LAST_GOOD_UNITS/ADDED" ]]; then
+    while IFS= read -r name; do
+      [[ -n "$name" ]] && { rm -f "$UNIT_DIR/$name" || return 1; }
+    done < "$LAST_GOOD_UNITS/ADDED"
+  fi
+  for file in "$LAST_GOOD_UNITS"/*.service "$LAST_GOOD_UNITS"/*.timer; do
+    [[ -f "$file" ]] || continue
+    cp -p "$file" "$UNIT_DIR/$(basename "$file")" || return 1
+  done
+  systemctl --user daemon-reload || return 1
+  echo "deploy: restored the unit files from before this deploy" >&2
+}
 
 # The corpus. New CSV rows get database ids at boot only on a *fresh* database —
 # `ensure_corpus_ready` seeds in bulk and then never re-imports, which is the
@@ -46,55 +430,331 @@ done
 # the new rows therefore stay unlinked, and a reviewer who opens one is told it is
 # "not linked to the project database" and cannot save. `sync_new_examples` (what
 # import_examples.py runs by default) inserts only the missing rows and touches no
-# existing one, so it is safe to run on every corpus change and cheap when there
-# is nothing to do.
+# existing one, so it is safe to run on every corpus change and cheap when there is
+# nothing to do. Before the restart, not after: the service should come up already
+# able to save annotations on every row it shows.
 #
-# Before the restart, not after: the service should come up already able to save
-# annotations on every row it shows.
-#
-# `cd "$REPO"` above matters twice here — import_examples.py reads the CSV by a
-# relative path, and DATABASE_URL defaults to `sqlite:///egyptology.db`, also
-# relative. Run from anywhere else it would quietly build a second database.
-if [[ "$BEFORE" != "$AFTER" ]] && git diff --name-only "$BEFORE" "$AFTER" | grep -qx "$CORPUS_CSV"; then
-  echo "deploy: $CORPUS_CSV changed — syncing new rows into the database"
-  # The same environment the service reads, so the import cannot land in a
-  # different database from the one the app will open. `set -a` exports every
-  # assignment in the file; the unit's own Environment= lines are repeated here
-  # because an EnvironmentFile cannot carry them.
+# Runs with the environment the service reads (egyptology.env, already loaded by
+# load_env_file), so the import cannot land in a different database from the one the
+# app will open; the unit's own Environment= lines are repeated as defaults because
+# an EnvironmentFile cannot carry them. The cwd is the clone, as import_examples.py
+# reads the CSV by a relative path. The NEW release venv runs it: it is the new code.
+import_corpus() {
   (
-    set -a
-    if [[ -f /home/ledio/egyptology.env ]]; then
-      # shellcheck disable=SC1091
-      source /home/ledio/egyptology.env
-    fi
-    PRIVATE_DATA_DIR=/home/ledio/egyptology-private
-    ANNOTATIONS_DURABLE=1
-    set +a
+    export PRIVATE_DATA_DIR="${PRIVATE_DATA_DIR:-$HOME_DIR/egyptology-private}"
+    export ANNOTATIONS_DURABLE="${ANNOTATIONS_DURABLE:-1}"
+    cd "$REPO" || exit 1
     # A non-writing pass first, so the log distinguishes "nothing to insert" from
     # "N inserted" before the real sync runs. It reports what the default sync
     # would insert AND what --refresh-existing would change, and writes nothing.
     echo "deploy: dry-run — what the sync would change:"
-    "$VENV"/bin/python scripts/import_examples.py --dry-run
+    "$NEW_VENV/bin/python" scripts/import_examples.py --dry-run || exit 1
     echo "deploy: applying the sync:"
-    "$VENV"/bin/python scripts/import_examples.py
+    "$NEW_VENV/bin/python" scripts/import_examples.py || exit 1
   )
-else
-  echo "deploy: $CORPUS_CSV unchanged — no corpus import needed"
-fi
+}
 
-systemctl --user restart egyptology.service
-for i in $(seq 1 30); do
-  sleep 2
-  if curl -fsS -o /dev/null http://127.0.0.1:8502/_stcore/health; then
-    echo "healthy on 8502 after ~$((i*2))s at $(git log -1 --format=%h)"
-    # The unit's ExecStartPost warms the stage resource sets before this point,
-    # so a `restart` that returns has already paid the ~60 s build. If that step
-    # was skipped or failed, `journalctl --user -u egyptology.service` says so and
-    # the first visitor's paste pays the build instead — the service is still up.
-    exit 0
+# Everything that changes the live tree or the service. Explicit `|| return 1` on every
+# step: `set -e` is switched off inside a function called from `if !`, so it cannot be
+# relied on here.
+apply_new_tree() {
+  if [[ "$BEFORE" != "$AFTER" ]]; then
+    if [[ "$STOP_BEFORE_UPDATE" == "1" ]]; then
+      echo "deploy: stopping the service before the files change"
+      systemctl --user stop egyptology.service || return 1
+      STOPPED_AT=$SECONDS
+    elif ! running_without_file_watcher; then
+      echo "deploy: the running service was not started with STREAMLIT_SERVER_FILE_WATCHER_TYPE=none"
+      echo "deploy:   (or its environment cannot be read) — stopping it before the files change"
+      systemctl --user stop egyptology.service || return 1
+      STOPPED_AT=$SECONDS
+    fi
+    git -C "$REPO" merge --ff-only "$AFTER" 9>&- || return 1
   fi
-done
+  install_helpers || return 1
+  install_units || return 1
+  if [[ "$BEFORE" != "$AFTER" ]] && corpus_changed "$BEFORE" "$AFTER"; then
+    echo "deploy: $CORPUS_CSV changed — syncing new rows into the database"
+    import_corpus || return 1
+  else
+    echo "deploy: $CORPUS_CSV unchanged — no corpus import needed"
+  fi
+  # Stop, switch, start rather than `restart`: the venv path must never change under a
+  # running process. The downtime is the same as a restart's.
+  systemctl --user stop egyptology.service || return 1
+  STOPPED_AT="${STOPPED_AT:-$SECONDS}"
+  point_venv_at "$NEW_VENV" || return 1
+  systemctl --user start egyptology.service || return 1
+  verify_app || return 1
+  echo "deploy: the service was down for about $((SECONDS - STOPPED_AT))s"
+}
 
-echo "deploy: service did not answer on 8502 after ~60s — last 30 journal lines:" >&2
-journalctl --user -u egyptology.service -n 30 --no-pager >&2 || true
-exit 1
+# Back to what was running: stop first (a failed check can leave the new app serving),
+# then the unit files, the commit and the venv link exactly as recorded before the
+# deploy, start, and the SAME paste check the deploy failed, not just /_stcore/health
+# (that is the false-health condition A11 describes). Never touches ignored files, so the
+# database (*.db) is safe. A release venv built for the failed commit is removed.
+# The rollback must not change files under a running process, nor let `start` (a no-op
+# on a running unit) and a passing check on the NEW app pass for a restored old one.
+service_stopped() {
+  local state
+  if systemctl --user stop egyptology.service; then
+    return 0
+  fi
+  state="$(systemctl --user is-active egyptology.service 2>/dev/null || true)"
+  case "$state" in
+    inactive|failed)
+      echo "deploy: warning — stop failed, but the service is $state; rolling back" >&2
+      return 0
+      ;;
+  esac
+  echo "deploy: could not stop the service (state: ${state:-unknown}) — not rolling back under a running app" >&2
+  return 1
+}
+
+rollback() {
+  local target="$1"
+  echo "deploy: FAILED — rolling back to $(git -C "$REPO" rev-parse --short "$target")" >&2
+  if service_stopped \
+    && restore_units \
+    && git -C "$REPO" reset --hard "$target" \
+    && point_venv_at "$PREVIOUS_VENV" \
+    && install_helpers \
+    && systemctl --user start egyptology.service \
+    && verify_app; then
+    if [[ -n "$BUILT_VENV" && "$BUILT_VENV" != "$(current_venv)" ]]; then
+      rm -rf "$BUILT_VENV"
+    fi
+    echo "deploy: ROLLED BACK to $(git -C "$REPO" rev-parse --short "$target")" >&2
+    return 0
+  fi
+  {
+    echo "deploy: MANUAL: the rollback itself failed. On the box:"
+    echo "  systemctl --user stop egyptology.service"
+    if [[ "$UNITS_CHANGED" == "1" ]]; then
+      echo "  # unit files: put back the copies in $LAST_GOOD_UNITS, delete the ones listed in"
+      echo "  # $LAST_GOOD_UNITS/ADDED, then: systemctl --user daemon-reload"
+    fi
+    echo "  git -C $REPO reset --hard \$(cat $LAST_GOOD)"
+    echo "  ln -sfn \"\$(cat $LAST_GOOD_VENV)\" $VENV"
+    echo "  systemctl --user start egyptology.service"
+    echo "  # check the app, then allow deploys again:"
+    echo "  rm $FAILED_MARKER"
+  } | tee "$SCRATCH/manual.txt" >&2
+  return 1
+}
+
+# Held for the whole run: fd 9 stays open on LOCK_FILE and carries a flock taken through
+# Python. The kernel releases it when this run exits or dies, so there is no stale lock
+# to take over, and the file is never deleted (a deleted-and-recreated lock file is how
+# two runs could both believe they held it).
+take_deploy_lock() {
+  local rc=0
+  if [[ -d "$LOCK_FILE" ]]; then
+    # The lock of the deploy script before the flock one. It may belong to a deploy that
+    # is running right now, so it is never removed here.
+    echo "deploy: $LOCK_FILE is an old-style lock directory — another deploy may be running." >&2
+    echo "deploy:   If none is, remove it (rm -r $LOCK_FILE) and run again. Nothing touched." >&2
+    exit 1
+  fi
+  exec 9>>"$LOCK_FILE"
+  "$LOCK_PYTHON" - "$DEPLOY_LOCK_WAIT" <<'PY' || rc=$?
+import fcntl
+import sys
+import time
+
+deadline = time.monotonic() + float(sys.argv[1])
+while True:
+    try:
+        fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sys.exit(0)
+    except BlockingIOError:
+        if time.monotonic() >= deadline:
+            sys.exit(5)
+        time.sleep(0.2)
+PY
+  if [[ $rc -eq 5 ]]; then
+    echo "deploy: another deploy holds $LOCK_FILE — nothing touched" >&2
+    exit 1
+  elif [[ $rc -ne 0 ]]; then
+    echo "deploy: could not lock $LOCK_FILE with $LOCK_PYTHON (exit $rc) — nothing touched" >&2
+    exit 1
+  fi
+}
+
+cleanup() {
+  if [[ -n "$SCRATCH" ]]; then
+    rm -rf "$SCRATCH"
+  fi
+}
+
+# Roll back to $BEFORE; on success exit 1, otherwise write the FAILED marker and exit 2.
+# Signals are ignored from here on: a second Ctrl-C must not cut a rollback short.
+roll_back_and_exit() {
+  trap '' HUP INT TERM
+  APPLYING=0
+  if rollback "$BEFORE"; then
+    remove_own_marker
+    exit 1
+  fi
+  {
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git -C "$REPO" rev-parse --short "$BEFORE") -> $(git -C "$REPO" rev-parse --short "$AFTER"), the rollback failed"
+    cat "$SCRATCH/manual.txt" 2>/dev/null || true
+  } > "$FAILED_MARKER"
+  remove_own_marker
+  echo "deploy: wrote $FAILED_MARKER; no deploy runs until it is deleted" >&2
+  exit 2
+}
+
+# The INPROGRESS marker is removed only by the run that wrote it. The traps are set
+# before the lock is taken, so a run interrupted while it waits for the lock (or while
+# it refuses to start over another run's marker) must leave that marker alone.
+OWNS_INPROGRESS=0
+remove_own_marker() {
+  if [[ "$OWNS_INPROGRESS" == "1" ]]; then
+    rm -f "$INPROGRESS_MARKER"
+    OWNS_INPROGRESS=0
+  fi
+}
+
+# HUP (the ssh session dropped), INT (Ctrl-C), TERM. Before any live change there is
+# nothing to undo; during one, the same rollback as a failure (APPLYING is set only
+# after this run wrote its own marker, so it never rolls back another run's changes). After a HUP the terminal
+# is gone, so everything from here on goes to $INTERRUPT_LOG.
+on_signal() {
+  trap '' HUP INT TERM PIPE
+  set +e
+  if [[ "$1" == HUP ]]; then
+    exec >>"$INTERRUPT_LOG" 2>&1
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): the session hung up"
+  fi
+  echo "deploy: interrupted by SIG$1" >&2
+  if [[ "$APPLYING" == "1" ]]; then
+    roll_back_and_exit
+  fi
+  remove_own_marker
+  exit 1
+}
+
+main() {
+  trap cleanup EXIT
+  trap 'on_signal HUP' HUP
+  trap 'on_signal INT' INT
+  trap 'on_signal TERM' TERM
+  take_deploy_lock
+  # Only now, under the lock: a run that was waiting while another failed its rollback
+  # must see the marker that run wrote before it released the lock.
+  if [[ -e "$FAILED_MARKER" ]]; then
+    {
+      echo "deploy: an earlier rollback failed ($FAILED_MARKER) — refusing to run, so the records"
+      echo "deploy:   the MANUAL steps read ($LAST_GOOD, $LAST_GOOD_VENV, $LAST_GOOD_UNITS) stay as they are."
+      echo "deploy:   Follow the MANUAL block from that run (also in the file), then delete the file."
+    } >&2
+    exit 1
+  fi
+  if [[ -e "$INPROGRESS_MARKER" ]]; then
+    {
+      echo "deploy: an earlier deploy was cut off while it changed the service ($INPROGRESS_MARKER)"
+      echo "deploy:   and never rolled back — refusing to run, so the records of what ran before it"
+      echo "deploy:   ($LAST_GOOD, $LAST_GOOD_VENV, $LAST_GOOD_UNITS) are not overwritten. Recover by"
+      echo "deploy:   hand with the steps in the file (DEPLOYMENT.md, \"Manual recovery\"), then delete it."
+    } >&2
+    exit 1
+  fi
+  cd "$REPO"
+  load_env_file "$ENV_FILE"
+
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    echo "deploy: the clone has modified tracked files — refusing to deploy over them:" >&2
+    git status --porcelain --untracked-files=no >&2
+    exit 1
+  fi
+  case "${DATABASE_URL:-}" in
+    sqlite:////*egyptology-data/*) ;;
+    *)
+      echo "deploy: warning — DATABASE_URL is not under $HOME_DIR/egyptology-data, so the database" >&2
+      echo "deploy:   (the only irreplaceable file) still lives inside the clone; see DEPLOYMENT.md" >&2
+      ;;
+  esac
+
+  BEFORE="$(git rev-parse HEAD)"
+  # `9>&-` on the commands that reach the network: a helper they may leave running (an
+  # ssh ControlMaster, a credential helper) must not inherit the lock's descriptor and
+  # hold the deploy lock after this run has ended.
+  git fetch -q origin 9>&-
+  AFTER="$(git rev-parse '@{u}')"
+  if ! git merge-base --is-ancestor "$BEFORE" "$AFTER"; then
+    echo "deploy: $(git rev-parse --short "$AFTER") upstream is not a fast-forward of $(git rev-parse --short "$BEFORE") — nothing touched" >&2
+    exit 1
+  fi
+  if [[ "$BEFORE" == "$AFTER" ]]; then
+    echo "deploy: already at $(git log -1 --format=%h) — nothing to pull"
+  else
+    echo "deploy: $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER")"
+    # The merge below smudges the LFS corpus (~69 MB); fetch it while the service is
+    # still up so the download is not part of the downtime. Best effort.
+    if corpus_changed "$BEFORE" "$AFTER" && git lfs version >/dev/null 2>&1; then
+      git lfs fetch origin "$AFTER" >/dev/null 9>&- || echo "deploy: LFS prefetch failed — the merge will download the corpus instead" >&2
+    fi
+  fi
+
+  # What is running now, recorded before anything changes (audit A12): the manual
+  # recovery in DEPLOYMENT.md reads these, and they exist even on a first failed deploy.
+  PREVIOUS_VENV="$(current_venv)"
+  write_file "$LAST_GOOD" "$BEFORE"
+  write_file "$LAST_GOOD_VENV" "$PREVIOUS_VENV"
+  rm -rf "$LAST_GOOD_UNITS"
+  UNITS_CHANGED=0
+  BUILT_VENV=""
+
+  SCRATCH="$(mktemp -d)"
+  CHECKER="$SCRATCH/warm_streamlit.py"
+  git show "$AFTER:scripts/warm_streamlit.py" > "$CHECKER" 2>/dev/null \
+    || git show "$BEFORE:scripts/warm_streamlit.py" > "$CHECKER"
+
+  # Dependencies first, into a separate release venv, while nothing live has changed.
+  # If this fails, the tree, the live venv and the running service are untouched.
+  if ! prepare_dependency_spec || ! build_release_venv; then
+    if [[ -n "$BUILT_VENV" ]]; then
+      rm -rf "$BUILT_VENV"
+    fi
+    echo "deploy: could not build the dependencies — the tree, the live venv and the running service are untouched" >&2
+    exit 1
+  fi
+
+  # From here until the run ends cleanly, a run that dies without the chance to roll
+  # back leaves this behind, and no later run starts while it exists. Owned from before
+  # the first byte, so a signal mid-write still removes this run's partial marker.
+  OWNS_INPROGRESS=1
+  {
+    echo "deploy $(date '+%Y-%m-%d %H:%M:%S'): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER") was cut off before it finished. On the box:"
+    echo "  systemctl --user stop egyptology.service"
+    echo "  # unit files: if $LAST_GOOD_UNITS exists, put back its copies, delete the ones listed in"
+    echo "  # $LAST_GOOD_UNITS/ADDED, then: systemctl --user daemon-reload"
+    echo "  git -C $REPO reset --hard $BEFORE"
+    echo "  ln -sfn \"\$(cat $LAST_GOOD_VENV)\" $VENV"
+    echo "  systemctl --user start egyptology.service"
+    echo "  # check the app, then allow deploys again:"
+    echo "  rm $INPROGRESS_MARKER"
+  } > "$INPROGRESS_MARKER"
+  APPLYING=1
+  if ! apply_new_tree; then
+    roll_back_and_exit
+  fi
+  APPLYING=0
+  remove_own_marker
+
+  prune_releases
+  # Refresh the operational copy of this script from the repo. Never in place: the
+  # running script may be that very file, so write beside it and rename over it.
+  if [[ -f "$REPO/scripts/egyptology-deploy.sh" ]]; then
+    install -m 755 "$REPO/scripts/egyptology-deploy.sh" "$DEPLOY_COPY.new" \
+      && mv -f "$DEPLOY_COPY.new" "$DEPLOY_COPY" \
+      || echo "deploy: warning — could not refresh $DEPLOY_COPY" >&2
+  fi
+  echo "deploy: done, serving $(git log -1 --format=%h) on $(current_venv); the previous state is in $LAST_GOOD and $LAST_GOOD_VENV"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

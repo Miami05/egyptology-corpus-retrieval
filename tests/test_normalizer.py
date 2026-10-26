@@ -52,7 +52,8 @@ def test_contains_hieroglyphs_detects_mixed_input():
 
 
 def test_transliteration_normalisation_folds_egyptological_characters():
-    assert normalize_transliteration("ḥtp-ḏi̯ nswt") == "htp-dji̯ nswt"
+    # The weak-consonant marker is folded too (audit A47): `ḏi̯` is `dji`, not `dji̯`.
+    assert normalize_transliteration("ḥtp-ḏi̯ nswt") == "htp-dji nswt"
     assert normalize_transliteration("ḫnt.ꞽ") == "khnt.i"  # the yod is kept as i
 
 

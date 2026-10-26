@@ -294,6 +294,28 @@ class StageResources:
     # pooled frame (see build_stage_resources), the mass it competes against
     # never shrinks, so there is nothing left to scale.
     lexicon_weight_factor: float = 1.0
+    # Rows labelled with this stage's own name whose hieroglyph groups and readings
+    # align one to one (the test `ReadingModel.fit` uses). `reading_model` is also
+    # fitted on every unlabelled row, so `sentences_seen` cannot tell whether the
+    # stage has any hieroglyph rows of its own; this can (A3). None = unknown (the
+    # stage=None resources, hand-built ones): never skips a stage.
+    own_aligned_rows: int | None = None
+
+
+def count_own_aligned_rows(df: pd.DataFrame, target: str) -> int:
+    """Labelled-`target` rows of `df` with as many hieroglyph groups as readings.
+
+    Vectorised (column-wise split, no row loop). Rows without hieroglyphs do not
+    count, matching `ReadingModel.fit`, which treats them as text-only.
+    """
+    if "language_stage" not in df.columns:
+        return 0
+    own = df.loc[df["language_stage"].map(normalize_stage) == target]
+    if own.empty:
+        return 0
+    signs = own["hieroglyphs_norm"].fillna("").astype(str).str.split().str.len()
+    readings = own["transliteration_gold"].fillna("").astype(str).str.split().str.len()
+    return int(((signs > 0) & (signs == readings)).sum())
 
 
 def build_stage_resources(
@@ -399,6 +421,7 @@ def build_stage_resources(
         stats.mdc_frequencies,
         stats.glyph_frequencies,
         reuse=pooled_index.tables if pooled_index is not None else None,
+        corpus_size=stats.n_rows,
     )
     index = SearchIndex(stats=stats, text_index=text_index, tables=tables)
 
@@ -410,12 +433,15 @@ def build_stage_resources(
         segmenter=segmenter,
         sign_index=build_sign_index(df),
         lexicon_weight_factor=1.0,
+        own_aligned_rows=None if target is None else count_own_aligned_rows(df, target),
     )
 
 
 def choose_stage_by_likelihood(
-    paste_hieroglyphs_norm: str,
+    paste: str,
     resources_by_stage: Callable[[str | None], StageResources],
+    coverage: dict[str, int] | None = None,
+    use_format_hints: bool = True,
 ) -> tuple[str | None, dict[str, float]]:
     """Language identification for a hieroglyph paste, by per-sign log-likelihood.
 
@@ -427,6 +453,16 @@ def choose_stage_by_likelihood(
     a stage's rows — but the reading model already computes how likely a stage's
     own statistics find a candidate reading of it, and that generalises language
     identification directly, without inventing a new score or a new threshold.
+
+    `paste` is the paste as the user gave it, layout controls included: it is
+    segmented with `segment_paste`, the same call that later decodes it, so the
+    groups the stage is chosen on are the groups that get read (audit item 13 —
+    this used to segment the control-free normalised string, so a paste whose
+    joiners changed the grouping was routed on a segmentation nobody decoded). An
+    already-normalised paste carries no controls and segments exactly as before.
+    `use_format_hints` is handed to `segment_paste` unchanged, so a caller that decodes
+    without hints (the expert eval's `--no-format-hints` ablation) also chooses the
+    stage without them.
 
     Segmentation is not part of the comparison. `build_stage_resources` now
     builds the segmenter from the *pooled* frame for every stage (measured
@@ -454,30 +490,64 @@ def choose_stage_by_likelihood(
     by the number of sign groups in that (shared) segmentation. The winner is a
     plain argmax over these per-sign likelihoods: no tunable threshold.
 
-    Two guards: (1) a stage whose reading model was fitted on zero aligned rows
-    (`reading_model.sentences_seen == 0` — e.g. Demotic, which this corpus holds
-    as text-only rows with no hieroglyphs to align) has nothing to score with and
-    is skipped rather than scored as if it had an opinion. (2) a near-tie between
-    the top two candidates (within 1e-9) is not trusted to decide a language —
+    Two guards: (1) a stage with nothing of its own to score with is skipped
+    rather than scored as if it had an opinion: either its reading model was
+    fitted on zero aligned rows (`reading_model.sentences_seen == 0`), or no
+    labelled row of that stage has aligned hieroglyphs (`own_aligned_rows == 0`).
+    The second check is needed because a stage's reading model is also fitted on
+    every unlabelled row, so for Demotic (text-only in this corpus) `sentences_seen`
+    is never 0 and the model was just the "unspecified rows" model, which won
+    for 47 of 200 Earlier and 24 of 200 Late held-out pastes (audit A3). (2) a
+    near-tie between the top two candidates (within 1e-9) is not trusted to decide a language —
     ties fall back to `None`, so the caller uses the pooled/label-based path
     instead of a coin flip.
+
+    Attested coverage comes first (A53, fix rounds 1 and 2). A stage whose model has
+    never seen a group has less evidence about this paste than one that has, however
+    its per-sign number compares: an unreadable group's charge is a constant
+    (`reading_model.UNREADABLE_EMISSION`), and a well-attested but ambiguous group
+    can always cost more than any constant. So only the stages that attest the most
+    groups compete on the per-sign likelihood; the others stay in the returned dict
+    for auditing but cannot win. Only *attested* readings count: a reading borrowed
+    from a similar-looking group (`ReadingPrediction.is_borrowed`) is right about a
+    quarter of the time, and counting it let a large model win on guesses alone
+    (Opus review, round 2). Not yet measured: the held-out stage-routing re-measure
+    below must cover this rule too.
+
+    Pass a dict as `coverage` to receive each scored stage's attested-group count,
+    the number the choice is ranked on first; the returned scores alone no longer
+    explain the decision (the winner need not have the highest score).
+
+    TODO(A3 margin): the 1e-9 tie guard is not a real abstention margin (audit A3
+    asks for one). Ledio decided 2026-10-25 not to pick a number without a
+    pre-registered measurement: re-run the audit's held-out stage-routing check
+    (200 held-out sentences per stage, twins removed; see docs/audit-2026-10-11.md
+    A3) with the margin pre-registered, then set it here with near-tie tests.
 
     Returns `(winning stage or None, {stage: per-sign log-likelihood})` — the
     dict covers every *scored* (non-degenerate) stage, in `STAGES` order, so a
     caller can print/audit the comparison that decided (or declined to decide)
     the choice.
     """
-    groups_as_pasted = paste_hieroglyphs_norm.split()
-    if not groups_as_pasted:
+    # Imported here for the same circularity reason as in build_stage_resources.
+    from app.services.segmentation import segment_paste
+
+    if not paste.split():
         return None, {}
 
     pooled = resources_by_stage(None)
-    groups = pooled.segmenter.segment(groups_as_pasted).groups
+    segmentation, groups_as_pasted = segment_paste(
+        paste, pooled.segmenter, use_format_hints=use_format_hints
+    )
+    if not groups_as_pasted:
+        return None, {}
+    groups = segmentation.groups
     n_groups = len(groups)
     if n_groups == 0:
         return None, {}
 
     scores: dict[str, float] = {}
+    readable: dict[str, int] = {}
     for candidate in STAGES:
         resources = resources_by_stage(candidate)
         if resources.reading_model.sentences_seen == 0:
@@ -485,14 +555,30 @@ def choose_stage_by_likelihood(
             # holds Demotic as text-only), so this stage has no likelihood to
             # offer and must not be scored as though it did.
             continue
-        _predictions, reading_score = resources.reading_model.predict_sequence_scored(
+        if resources.own_aligned_rows == 0:
+            # The stage subset also holds every unlabelled row, so `sentences_seen`
+            # above cannot see that this stage has no hieroglyph rows of its own
+            # (Demotic here). Its model is then a pooled one, not this stage's.
+            continue
+        predictions, reading_score = resources.reading_model.predict_sequence_scored(
             groups, use_lexicon=False
         )
         scores[candidate] = reading_score / n_groups
+        readable[candidate] = sum(
+            1 for p in predictions if p.predicted != "" and not p.is_borrowed
+        )
+
+    if coverage is not None:
+        coverage.update(readable)
 
     if not scores:
         return None, scores
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    best_coverage = max(readable.values())
+    ranked = sorted(
+        ((stage, score) for stage, score in scores.items() if readable[stage] == best_coverage),
+        key=lambda item: item[1],
+        reverse=True,
+    )
     if len(ranked) > 1 and abs(ranked[0][1] - ranked[1][1]) <= 1e-9:
         return None, scores
     return ranked[0][0], scores

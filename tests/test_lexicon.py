@@ -51,7 +51,8 @@ def test_the_two_halves_write_the_yod_differently() -> None:
     "=y" (AES) and "=i" (Ramses) would have been two different readings."""
     assert reading_to_corpus_convention("=y", "AES") == "=ꞽ"
     assert reading_to_corpus_convention("=i", "Ramses") == "=ꞽ"
-    assert reading_to_corpus_convention("ywi", "AES") == "ꞽwi"  # i̯ stays i
+    # The weak radical i̯ (a bare `i` in AES) folds to ꞽ too, as strict_reading_key does.
+    assert reading_to_corpus_convention("ywi", "AES") == "ꞽwꞽ"
     assert reading_to_corpus_convention("y", "Ramses") == "y"  # double reed stays y
     assert reading_to_corpus_convention("jrj.t", "Ramses") == "ꞽrꞽ.t"
 

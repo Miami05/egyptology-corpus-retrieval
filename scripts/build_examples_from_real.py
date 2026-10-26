@@ -1,5 +1,17 @@
+"""Turn the TLA worklist into a corpus CSV with the final column set.
+
+This only *seeds* a TLA-only corpus (the original 12,772 Earlier Egyptian rows). It is
+not the producer of the full corpus in data/processed/examples.csv: that file is the
+seed plus the rows the import_* scripts append (`--append`). Writing it from the
+worklist alone would drop every other source, so `--output` is required and an
+existing output that holds more than the new rows is refused unless `--force` is given.
+
+    python scripts/build_examples_from_real.py --output scratch/examples_tla.csv
+"""
+
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from typing import cast
@@ -10,8 +22,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.import_bbaw_egyptian import refuse_unsafe_output  # noqa: E402
+
 INPUT_PATH = "data/raw/real_examples_worklist.csv"
-OUTPUT_PATH = "data/processed/examples.csv"
 
 FINAL_COLUMNS = [
     "source",
@@ -73,8 +86,10 @@ def _normalize_defaults(df: pd.DataFrame) -> pd.DataFrame:
             out[col] = ""
 
     out = out.fillna("")
-    out["genre"] = out["genre"].map(_safe_str).replace("", "offering_formula")
-    out["period"] = out["period"].map(_safe_str).replace("", "Middle Egyptian")
+    # An empty label stays visibly unknown; it used to be filled with
+    # "offering_formula" / "Middle Egyptian", which asserts a genre and a period.
+    out["genre"] = out["genre"].map(_safe_str).replace("", "unknown")
+    out["period"] = out["period"].map(_safe_str).replace("", "unknown")
     out["review_status"] = out["review_status"].map(_safe_str).replace("", "seed")
 
     for col in FINAL_COLUMNS:
@@ -90,8 +105,38 @@ def _is_complete_row(row: pd.Series) -> bool:
     return True
 
 
-def main() -> None:
-    df = pd.read_csv(INPUT_PATH)
+def _refuse_to_shrink(output: Path, ready: pd.DataFrame) -> None:
+    """Exit when `output` already holds rows this build would lose."""
+    if not output.exists():
+        return
+    held = pd.read_csv(output, dtype=str, usecols=["source"]).fillna("")["source"]
+    lost_sources = sorted(set(held) - set(ready["source"]))
+    if lost_sources or len(held) > len(ready):
+        raise SystemExit(
+            f"refusing to overwrite {output}: it holds {len(held):,} rows "
+            f"(sources: {', '.join(sorted(set(held)))}) and this build has "
+            f"{len(ready):,} rows (sources: {', '.join(sorted(set(ready['source'])))}). "
+            "Pick another --output, or pass --force."
+        )
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--input", default=INPUT_PATH, help="The TLA worklist CSV.")
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="CSV to write. Required: the old default was the 130k-row corpus itself.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite --output even if it holds rows (or sources) this build lacks.",
+    )
+    args = parser.parse_args(argv)
+    refuse_unsafe_output(args.output, allow_corpus=True)
+
+    df = pd.read_csv(args.input)
     df = _normalize_defaults(df)
 
     complete_mask = cast(pd.Series, df.apply(_is_complete_row, axis=1))
@@ -114,10 +159,13 @@ def main() -> None:
         ),
     )
 
-    Path("data/processed").mkdir(parents=True, exist_ok=True)
-    ready.to_csv(OUTPUT_PATH, index=False)
+    output = Path(args.output)
+    if not args.force:
+        _refuse_to_shrink(output, ready)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    ready.to_csv(output, index=False)
 
-    print(f"Wrote {len(ready)} complete rows to {OUTPUT_PATH}")
+    print(f"Wrote {len(ready)} complete rows to {output}")
 
     if not skipped.empty:
         print(f"Skipped {len(skipped)} incomplete worklist rows.")

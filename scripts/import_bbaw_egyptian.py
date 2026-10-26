@@ -31,7 +31,9 @@ What is different from the corpus, and what is done about it:
 Strictness, as in the AES importer: a sentence is kept only when every word has a
 sign group and the counts match. Rows with a lacuna (`//`), an unreadable sign
 (`"?"`, `"⸮"`), an empty group or a count mismatch are counted and dropped, never
-patched, because a shifted pairing silently corrupts the sign-level model.
+patched, because a shifted pairing silently corrupts the sign-level model. The same
+goes for a lacuna written in the transcription itself (`//`, `[...]`, `[]`), which is
+checked for text-only rows too: a broken reading is not evidence.
 
     python scripts/import_bbaw_egyptian.py                 # measure only
     python scripts/import_bbaw_egyptian.py --append        # append aligned rows
@@ -60,16 +62,56 @@ from app.data.normalizer import normalize_hieroglyphs, search_fold  # noqa: E402
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "bbaw_egyptian"
 RAW_PARQUET = RAW_DIR / "train.parquet"
+# Pinned to the Hub commit the local snapshot was taken from, so a re-download cannot
+# silently change the corpus (the row index is the only id this export offers).
+PARQUET_REVISION = "f9dde1200348af9b531e8fd09096bd9f9ddfeb34"
 PARQUET_URL = (
-    "https://huggingface.co/datasets/phiwi/bbaw_egyptian/resolve/main/"
+    f"https://huggingface.co/datasets/phiwi/bbaw_egyptian/resolve/{PARQUET_REVISION}/"
     "data/train-00000-of-00001.parquet"
 )
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "bbaw_rows.csv"
 EXAMPLES = PROJECT_ROOT / "data" / "processed" / "examples.csv"
+PRIVATE_DIR = PROJECT_ROOT / "data" / "private"
 
 SOURCE = "BBAW"
 TEXT_ID = "bbaw_egyptian_2018"
 SOURCE_REF = "phiwi/bbaw_egyptian (AED-TEI, BBAW, Jan 2018 snapshot)"
+
+
+def refuse_unsafe_output(
+    output: str | Path,
+    existing: str | Path | None = None,
+    allow_corpus: bool = False,
+) -> None:
+    """Stop an importer from writing its scratch CSV over the wrong file.
+
+    Every source importer writes a per-source CSV (`--output`) and can also append to
+    the corpus (`--append`, which writes `--existing`). Pointing `--output` at the
+    corpus would replace 130k rows with one source's rows, and anything under
+    data/private/ is loaded as reviewer-only private rows on top of the public corpus.
+    Shared by the BBAW, Ramses, AES and TLA importers. `allow_corpus` is for the one
+    script whose job is to write a corpus file (build_examples_from_real.py, which has
+    its own shrink guard); the private-folder rule still applies to it.
+    """
+    target = Path(output).resolve()
+    if allow_corpus:
+        existing = None
+    elif target == EXAMPLES.resolve():
+        raise SystemExit(
+            f"refusing --output {output}: that is the corpus itself. Write to a scratch "
+            "file and use --append to add the net-new rows."
+        )
+    if existing and target == Path(existing).resolve():
+        raise SystemExit(
+            f"refusing --output {output}: it is the same file as --existing. Use "
+            "--append to add rows to the corpus."
+        )
+    if PRIVATE_DIR.resolve() in target.parents:
+        raise SystemExit(
+            f"refusing --output {output}: data/private/ is loaded as reviewer-only "
+            "private rows, so a public source must not be written there."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Gardiner code -> Unicode sign
@@ -124,6 +166,16 @@ OPERATOR_PREFIX_RE = re.compile(r"^[-:*]+")
 OPENER_RE = re.compile(r"^(\[+\(?\??|\(|<[a-z]?\d*)$")
 CLOSER_RE = re.compile(r"^(\??\)?\]+|\)|\d*>)$")
 LACUNA_RE = re.compile(r"^/{2,}$")
+# A lacuna written in the transcription: `//` anywhere in a word (`ꞽmn-m-//`), or a
+# bracket holding only gap filler — nothing, dots, dashes or an ellipsis (`[]`,
+# `[...]`, `[. . .]`, `[---]`, `[…]`; BBAW writes some gaps as `[---]`). A fraction
+# (`1/2`) and a bracket that holds letters (`nb.[t]`, a restoration) do not match.
+# An underscore is a lost sign too (fix round 2): BBAW writes `[_]`, `[___]`,
+# `[⸮_?]`, `ꜥ[__]` and bare `_` (`nꜣ _ n`), and checked against the raw export,
+# 827 of the 867 `[_]` rows that have hieroglyphs carry `//` there and the German
+# translation shows `...` at that point. No reading uses `_` as a letter; the Ramses
+# importer splits its `_` word boundaries off before this test runs.
+TRANSLIT_LACUNA_RE = re.compile(r"/{2,}|\[[\s.…\-–—]*\]|_")
 SHADING_RE = re.compile(r"^[hv]?/$")  # partial-sign shading, no sign of its own
 UNREADABLE_RE = re.compile(r'^"?(\?|⸮)"?$')
 # Quoted lower-case words are editorial annotations, not signs: "lb" marks a line
@@ -262,7 +314,8 @@ def to_schema(index: int, transcription: str, translation: str, glyphs: str) -> 
             "translation": str(translation or "").replace("\n", " ").strip(),
             "source_ref": SOURCE_REF,
             "review_status": "seed",
-            "display_sequence": glyphs,
+            # A text-only row has no glyphs; show the reading, as the Ramses rows do.
+            "display_sequence": glyphs or transcription,
             "aesthetic_arrangement_flag": False,
         }
     )
@@ -280,6 +333,7 @@ class ImportReport:
     dropped_mismatch: int = 0
     dropped_empty_transcription: int = 0
     dropped_unsearchable: int = 0
+    dropped_translit_lacuna: int = 0
     text_only: int = 0
     unknown_codes: collections.Counter = field(default_factory=collections.Counter)
     mismatch_samples: list[tuple[str, str, int, int]] = field(default_factory=list)
@@ -299,6 +353,9 @@ def convert(frame: pd.DataFrame, include_text_only: bool) -> tuple[pd.DataFrame,
             # rightly refuses such a row. Six sentences in this export, one of them
             # net-new; the others duplicate rows already dropped for the same reason.
             report.dropped_unsearchable += 1
+            continue
+        if TRANSLIT_LACUNA_RE.search(transcription):
+            report.dropped_translit_lacuna += 1
             continue
         glyph_field = str(record.hieroglyphs or "").strip()
         if not glyph_field:
@@ -359,6 +416,7 @@ def main() -> None:
     parser.add_argument("--include-text-only", action="store_true", help="Also import rows without hieroglyphs.")
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
+    refuse_unsafe_output(args.output, args.existing)
 
     parquet = Path(args.parquet)
     if not parquet.exists():
@@ -391,6 +449,7 @@ def main() -> None:
     print(f"  text only (no hieroglyphs)   {report.text_only:>8,}  {'included' if args.include_text_only else 'skipped (--include-text-only)'}")
     print(f"  empty transcription          {report.dropped_empty_transcription:>8,}")
     print(f"  unsearchable reading         {report.dropped_unsearchable:>8,}")
+    print(f"  lacuna in transcription      {report.dropped_translit_lacuna:>8,}")
     print(f"duplicates within the export   {internal_dupes:>8,}")
     print(f"already in {Path(args.existing).name if args.existing else '-':<19} {existing_dupes:>8,}")
     print(f"NET NEW                        {len(frame):>8,}")

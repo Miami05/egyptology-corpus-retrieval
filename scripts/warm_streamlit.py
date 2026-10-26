@@ -16,17 +16,51 @@ The script run this triggers is a *real* one: whatever the app builds eagerly
 during a run (see `WARM_STAGE_RESOURCES` in `app/ui/whyptology_app.py`) is
 built here, into the cache every later session shares.
 
-Usage (exits 0 on success, non-zero on failure; never blocks a service start
-for longer than --timeout):
+The run is also a smoke test (audit A11). When the app's code is broken, Streamlit
+does not fail the run: it renders the traceback as an `exception` element and then
+reports `script_finished` with FINISHED_SUCCESSFULLY, so "the script finished" says
+nothing about the page working. This client therefore watches the elements as they
+arrive and fails on any `exception` element (not a warning), and with
+`--expect-text` it also fails unless some element shows that text, which proves a
+real search rendered a real result. `<style>` blocks and HTML comments do not count:
+the app injects its whole theme stylesheet on every page, and that names every result
+class (`.suggestion-card {`) whether or not a result was drawn. An expectation shaped
+like an attribute (`class="suggestion-card"`) is stricter: it passes only on a real
+start tag carrying that attribute, in an element that renders HTML (`st.html`, or
+`st.markdown` with unsafe_allow_html), outside any non-rendering element (style,
+script, template, textarea, title, noscript) and, for Markdown, only where the Markdown
+parser passes it through as raw HTML: never inside code, fenced, indented or inline, at
+any depth of block quotes and list items (see `markdown_html`). The same markup shown as
+text, quoted in a comment or a code span, or written inside a `<textarea>` is not a
+result.
+
+`--reject-text` (repeatable) is the opposite: the run fails if any alert (st.warning,
+st.error, st.info), markdown, html or text element contains that text. The deploy uses it
+for the app's "Read-only mode." notice: when the database cannot be reached the app still
+searches and draws result cards, so without it a deploy that broke annotation storage
+would pass (final ops audit).
+
+Usage (never blocks a service start for longer than --timeout):
 
     python scripts/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 300
+    python scripts/warm_streamlit.py --query "..." --expect-text 'class="suggestion-card"'
+
+Exit codes: 0 the run finished and rendered no exception (and the expected text, if
+asked for, appeared, and no rejected text did); 1 anything else: timeout, closed
+connection, compile error, an exception element, the expected text missing, or a
+rejected text shown.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
+import html
+import re
 import sys
 import time
+from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from tornado.httpclient import HTTPRequest
@@ -38,6 +72,519 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 
 HEALTH_PATH = "/_stcore/health"
 STREAM_PATH = "/_stcore/stream"
+
+# A <style> block, or an unclosed one running to the end of the element.
+_STYLE_BLOCK = re.compile(r"<style\b[^>]*>.*?(?:</style\s*>|\Z)", re.IGNORECASE | re.DOTALL)
+# An HTML comment, or an unclosed one running to the end of the element.
+_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+# `name="value"`: an expectation that names an attribute a real element must carry.
+_ATTRIBUTE_EXPECTATION = re.compile(r'^([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"<>]*)"$')
+# Elements whose content the browser never draws as markup.
+_NON_RENDERING = frozenset({"style", "script", "template", "textarea", "title", "noscript", "xmp"})
+
+
+# --- Markdown: what an st.markdown body draws as HTML --------------------------------
+#
+# Streamlit renders Markdown as CommonMark (react-markdown), so a tag only draws when the
+# Markdown parser passes it through as raw HTML. The code below is a small CommonMark
+# block parser (block quotes, list items, fenced and indented code, HTML blocks,
+# paragraphs, headings, thematic breaks) and an inline scanner that, left to right like
+# CommonMark, takes a backtick run as a code span or a `<` as a raw tag, whichever starts
+# first. Only raw HTML (HTML blocks verbatim, inline tags exactly as written) reaches the
+# HTML parser; every other character goes in escaped. Nothing is ever cut out of a tag,
+# so no attribute can be put together from the pieces around a code span.
+#
+# Where it is simpler than CommonMark it hides more, never less: an unclosed inline
+# comment hides the rest of its paragraph, a paragraph that starts like a link reference
+# definition is hidden whole, a link destination or title is never read as a tag, and an
+# image description (`![...]`) is hidden even when nothing makes it an image.
+
+# CommonMark's raw-HTML grammar (spec 0.31, section 6.6).
+_ATTRIBUTE = r"""(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)"""
+_INLINE_TAG = re.compile(
+    rf"<[A-Za-z][A-Za-z0-9-]*{_ATTRIBUTE}*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>"
+)
+_INLINE_COMMENT = re.compile(r"<!-->|<!--->|<!--.*?-->", re.DOTALL)
+# Processing instructions, declarations, CDATA and autolinks: never a start tag.
+_INLINE_OTHER = re.compile(
+    r"<\?.*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[.*?\]\]>"
+    r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>|<[^\s<>@]+@[A-Za-z0-9.-]+>",
+    re.DOTALL,
+)
+_BACKTICKS = re.compile(r"`+")
+_REFERENCE_DEFINITION = re.compile(r"^\[(?:[^\]\\]|\\.)+\]:")
+_ASCII_PUNCTUATION = frozenset("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+_BLOCK_HTML_TAGS = frozenset(
+    "address article aside base basefont blockquote body caption center col colgroup dd "
+    "details dialog dir div dl dt fieldset figcaption figure footer form frame frameset "
+    "h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu menuitem nav "
+    "noframes ol optgroup option p param search section summary table tbody td tfoot th "
+    "thead title tr track ul".split()
+)
+# HTML block start conditions 1-5, each with the end condition that closes it.
+_HTML_BLOCK_ENDS = (
+    (re.compile(r"<(?:script|pre|style|textarea)(?:\s|>|$)", re.I),
+     re.compile(r"</(?:script|pre|style|textarea)>", re.I)),
+    (re.compile(r"<!--"), re.compile(r"-->")),
+    (re.compile(r"<\?"), re.compile(r"\?>")),
+    (re.compile(r"<![A-Za-z]"), re.compile(r">")),
+    (re.compile(r"<!\[CDATA\["), re.compile(r"\]\]>")),
+)
+_HTML_BLOCK_6 = re.compile(r"</?([A-Za-z][A-Za-z0-9-]*)(?:\s|/?>|$)")
+_HTML_BLOCK_7 = re.compile(
+    rf"(?:<[A-Za-z][A-Za-z0-9-]*{_ATTRIBUTE}*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$"
+)
+_ATX_HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
+_FENCE_OPEN = re.compile(r"(`{3,}|~{3,})")
+_SETEXT_UNDERLINE = re.compile(r"(?:=+|-+)[ \t]*$")
+_THEMATIC_BREAK = re.compile(r"(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+_BULLET = re.compile(r"[*+-]")
+_ORDERED = re.compile(r"(\d{1,9})[.)]")
+
+_CONTAINERS = ("document", "quote", "item")
+_TAKES_LINES = ("fence", "indented", "html")
+
+
+@dataclass(eq=False)
+class _Block:
+    kind: str  # document, quote, item, paragraph, heading, rule, fence, indented, html
+    parent: "_Block | None" = None
+    children: list["_Block"] = field(default_factory=list)
+    lines: list[str] = field(default_factory=list)
+    open: bool = True
+    offset: int = 0  # item: columns a continuation line must be indented by
+    fence: str = ""  # fence: the opening run of backticks or tildes
+    html_end: "re.Pattern[str] | None" = None  # html, kinds 1-5: what closes it
+
+
+def _nonspace(line: str, pos: int) -> int:
+    while pos < len(line) and line[pos] == " ":
+        pos += 1
+    return pos
+
+
+class _MarkdownBlocks:
+    """CommonMark's block phase (the two-pass algorithm in the spec's appendix), reduced
+    to the blocks that decide whether a line is code, raw HTML or Markdown text."""
+
+    def __init__(self) -> None:
+        self.document = _Block("document")
+        self.tip = self.document
+
+    def _finalize(self, block: _Block) -> None:
+        block.open = False
+        self.tip = block.parent
+
+    def _add(self, kind: str, **fields) -> _Block:
+        while self.tip.kind not in _CONTAINERS:
+            self._finalize(self.tip)
+        block = _Block(kind, parent=self.tip, **fields)
+        self.tip.children.append(block)
+        self.tip = block
+        return block
+
+    def _close_unmatched(self, last_matched: _Block) -> None:
+        while self.tip is not last_matched:
+            self._finalize(self.tip)
+
+    def _continues(self, block: _Block, line: str, pos: int) -> int | None | bool:
+        """Column after this block's continuation marker; False when the line does not
+        continue it; None when the line closed it (a closing fence)."""
+        nxt = _nonspace(line, pos)
+        indent, blank = nxt - pos, nxt >= len(line)
+        if block.kind == "quote":
+            if not blank and indent <= 3 and line[nxt] == ">":
+                pos = nxt + 1
+                return pos + 1 if line[pos:pos + 1] == " " else pos
+            return False
+        if block.kind == "item":
+            if blank:
+                return nxt if block.children else False
+            return pos + block.offset if indent >= block.offset else False
+        if block.kind == "fence":
+            closing = _FENCE_OPEN.match(line, nxt) if indent <= 3 else None
+            if closing and closing.group(1)[0] == block.fence[0] \
+                    and len(closing.group(1)) >= len(block.fence) and not line[closing.end():].strip():
+                self._finalize(block)
+                return None
+            return pos
+        if block.kind == "indented":
+            return pos + 4 if indent >= 4 else (nxt if blank else False)
+        if block.kind == "html":
+            return False if blank and block.html_end is None else pos
+        if block.kind == "paragraph":
+            return False if blank else pos
+        return False  # heading, rule
+
+    def _html_start(self, line: str, nxt: int, after_paragraph: bool):
+        """(True, end condition or None) when an HTML block starts at `nxt`."""
+        for start, end in _HTML_BLOCK_ENDS:
+            if start.match(line, nxt):
+                return True, end
+        tag = _HTML_BLOCK_6.match(line, nxt)
+        if tag and tag.group(1).lower() in _BLOCK_HTML_TAGS:
+            return True, None
+        if not after_paragraph and _HTML_BLOCK_7.match(line, nxt):
+            return True, None
+        return False, None
+
+    def feed(self, line: str) -> None:
+        line = line.expandtabs(4)
+        container, pos, all_matched = self.document, 0, True
+        while container.children and container.children[-1].open:
+            child = container.children[-1]
+            result = self._continues(child, line, pos)
+            if result is None:
+                return
+            if result is False:
+                all_matched = False
+                break
+            container, pos = child, result
+        last_matched = container
+        old_tip_is_paragraph = self.tip.kind == "paragraph"
+        all_closed = self.tip is last_matched
+
+        def start(kind: str, **fields) -> _Block:
+            nonlocal all_closed
+            if not all_closed:
+                self._close_unmatched(last_matched)
+                all_closed = True
+            return self._add(kind, **fields)
+
+        while container.kind not in _TAKES_LINES:
+            nxt = _nonspace(line, pos)
+            indent, blank = nxt - pos, nxt >= len(line)
+            if blank:
+                break
+            if indent >= 4:
+                if not old_tip_is_paragraph:
+                    container, pos = start("indented"), pos + 4
+                break
+            char = line[nxt]
+            if char == ">":
+                container = start("quote")
+                pos = nxt + 1
+                pos += 1 if line[pos:pos + 1] == " " else 0
+                continue
+            if _ATX_HEADING.match(line, nxt):
+                start("heading", lines=[line[nxt:].lstrip("#")])
+                return
+            fence = _FENCE_OPEN.match(line, nxt)
+            if fence and not (fence.group(1)[0] == "`" and "`" in line[fence.end():]):
+                start("fence", fence=fence.group(1))
+                return
+            if char == "<":
+                lazy = not all_closed and old_tip_is_paragraph
+                found, end = self._html_start(line, nxt, container.kind == "paragraph" or lazy)
+                if found:
+                    container, pos = start("html", html_end=end), nxt
+                    break
+            # Before thematic breaks and list items: `Title\n--` is a heading, not a rule.
+            # A paragraph that is a link reference definition never becomes a heading.
+            if container.kind == "paragraph" and _SETEXT_UNDERLINE.match(line, nxt) \
+                    and not _REFERENCE_DEFINITION.match(container.lines[0].strip()):
+                container.kind = "heading"
+                self._finalize(container)
+                return
+            if _THEMATIC_BREAK.match(line, nxt):
+                start("rule")
+                self._finalize(self.tip)
+                return
+            marker = _BULLET.match(line, nxt) or _ORDERED.match(line, nxt)
+            if marker:
+                after = marker.end()
+                rest_blank = not line[after:].strip()
+                interrupts = container.kind == "paragraph"
+                if (after == len(line) or line[after] == " ") and not (
+                    interrupts and (rest_blank or (marker.re is _ORDERED and marker.group(1) != "1"))
+                ):
+                    spaces = _nonspace(line, after) - after
+                    width = after - nxt
+                    padding = width + 1 if rest_blank or spaces >= 5 else width + spaces
+                    container = start("item", offset=indent + padding)
+                    pos = min(len(line), nxt + padding)
+                    continue
+            pos = nxt
+            break
+
+        blank = _nonspace(line, pos) >= len(line)
+        if not all_closed and not blank and self.tip.kind == "paragraph":
+            self.tip.lines.append(line[pos:])  # lazy continuation
+            return
+        if not all_closed:
+            self._close_unmatched(last_matched)
+        if self.tip.kind in _TAKES_LINES or self.tip.kind == "paragraph":
+            self.tip.lines.append(line[pos:])
+            if self.tip.kind == "html" and self.tip.html_end is not None \
+                    and self.tip.html_end.search(line[pos:]):
+                self._finalize(self.tip)
+        elif not blank:
+            self._add("paragraph", lines=[line[pos:]])
+
+
+def _link_tail_end(text: str, i: int) -> int | None:
+    """End of `(destination "title")` starting at `text[i] == "("`, or None. Destinations
+    may hold balanced parentheses; a `<...>` destination and any title are never tags."""
+    n = len(text)
+    i += 1
+    while i < n and text[i] in " \t\n":
+        i += 1
+    if i < n and text[i] == "<":
+        i += 1
+        while i < n and text[i] not in "<>\n":
+            i += 2 if text[i] == "\\" else 1
+        if i >= n or text[i] != ">":
+            return None
+        i += 1
+    else:
+        depth = 0
+        while i < n and not text[i].isspace() and ord(text[i]) >= 0x20:
+            char = text[i]
+            if char == "\\" and text[i + 1:i + 2] in _ASCII_PUNCTUATION:
+                i += 2
+                continue
+            if char == "<":
+                return None
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            i += 1
+        if depth:
+            return None
+    gap = i
+    while i < n and text[i] in " \t\n":
+        i += 1
+    if i < n and text[i] in "\"'(" and i > gap:
+        close = ")" if text[i] == "(" else text[i]
+        i += 1
+        while i < n and text[i] != close:
+            if text[i] == "(" and close == ")":
+                return None
+            i += 2 if text[i] == "\\" else 1
+        if i >= n:
+            return None
+        i += 1
+        while i < n and text[i] in " \t\n":
+            i += 1
+    return i + 1 if i < n and text[i] == ")" else None
+
+
+def _bracket_end(text: str, i: int) -> int | None:
+    """Index of the `]` matching the `[` at `text[i]`, or None. Escapes, code spans and raw
+    tags are skipped whole, so a `]` inside them does not count (as in CommonMark)."""
+    depth = 0
+    n = len(text)
+    while i < n:
+        char = text[i]
+        if char == "\\":
+            i += 2
+            continue
+        if char == "`":
+            run = _BACKTICKS.match(text, i).end() - i
+            closing = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, i + run)
+            i = closing.end() if closing else i + run
+            continue
+        if char == "<":
+            atom = _INLINE_COMMENT.match(text, i) or _INLINE_OTHER.match(text, i) \
+                or _INLINE_TAG.match(text, i)
+            if atom:
+                i = atom.end()
+                continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def _inline_html(text: str) -> str:
+    """Paragraph text as HTML: raw tags and comments exactly as written, the rest escaped,
+    code spans and link destinations dropped."""
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if char == "\\" and text[i + 1:i + 2] in _ASCII_PUNCTUATION:
+            out.append(html.escape(text[i + 1]))
+            i += 2
+        elif char == "`":
+            run = _BACKTICKS.match(text, i).end() - i
+            closing = re.compile(rf"(?<!`)`{{{run}}}(?!`)").search(text, i + run)
+            if closing:
+                i = closing.end()  # a code span draws its content as text
+            else:
+                out.append(char * run)
+                i += run
+        elif char == "<":
+            raw = _INLINE_COMMENT.match(text, i) or _INLINE_TAG.match(text, i)
+            other = _INLINE_OTHER.match(text, i)
+            if other:
+                i = other.end()
+            elif raw:
+                out.append(raw.group(0))
+                i = raw.end()
+            elif text.startswith("<!--", i):
+                break  # an unclosed comment: hide the rest rather than guess
+            else:
+                out.append("&lt;")
+                i += 1
+        elif char == "!" and text.startswith("![", i) and _bracket_end(text, i + 1) is not None:
+            # An image description is alt text, never markup. Hidden even when no link or
+            # reference follows (CommonMark would then show it as text): hides more, not less.
+            i = _bracket_end(text, i + 1) + 1
+            if text.startswith("(", i):
+                i = _link_tail_end(text, i) or i
+            elif text.startswith("[", i):
+                end = _bracket_end(text, i)
+                i = end + 1 if end is not None else i
+        elif char == "]" and text.startswith("(", i + 1) and _link_tail_end(text, i + 1):
+            i = _link_tail_end(text, i + 1)
+        else:
+            out.append(html.escape(char))
+            i += 1
+    return "".join(out)
+
+
+def markdown_html(body: str) -> str:
+    """The HTML a Markdown `body` draws, as far as tags go: HTML blocks verbatim, raw tags
+    in paragraphs and headings as written, all text escaped, code (fenced, indented, inline)
+    left out. Containers (block quotes, list items) are parsed, so code inside them is code."""
+    blocks = _MarkdownBlocks()
+    for line in re.split(r"\r\n|\r|\n", body):
+        blocks.feed(line)
+    parts: list[str] = []
+
+    def walk(block: _Block) -> None:
+        for child in block.children:
+            if child.kind in _CONTAINERS:
+                walk(child)
+            elif child.kind == "html":
+                parts.append("\n".join(child.lines))
+            elif child.kind in ("paragraph", "heading"):
+                text = "\n".join(line.strip() for line in child.lines)
+                if child.kind == "paragraph" and _REFERENCE_DEFINITION.match(text):
+                    continue  # link reference definitions draw nothing
+                parts.append(_inline_html(text))
+
+    walk(blocks.document)
+    return "\n".join(parts)
+
+
+def rendered_markup(body: str) -> str:
+    """The part of an element's body that can draw something: no <style> blocks, no comments."""
+    return _COMMENT.sub("", _STYLE_BLOCK.sub("", body))
+
+
+class _StartTagFinder(HTMLParser):
+    """Looks for one start tag carrying `name="value"` outside comments and non-rendering
+    elements. For `class` the value is a list of class names, so `class="a b"` carries
+    `class="a"` too; any other attribute must match exactly."""
+
+    def __init__(self, name: str, value: str):
+        super().__init__(convert_charrefs=True)
+        self.name, self.value = name.lower(), value
+        self.hidden: list[str] = []
+        self.found = False
+
+    def _carries(self, attrs: list[tuple[str, str | None]]) -> bool:
+        for name, value in attrs:
+            if name != self.name or value is None:
+                continue
+            if name == "class":
+                wanted = set(self.value.split())
+                if wanted and wanted <= set(value.split()):
+                    return True
+            elif value == self.value:
+                return True
+        return False
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden:
+            if tag == self.hidden[-1]:
+                self.hidden.append(tag)
+            return
+        if tag in _NON_RENDERING:
+            self.hidden.append(tag)
+        elif self._carries(attrs):
+            self.found = True
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.hidden and tag not in _NON_RENDERING and self._carries(attrs):
+            self.found = True
+
+    def handle_endtag(self, tag):
+        if self.hidden and tag == self.hidden[-1]:
+            self.hidden.pop()
+
+
+def renders_start_tag(body: str, name: str, value: str) -> bool:
+    """True when the HTML `body` draws an element carrying `name="value"`."""
+    finder = _StartTagFinder(name, value)
+    finder.feed(body)
+    finder.close()
+    return finder.found
+
+
+def element_shows(kind: str, element, expect_text: str) -> bool:
+    """Does this markdown/html/text element show `expect_text`? See the module docstring."""
+    body = getattr(element, kind).body
+    attribute = _ATTRIBUTE_EXPECTATION.match(expect_text)
+    if attribute is None:
+        return expect_text in rendered_markup(body)
+    if kind == "html":
+        return renders_start_tag(body, *attribute.groups())
+    if kind == "markdown" and element.markdown.allow_html:
+        return renders_start_tag(markdown_html(body), *attribute.groups())
+    return False
+
+
+@dataclass
+class RunState:
+    """What one script run has shown so far; see `inspect_forward`."""
+
+    expect_text: str = ""
+    # (exception type or "<redacted>", first 200 chars of the message)
+    exceptions: list[tuple[str, str]] = field(default_factory=list)
+    expect_seen: bool = False
+    # Texts that fail the run wherever an alert/markdown/html/text element shows them.
+    reject_texts: tuple[str, ...] = ()
+    rejected: list[str] = field(default_factory=list)
+
+
+def inspect_forward(forward: ForwardMsg, state: RunState) -> None:
+    """Record exception elements, and the expected text, from one ForwardMsg.
+
+    With `[client] showErrorDetails = "none"` the exception element still arrives, with
+    an empty type and a generic message, so detection keys on the element kind only.
+    `is_warning` marks the non-fatal flavour, which is not a failure.
+    """
+    if forward.WhichOneof("type") != "delta":
+        return
+    delta = forward.delta
+    if delta.WhichOneof("type") != "new_element":
+        return
+    element = delta.new_element
+    kind = element.WhichOneof("type")
+    if kind in ("alert", "markdown", "html", "text"):
+        body = getattr(element, kind).body
+        for text in state.reject_texts:
+            if text and text in body and text not in state.rejected:
+                state.rejected.append(text)
+    if kind == "exception":
+        if not element.exception.is_warning:
+            state.exceptions.append(
+                (element.exception.type or "<redacted>", element.exception.message[:200])
+            )
+    elif kind in ("markdown", "html", "text") and state.expect_text and not state.expect_seen:
+        if element_shows(kind, element, state.expect_text):
+            state.expect_seen = True
 
 
 def _query_string(query: str) -> str:
@@ -69,12 +616,17 @@ async def _wait_for_health(base: str, deadline: float) -> None:
 
 
 async def _sleep(seconds: float) -> None:
-    import asyncio
-
     await asyncio.sleep(seconds)
 
 
-async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> int:
+async def _run_once(
+    base: str,
+    deadline: float,
+    query: str,
+    verbose: bool,
+    expect_text: str = "",
+    reject_texts: tuple[str, ...] = (),
+) -> int:
     await _wait_for_health(base, deadline)
     started = time.monotonic()
 
@@ -88,6 +640,7 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
         ping_timeout=20,
     )
 
+    state = RunState(expect_text=expect_text, reject_texts=reject_texts)
     request = BackMsg()
     # `?q=` is the app's shareable-search link: `consume_query_param` fills the
     # box and arms the search, and the same script run performs it. So passing a
@@ -102,7 +655,13 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
             conn.close()
             print("warm-up: timed out waiting for the script to finish", file=sys.stderr)
             return 1
-        message = await conn.read_message()
+        try:
+            # Bounded by the deadline: a hung script run must fail a deploy, not hang it.
+            message = await asyncio.wait_for(conn.read_message(), timeout=remaining)
+        except asyncio.TimeoutError:
+            conn.close()
+            print("warm-up: timed out waiting for the script to finish", file=sys.stderr)
+            return 1
         if message is None:
             print("warm-up: the server closed the connection", file=sys.stderr)
             return 1
@@ -111,17 +670,37 @@ async def _run_once(base: str, deadline: float, query: str, verbose: bool) -> in
         kind = forward.WhichOneof("type")
         if verbose and kind:
             print(f"warm-up: <- {kind}")
+        inspect_forward(forward, state)
         if kind != "script_finished":
             continue
         status = forward.script_finished
+        name = ForwardMsg.ScriptFinishedStatus.Name(status)
+        if expect_text and status == ForwardMsg.FINISHED_EARLY_FOR_RERUN:
+            # The app's own `?q=` handling may rerun the script; what the aborted
+            # run drew does not count, so wait for the run that completes.
+            state = RunState(expect_text=expect_text, reject_texts=reject_texts)
+            continue
         conn.close()
         elapsed = time.monotonic() - started
+        print(f"warm-up: script finished ({name}) in {elapsed:.1f}s")
+        if state.exceptions:
+            error_type, error_message = state.exceptions[0]
+            print(
+                "warm-up: the app raised an exception during the run — "
+                f"{error_type}: {error_message} (details in the service journal)",
+                file=sys.stderr,
+            )
+            return 1
+        if state.rejected:
+            print(f'warm-up: the run rendered "{state.rejected[0]}"', file=sys.stderr)
+            return 1
+        if expect_text and not state.expect_seen:
+            print(f'warm-up: the run finished but never rendered "{expect_text}"', file=sys.stderr)
+            return 1
         finished_ok = status in (
             ForwardMsg.FINISHED_SUCCESSFULLY,
             ForwardMsg.FINISHED_EARLY_FOR_RERUN,
         )
-        name = ForwardMsg.ScriptFinishedStatus.Name(status)
-        print(f"warm-up: script finished ({name}) in {elapsed:.1f}s")
         return 0 if finished_ok else 1
 
 
@@ -142,13 +721,38 @@ def main() -> int:
             "which times a real paste; omit to warm without searching"
         ),
     )
+    parser.add_argument(
+        "--expect-text",
+        default="",
+        help=(
+            "fail unless an element shows this text outside <style> blocks and "
+            "comments; an attribute such as 'class=\"suggestion-card\"' must be on a "
+            "real start tag in an element that renders HTML"
+        ),
+    )
+    parser.add_argument(
+        "--reject-text",
+        action="append",
+        default=[],
+        help=(
+            "fail if an alert, markdown, html or text element shows this text "
+            "(repeatable); the deploy rejects the app's 'Read-only mode.' notice"
+        ),
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
     deadline = time.monotonic() + args.timeout
     try:
         return IOLoop.current().run_sync(
-            lambda: _run_once(args.url, deadline, args.query, args.verbose)
+            lambda: _run_once(
+                args.url,
+                deadline,
+                args.query,
+                args.verbose,
+                args.expect_text,
+                tuple(args.reject_text),
+            )
         )
     except Exception as exc:
         # One line, not a traceback: this runs from a systemd ExecStartPost, where

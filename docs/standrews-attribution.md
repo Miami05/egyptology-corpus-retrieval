@@ -41,22 +41,23 @@ Exactly, with "source" and the licence name as links:
 > St Andrews Corpus of Ancient Egyptian texts, Mark-Jan Nederhof — licensed
 > [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 > ([source](https://mjn.host.cs.st-andrews.ac.uk/egyptian/texts/)). Adapted: Hannig
-> transliteration conventions preserved as written; provenance recorded in
-> grammar_notes; normalised columns added. Displayed here under its own licence for
-> non-commercial use; the underlying files are not redistributed.
+> transliteration conventions preserved as written (no z/s distinction, no .t dot);
+> suffix pronouns tokenised on the author's own '='; the '^' proper-name marker
+> dropped; provenance recorded in grammar_notes; normalised columns added. Displayed
+> here under its own licence for non-commercial use; the underlying files are not
+> redistributed.
 
 It is deliberately **not** folded into the CC BY-SA sentence that credits TLA, AES,
 BBAW and Ramses: that sentence is a licence claim, and his rows are under a different
 licence entirely.
 
-### One change the importer now makes that this line does not yet mention
+### The importer's two further changes (applied to the line above, 2026-10-25)
 
 `scripts/import_standrews.py` also (a) tokenises suffix pronouns on his own `=`, so
 `Dd=f` is stored `ḏd =f` like every other corpus row, and (b) drops the `^`
 proper-name marker, which is markup rather than a letter. Both are described in
-`DATA-LICENSE.md`. Suggested replacement for the `changes` string in
-`PRIVATE_CORPUS_CREDITS["StAndrews"]` (`app/ui/whyptology_app.py`), for whoever owns
-that file next — this file does not edit it:
+`DATA-LICENSE.md`. The `changes` string in `PRIVATE_CORPUS_CREDITS["StAndrews"]`
+(`app/ui/whyptology_app.py`) now reads:
 
 ```
 "changes": (

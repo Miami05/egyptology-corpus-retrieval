@@ -9,9 +9,11 @@ glyph stream) and `tgt-*.txt` (the transliteration, tokenised one *character* pe
 space-separated token, `_` marking word boundaries). 73,992 sentences across five
 splits (train/val/test/ctest/htest).
 
-Licence: CC BY-NC-SA 4.0 (the archive's own README, not Zenodo's metadata field,
-which mislabels it). Output goes to `data/private/ramses.csv`, which must never be
-committed.
+Licence: the archive's own README says CC BY-NC-SA 4.0, but the rights holder
+granted CC BY-SA 4.0 by permission on 2026-09-04, so the rows are public corpus rows;
+see DATA-LICENSE.md. Nothing here belongs in data/private/ (the app loads that folder
+as reviewer-only rows on top of the public corpus, so a Ramses file there would show
+every sentence twice); `refuse_unsafe_output` rejects such an `--output`.
 
 Why word alignment is NOT trusted globally. The README says outright: "transliterations
 are standardised according to what is grammatically expected" — a word can be present
@@ -35,13 +37,19 @@ for alignment is a plausible later loader feature; not built here.) Rows whose
 *transliteration* itself contains a lacuna are dropped outright, because "LACUNA" as
 literal text is not a reading.
 
-Transliteration-side lacuna markers, all three drop the row:
+Period. The archive does not date its sentences (Saite documents are among them), so
+every row carries `period = unknown`, as the BBAW rows do. `language_stage` stays
+Late Egyptian.
+
+Transliteration-side lacuna markers, all four drop the row:
   - a whole word equal to `LACUNA` (or `MISSING`, not observed but checked defensively)
   - the bracket convention `[_]` (an indeterminate-length lacuna; ambiguous with the
     word-boundary `_` at the character level, so it is detected on the *raw* token
     stream before any word-splitting is attempted)
   - a word made only of `/` characters (`//`, `///`, ...; a fraction like `1/2` is not
     a lacuna and is kept)
+  - a partial lacuna inside a word or an empty bracket (`ꞽmn-m-//`, `ḥr-[...]`, `[]`),
+    the same `TRANSLIT_LACUNA_RE` the BBAW importer uses
 
 Glyph-side lacuna markers (`LACUNA`, `MISSING`, `SHADED1/2/3`) do not drop a row — they
 only disqualify it from word alignment, falling back to text-only, per the rules.
@@ -59,8 +67,9 @@ transliteration of foreign/hypocoristic names, kept as-is) and 52 `+` (Ramses's 
 name `tili-tesub` in the Ramses-Hittite treaty text; kept verbatim as a literal proper
 noun spelling), 1 `o` (kept verbatim). See `RAMSES_CHAR_MAP`.
 
-    python scripts/import_ramses.py                       # measure only
+    python scripts/import_ramses.py                       # measure only, writes nothing
     python scripts/import_ramses.py --append               # append to --existing
+    python scripts/import_ramses.py --output scratch.csv   # also write the net-new rows
 """
 
 from __future__ import annotations
@@ -82,16 +91,19 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.data.loader import REQUIRED_COLUMNS, alignment_report  # noqa: E402
 from app.data.normalizer import normalize_hieroglyphs, search_fold  # noqa: E402
 from scripts.import_bbaw_egyptian import (  # noqa: E402
+    TRANSLIT_LACUNA_RE,
     dedup_key,
     deduplicate,
+    refuse_unsafe_output,
     sign_for_code,
 )
 
 RAW_DIR = PROJECT_ROOT / "data" / "raw" / "ramses" / "ramses-trl" / "data"
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "private" / "ramses.csv"
 EXAMPLES = PROJECT_ROOT / "data" / "processed" / "examples.csv"
 
 SOURCE = "Ramses"
+# The archive carries no dating, so no period is claimed (BBAW does the same).
+PERIOD = "unknown"
 VERSION = "2019-09-01"
 ALL_SPLITS = ["train", "val", "test", "ctest", "htest"]
 GRAMMAR_NOTE = (
@@ -172,6 +184,14 @@ def is_translit_lacuna_word(word: str) -> bool:
     return bool(word) and set(word) == {"/"}
 
 
+def has_partial_lacuna(words: list[str]) -> bool:
+    """A lacuna inside a word (`ꞽmn-m-//`) or an empty bracket (`[...]`, `[]`).
+
+    Whole-word markers are caught first by `is_translit_lacuna_word`; this is the rest.
+    """
+    return bool(TRANSLIT_LACUNA_RE.search(" ".join(words)))
+
+
 # ---------------------------------------------------------------------------
 # src-sep parsing: whole Gardiner codes, `_` its own token marking a word boundary
 # ---------------------------------------------------------------------------
@@ -238,7 +258,7 @@ def to_schema(
             "language_stage": "Late Egyptian",
             "script_type": "hieroglyphic/hieratic",
             "genre": "unknown",
-            "period": "New Kingdom",
+            "period": PERIOD,
             "hieroglyphs": hieroglyphs,
             "mdc": "",
             "sign_sequence": transliteration,
@@ -265,6 +285,7 @@ class ImportReport:
     dropped_bracket_lacuna: int = 0
     dropped_word_lacuna: int = 0
     dropped_slash_lacuna: int = 0
+    dropped_partial_lacuna: int = 0
     dropped_empty_transliteration: int = 0
     dropped_unsearchable: int = 0
     aligned: int = 0
@@ -282,6 +303,7 @@ class ImportReport:
             self.dropped_bracket_lacuna
             + self.dropped_word_lacuna
             + self.dropped_slash_lacuna
+            + self.dropped_partial_lacuna
         )
 
 
@@ -322,6 +344,9 @@ def convert(raw_dir: Path, splits: list[str], limit: int = 0) -> tuple[pd.DataFr
                 continue
             if any(w and set(w) == {"/"} for w in words_raw):
                 report.dropped_slash_lacuna += 1
+                continue
+            if has_partial_lacuna(words_raw):
+                report.dropped_partial_lacuna += 1
                 continue
 
             transliteration = " ".join(convert_word(w) for w in words_raw)
@@ -378,7 +403,11 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--raw-dir", default=str(RAW_DIR))
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument(
+        "--output",
+        default="",
+        help="Optional scratch CSV for the net-new rows; '' (default) writes nothing.",
+    )
     parser.add_argument(
         "--existing", default=str(EXAMPLES), help="Corpus to deduplicate against; '' to skip."
     )
@@ -390,6 +419,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--append", action="store_true", help="Append the new rows to --existing.")
     args = parser.parse_args()
+    if args.output:
+        refuse_unsafe_output(args.output, args.existing)
 
     raw_dir = Path(args.raw_dir)
     splits = [s.strip() for s in args.splits.split(",") if s.strip()]
@@ -410,6 +441,7 @@ def main() -> None:
     print(f"    [_] bracket lacuna         {report.dropped_bracket_lacuna:>8,}")
     print(f"    LACUNA/MISSING word        {report.dropped_word_lacuna:>8,}")
     print(f"    // slash-run word          {report.dropped_slash_lacuna:>8,}")
+    print(f"    partial lacuna (//, [...]) {report.dropped_partial_lacuna:>8,}")
     print(f"  dropped: empty transliteration {report.dropped_empty_transliteration:>6,}")
     print(f"  dropped: unsearchable reading {report.dropped_unsearchable:>7,}")
     print(f"  kept                         {report.aligned + report.text_only:>8,}")
@@ -436,10 +468,11 @@ def main() -> None:
     if align.misaligned_rows:
         print("MISALIGNED ROWS FOUND (should be 0):", align.misaligned_indices[:20])
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(output, index=False)
-    print(f"\nwrote {len(frame)} rows to {output}")
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_csv(output, index=False)
+        print(f"\nwrote {len(frame)} rows to {output}")
 
     if args.append and existing is not None:
         combined = pd.concat([existing, frame.astype(str)], ignore_index=True)[REQUIRED_COLUMNS]

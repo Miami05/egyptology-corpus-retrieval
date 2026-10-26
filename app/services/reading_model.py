@@ -51,6 +51,10 @@ BOUNDARY = "<s>"
 # Additive smoothing. Small, because most sign/reading pairs are genuinely unattested
 # and we do not want to invent readings the corpus never shows.
 SMOOTHING = 0.1
+# What `ReadingModel.unreadable_emission` charges for a group with no reading at all:
+# the smoothed probability of an unseen reading of a group attested once,
+# log(SMOOTHING / (SMOOTHING + 1)) ≈ -2.40. Shared by every model (A53, fix round 1).
+UNREADABLE_EMISSION = log(SMOOTHING / (SMOOTHING + 1.0))
 
 # Minimum glyph overlap before an unattested sign group borrows another group's
 # readings. Measured precision/coverage tradeoff on 1,689 held-out sentences
@@ -173,6 +177,12 @@ class ReadingPrediction:
     # borrowed everywhere fallbacks are counted, and the UI says it was read sign by
     # sign from the sign-function list rather than observed.
     is_composed: bool = False
+    # How often the *chosen* reading itself is attested for this group, from the same
+    # source as `attested_count` (corpus) or `lexicon_count` (lexicon). Those two are
+    # totals over every reading of the group; when context picks a minority reading
+    # the total overstates the evidence for it — `y` chosen twice-attested from a
+    # group seen five times is "this reading 2×; this group 5×", not "5×" (Astra #5).
+    reading_count: int = 0
 
     @property
     def is_fallback(self) -> bool:
@@ -303,6 +313,25 @@ class ReadingModel:
         vocabulary = max(len(counts), 1)
         numerator = counts.get(reading, 0) + SMOOTHING
         return log(numerator / (total + SMOOTHING * vocabulary))
+
+    @property
+    def unreadable_emission(self) -> float:
+        """Log-probability charged for a group this model cannot read at all.
+
+        A group with no corpus, lexicon, composed or fallback reading used to cost
+        `_emission('', '')` = log(SMOOTHING / SMOOTHING) = 0, i.e. nothing, so a model
+        that had never seen a paste's signs out-scored one that attested them (A53).
+
+        The charge is `UNREADABLE_EMISSION`, one constant shared by every model. The
+        first fix scaled it with the model's mean attestation count, which made a
+        smaller model that knows less charge *less* for not knowing (fix round 1).
+        A shared constant is not enough on its own either — any fixed number can be
+        undercut by a well-attested but ambiguous group — so stage choice also ranks
+        on attested coverage first (`app.services.stage.choose_stage_by_likelihood`);
+        among stages that attest equally many groups this constant cancels except
+        where one stage borrows a reading for a group the other leaves unread.
+        """
+        return UNREADABLE_EMISSION
 
     def _lexicon_emission(self, sign: str, reading: str) -> float:
         """Same estimate as `_emission`, over the external lexicon's counts."""
@@ -562,6 +591,10 @@ class ReadingModel:
                     emission = log(max(composed[position].get(reading, 0.0), 1e-12))
                 elif kind == "lexicon":
                     emission = self._lexicon_emission(source_group, reading)
+                elif kind == "none":
+                    # One option (''), so this constant cannot change the Viterbi
+                    # path or any prediction, only the returned score (A53).
+                    emission = self.unreadable_emission
                 else:
                     emission = self._emission(source_group, reading)
                 local = (
@@ -637,6 +670,9 @@ class ReadingModel:
                     lexicon_count=sum(counts.values()) if kind == "lexicon" else 0,
                     lexicon_source=self.lexicon_sources.get(sign, "") if kind == "lexicon" else "",
                     is_composed=kind == "composed",
+                    reading_count=(
+                        int(counts.get(reading, 0)) if kind != "composed" else 0
+                    ),
                 )
             )
         return predictions, lattice[-1][best_final][0]
