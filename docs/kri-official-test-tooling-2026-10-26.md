@@ -142,8 +142,14 @@ Egyptological letters — that is how a line would otherwise leak into git.
     --examples data/processed/examples.csv \
     --bfreq-table ~/egyptology-baselines/kri-bfreq-2026-10-26/bfreq_table_all.csv \
     --judgements ~/egyptology-private-kri/judgements.csv \
+    [--private-dir ~/egyptology-private-kri/standrews] \
+    [--excluded-texts ~/egyptology-private-kri/excluded-texts.csv] \
     --out ~/egyptology-private-kri/run-<date>
 ```
+
+`--private-dir` and `--excluded-texts` must be exactly what step 1 was given (or
+both absent when step 1 had neither): the report's sidecar records their sha256s and
+the driver refuses a report whose digests differ (review round 2).
 
 `--lines` is the same file as in step 1 (see step 0). The **judgements** file
 carries `line_id, app_success, baseline_success` (and optionally `bm25_success`) —
@@ -156,13 +162,15 @@ The driver stops rather than improvises. **It refuses to run at all** if:
 * the declaration is invalid, `--examples` is not the declared corpus sha256, or HEAD
   is not the declared commit;
 * the overlap report's sidecar does not match the lines file, the corpus, the
-  checker code or the report itself; or a declared line is missing from the report or
+  private corpus (`--private-dir`), the excluded texts (`--excluded-texts`), the
+  checker code and the source of every project function it imports, or the report
+  itself; or a declared line is missing from the report or
   not labelled `new` (the label is checked, not only the `runnable` flag);
 * a **confirmation** line is covered by a manifest entry, has no parseable
   `kri_reference`, or the report was made without a complete manifest, or against a
   different manifest than `--manifest`;
-* a declared record is missing or duplicated, a judgement is malformed or
-  duplicated, a G line has no glyph input, a different number of gold groups and gold
+* a declared record is missing or duplicated, an endpoint-R line has no judgement,
+  a judgement is malformed or duplicated, a G line has no glyph input, a different number of gold groups and gold
   readings, or a gold division that is not its glyph input — all checked **before
   the app is called once**, so no output exists that could tempt a second evaluation;
 * the B-freq table's `bfreq_header.json` does not tie it to the declared corpus, top
@@ -200,9 +208,10 @@ Outputs: `endpoint_g_lines.csv`, `endpoint_r_lines.csv`, `summary.json`,
 * **clustering by passage** (§4e "clustered by passage") — the sign test treats lines
   as independent units.
 
-How the two endpoint-R statements fit: an endpoint-R line with no judgement is
-recorded as *unjudged* (never as a loss, so it cannot shrink or bias n), **and** its
-absence makes the run incomplete, so no verdict is written for either endpoint.
+How the two endpoint-R statements fit (review round 2): an endpoint-R line with no
+judgement is refused in preflight, before any endpoint-G prediction runs, so no
+output exists. The driver's unjudged branch remains only as a defensive fallback: it
+would record the line as *unjudged* (never as a loss) and make the run incomplete.
 
 ### 5. The dev fixture gate (any time)
 
@@ -418,6 +427,32 @@ message lists each item. In short:
   appended as a dated amendment to the B-freq record; §4a's `signs = sign_key` is
   appended to the plan for the gate adjudicators.
 
+## Review round 2 2026-10-26 (Astra re-check) — what changed
+
+* **Provenance**: the driver checks the sidecar's `private_sha256` and
+  `excluded_texts_sha256` against the `--private-dir` and `--excluded-texts` it is
+  given; a report made with other (or without those) inputs is stale and refused.
+* **Checker fingerprint**: `checker_sha256` now also covers the source of every
+  project function and module constant the checker modules import, closed
+  transitively (`check_overlap.dependency_sources`: the app's `search_fold`,
+  `strict_reading_key`, `loose_reading_form`, the §4a `sign_key`, the tokeniser, the
+  Jaccard, …), so a change to the normalisation or tokenisation invalidates old
+  reports.
+* **Edition links**: every KRI span in a reference is parsed (`parse_kri_spans`), not
+  only the leading one. An `edition` entry relates references, by further KRI spans
+  or by naming the excluded entry's id; a line in any span of a linked group is
+  excluded by every entry in it, so a second edition of an excluded passage is never
+  confirmation-eligible. `validate --strict` refuses an edition entry that relates no
+  references, and any validation refuses one that names a missing entry id.
+* **No raw fields in messages**: manifest validation names an entry by its position
+  (`entry N`) only; a rejected entry's id, reference and other fields are never
+  printed. The manifest header is not echoed either.
+* **Missing judgements**: refused in preflight, before any endpoint-G prediction.
+
+Re-frozen: the three changed files have new rows appended below. No KRI scoring run
+is recorded in this document before these rows (endpoint R's blind pack is still not
+built); the lead confirms that before the first declaration.
+
 ## The frozen tooling
 
 Recorded at the review-round commit, before any KRI scoring run. Enforced by
@@ -434,3 +469,6 @@ force), with a note on whether any KRI result had been seen.
 | `scripts/kri_segment_mapping.py` | sha256 `6c9e7d1358ed19954806226d524e6a83a17be48dcf97c708a5d590e12f1a5833` |
 | `scripts/kri_stats.py` | sha256 `5f8e5e06380eb17374897b53523601d34326738ff57b379fca2ff8d3416123ca` |
 | `scripts/run_kri_endpoints.py` | sha256 `f29835c91c6950967678960175b2fbde0e911f1a9523ce8f3166ad5cc39b5b3b` |
+| `scripts/check_overlap.py` | sha256 `3b4f40897700ea9d7d46610cd320fcc894e58eed4c4141e2902a5b96f7ba0632` |
+| `scripts/kri_exclusion_manifest.py` | sha256 `65f55246ed9f9ff164aad85da7850e3d7031108914c5e8422d7b1e8dc3ba5da0` |
+| `scripts/run_kri_endpoints.py` | sha256 `185b9f9c15637f16e264cae77ae530c98d7676ad52529bad37c434c87c7afe52` |

@@ -280,3 +280,62 @@ def test_strict_validation_needs_a_kri_citation_for_line_and_passage_entries():
     loose = entry(scope="passage", reference="Karnak hypostyle, somewhere")
     assert any("KRI citation" in p for p in validate_entry(loose, strict=True))
     assert not any("KRI citation" in p for p in validate_entry(loose))
+
+
+# --------------------------------------------------------------------------- review round 2
+
+
+def test_every_kri_span_in_a_reference_is_parsed_not_only_the_leading_one():
+    from scripts.kri_exclusion_manifest import parse_kri_spans
+
+    spans = parse_kri_spans("KRI II 569 (lines 3-16) = KRI VII 45-46, second edition")
+    assert [(s.volume, s.page_start, s.page_end) for s in spans] == [("II", 569, 569), ("VII", 45, 46)]
+    assert parse_kri_spans("Urk. IV 1") == []
+    # A line whose reference cites the excluded span second is still excluded.
+    book = Manifest(entries=[entry(reference="KRI II 569 (lines 3-16), test")])
+    assert [e.entry_id for e in book.excludes_reference("KRI VII 45 = KRI II 569 (line 4)")] == ["EX001"]
+
+
+def test_a_linked_second_edition_of_an_excluded_passage_is_excluded():
+    """Synthetic: EX001 excludes a passage; EX002 links it to its second edition."""
+    passage = entry(entry_id="EX001", scope="passage", reference="KRI II 569 (lines 3-16), test")
+    by_span = entry(entry_id="EX002", scope="edition",
+                    reference="KRI II 569 (lines 3-16) = KRI VII 45-46, second edition")
+    book = Manifest(entries=[passage, by_span])
+    assert [e.entry_id for e in book.excludes_reference("KRI VII 45 (line 2)")] == ["EX001", "EX002"]
+    assert book.excludes_reference("KRI VII 47 (line 2)") == []
+    # A link by entry id, with only the second edition's span in the reference.
+    by_id = entry(entry_id="EX002", scope="edition", reference="KRI VII 45-46, second edition of EX001")
+    book = Manifest(entries=[passage, by_id])
+    assert [e.entry_id for e in book.excludes_reference("KRI VII 46")] == ["EX001", "EX002"]
+    assert not validate(book, strict=False)
+
+
+def test_an_edition_entry_must_relate_references():
+    lonely = entry(entry_id="EX001", scope="edition", reference="KRI VII 45-46, an edition of something")
+    assert any("relates no references" in p for p in validate(Manifest(entries=[lonely]), strict=True))
+    dangling = entry(entry_id="EX001", scope="edition", reference="KRI VII 45, second edition of EX009")
+    assert any("does not have" in p for p in validate(Manifest(entries=[dangling])))
+
+
+def test_validation_never_prints_a_rejected_entrys_raw_fields(tmp_path, capsys):
+    """An entry_id carrying Egyptian text is named by its position, never echoed."""
+    secret_id = f"EX001 ḥtp-dj-nsw {A1}"
+    path = tmp_path / "m.csv"
+    write_manifest(
+        Manifest(entries=[
+            entry(entry_id=secret_id, reference="KRI II 569 (lines 3-16), test",
+                  sha256=PENDING_HASH, hash_basis="pending"),
+            entry(entry_id="EX002", reference="KRI II 570, test", added="not-a-date",
+                  sha256=PENDING_HASH, hash_basis="pending"),
+        ]),
+        path,
+    )
+    assert manifest_mod.main(["validate", "--manifest", str(path)]) == 1
+    captured = capsys.readouterr()
+    shown = captured.out + captured.err
+    assert "ḥtp" not in shown and A1 not in shown and secret_id not in shown
+    assert "EX002" not in shown and "KRI II 570" not in shown  # rejected: fields withheld
+    assert "entry 1" in shown and "entry 2" in shown
+    problems = validate(read_manifest(path))
+    assert problems and all("ḥtp" not in p and A1 not in p for p in problems)

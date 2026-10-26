@@ -611,3 +611,53 @@ def test_private_rows_join_the_gate_corpus_and_are_labelled_as_witnesses(tmp_pat
     row = list(csv.DictReader(out.open(encoding="utf-8")))[0]
     assert row["label"] == CONTAINED
     assert row["max_jaccard_witness"].startswith("private/")
+
+
+# --------------------------------------------------------------------------- review round 2
+
+
+def test_a_linked_second_edition_is_excluded_and_not_confirmation_eligible(tmp_path):
+    """Synthetic: EX001 excludes KRI II 569 (lines 3-16); EX002, scope `edition`,
+    links it to KRI VII 45-46. A line cited from the second edition is excluded."""
+    manifest = _manifest_with(
+        tmp_path,
+        ("passage", "KRI II 569 (lines 3-16), test passage", ["--pending"]),
+        ("edition", "KRI II 569 (lines 3-16) = KRI VII 45-46, second edition", ["--pending"]),
+    )
+    rows, _out = _run_with_manifest(
+        tmp_path,
+        [
+            {"line_id": "SECOND", "transliteration": "nb pt", "kri_reference": "KRI VII 45 (line 2)"},
+            {"line_id": "BOTH", "transliteration": "nb tꜣ", "kri_reference": "KRI III 1 = KRI II 569 (line 4)"},
+            {"line_id": "ELSEWHERE", "transliteration": "nb pt tꜣ", "kri_reference": "KRI VII 47"},
+        ],
+        manifest,
+    )
+    assert rows["SECOND"]["excluded_by"] == "EX001 EX002"
+    assert rows["SECOND"]["label"] == NEW and rows["SECOND"]["confirmation_eligible"] == "no"
+    assert rows["BOTH"]["excluded_by"] == "EX001 EX002"  # the second span counts
+    assert rows["BOTH"]["confirmation_eligible"] == "no"
+    assert rows["ELSEWHERE"]["excluded_by"] == "" and rows["ELSEWHERE"]["kri_reference_checked"] == "yes"
+
+
+def test_the_checker_fingerprint_covers_its_imported_normalisation_and_tokenisation(monkeypatch):
+    deps = check_overlap.dependency_sources()
+    for name in (
+        "app.data.normalizer.search_fold",
+        "app.services.suggestions.strict_reading_key",
+        "app.services.suggestions.loose_reading_form",
+        "scripts.bfreq_baseline.sign_key",
+        "scripts.build_competitive_ambiguity_benchmark._token_set",
+        "scripts.eval_guards.jaccard",
+        "scripts.import_ud_egyptian_pc.glyph_key",
+    ):
+        assert name in deps, name
+    before = check_overlap.checker_sha256()
+    real = check_overlap.inspect.getsource
+
+    def edited(obj):
+        source = real(obj)
+        return source + "\n# changed\n" if getattr(obj, "__name__", "") == "search_fold" else source
+
+    monkeypatch.setattr(check_overlap.inspect, "getsource", edited)
+    assert check_overlap.checker_sha256() != before

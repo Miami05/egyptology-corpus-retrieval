@@ -227,18 +227,27 @@ def test_the_outputs_carry_no_egyptian(
             assert reading not in text
 
 
-def test_an_unjudged_retrieval_line_is_recorded_as_unjudged_not_as_a_loss(
-    tmp_path, declaration, lines, overlap_report, corpus
+def test_an_unjudged_retrieval_line_is_refused_before_any_g_prediction(
+    tmp_path, declaration, lines, overlap_report, corpus, capsys, monkeypatch
 ):
-    code, out = run(tmp_path, declaration, lines, overlap_report, corpus, judgements=None)
-    assert code == 1  # a line that could not be scored fails the run, loudly
-    r_rows = list(csv.DictReader((out / "endpoint_r_lines.csv").open(encoding="utf-8")))
-    assert r_rows[0]["judged"] == "no" and "no blind judgement" in r_rows[0]["error"]
-    results = json.loads((out / "summary.json").read_text(encoding="utf-8"))
-    assert results["endpoints"]["R"]["exploratory"]["n"] == 0
-    assert results["endpoints"]["R"]["failed"] == 1
-    assert results["run_complete"] is False and results["verdict_allowed"] is False
-    assert any("incomplete" in reason for reason in results["no_verdict_because"])
+    """Review round 2: a missing endpoint-R judgement is a preflight refusal, not a
+    failure discovered after endpoint G has already produced outputs."""
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("an endpoint-G prediction ran before the judgements were checked")
+
+    monkeypatch.setattr(driver, "run_app_on_line", must_not_run)
+    with pytest.raises(SystemExit) as error:
+        run(tmp_path, declaration, lines, overlap_report, corpus, judgements=None)
+    assert "nothing was run" in str(error.value)
+    assert "KRI_02: endpoint R line has no blind judgement" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+
+
+def test_the_unjudged_fallback_still_records_unjudged_not_a_loss():
+    row = driver.score_r_line(None, "KRI_02")
+    assert row["judged"] == "no" and "no blind judgement" in row["error"]
+    assert row["app_success"] == "" and row["baseline_success"] == ""
 
 
 # --------------------------------------------------------------------- the refusals
@@ -576,8 +585,74 @@ def test_a_confirmation_needs_a_complete_manifest_and_unexcluded_lines(
     )
     assert json.loads(report.with_suffix(".csv.json").read_text(encoding="utf-8"))["manifest_complete"]
     with pytest.raises(SystemExit) as error:
-        driver.verify_overlap_report(report, lines, sha256_file(corpus), Declaration(runs=[run_]), manifest)
+        driver.verify_overlap_report(
+            report, lines, sha256_file(corpus), Declaration(runs=[run_]), manifest, excluded_texts=texts
+        )
     assert "covered by the (B) exclusion manifest" in str(error.value)
+
+
+def _exploratory_declaration():
+    from scripts.kri_declaration import Declaration, DeclaredRun
+
+    return Declaration(runs=[DeclaredRun(
+        declaration_id="KRI_02_R", line_id="KRI_02", input_modality="transliteration", endpoint="R",
+        stage="auto", cohort="exploratory", material_received="2026-10-26", declared_on="2026-10-26",
+        commit="0" * 40, corpus_sha256="0" * 64,
+    )])
+
+
+def test_a_report_made_with_another_private_corpus_is_stale(tmp_path, corpus, lines):
+    """Review round 2: the sidecar's private_sha256 must be the --private-dir given."""
+    from scripts.kri_exclusion_manifest import sha256_file
+
+    private = tmp_path / "private"
+    private.mkdir()
+    write_csv(private / "standrews.csv", ("source", "source_ref", "hieroglyphs", "transliteration_gold"),
+              [{"source": "StAndrews", "source_ref": "SA_1", "hieroglyphs": "", "transliteration_gold": "wr ḫpr"}])
+    report = make_overlap_report(tmp_path, corpus, lines, ["--private-dir", str(private)])
+    corpus_sha, declaration = sha256_file(corpus), _exploratory_declaration()
+    manifest = driver.DEFAULT_MANIFEST
+
+    driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest, private_dir=private)
+    with pytest.raises(SystemExit) as error:  # the driver was not told about the private corpus
+        driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest)
+    assert "different private corpus" in str(error.value)
+    (private / "standrews.csv").write_text(
+        (private / "standrews.csv").read_text(encoding="utf-8") + "StAndrews,SA_2,,nb pt\n", encoding="utf-8"
+    )
+    with pytest.raises(SystemExit) as error:  # the private corpus changed since
+        driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest, private_dir=private)
+    assert "different private corpus" in str(error.value)
+
+
+def test_a_report_checked_against_other_excluded_texts_is_stale(tmp_path, corpus, lines):
+    """Review round 2: the sidecar's excluded_texts_sha256 must be the file given."""
+    from scripts import kri_exclusion_manifest as manifest_mod
+    from scripts.kri_exclusion_manifest import sha256_file
+
+    manifest = tmp_path / "m.csv"
+    passage = "nb pt tꜣ dwꜣt"
+    manifest_mod.main(["init", "--manifest", str(manifest)])
+    manifest_mod.main(["add", "--manifest", str(manifest), "--scope", "passage", "--reference",
+                       "KRI IX 1 (lines 1-3), test", "--added", "2026-10-26",
+                       "--sha256", manifest_mod.content_hash(passage, basis="canonical_transliteration"),
+                       "--hash-basis", "canonical_transliteration"])
+    texts = write_csv(tmp_path / "excluded.csv", ("entry_id", "transliteration", "hieroglyphs"),
+                      [{"entry_id": "EX001", "transliteration": passage, "hieroglyphs": ""}])
+    report = make_overlap_report(
+        tmp_path, corpus, lines, ["--manifest", str(manifest), "--excluded-texts", str(texts)]
+    )
+    corpus_sha, declaration = sha256_file(corpus), _exploratory_declaration()
+
+    driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest, excluded_texts=texts)
+    with pytest.raises(SystemExit) as error:
+        driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest)
+    assert "different excluded texts" in str(error.value)
+    other = write_csv(tmp_path / "excluded-2.csv", ("entry_id", "transliteration", "hieroglyphs"),
+                      [{"entry_id": "EX001", "transliteration": passage + " ", "hieroglyphs": ""}])
+    with pytest.raises(SystemExit) as error:
+        driver.verify_overlap_report(report, lines, corpus_sha, declaration, manifest, excluded_texts=other)
+    assert "different excluded texts" in str(error.value)
 
 
 def test_a_bfreq_table_is_tied_to_its_header_corpus_and_code(tmp_path):

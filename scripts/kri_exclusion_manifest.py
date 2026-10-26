@@ -51,9 +51,15 @@ link". An exact hash alone catches only an identical canonical text, so an entry
 excludes a line by any of three routes, all reported by entry id:
 
 * **hash** — the line's canonical text has the entry's sha256 (`excludes_text`);
-* **reference** — the line's `kri_reference` falls inside the entry's KRI span
-  (`excludes_reference`; `parse_kri_span` is the grammar, and `validate --strict`
-  requires every `line`/`passage` entry's reference to parse);
+* **reference** — any KRI span cited in the line's `kri_reference` falls inside any
+  KRI span cited in the entry's reference (`excludes_reference`; `parse_kri_spans`
+  reads *every* `KRI <vol> <page>…` citation in a field, not only the leading one, and
+  `validate --strict` requires every entry's reference to carry one);
+* **edition link** — an entry of scope `edition` relates references: it cites the
+  other edition(s) of an excluded passage, either as further KRI spans or by naming
+  the excluded entry's id (`EX001`). A line that falls in any span of a linked group
+  is excluded by every entry of that group (review round 2, 2026-10-26), so a second
+  edition of an excluded passage can never be a confirmation line;
 * **text** — the §4a predicates C1-C4/P1-P3 (pinned Jaccard >= 0.5, identical fold,
   containment, shared word run, shared sign trigrams) fire between the line and the
   entry's excluded text, which lives in a *private* file in custody
@@ -132,6 +138,16 @@ _KRI_SPAN = re.compile(
     r"(?:\s*(?:,|\()\s*lines?\s+(?P<l1>\d+)(?:\s*[-–]\s*(?P<l2>\d+))?\)?)?"
 )
 
+#: The same grammar, unanchored: every citation in a field. Each citation must carry
+#: its own `KRI` prefix ("KRI II 569 = KRI VII 45", not "KRI II 569 = VII 45").
+_KRI_SPAN_ANYWHERE = re.compile(
+    r"\bKRI\s+(?P<vol>[IVXLC]+)\s+(?P<p1>\d+)(?:\s*[-–]\s*(?P<p2>\d+))?"
+    r"(?:\s*(?:,|\()\s*lines?\s+(?P<l1>\d+)(?:\s*[-–]\s*(?P<l2>\d+))?\)?)?"
+)
+#: An entry id named inside an `edition` entry's reference: the link to the entry it
+#: is another edition of.
+_ENTRY_LINK = re.compile(r"\bEX\d{3,}\b")
+
 #: The private excluded-text file's columns (custody only, never committed).
 EXCLUDED_TEXT_COLUMNS = ("entry_id", "transliteration", "hieroglyphs")
 _ENTRY_ID = re.compile(r"^EX\d{3,}$")
@@ -194,11 +210,7 @@ class KriSpan:
     line_end: int | None = None
 
 
-def parse_kri_span(text: str) -> KriSpan | None:
-    """Read a KRI citation by `_KRI_SPAN`; `None` when it is not one."""
-    match = _KRI_SPAN.match(text or "")
-    if not match:
-        return None
+def _span_from_match(match: re.Match) -> KriSpan | None:
     p1 = int(match["p1"])
     p2 = int(match["p2"]) if match["p2"] else p1
     l1 = int(match["l1"]) if match["l1"] else None
@@ -206,6 +218,30 @@ def parse_kri_span(text: str) -> KriSpan | None:
     if p2 < p1 or (l1 is not None and l2 < l1):
         return None
     return KriSpan(match["vol"], p1, p2, l1, l2)
+
+
+def parse_kri_span(text: str) -> KriSpan | None:
+    """Read a *leading* KRI citation by `_KRI_SPAN`; `None` when it is not one."""
+    match = _KRI_SPAN.match(text or "")
+    return _span_from_match(match) if match else None
+
+
+def parse_kri_spans(text: str) -> list[KriSpan]:
+    """Every well-formed KRI citation anywhere in `text`, in order.
+
+    Exclusion checks use this, never `parse_kri_span`: a reference that cites two
+    editions ("KRI II 569 (lines 3-16) = KRI VII 45-46") excludes both.
+    """
+    spans = []
+    for match in _KRI_SPAN_ANYWHERE.finditer(text or ""):
+        span = _span_from_match(match)
+        if span is not None:
+            spans.append(span)
+    return spans
+
+
+def any_spans_overlap(lines: list[KriSpan], entries: list[KriSpan]) -> bool:
+    return any(spans_overlap(line, entry) for line in lines for entry in entries)
 
 
 def spans_overlap(line: KriSpan, entry: KriSpan) -> bool:
@@ -286,20 +322,57 @@ class Manifest:
             )
         return hits
 
-    def excludes_reference(self, kri_reference: str) -> list[ManifestEntry]:
-        """Which `line`/`passage` entries' KRI span covers this line's citation.
+    def edition_links(self) -> dict[str, set[str]]:
+        """The undirected links `edition` entries make, by entry id.
 
-        A pending entry counts: its reference is real even before its hash is.
+        An `edition` entry is linked to every entry it names by id and to every entry
+        one of whose KRI spans overlaps one of its own. Other scopes link nothing:
+        two passage entries that happen to share a page are two exclusions, not one.
         """
-        line = parse_kri_span(kri_reference)
-        if line is None:
-            return []
-        hits = []
+        links: dict[str, set[str]] = {entry.entry_id: set() for entry in self.entries}
+        spans = {entry.entry_id: parse_kri_spans(entry.reference) for entry in self.entries}
+        ids = set(links)
         for entry in self.entries:
-            span = parse_kri_span(entry.reference)
-            if span is not None and spans_overlap(line, span):
-                hits.append(entry)
-        return hits
+            if entry.scope != "edition":
+                continue
+            named = set(_ENTRY_LINK.findall(entry.reference)) & ids
+            overlapping = {
+                other.entry_id
+                for other in self.entries
+                if other.entry_id != entry.entry_id
+                and any_spans_overlap(spans[entry.entry_id], spans[other.entry_id])
+            }
+            for other_id in (named | overlapping) - {entry.entry_id}:
+                links[entry.entry_id].add(other_id)
+                links[other_id].add(entry.entry_id)
+        return links
+
+    def excludes_reference(self, kri_reference: str) -> list[ManifestEntry]:
+        """Which entries cover this line's citation, directly or by an edition link.
+
+        Every KRI span in the line's reference is compared with every KRI span in each
+        entry's reference. The entries hit directly are then closed over
+        `edition_links`, so a line in the second edition of an excluded passage is
+        excluded by the passage's entry as well as by the edition entry. A pending
+        entry counts: its reference is real even before its hash is.
+        """
+        line_spans = parse_kri_spans(kri_reference)
+        if not line_spans:
+            return []
+        hit_ids = {
+            entry.entry_id
+            for entry in self.entries
+            if any_spans_overlap(line_spans, parse_kri_spans(entry.reference))
+        }
+        if hit_ids:
+            links = self.edition_links()
+            frontier = list(hit_ids)
+            while frontier:
+                for linked in links.get(frontier.pop(), ()):
+                    if linked not in hit_ids:
+                        hit_ids.add(linked)
+                        frontier.append(linked)
+        return [entry for entry in self.entries if entry.entry_id in hit_ids]
 
     def entry(self, entry_id: str) -> ManifestEntry | None:
         return next((entry for entry in self.entries if entry.entry_id == entry_id), None)
@@ -328,10 +401,15 @@ def validate_entry(entry: ManifestEntry, *, strict: bool = False) -> list[str]:
         problems.append(f"scope is not one of {list(SCOPES)}")
     if not entry.reference.strip():
         problems.append("reference is empty: an exclusion with no citation excludes nothing")
-    elif strict and entry.scope in ("line", "passage") and parse_kri_span(entry.reference) is None:
+    elif strict and entry.scope in ("line", "passage") and not parse_kri_spans(entry.reference):
         problems.append(
-            "reference does not start with a KRI citation (`KRI <vol> <page>[-<page>]"
+            "reference carries no KRI citation (`KRI <vol> <page>[-<page>]"
             " [(lines a-b)]`), so no line can be excluded by reference"
+        )
+    elif entry.scope == "edition" and strict and not parse_kri_spans(entry.reference):
+        problems.append(
+            "an edition entry's reference carries no KRI citation, so no line of that "
+            "edition can be excluded by reference"
         )
     if entry.hash_basis not in HASH_BASES:
         problems.append(f"hash_basis is not one of {sorted(HASH_BASES)}")
@@ -357,17 +435,37 @@ def validate_entry(entry: ManifestEntry, *, strict: bool = False) -> list[str]:
     return problems
 
 
+def entry_label(index: int) -> str:
+    """How a message names an entry: its position, never a field of it.
+
+    Review round 2 (2026-10-26): even a well-formed-looking `entry_id` is a field the
+    lead typed, so messages about an entry say "entry N" (1-based, file order) only.
+    """
+    return f"entry {index}"
+
+
 def validate(manifest: Manifest, *, strict: bool = False) -> list[str]:
-    """Every problem with the whole manifest, entry problems prefixed by entry id."""
+    """Every problem with the whole manifest, each prefixed by the entry's position."""
     problems: list[str] = []
-    seen: set[str] = set()
-    for row_number, entry in enumerate(manifest.entries, start=1):
-        # The entry id is echoed only when it is a well-formed id.
-        label = entry.entry_id if _ENTRY_ID.match(entry.entry_id) else f"row {row_number}"
+    seen: dict[str, int] = {}
+    ids = {entry.entry_id for entry in manifest.entries}
+    links = manifest.edition_links()
+    for index, entry in enumerate(manifest.entries, start=1):
+        label = entry_label(index)
         problems.extend(f"{label}: {problem}" for problem in validate_entry(entry, strict=strict))
         if entry.entry_id in seen:
-            problems.append(f"{label}: duplicate entry_id")
-        seen.add(entry.entry_id)
+            problems.append(f"{label}: duplicate entry_id (same as {entry_label(seen[entry.entry_id])})")
+        else:
+            seen[entry.entry_id] = index
+        if entry.scope == "edition":
+            named = set(_ENTRY_LINK.findall(entry.reference))
+            if named - ids:
+                problems.append(f"{label}: an edition entry names an entry id the manifest does not have")
+            if strict and not links.get(entry.entry_id) and len(parse_kri_spans(entry.reference)) < 2:
+                problems.append(
+                    f"{label}: an edition entry relates no references: cite every edition "
+                    f"as a KRI span, or name the excluded entry's id (EX001)"
+                )
     return problems
 
 
@@ -445,9 +543,9 @@ def completeness_problems(manifest: Manifest, texts: list[ExcludedText] | None) 
     else:
         covered = {text.entry_id for text in texts}
         problems.extend(
-            f"{entry.entry_id}: no private excluded text, so near-match exclusion "
+            f"{entry_label(index)}: no private excluded text, so near-match exclusion "
             f"cannot be checked against it"
-            for entry in manifest.entries
+            for index, entry in enumerate(manifest.entries, start=1)
             if entry.entry_id not in covered
         )
     return problems
@@ -462,9 +560,8 @@ def read_manifest(path: str | Path) -> Manifest:
     with open(path, "r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None or tuple(reader.fieldnames) != MANIFEST_COLUMNS:
-            raise ManifestError(
-                f"manifest header is {reader.fieldnames}, expected {list(MANIFEST_COLUMNS)}"
-            )
+            # The header is a field the file's author typed: never echoed.
+            raise ManifestError(f"manifest header is not {list(MANIFEST_COLUMNS)}")
         entries = [
             ManifestEntry(**{column: (row.get(column) or "").strip() for column in MANIFEST_COLUMNS})
             for row in reader
@@ -529,6 +626,8 @@ def _cmd_add(args: argparse.Namespace) -> int:
         note=args.note,
     )
     problems = validate_entry(entry)
+    if entry.entry_id in {existing.entry_id for existing in manifest.entries}:
+        problems.append("entry_id is already in the manifest")
     if problems:
         for problem in problems:
             print(f"refused: {problem}", file=sys.stderr)
@@ -548,10 +647,15 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print(f"INVALID {problem}", file=sys.stderr)
     pending = manifest.pending_entries
     print(f"{len(manifest.entries)} entries, {len(pending)} with a pending hash")
-    for entry in pending:
-        # The reference is echoed only when it passed the no-text check.
-        shown = entry.reference if not _text_fields_are_clean(entry) else "(reference withheld: see INVALID)"
-        print(f"  pending: {entry.entry_id}  {shown}")
+    for index, entry in enumerate(manifest.entries, start=1):
+        if not entry.pending:
+            continue
+        # Review round 2: a field is echoed only for an entry with no problem at all;
+        # a rejected entry is named by its position and nothing else.
+        if validate_entry(entry):
+            print(f"  pending: {entry_label(index)}  (rejected: fields withheld, see INVALID)")
+        else:
+            print(f"  pending: {entry_label(index)}  {entry.entry_id}  {entry.reference}")
     print(f"manifest sha256 {sha256_file(path)}")
     return 1 if problems else 0
 

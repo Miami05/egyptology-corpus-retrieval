@@ -28,7 +28,8 @@ words).
 
 Binding (review round 2026-10-26). The sidecar `<report>.json` records the sha256 of
 the lines file, the corpus, the private corpus, the manifest and the excluded texts,
-the checker's own code (`checker_sha256`), whether the manifest is complete, and the
+the checker's own code and the source of every project function it imports
+(`checker_sha256`, `dependency_sources`), whether the manifest is complete, and the
 report's own sha256. The driver refuses a report whose sidecar does not match the
 files it is given, so a stale or hand-edited report cannot open the gate. `--examples` is
 guarded by `scripts.bfreq_baseline.assert_public_path`, so the public corpus can
@@ -53,7 +54,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import inspect
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -72,7 +75,7 @@ from scripts.kri_exclusion_manifest import (  # noqa: E402
     Manifest,
     ManifestError,
     completeness_problems,
-    parse_kri_span,
+    parse_kri_spans,
     read_excluded_texts,
     read_manifest,
     sha256_file,
@@ -104,12 +107,104 @@ CHECKER_FILES = (
 _VIEW_SEP = "\x1f"
 
 
+#: The checker modules by import name. Anything they import from the project (the
+#: app's normalisation and tokenisation, the B-freq sign key, the Jaccard) is a
+#: *dependency*: it decides a label too, so its source is part of the fingerprint.
+CHECKER_MODULES = (
+    "scripts.check_overlap",
+    "scripts.kri_exclusion_manifest",
+    "scripts.kri_overlap",
+)
+_PROJECT_PREFIXES = ("app.", "scripts.")
+
+
+def _is_project_code(obj: object) -> bool:
+    module = getattr(obj, "__module__", "") or ""
+    return (
+        (inspect.isfunction(obj) or inspect.isclass(obj))
+        and module.startswith(_PROJECT_PREFIXES)
+        and module not in CHECKER_MODULES
+    )
+
+
+def _constant_fingerprint(value: object) -> str | None:
+    """A stable text for a module-level constant a dependency reads, or `None`."""
+    if isinstance(value, re.Pattern):
+        return f"re({value.pattern!r}, {int(value.flags)})"
+    if isinstance(value, (set, frozenset)):
+        return f"{type(value).__name__}({sorted(repr(item) for item in value)})"
+    if isinstance(value, dict):
+        return "dict(" + ", ".join(sorted(f"{k!r}: {v!r}" for k, v in value.items())) + ")"
+    if isinstance(value, (str, bytes, int, float, bool, tuple, list)) or value is None:
+        return repr(value)
+    return None
+
+
+def _code_names(code) -> set[str]:
+    names = set(code.co_names)
+    for const in code.co_consts:
+        if inspect.iscode(const):
+            names |= _code_names(const)
+    return names
+
+
+def dependency_sources() -> dict[str, str]:
+    """`module.qualname` -> sha256 of the source (or value) of every piece of project
+    code the checker modules import, closed transitively over the names it reads.
+
+    Review round 2 (2026-10-26): hashing only `CHECKER_FILES` let a change to, say,
+    `app.services.suggestions.strict_reading_key` or `app.data.normalizer.search_fold`
+    re-label lines while every old report still matched the fingerprint.
+    """
+    seeds: list[object] = []
+    for module_name in CHECKER_MODULES:
+        module = sys.modules.get(module_name)
+        if module is None and module_name == "scripts.check_overlap":
+            module = sys.modules.get(__name__)  # run as a script
+        if module is None:
+            __import__(module_name)
+            module = sys.modules[module_name]
+        seeds.extend(value for value in vars(module).values() if _is_project_code(value))
+
+    found: dict[str, str] = {}
+    pending = list(seeds)
+    while pending:
+        obj = inspect.unwrap(pending.pop())
+        key = f"{obj.__module__}.{obj.__qualname__}"
+        if key in found:
+            continue
+        found[key] = hashlib.sha256(inspect.getsource(obj).encode("utf-8")).hexdigest()
+        functions = (
+            [v for v in vars(obj).values() if inspect.isfunction(v)]
+            if inspect.isclass(obj)
+            else [obj]
+        )
+        for function in functions:
+            namespace = function.__globals__
+            for name in sorted(_code_names(function.__code__)):
+                if name not in namespace:
+                    continue
+                value = namespace[name]
+                if _is_project_code(value):
+                    pending.append(value)
+                elif not inspect.ismodule(value) and not callable(value):
+                    text = _constant_fingerprint(value)
+                    if text is not None:
+                        found[f"{function.__module__}.{name}"] = hashlib.sha256(
+                            text.encode("utf-8")
+                        ).hexdigest()
+    return dict(sorted(found.items()))
+
+
 def checker_sha256() -> str:
-    """One sha256 over the checker's code files, in name order."""
+    """One sha256 over the checker's code files, in name order, and over the source
+    of every project function they depend on (`dependency_sources`)."""
     digest = hashlib.sha256()
     for name in CHECKER_FILES:
         digest.update(name.encode("utf-8") + b"\n")
         digest.update((PROJECT_ROOT / name).read_bytes())
+    for key, source_digest in dependency_sources().items():
+        digest.update(f"dep {key} {source_digest}\n".encode("utf-8"))
     return digest.hexdigest()
 
 #: The file the private corpus contributes to G (§4a: "With `--private-dir`, G also
@@ -330,7 +425,7 @@ def apply_manifest(
             for entry in manifest.excludes_text(record.get(column, "")):
                 routes.setdefault(entry.entry_id, set()).add("hash")
         reference = record.get("kri_reference", "")
-        result.reference_checked = parse_kri_span(reference) is not None
+        result.reference_checked = bool(parse_kri_spans(reference))
         for entry in manifest.excludes_reference(reference):
             routes.setdefault(entry.entry_id, set()).add("reference")
         for entry_id, prepared_text in prepared_texts:

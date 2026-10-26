@@ -33,8 +33,9 @@ What it refuses to do, deliberately:
 * run without a valid declaration, or on a corpus whose sha256 is not the declared
   one, or from a commit that is not the declared one (§4e: "one evaluation on a
   pinned commit and a pinned corpus sha");
-* trust an overlap report it cannot tie to the lines file, the corpus and the
-  checker code it is given, or run a line the report does not label `new` (§4d:
+* trust an overlap report it cannot tie to the lines file, the corpus, the private
+  corpus, the excluded texts and the checker code (and its imported dependencies) it
+  is given, or run a line the report does not label `new` (§4d:
   "The tool runs only on `new` lines");
 * run a confirmation line that any (B) manifest entry covers, or under a manifest
   that is not complete (pending hashes, missing private texts);
@@ -47,8 +48,9 @@ What it refuses to do, deliberately:
 * pool the two endpoints, mix exploratory lines into a confirmatory statistic, or
   report a percentage, an interval or a p-value for fewer than 30 lines (§4d: "case
   by case … no percentages or intervals while n < 30");
-* write a verdict for a run with any failed line (an unjudged endpoint-R line): the
-  counts are written, the verdict fields are not.
+* start if a declared endpoint-R line has no blind judgement (refused before any
+  endpoint-G prediction, review round 2); write a verdict for a run with any failed
+  line: the counts are written, the verdict fields are not.
 
 If the app's *own* output drops or changes signs of a correctly divided line, that is
 the app not producing those groups, which §4e scores as misses: the line is scored
@@ -97,7 +99,7 @@ from scripts.bfreq_baseline import (  # noqa: E402
     score_endpoint_g,
     score_line,
 )
-from scripts.check_overlap import checker_sha256  # noqa: E402
+from scripts.check_overlap import PRIVATE_FILE, checker_sha256  # noqa: E402
 from scripts.kri_declaration import (  # noqa: E402
     ENDPOINT_G,
     ENDPOINT_R,
@@ -106,7 +108,7 @@ from scripts.kri_declaration import (  # noqa: E402
     validate,
 )
 from scripts.kri_exclusion_manifest import (  # noqa: E402
-    parse_kri_span,
+    parse_kri_spans,
     read_manifest,
     sha256_file,
     validate as validate_manifest,
@@ -293,15 +295,41 @@ def verify_bfreq_table(path: str | Path, corpus_sha: str, *, confirmation: bool)
     return header
 
 
+def expected_private_sha256(private_dir: str | Path | None) -> str:
+    """The private-corpus digest a report must carry: `""` when no private corpus."""
+    if not private_dir:
+        return ""
+    path = Path(private_dir).expanduser() / PRIVATE_FILE
+    if not path.exists():
+        raise SystemExit(f"{path} not found: --private-dir must hold {PRIVATE_FILE}; nothing was run")
+    return sha256_file(path)
+
+
+def expected_excluded_texts_sha256(excluded_texts: str | Path | None) -> str:
+    """The excluded-texts digest a report must carry: `""` when none was given."""
+    if not excluded_texts:
+        return ""
+    return sha256_file(Path(excluded_texts).expanduser())
+
+
 def verify_overlap_report(
     report_path: str | Path,
     lines_path: str | Path,
     corpus_sha: str,
     declaration,
     manifest_path: str | Path,
+    *,
+    private_dir: str | Path | None = None,
+    excluded_texts: str | Path | None = None,
 ) -> dict:
     """Check the §4a report belongs to these inputs, and that every declared line may
     run. Returns the sidecar. Refuses (SystemExit) on anything else.
+
+    Review round 2 (2026-10-26): the private corpus and the excluded texts are inputs
+    too. The sidecar's `private_sha256` and `excluded_texts_sha256` must equal the
+    digests of the `--private-dir` and `--excluded-texts` this run is given (both
+    empty when neither is), so a report made against another private corpus or an
+    older excluded-texts file is stale and refused.
     """
     report = Path(report_path).expanduser()
     sidecar_path = report.with_suffix(report.suffix + ".json")
@@ -320,6 +348,16 @@ def verify_overlap_report(
         stale.append("it was made on a different corpus than the declared one")
     if sidecar.get("checker_sha256") != checker_sha256():
         stale.append("it was made by different checker code than this commit's")
+    if (sidecar.get("private_sha256") or "") != expected_private_sha256(private_dir):
+        stale.append(
+            "it was made with a different private corpus than --private-dir (or with one "
+            "when none was given, or without one when one was)"
+        )
+    if (sidecar.get("excluded_texts_sha256") or "") != expected_excluded_texts_sha256(excluded_texts):
+        stale.append(
+            "it was checked against different excluded texts than --excluded-texts (or "
+            "with them when none were given, or without them when they were)"
+        )
     if stale:
         raise SystemExit(
             "the overlap report cannot be used: " + "; ".join(stale)
@@ -410,7 +448,7 @@ def precheck_records(declaration, records: dict[str, dict], judgements: dict[str
         if record is None:
             problems.append(f"{run.line_id}: declared but missing from the lines file")
             continue
-        if run.eligible_for_confirmation and parse_kri_span(record.get("kri_reference", "")) is None:
+        if run.eligible_for_confirmation and not parse_kri_spans(record.get("kri_reference", "")):
             problems.append(f"{run.line_id}: a confirmation line needs a parseable kri_reference")
         if run.endpoint == ENDPOINT_G:
             glyph_input = str(record.get("glyph_input") or "")
@@ -437,7 +475,13 @@ def precheck_records(declaration, records: dict[str, dict], judgements: dict[str
             if not str(record.get("query_transliteration") or "").strip():
                 problems.append(f"{run.line_id}: endpoint R needs a query_transliteration")
             judgement = judgements.get(run.line_id)
-            if judgement is not None:
+            if judgement is None:
+                # Review round 2: refused here, before any endpoint-G prediction runs,
+                # not discovered after outputs exist.
+                problems.append(
+                    f"{run.line_id}: endpoint R line has no blind judgement in --judgements"
+                )
+            else:
                 for column in JUDGEMENT_COLUMNS[1:] + ((BM25_COLUMN,) if BM25_COLUMN in judgement else ()):
                     if parse_judgement(judgement.get(column)) is None:
                         problems.append(
@@ -591,9 +635,9 @@ def score_g_line(
 def score_r_line(record: dict | None, line_id: str) -> dict:
     """One endpoint-R line: Camilla's blind judgement, one binary per side.
 
-    Values were checked against `JUDGEMENT_VALUES` before the run started. A missing
-    judgement is recorded as unjudged — never as a loss — and makes the run
-    incomplete, so no verdict is written for it.
+    Values were checked against `JUDGEMENT_VALUES`, and their presence for every
+    declared R line, before the run started (`precheck_records`). The unjudged branch
+    below is a defensive fallback only: recorded as unjudged, never as a loss.
     """
     row = {column: "" for column in R_REPORT_COLUMNS}
     row["line_id"] = line_id
@@ -812,6 +856,16 @@ def main(argv: list[str] | None = None) -> int:
         help="EXPERIMENTAL: rebuild B-freq from --examples instead of reading the frozen table",
     )
     parser.add_argument("--judgements", default=None, help="endpoint R's blind judgements")
+    parser.add_argument(
+        "--private-dir",
+        default=None,
+        help=f"the directory holding {PRIVATE_FILE}, exactly as given to check_overlap.py",
+    )
+    parser.add_argument(
+        "--excluded-texts",
+        default=None,
+        help="the private excluded-texts CSV, exactly as given to check_overlap.py",
+    )
     parser.add_argument("--out", required=True, help="output directory")
     parser.add_argument(
         "--top-k", type=int, default=OFFICIAL_TOP_K, help=f"EXPERIMENTAL unless {OFFICIAL_TOP_K}"
@@ -870,7 +924,13 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2. The §4a overlap report, bound to these inputs.
     sidecar = verify_overlap_report(
-        args.overlap_report, args.lines, corpus_sha, declaration, args.manifest
+        args.overlap_report,
+        args.lines,
+        corpus_sha,
+        declaration,
+        args.manifest,
+        private_dir=args.private_dir,
+        excluded_texts=args.excluded_texts,
     )
 
     # 3. Inputs, every declared record checked before anything runs.
@@ -950,6 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
         "overlap_checker_sha256": sidecar.get("checker_sha256"),
         "private_sha256": sidecar.get("private_sha256", ""),
         "manifest_sha256": sidecar.get("manifest_sha256", ""),
+        "excluded_texts_sha256": sidecar.get("excluded_texts_sha256", ""),
         "manifest_complete": bool(sidecar.get("manifest_complete")),
         "bfreq_table": bfreq_source,
         "bfreq_table_sha256": bfreq_sha,
