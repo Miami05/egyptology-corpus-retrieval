@@ -1661,30 +1661,81 @@ def _parse_unit(name: str) -> dict[str, dict[str, list[str]]]:
     return sections
 
 
-def test_the_service_unit_has_the_settings_the_audit_asked_for():
+# The three installed units were read off the box on 2026-10-26 (read-only ssh) and the
+# repo copies were made equal to them, directive for directive. These tests pin what is
+# really running, so a later drift between repo and box shows up as a failing test rather
+# than as a surprise during INSTALL_UNITS=1.
+RECONCILED_UNITS = ("egyptology.service", "egyptology-backup.service", "egyptology-backup.timer")
+
+# Settings the repo wants but the box has never run. They live in the unit files as
+# commented-out lines with a note, so that adopting one is a deliberate edit.
+PENDING_IN_UNIT = {
+    "egyptology.service": (
+        "OnFailure=egyptology-notify@%n.service",
+        "Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none",
+        "MemoryMax=6G",
+    ),
+    "egyptology-backup.service": (
+        "OnFailure=egyptology-notify@%n.service",
+        "EnvironmentFile=-/home/ledio/egyptology.env",
+    ),
+}
+
+
+def test_the_service_unit_matches_the_one_installed_on_the_box():
     unit = _parse_unit("egyptology.service")
     service = unit["Service"]
+    assert unit["Unit"]["After"] == ["network-online.target"]
     assert service["TimeoutStartSec"] == ["600"]
     assert service["ExecStartPost"][0].startswith("-"), "a failed warm-up must not fail the unit"
-    assert "MemoryMax" in service
     assert service["Restart"] == ["on-failure"]
-    assert "STREAMLIT_SERVER_FILE_WATCHER_TYPE=none" in service["Environment"]
-    assert {"PRIVATE_DATA_DIR=/home/ledio/egyptology-private", "ANNOTATIONS_DURABLE=1", "WARM_STAGE_RESOURCES=1"} <= set(service["Environment"])
+    assert service["RestartSec"] == ["5"]
+    assert service["WorkingDirectory"] == ["/home/ledio/egyptology"]
+    # The leading `-` makes a missing env file non-fatal; the box has it.
+    assert service["EnvironmentFile"] == ["-/home/ledio/egyptology.env"]
+    assert {
+        "PYTHONUNBUFFERED=1",
+        "PRIVATE_DATA_DIR=/home/ledio/egyptology-private",
+        "ANNOTATIONS_DURABLE=1",
+        "WARM_STAGE_RESOURCES=1",
+    } == set(service["Environment"])
     start = service["ExecStart"][0]
+    assert start.startswith("/home/ledio/venvs/egyptology/bin/streamlit run "), "the box runs the venv's streamlit binary, not `python -m streamlit`"
     assert "app/ui/whyptology_app.py" in start and "--server.port 8502" in start and "127.0.0.1" in start
-    assert unit["Unit"]["OnFailure"] == ["egyptology-notify@%n.service"]
+    assert "--browser.gatherUsageStats false" in start
+    assert "--timeout 420" in service["ExecStartPost"][0]
     assert unit["Install"]["WantedBy"] == ["default.target"]
+    # Not installed, so not an active directive here either.
+    assert "OnFailure" not in unit.get("Unit", {})
+    assert "MemoryMax" not in service
 
 
-def test_the_backup_units_match_the_documented_setup():
-    service = _parse_unit("egyptology-backup.service")
-    assert service["Service"]["Type"] == ["oneshot"]
-    assert service["Service"]["ExecStart"] == ["/home/ledio/bin/backup_db.sh"]
-    assert service["Service"]["Environment"] == ["OFFSITE_TARGET=b2:egyptology-backups-ledio"]
-    assert service["Unit"]["OnFailure"] == ["egyptology-notify@%n.service"]
+def test_the_backup_units_match_the_ones_installed_on_the_box():
+    unit = _parse_unit("egyptology-backup.service")
+    service = unit["Service"]
+    assert service["Type"] == ["oneshot"]
+    assert service["ExecStart"] == ["/home/ledio/bin/backup_db.sh"]
+    assert service["Environment"] == [
+        "OFFSITE_TARGET=b2:egyptology-backups-ledio",
+        "RETENTION_DAYS=30",
+    ]
+    assert unit["Unit"]["Documentation"] == ["file:///home/ledio/egyptology/DEPLOYMENT.md"]
+    # The box's backup unit reads no env file, so the job sees no DATABASE_URL or
+    # HEALTHCHECK_URL. Adopting it is pending (see PENDING_IN_UNIT and DEPLOYMENT.md).
+    assert "OnFailure" not in unit.get("Unit", {})
+    assert "EnvironmentFile" not in service
     timer = _parse_unit("egyptology-backup.timer")["Timer"]
     assert timer["Persistent"] == ["true"]
     assert timer["OnCalendar"] == ["*-*-* 03:30:00"]
+    assert timer["RandomizedDelaySec"] == ["300"]
+
+
+def test_settings_the_box_does_not_run_are_kept_commented_out_not_dropped():
+    for name, pending in PENDING_IN_UNIT.items():
+        text = (UNIT_DIR / name).read_text()
+        assert "NOT INSTALLED" in text, f"{name} does not say which settings are pending"
+        for line in pending:
+            assert f"# {line}" in text, f"{name} lost the pending line {line!r}"
 
 
 def test_the_notify_unit_reads_its_topic_from_the_env_file_and_no_topic_is_committed():
@@ -1714,11 +1765,19 @@ def test_the_unit_warm_up_query_matches_the_deploy_check_and_the_docs():
     assert f'--query "{deploy}"' in (PROJECT_ROOT / "DEPLOYMENT.md").read_text()
 
 
-def test_every_guessed_line_is_marked():
-    markers = sum(path.read_text().count("GUESSED:") for path in UNIT_DIR.iterdir())
-    # no After=, exact ExecStart flags, warm-up timeout, RestartSec, MemoryMax, backup
-    # timeout, RandomizedDelaySec, the notify command (the list in DEPLOYMENT.md)
-    assert markers >= 8
+def test_the_reconciled_units_guess_nothing_and_say_where_they_came_from():
+    for name in RECONCILED_UNITS:
+        text = (UNIT_DIR / name).read_text()
+        assert "GUESSED:" not in text, f"{name} was copied from the box; nothing in it is a guess"
+        assert "COPIED FROM THE BOX ON 2026-10-26" in text, f"{name} does not record its provenance"
+
+
+def test_the_notify_unit_is_still_a_guess_because_it_is_not_installed():
+    # There is no live copy to reconcile it against: the box has no notify unit and no
+    # OnFailure= line that would call one (DEPLOYMENT.md, "The unit files").
+    text = (UNIT_DIR / "egyptology-notify@.service").read_text()
+    assert "NOT INSTALLED" in text
+    assert text.count("GUESSED:") >= 1
 
 
 # ---------------------------------------------------------------------------

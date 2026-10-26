@@ -1,47 +1,75 @@
 # The Whyptology service: Streamlit on 127.0.0.1:8502, a systemd USER unit of `ledio`.
 #
-# Reconstructed from DEPLOYMENT.md, not copied from the box (audit A46). Every line
-# that had to be guessed is marked `# GUESSED:` — diff this file against
-# ~/.config/systemd/user/egyptology.service and reconcile before installing it
-# (INSTALL_UNITS=1 ~/egyptology-deploy.sh). Settings that carry secrets or differ per
-# host live in /home/ledio/egyptology.env, which overrides the Environment= lines here.
+# COPIED FROM THE BOX ON 2026-10-26 (`cat ~/.config/systemd/user/egyptology.service` over
+# ssh, read-only). This file now equals the installed unit byte for byte once the
+# commented-out block at the end is left out. Audit A46's guess markers are all gone:
+# nothing in this file is reconstructed any more.
+#
+# NOT INSTALLED YET. Four settings the repo had before this reconciliation are real,
+# wanted changes that the box has never run. They are kept below as a commented-out
+# block rather than dropped, so the next `INSTALL_UNITS=1 ~/egyptology-deploy.sh` is a
+# deliberate decision and not a silent one: OnFailure=egyptology-notify@%n.service (A42),
+# Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none (A40), MemoryMax=6G, and Type=simple
+# (the default for this unit anyway, so it is documentation rather than a change).
+#
+# Settings that carry secrets or differ per host live in /home/ledio/egyptology.env,
+# which overrides the Environment= lines here.
 
 [Unit]
-Description=Whyptology (Streamlit, 127.0.0.1:8502)
-# Runs once the unit has really failed, i.e. after Restart= gave up (default: 5 starts
-# in 10 s). It does NOT fire for a single crash that Restart=on-failure recovers, nor
-# for a Tailscale/Funnel outage; an external uptime check covers those (DEPLOYMENT.md).
-OnFailure=egyptology-notify@%n.service
-# GUESSED: no After=/Wants= lines. A user unit cannot order itself on network-online.target.
+Description=Whyptology - Egyptology corpus retrieval (Streamlit, port 8502)
+After=network-online.target
 
 [Service]
-Type=simple
 WorkingDirectory=/home/ledio/egyptology
-EnvironmentFile=/home/ledio/egyptology.env
-# Documented as "in the unit" in DEPLOYMENT.md; egyptology.env wins if it repeats them.
+Environment=PYTHONUNBUFFERED=1
 Environment=PRIVATE_DATA_DIR=/home/ledio/egyptology-private
 Environment=ANNOTATIONS_DURABLE=1
+# Build every language stage's resources during the first script run instead of
+# leaving them to the first visitor. Costs ~1.9 GB resident of this box's 23 GB;
+# a 1 GB host must leave this unset. Read by warm_stage_resources() in
+# app/ui/whyptology_app.py.
 Environment=WARM_STAGE_RESOURCES=1
-# A40: never reload modules when files change underneath the running process (a deploy
-# rewrites the tree; a reload would build a second ~3 GB resource set).
-Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
-# GUESSED: the exact ExecStart flags and the `python -m streamlit` form.
-ExecStart=/home/ledio/venvs/egyptology/bin/python -m streamlit run app/ui/whyptology_app.py --server.address 127.0.0.1 --server.port 8502 --server.headless true
-# Warms the stage resource sets with one real paste (scripts/warm_streamlit.py). The
-# leading dash: a failed warm-up must never mark the app failed. The deploy script runs
-# the same check strictly and rolls back on failure.
-# GUESSED: --timeout 500 (it has to stay below TimeoutStartSec).
-ExecStartPost=-/home/ledio/venvs/egyptology/bin/python /home/ledio/bin/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 500 --query "𓆓𓂧 𓆑𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏼 𓂋𓍿 𓀀 𓏼𓎟𓏏"
-# GUESSED: Restart=on-failure is documented; RestartSec is not set (systemd's 100 ms default).
-Restart=on-failure
-# systemd's default 90 s is shorter than the corpus load plus the warm-up and would kill
-# a healthy service in a loop.
+EnvironmentFile=-/home/ledio/egyptology.env
+ExecStart=/home/ledio/venvs/egyptology/bin/streamlit run app/ui/whyptology_app.py --server.port 8502 --server.address 127.0.0.1 --server.headless true --browser.gatherUsageStats false
+# Streamlit runs the script only when a client opens a session, so the env var
+# above warms nothing on its own — something has to connect. This opens one real
+# session over the websocket and runs expert paste query 1 (PASTE_001) through
+# the app's own ?q= shared-search link, which is the exact path a visitor takes:
+# stage inference over all three stages, then retrieval. By the time it returns,
+# the ~60 s cold build is done and cached for every later session.
+# Leading `-`: a warm-up is an optimisation and must never be the reason the app
+# is marked failed. If it does not run, the first visitor simply waits as before.
+ExecStartPost=-/home/ledio/venvs/egyptology/bin/python /home/ledio/bin/warm_streamlit.py --url http://127.0.0.1:8502 --timeout 420 --query "𓆓𓂧 𓆑𓆓𓂧 𓀀 𓈖 𓏏𓈖𓏼 𓂋𓍿 𓀀 𓏼𓎟𓏏"
+# systemd waits for ExecStartPost before calling the unit started, and the default
+# 90 s is shorter than the corpus load plus the warm-up. Must stay above the
+# --timeout above.
 TimeoutStartSec=600
-# GUESSED: MemoryMax=6G. Measured peak is 3.0 GB, +1.0 GB for a keyed session and +0.5 GB
-# for Similar text (about 4.5 GB worst case). This kills the app at the limit instead of
-# letting it starve Vaultwarden and Nextcloud on the same box. Needs memory delegation to
-# the user manager: check `systemctl --user show egyptology -p MemoryMax`.
-MemoryMax=6G
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=default.target
+
+# ---------------------------------------------------------------------------
+# NOT INSTALLED — deliberate future change, not a dropped line
+# ---------------------------------------------------------------------------
+# Move each line up into its section and re-run INSTALL_UNITS=1 to adopt it.
+#
+# [Unit]
+# Runs once the unit has really failed, i.e. after Restart= gave up (default: 5 starts
+# in 10 s). It does NOT fire for a single crash that Restart=on-failure recovers, nor
+# for a Tailscale/Funnel outage; an external uptime check covers those (DEPLOYMENT.md).
+# Needs egyptology-notify@.service installed and NTFY_TOPIC set in egyptology.env.
+# OnFailure=egyptology-notify@%n.service
+#
+# [Service]
+# The unit's type is already simple by default; spelling it out is documentation.
+# Type=simple
+# A40: never reload modules when files change underneath the running process (a deploy
+# rewrites the tree; a reload would build a second ~3 GB resource set).
+# Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+# Measured peak is 3.0 GB, +1.0 GB for a keyed session and +0.5 GB for Similar text
+# (about 4.5 GB worst case). This kills the app at the limit instead of letting it
+# starve Vaultwarden and Nextcloud on the same box. Needs memory delegation to the
+# user manager: check `systemctl --user show egyptology -p MemoryMax`.
+# MemoryMax=6G

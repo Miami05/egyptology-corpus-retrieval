@@ -22,7 +22,7 @@ answers at the old `streamlit.app` address is unmaintained.
 | `/home/ledio/bin` | operational copies of `scripts/backup_db.sh` and `scripts/warm_streamlit.py`, refreshed from the clone by the deploy script. Outside the clone so a systemd unit never points into a tree an update is rewriting |
 | `~/.config/systemd/user/egyptology.service` | the service: Streamlit on `127.0.0.1:8502`, headless, `Restart=on-failure`, enabled; `loginctl enable-linger ledio` keeps it running with nobody logged in. **Versioned in `deploy/systemd/`** (see "The unit files" below) |
 | `~/.config/systemd/user/egyptology-backup.{service,timer}` | the nightly backup, 03:30 with `Persistent=true` and up to 5 min of jitter. Versioned in `deploy/systemd/` |
-| `~/.config/systemd/user/egyptology-notify@.service` | sends a phone notification when the service or the backup fails. Versioned in `deploy/systemd/` |
+| `~/.config/systemd/user/egyptology-notify@.service` | **not installed** (checked 2026-10-26: the box carries only `egyptology.service` and `egyptology-backup.{service,timer}`, plus two `.bak-2026-09-05*` copies). It would send a phone notification when the service or the backup fails; the unit is written and versioned in `deploy/systemd/`, and installing it is a pending decision — see "The unit files" |
 | `/home/ledio/egyptology-data/egyptology.db` | the SQLite database: corpus ids and **all annotations**. The only irreplaceable file. Until the move in "Moving the database out of the clone" is done it is still `/home/ledio/egyptology/egyptology.db`, inside the clone |
 
 Public access: `tailscaled` terminates TLS and proxies `/` to `127.0.0.1:8502`
@@ -422,8 +422,9 @@ still needs a session to run in, which is what the warm-up client provides.
 Two guards on the unit, both deliberate: `ExecStartPost=-…` (leading dash) so a warm-up
 that fails never marks the app failed, and `TimeoutStartSec=600`, because systemd's default
 90 s is shorter than the load plus the build and would kill a healthy service mid-warm.
-The unit is versioned in `deploy/systemd/egyptology.service`; the lines in it that were
-reconstructed rather than copied from the box are listed under "The unit files" below.
+The unit is versioned in `deploy/systemd/egyptology.service`, copied from the box on
+2026-10-26; the installed warm-up uses `--timeout 420`. The settings the repo copy carries
+but the box does not yet run are listed under "The unit files" below.
 
 **The warm-up is also a smoke test (audit A11).** When the app's code is broken Streamlit
 does not fail the run: it draws the traceback as an `exception` element and then reports
@@ -640,7 +641,10 @@ the copy deleted.
 
 ## Alerts (audit A42)
 
-Three layers, because each one misses something the next catches:
+Three layers, because each one misses something the next catches. **Layer 1 is designed but
+not live** (checked 2026-10-26): neither installed unit has an `OnFailure=` line and
+`egyptology-notify@.service` is not on the box, so a failed service or backup sends nothing
+today. See "The unit files".
 
 | What | Catches | Misses |
 |---|---|---|
@@ -657,22 +661,42 @@ The notification text carries only the unit name and the host name. Test the cha
 `deploy/systemd/egyptology-backup.service`, `deploy/systemd/egyptology-backup.timer`,
 `deploy/systemd/egyptology-notify@.service` and `deploy/systemd/egyptology.env.example`, so a
 reinstall of the box no longer depends on guessing `OFFSITE_TARGET`, the 600 s start timeout
-or the warm-up line. **They were reconstructed from this document, not copied from the box**,
-and every guessed line is marked `# GUESSED:` in the file. Before installing them, diff each
-against the live one and fix the repo copy where the live one is right:
+or the warm-up line.
+
+**Reconciled with the box on 2026-10-26 (audit A46 closed).** The three installed units were
+read over ssh and the repo copies now equal them directive for directive;
+`egyptology.service`, `egyptology-backup.service` and `egyptology-backup.timer` carry no
+`# GUESSED:` markers any more. Re-check at any time with:
 
 ```bash
 ssh ledio@vela-optiplex-3070 'cat ~/.config/systemd/user/egyptology.service' | diff - deploy/systemd/egyptology.service
 ```
 
-The guesses, in one place: no `After=`/`Wants=` lines (a user unit cannot wait for
-`network-online.target`); the exact `ExecStart` flags and the `python -m streamlit` form;
-the warm-up `--timeout 500`; `RestartSec` left at the default; `MemoryMax=6G` (measured peak
-3.0 GB, about 4.5 GB worst case with a keyed session and Similar text; it kills the app at the
-limit instead of letting it starve Vaultwarden and Nextcloud, and needs memory delegation to
-the user manager, so check `systemctl --user show egyptology -p MemoryMax`); the backup
-service having no `TimeoutStartSec`; the timer's `RandomizedDelaySec=300` spelling; the notify
-command line. `systemd-analyze verify` was not available where these were written.
+(the repo copy adds a header comment and a trailing commented-out block, so compare the
+directive lines, e.g. pipe both through `grep -v '^\s*#'`).
+
+**What the reconciliation corrected**, i.e. where the 2026-10-11 reconstruction was wrong:
+the service does have `After=network-online.target`; `ExecStart` calls the venv's
+`streamlit` binary, not `python -m streamlit`, and passes `--browser.gatherUsageStats false`;
+the warm-up timeout is `--timeout 420`, not 500; `RestartSec=5` is set, not left at the
+default; `PYTHONUNBUFFERED=1` is set; `EnvironmentFile` has the tolerant `-` prefix. The
+backup service has a `Documentation=` line and `Environment=RETENTION_DAYS=30`, and the
+timer's `RandomizedDelaySec=300` spelling was right.
+
+**Four settings in the repo are NOT installed on the box.** They are real, wanted changes,
+not drift, and they are kept in the files as commented-out blocks so adopting them is a
+decision rather than a side effect of the next `INSTALL_UNITS=1` run:
+
+| Not installed | In | Why it is wanted |
+| --- | --- | --- |
+| `OnFailure=egyptology-notify@%n.service` | service and backup service | audit A42 alerting; needs `egyptology-notify@.service` installed and `NTFY_TOPIC` set first |
+| `Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none` | service | audit A40: a deploy rewrites the tree under the running process, and a reload would build a second ~3 GB resource set |
+| `MemoryMax=6G` | service | measured peak 3.0 GB, about 4.5 GB worst case with a keyed session and Similar text; kills the app at the limit instead of letting it starve Vaultwarden and Nextcloud. Needs memory delegation to the user manager, so check `systemctl --user show egyptology -p MemoryMax` |
+| `EnvironmentFile=-/home/ledio/egyptology.env` | backup service | without it the nightly job never sees `DATABASE_URL`, `HEALTHCHECK_URL` or `OFFSITE_PRUNE`, so today it falls back to `/home/ledio/egyptology/egyptology.db` and sends no heartbeat |
+
+`egyptology-notify@.service` itself is not installed and keeps its `# GUESSED:` marker: there
+is no live version to copy it from. `systemd-analyze verify` has still not been run on these
+files.
 
 The deploy script installs them only with `INSTALL_UNITS=1` (copy, `daemon-reload`); without
 it, it just says when they differ. Run `systemctl --user enable --now egyptology-backup.timer`
