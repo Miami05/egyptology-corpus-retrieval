@@ -533,3 +533,99 @@ Rules (a), (b), (e), (h) and (i) of §5 stand unchanged.
 4. Gold-defined V_obs = 1 contexts in N bands, primary; V_obs = 2, N ≤ 3 secondary — R5 (d′).
 5. Not a default after the fact: the pre-registered tie-break of R4 makes
    `c2_transition_only` primary when it is within the dev CI of the best arm.
+
+---
+
+## Revision 2 — review round 2 (Astra re-check), 2026-10-26
+
+**Still a DRAFT. Still NOT RUN and NOT APPROVED.** Append-only, as Revision 1: this revision
+supersedes §§1–7 and Revision 1 wherever they disagree, and a later approval must point at
+it. Nothing here is a result.
+
+### R7. Dev selection, made unambiguous (replaces R4 "Selection metric" and "Exactly one primary arm leaves dev")
+
+R4 compared one arm's *absolute* dev accuracy with a *paired* CI of another arm. That mixes
+two quantities and does not say which interval, so it could select zero or two arms. It is
+replaced by paired differences only.
+
+* **Unit of scoring.** A dev position is scored exactly as in R8 (reading track, gold
+  grouping). acc(a) = correct positions / all positions, pooled over every dev row, all
+  sources together.
+* **Bootstrap, fixed.** Resampling units are dev groups (whole texts; each TLA/BBAW
+  sentence its own group). 10,000 resamples with replacement, drawn **once** from a fresh
+  `numpy.random.default_rng(20261026)` (a separate instance from R4's draw generator) and
+  the **same** resample indices reused for every comparison below. In each resample the
+  difference is Σcorrect_a − Σcorrect_b over the resampled positions divided by the number of
+  resampled positions (a ratio of sums, not a mean of per-text accuracies). The 95% CI is the
+  percentile interval: the 2.5th and 97.5th percentiles (`numpy.percentile`, default linear
+  interpolation) of the 10,000 differences.
+* **Eligibility versus `off`.** For each arm a in {`c2_transition_only`, `c2`, `c3`},
+  Δ_a = acc(a) − acc(`off`) on the full dev set (point estimate, no resampling). a is
+  **eligible** iff Δ_a > 0 (strictly: at least one more correct dev position than `off`).
+  The dev stage only selects; the confirmatory CI requirement is rule (c′) on test, so it is
+  not duplicated here. If no arm is eligible, there is no primary arm, the test split is
+  **not** opened, and the result is "no candidate survived dev".
+* **Best arm.** b = the eligible arm with the largest Δ. Exact ties in Δ (equal correct
+  counts) are broken by the simplicity order below, simplest first.
+* **Simplicity order, fixed:** `c2_transition_only` < `c2` < `c3`. (`c2` before `c3`: C2
+  has no estimated constant and no pooled level; C3 adds d and the pooled lower order.)
+* **Primary arm, deterministic.** Walk the eligible arms in simplicity order; the primary
+  arm is the **first** eligible arm a for which the lower bound of the paired 95% CI of
+  acc(b) − acc(a) is **≤ 0** (a is not distinguishably worse than the best). b itself
+  always qualifies (its difference with itself is 0 in every resample), so whenever at least
+  one arm is eligible **exactly one** primary arm is selected. This is the R4 tie-break
+  stated correctly: `c2_transition_only` wins when it is eligible and not distinguishably
+  worse than the best; otherwise the C2–C3 choice is made by the same rule (`c2` wins if it
+  is eligible and not distinguishably worse than `c3`, `c3` wins only when `c2` is
+  ineligible or distinguishably worse).
+* **Recorded before test:** every Δ_a, every paired CI used in the walk, the eligible set,
+  b, and the primary arm, committed with the dev manifest sha256 before the test split is
+  touched (as R4).
+
+Rule (c′)'s CI on test uses the same bootstrap definition (resampling over test groups,
+fresh `default_rng(20261026)`, percentile interval, ratio of sums), applied to
+acc(primary) − acc(`off`).
+
+### R8. Scoring alignment, pinned (replaces R5 (d′) "For each arm: accuracy at position i **and** at its predecessor i − 1", and fixes the scoring unit for (c′))
+
+* **Accuracy is scored on the reading track only.** Rules (c′), (d′) and R7 score the
+  decoder on the row's **gold** sign grouping, exactly as `run_kri_fixes_eval.py`'s reading
+  track does: one prediction per gold group, prediction k aligned to gold position k by
+  index, correct iff `prediction.predicted == gold_reading` (the harness's existing
+  equality, no extra folding). On this track a split, merged or unmatched prediction cannot
+  occur: the harness asserts `len(predictions) == len(gold_groups)` for every row and every
+  arm, and a mismatch is a harness fault (hard FAIL under the R5 retry rule), never scored.
+* **Segmentation-track words are never used for accuracy.** The re-segmented line only
+  feeds rule (e) (boundary errors) and the stage router. If any reading accuracy over the
+  re-segmented line is reported (diagnostic only, never gated, never used in R7), it is
+  aligned by **exact sign span**: gold position j, spanning signs [s_j, e_j), is correct iff
+  some predicted word has exactly that span and the same reading. Otherwise it is
+  **incorrect** and stays in the denominator, tallied as one of: **split** (two or more
+  predicted words lie inside [s_j, e_j)), **merged** (one predicted word covers [s_j, e_j)
+  and at least one sign outside it), **unmatched** (anything else, e.g. both edges shifted).
+  Positions i − 1 and i are scored independently by this rule: one predicted word merging
+  them makes **both** incorrect, each tallied as "merged".
+* **Population (unchanged from R5 (d′), made exact).** Member positions are gold positions
+  i ≥ 1 in a row (position 0 has the BOUNDARY context, which no arm changes) whose gold
+  previous reading h = gold_reading[i − 1] satisfies V_obs(h) = 1 in the `_transition`
+  table of the fitted training model **of the stage the row was routed to** (routing is the
+  `off` routing, identical in every arm by R2). h = `''` (unreadable) is excluded, because
+  R3 leaves transitions out of `''` unchanged in every arm. Membership never depends on any
+  arm's prediction.
+* **What is reported per member.** For every arm, the pair (correct at i, correct at
+  i − 1), both scored on the reading track, plus 2×2 paired counts against `off` at i and
+  at i − 1 separately. The i − 1 tallies are over **members**, not distinct positions: when
+  two consecutive positions are both members, the shared position is counted once as a
+  predecessor and once as a member, and the report says how many such overlaps there are.
+  The diagnostic "the arm's own path passes through a V_obs = 1 context" is computed on the
+  reading track from the arm's decoded reading at i − 1, and reported as a share of members.
+
+### R9. Status of the Revision 1 items
+
+Re-checked against the reviews in this round; all present above and unchanged: R1 (V_obs = 1
+defect, N bands), R2 (routing on the `off` estimator, hard identity gate (f′), per-stage
+likelihood diagnostic), R3 (C1 dropped; support/OOV; `''` sentinel; unseen contexts;
+per-function P_lower; C3 d with fallback and terminating pooled level), R4 (seed,
+stratified draw, hygiene, manifest, minimum counts with one 20% step; its selection text
+replaced by R7), R5 (retry rule, (c′) CI lower bound > 0, (d′) gold population, (f′),
+(g′) floors only on the `release_baseline.json` configuration), R6.

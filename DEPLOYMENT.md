@@ -483,7 +483,10 @@ baseline survives even when every daily has aged out):
 - **fewer annotations: exit 3.** The copy is kept as
   `egyptology-<date>.db.gz.suspect` (a name retention does not match), both counts are
   printed, and *nothing else happens*: no retention, no monthly copy, no off-site copy, so
-  every older good snapshot stays. The unit shows `failed` and the notification fires. The
+  every older good snapshot stays. The unit shows `failed`; the notification would fire
+  once `OnFailure=` and the notify unit are installed, but **today nothing is sent** (no
+  alert layer is live, see "Alerts"), so this only shows up in
+  `systemctl --user status egyptology-backup.service` and the journal. The
   next night compares with the last *good* snapshot again, so it keeps failing until a
   human decides. If the deletion was deliberate, run once with
   `ALLOW_ANNOTATION_DROP=1 ~/bin/backup_db.sh`. Delete the `.suspect` file by hand when it
