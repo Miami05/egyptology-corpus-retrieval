@@ -412,3 +412,56 @@ def test_a_cartouche_longer_than_the_window_is_still_kept_whole():
     assert seg.segment([CARTOUCHE_OPEN + "AB", "AB" * 5 + CARTOUCHE_CLOSE]).groups == [
         long_name
     ]
+
+
+# ---------- a long cartouche counts as one unit of the window (KRI fixes, 2026-10-27) ----
+#
+# Attempt 1 of the KRI-fixes measurement failed rule (c) by one boundary error, and both
+# independent diagnoses traced it to the candidate window, not to the rule. The window
+# measured `max_group_glyphs` in raw glyphs, the constraint forbids every start inside a
+# cartouche, and the only escape offered the span that is *exactly* the cartouche. So a
+# group holding a long cartouche plus one sign on either side was never a candidate,
+# and every path had to cut at the cartouche's edge even where the objective prefers no
+# cut: `segment` returned a grouping that `score_segmentation`, the same objective,
+# ranks below another legal grouping. These tests are synthetic on purpose — the rule is
+# general, not tuned to the line that exposed it.
+
+
+@pytest.mark.parametrize("payload_length", [9, 10, 13])
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_long_cartouche_does_not_force_an_edge_cut(payload_length, side):
+    """Every span is unattested, so the per-glyph cost of any grouping is the same and
+    an extra cut only pays log P(cut) = log 0.25 against log P(no cut) = log 0.75. The
+    whole line as one group is therefore the optimum, and `segment` must find it."""
+    from app.services.boundary_model import BoundaryModel
+    from app.services.reading_model import ReadingModel
+
+    seg = Segmenter(
+        ReadingModel(),
+        use_lexicon=False,
+        boundary_model=BoundaryModel(prior=0.25, use_class_backoff=False),
+    )
+    name = CARTOUCHE_OPEN + "A" * payload_length + CARTOUCHE_CLOSE
+    stream = "Z" + name if side == "left" else name + "Z"
+    result = seg.segment([stream])
+    assert result.groups == [stream]
+    assert result.score == pytest.approx(seg.score_segmentation([stream], set()))
+
+
+def test_a_long_cartouche_does_not_force_a_cut_at_its_closing_edge():
+    """On an attested corpus: the optimiser must never return less than the objective's
+    own score of a legal grouping it could have proposed."""
+    df = pd.concat([cartouche_corpus(), corpus([("Q", "q")])], ignore_index=True)
+    seg = segmenter(df, boundary_model=NO_BOUNDARY_TERM)
+    line = CARTOUCHE_OPEN + "AB" * 6 + CARTOUCHE_CLOSE + "Q"  # 15 glyphs > window
+    result = seg.segment([line])
+    assert result.score >= seg.score_segmentation([line], set()) - 1e-9
+    assert result.groups == [line]
+
+
+def test_the_cartouche_window_changes_nothing_without_a_cartouche():
+    """With no matched pair in the stream the window is the raw-glyph window it always
+    was, so every line without a cartouche segments exactly as before."""
+    seg = segmenter(cartouche_corpus())
+    stream = "AB" * 12
+    assert seg.segment([stream]).groups == ["A", "B"] * 12

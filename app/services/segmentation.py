@@ -388,9 +388,10 @@ class Segmenter:
         # name in the KRI self-test came apart into four groups, two of them unseen
         # and unreadable, and the king's name left the line reading.
         #
-        # `cartouche_opening` keeps each span reachable: a cartouche longer than
-        # `max_group_glyphs` is not offered by the sliding window, and if it were
-        # unattested as a whole group no path through it would exist at all.
+        # `cartouche_opening` keeps each span reachable: the candidate window below
+        # counts a whole cartouche as ONE unit, so a cartouche longer than
+        # `max_group_glyphs` — and a group holding it plus signs on either side — is
+        # still offered, and an unattested royal name always has a path through it.
         inside_cartouche, cartouche_opening, whole_cartouches = cartouche_constraint(stream)
 
         # best[j] = (score, start_of_last_group) for the best segmentation of
@@ -406,7 +407,23 @@ class Segmenter:
         for j in range(1, n + 1):
             top = float("-inf")
             arg = -1
-            window_start = max(0, j - self.max_group_glyphs)
+            # The window is `max_group_glyphs` units long, where a complete cartouche
+            # is one unit and every other glyph is one unit. Counting raw glyphs (as
+            # before 2026-10-27) made the constraint shrink the set of starts without
+            # giving back the ones it removed: for a group ending just after a long
+            # cartouche the only legal start left was the closing edge, so every path
+            # was forced to cut there even where the objective prefers no cut, and
+            # `segment` returned a grouping `score_segmentation` ranks below a legal
+            # one it never proposed (KRI-fixes attempt 1, rule (c); addendum
+            # 2026-10-27). With no cartouche in the stream this is exactly
+            # `max(0, j - max_group_glyphs)`, so nothing else moves. Starts inside a
+            # cartouche are still skipped below; the weights, the known-long-group
+            # candidates and the hint veto are unchanged.
+            window_start = j
+            for _ in range(self.max_group_glyphs):
+                if window_start <= 0:
+                    break
+                window_start = cartouche_opening.get(window_start, window_start - 1)
             starts: range | list[int] = range(window_start, j)
             extra: list[int] = []
             if self._long_lengths:
@@ -416,9 +433,6 @@ class Segmenter:
                     for length in self._long_lengths
                     if j - length >= 0 and self.is_known(stream[j - length : j])
                 )
-            opening = cartouche_opening.get(j)
-            if opening is not None and opening < window_start and opening not in extra:
-                extra.append(opening)
             if extra:
                 starts = [*extra, *starts]
             for i in starts:
