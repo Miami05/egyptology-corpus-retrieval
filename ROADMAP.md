@@ -2755,6 +2755,10 @@ audit fixes merged (`3465478`), among them A54 (strict/loose per-word matching i
 suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fold
 `ʿ ȝ ỉ` → `ꜥ ꜣ ꞽ`), the twin guard at eval time (`--exclude-twins`) and release floors
 (`data/benchmarks/release_baseline.json`).
+*Revision note, round 2 (2026-10-26, Astra's re-check; still nothing beyond step 0 has run, no
+rule changed): the "baseline is F-b" claim replaced by the per-word account, the false `pl` claim
+replaced by what `pl` does in each arm, step 0 keeps inline suffix boundaries (`tw=ꞽ`) and splits
+the query like the corpus for the cleaned movers (v4 18 → 19); outputs regenerated.*
 
 **What A54 already does, against F-a and F-b** (line numbers on `619bf79`):
 
@@ -2792,8 +2796,15 @@ suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fo
 
 **What is baseline now, and what remains to test.**
 
-- Baseline = today's code (`619bf79`): for a Unicode query it *is* F-b. F-b is not tested
-  again as a candidate.
+- Baseline = today's code (`619bf79`). For a Unicode query it is **not** F-b; it is A54's
+  per-word rule: a word written with an Egyptological letter is compared by its faithful form in
+  all three text signals of the re-rank, an ASCII-only word of the same query (`tw`, `rs`, `pl`)
+  is compared loosely, and retrieval uses the lossy `search_fold` key for every word. So F-b
+  (every token of the query by its faithful key in the re-rank, retrieval lossy) is shipped only
+  for the words that carry a letter. F-b is not run as a separate candidate: its only remaining
+  difference from the baseline, the ASCII-only words of a Unicode query, is part of F-a's
+  re-rank (whole-query `strict`, frozen definition below) and is not attributed separately; the
+  report lists per query whether it has such words (97 of the 100 faithful queries do).
 - Remaining candidate: **F-a** (faithful key in retrieval and re-rank), for queries whose
   notation is `unicode`. Plain-ASCII queries and hieroglyph queries stay on today's path and
   every result column must be identical.
@@ -2934,7 +2945,8 @@ sha256 `44543932…`).**
   `normalized_reading_order` column (which deleted the yod). Ids in the log.
 - *Repair* (allowed by step 0), only where the recipe fails: each stored token is replaced by a
   faithful spelling from the expected reading that folds to exactly that token (repeated words
-  usable once per occurrence, suffix pronouns keep `=`); a token with none is aligned character
+  usable once per occurrence, suffix pronouns keep `=`, an inline one stays inline: `tw=ꞽ`,
+  not `tw ꞽ`, revision round 2, COMP_017 and COMP_020); a token with none is aligned character
   by character against the expected words (fewest skipped characters); only a token with
   neither stays ASCII. Recipe outputs that fold back are kept unchanged (revision: the first
   run replaced them too, which lost distinctions in HOLD_024 and HOLD_027 and left `irt-hr-rr`,
@@ -2944,17 +2956,30 @@ sha256 `44543932…`).**
 - *Residue* (revised): repaired by character alignment v4 COMP_012 (`rit`→`rꞽt`), COMP_018
   (`maa-hr-b`→`mꜣꜥ-ḥr-b`, `mntt`), held-out 1 HOLD_008 (`i`→`ꞽ`), HOLD_026 (`kh`→`ḫ`). Left ASCII:
   v4 10 queries, all the stale plural marker (`pl`, `kawtpl`, `twpl`): today's notation
-  normaliser rewrites `.pl`/`.PL` to `.w`, so no faithful spelling folds to `pl`. Such a token
-  matches no corpus key in either arm (corpus keys carry `w`), so it does not bias F-a against
-  the baseline; the queries are still reported separately (above). Held-out 1, LE-v1, NAME-v1:
-  no residue.
+  normaliser rewrites `.pl`/`.PL` to `.w`, so no faithful spelling of the expected reading folds
+  to `pl`. The residue token never matches the plural it stood for (that is `w` in every corpus
+  form), but it does match other corpus words, differently in the two arms (revision round 2;
+  the earlier claim that it matches no corpus key in either arm was false). *Baseline:* `pl` is
+  in the retrieval vocabulary (the search key of the one transliterated row
+  `… ꞽr(.ꞽ) =pl`), so it is a rare, high-IDF retrieval match; `twpl` and `kawtpl` are not. In
+  the re-rank `pl` is an ASCII-only word, compared loosely with the candidates' loose forms,
+  where it is a word in 242 distinct readings (stray `pl` pieces such as `nb(.t)pl`,
+  `ḫn~pl.rʾ.PL`). *F-a:* retrieval and re-rank use the faithful pieces
+  (`unfolded_reading_form`), where `pl` is a word in 241 distinct readings (241 rows) and `twpl`
+  in one (`…nḫt.w.twpl-…`); `kawtpl` matches nothing. So on these 10 v4 queries F-a's retrieval
+  pool can differ from the baseline's through the residue token alone, and that difference is not
+  a notation effect: the separate report of these queries (above) is required, not optional.
+  Held-out 1, LE-v1, NAME-v1: no residue.
 - *Movers* (faithful query has ≥1 token whose folded key is a merging key). Pre-registered
   method (raw tokens): **v4 20/20, held-out 1 18/20, LE-v1 30/30, NAME-v1 29/30**; token carries
   a letter of the pair: 18, 16, 27, 28. Raw-token merging keys: ꜣ/ꜥ 611, ḫ/ẖ 263, ḥ/h 402.
   **Cleaned method (the meaningful number):** keys from `unfolded_reading_form` pieces (editorial
   text removed; the raw method counts `n{ꜣ}`, `{ꜥ}〈n〉`, `{h}〈p〉n` as merges of `n`, `m`, `nb`,
-  `pn`): ꜣ/ꜥ 328, ḫ/ẖ 147, ḥ/h 245 keys; movers 18, 16, 27, 29, the same with the
-  pair-letter requirement. The recorded 2026-09-07 counts (681 / 242 / 638 on 35,808 keys) were
+  `pn`): ꜣ/ꜥ 328, ḫ/ẖ 147, ḥ/h 245 keys; movers 19, 16, 27, 29, the same with the
+  pair-letter requirement (revision round 2: the query is now split into the same
+  `unfolded_reading_form` pieces as the corpus keys; it was split on whitespace, so a
+  hyphenated or inline-suffix token never met its pieces — COMP_018's `pr-ḫrw`, `ẖr-nṯr` — and
+  v4 was 18). The recorded 2026-09-07 counts (681 / 242 / 638 on 35,808 keys) were
   probably inflated the same way; their method was never tracked (reconstructed here), and the
   cause of the mismatch is unknown. They are not to be quoted to Nederhof without that caveat.
   Step-0 numbers changed in the revision only where stated: v4/held-out 1 residue lists (repair),
@@ -3008,8 +3033,8 @@ Not built yet; measure before switching on, on queries written in a reader's not
    (`docs/kri-fixes-preregistration-2026-10-26.md`); merge and deploy only if every gated rule passes.
 2. **Experiment 3 — notation-faithful search key** (pre-registered 2026-09-07 above, NOT RUN), next.
    Before step 0, re-scope it against what shipped since: audit fix A54 (in `3465478`) already
-   matches Unicode queries strictly per token in the suggestion re-rank, which overlaps
-   configuration F-b. The re-scope is written as a dated addendum to the Experiment 3 section,
+   matches the words of a Unicode query that carry an Egyptological letter strictly in the
+   suggestion re-rank (ASCII-only words stay loose), which overlaps configuration F-b. The re-scope is written as a dated addendum to the Experiment 3 section,
    never an edit of it, and is reviewed by Opus and Astra before step 0 runs. On a confirmed pass, the
    result goes to Nederhof together with the invitation to test the live tool (his own St Andrews
    texts through the reviewer key).

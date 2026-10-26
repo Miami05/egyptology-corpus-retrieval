@@ -109,26 +109,53 @@ ASCII_EDITORIAL_RE = re.compile(r"[<>]")
 # --------------------------------------------------------------------------- pieces
 
 
-def faithful_pairs(transliteration: str) -> list[tuple[str, str]]:
-    """(faithful token, its loose fold) for every token the builder's loose form has.
+def faithful_tokens(transliteration: str) -> list[tuple[str, str, bool]]:
+    """(faithful token, its loose fold, glued) for every token the builder's loose form
+    has; `glued` marks a suffix pronoun written inline (`tw=ꞽ`), which is joined to
+    the token before it without a space when that token is kept (`_join`).
 
     The editor-supplied yod in round brackets is removed first because the search
     key (and so the loose form) drops it; a piece whose loose fold is empty (`ʾ`,
     `?`) is dropped for the same reason. A piece that folds to several tokens keeps
     its fold as one string — it never occurs in the four sets, and the fold-back
     check would show it.
+
+    A suffix pronoun keeps its `=` (it folds away, so fold-back holds), both when it
+    stands alone (`n =f`) and when it is written inline (`tw=ꞽ`; revision round 2:
+    the inline boundary was lost, `tw=ꞽ` became `tw ꞽ`, and A54 reads the two
+    differently — `tw` alone is an ASCII-only word).
     """
     text = PARENTHESISED_YOD_RE.sub("", normalize_notation(str(transliteration)))
-    pairs: list[tuple[str, str]] = []
+    out: list[tuple[str, str, bool]] = []
     for word in text.split():
-        suffix = word.replace("⸗", "=").startswith("=")
-        for index, piece in enumerate(unfolded_reading_form(word).split()):
-            piece = ASCII_EDITORIAL_RE.sub("", piece)
-            folded = loose_reading_form(piece)
-            if piece and folded:
-                # A suffix pronoun keeps its `=` (it folds away, so fold-back holds).
-                pairs.append(("=" + piece if suffix and index == 0 else piece, folded))
-    return pairs
+        for segment_index, segment in enumerate(word.replace("⸗", "=").split("=")):
+            first = True
+            for piece in unfolded_reading_form(segment).split():
+                piece = ASCII_EDITORIAL_RE.sub("", piece)
+                folded = loose_reading_form(piece)
+                if not (piece and folded):
+                    continue
+                if segment_index > 0 and first:
+                    # Glued only when the word has text before the `=` (`tw=ꞽ`).
+                    glued = bool(word.replace("⸗", "=").split("=")[0].strip())
+                    out.append(("=" + piece, folded, glued))
+                else:
+                    out.append((piece, folded, False))
+                first = False
+    return out
+
+
+def faithful_pairs(transliteration: str) -> list[tuple[str, str]]:
+    """(faithful token, its loose fold), see `faithful_tokens`."""
+    return [(faithful, folded) for faithful, folded, _ in faithful_tokens(transliteration)]
+
+
+def _join(tokens: list[tuple[str, bool]]) -> str:
+    """Join (spelling, glue to the previous one) pairs into a query."""
+    text = ""
+    for spelling, glue in tokens:
+        text += spelling if (glue and text) else (" " + spelling if text else spelling)
+    return text
 
 
 def _strip_ending(pair: tuple[str, str]) -> tuple[str, str]:
@@ -151,26 +178,40 @@ def recipe_query(transliteration: str, query_type: str) -> str:
         if len(tokens) > 5:
             tokens = tokens[: max(4, round(len(tokens) * 0.75))]
         return " ".join(tokens)
-    pairs = [_strip_ending(pair) for pair in faithful_pairs(transliteration)]
-    content = [pair for pair in pairs if pair[1] not in STOP_TOKENS] or pairs
+    entries = faithful_tokens(transliteration)
+    pairs = [_strip_ending((faithful, folded)) for faithful, folded, _ in entries]
+    indexed = list(enumerate(pairs))
+    content = [item for item in indexed if item[1][1] not in STOP_TOKENS] or indexed
     if query_type == "partial_transliteration":
         keep = max(2, min(len(content), round(len(content) * 0.6)))
         chosen = content[:keep]
     else:
         chosen = content[:8]
-    return " ".join(faithful for faithful, _ in chosen)
+    # An inline suffix is glued back only when its host token is kept right before it.
+    out: list[tuple[str, bool]] = []
+    previous = None
+    for index, (faithful, _) in chosen:
+        out.append((faithful, entries[index][2] and previous == index - 1))
+        previous = index
+    return _join(out)
 
 
-def _candidate_spellings(transliteration: str) -> tuple[list[str], list[str]]:
+def _candidate_spellings(
+    transliteration: str,
+) -> tuple[list[str], list[str], list[tuple[int, bool]]]:
     """The faithful spellings the expected reading offers, in reading order: first
     the tokens and their light-ending-stripped forms, then (second tier, tried only
-    when no token fits) whole whitespace words, for hyphenated reading-order tokens."""
+    when no token fits) whole whitespace words, for hyphenated reading-order tokens.
+    The third list gives, per token, (index of its `faithful_tokens` entry, glued)."""
     tokens: list[str] = []
-    for faithful, folded in faithful_pairs(transliteration):
+    origin: list[tuple[int, bool]] = []
+    for entry, (faithful, folded, glued) in enumerate(faithful_tokens(transliteration)):
         tokens.append(faithful)
+        origin.append((entry, glued))
         stripped, _ = _strip_ending((faithful, folded))
         if stripped != faithful:
             tokens.append(stripped)
+            origin.append((entry, glued))
     text = PARENTHESISED_YOD_RE.sub("", normalize_notation(str(transliteration)))
     words: list[str] = []
     for word in text.split():
@@ -178,7 +219,7 @@ def _candidate_spellings(transliteration: str) -> tuple[list[str], list[str]]:
         # Repeated words are kept: each occurrence can be used once (`used` below).
         if whole and whole not in tokens:
             words.append(whole)
-    return tokens, words
+    return tokens, words, origin
 
 
 def _raw_words(transliteration: str) -> list[str]:
@@ -228,12 +269,13 @@ def aligned_query(
     returns (query, stored tokens left as typed, tokens repaired by character
     alignment as `stored->faithful`). The first unused match at or after the previous
     match wins, then any unused match, so repeated words keep order."""
-    tokens, words = _candidate_spellings(transliteration)
+    tokens, words, origin = _candidate_spellings(transliteration)
     spellings = tokens + words
     folds = [search_fold(spelling) for spelling in spellings]
     used: set[int] = set()
     cursor = 0
-    out: list[str] = []
+    out: list[tuple[str, bool]] = []
+    previous_entry: int | None = None
     residue: list[str] = []
     char_aligned: list[str] = []
     raw_words = _raw_words(transliteration)
@@ -252,17 +294,25 @@ def aligned_query(
             ]
             if options:
                 _, _, spelling = min(options)
-                out.append(spelling)
+                out.append((spelling, False))
                 char_aligned.append(f"{token}->{spelling}")
             else:
-                out.append(token)
+                out.append((token, False))
                 residue.append(token)
+            previous_entry = None
             continue
         used.add(match)
+        glue = False
         if match < len(tokens):
             cursor = match + 1
-        out.append(spellings[match])
-    return " ".join(out), residue, char_aligned
+            entry, glued = origin[match]
+            # An inline suffix (`tw=ꞽ`) is glued back only right after its host token.
+            glue = glued and previous_entry == entry - 1
+            previous_entry = entry
+        else:
+            previous_entry = None
+        out.append((spellings[match], glue))
+    return _join(out), residue, char_aligned
 
 
 def apply_respelling(transliteration: str, notes: str) -> str:
@@ -329,7 +379,7 @@ def corpus_tokens(path: str) -> tuple[set[str], set[str], set[str], int, str]:
     for value in frame["transliteration_gold"]:
         tokens.update(nfc_lower(value).split())
     for value in frame["transliteration_gold"].unique():
-        cleaned.update(unfolded_reading_form(unicodedata.normalize("NFC", value)).lower().split())
+        cleaned.update(cleaned_pieces(value))
     has_reading = frame["transliteration_gold"].str.strip() != ""
     keys = frame["transliteration_gold"].map(search_fold).where(
         has_reading, frame["mdc"].map(normalize_mdc)
@@ -342,12 +392,23 @@ def nfc_lower(value: str) -> str:
     return unicodedata.normalize("NFC", str(value)).lower()
 
 
-def mover_tokens(query: str, merging: dict[str, set[str]]) -> tuple[list[str], list[str]]:
+def cleaned_pieces(text: str) -> list[str]:
+    """The cleaned method's tokenisation, used for the corpus keys *and* the query
+    tokens matched against them (revision round 2: the query side used whitespace
+    tokens, so `pr-ḫrw` or `tw=ꞽ` never met the corpus pieces `ḫrw`, `ꞽ`)."""
+    return unfolded_reading_form(unicodedata.normalize("NFC", str(text))).lower().split()
+
+
+def mover_tokens(
+    query: str, merging: dict[str, set[str]], tokenise=str.split
+) -> tuple[list[str], list[str]]:
     """(pre-registered: key merges; strict: key merges and the token carries a letter
-    of that pair) as `token[pair]` strings."""
+    of that pair) as `token[pair]` strings. `tokenise` must match how the merging
+    keys' tokens were made: whitespace for the raw method, `cleaned_pieces` for the
+    cleaned one."""
     loose_hits: list[str] = []
     strict_hits: list[str] = []
-    for token in query.split():
+    for token in tokenise(query):
         key = search_fold(token)
         for name, first, second in PAIRS:
             if key in merging[name]:
@@ -486,7 +547,7 @@ def main() -> int:
             modes[mode] += 1
             loose_hits, strict_hits = mover_tokens(aligned, merging)
             _, conservative_hits = mover_tokens(aligned, conservative)
-            cleaned_hits, cleaned_strict_hits = mover_tokens(aligned, cleaned)
+            cleaned_hits, cleaned_strict_hits = mover_tokens(aligned, cleaned, cleaned_pieces)
             if not recipe_ok:
                 recipe_bad.append(row.benchmark_id)
             if not aligned_ok:

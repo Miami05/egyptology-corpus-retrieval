@@ -7,6 +7,7 @@ from scripts.exp3_step0_faithful_queries import (
     aligned_query,
     apply_respelling,
     char_align,
+    cleaned_pieces,
     faithful_pairs,
     merging_keys,
     mover_tokens,
@@ -104,3 +105,30 @@ def test_conservative_variant_needs_both_letters():
     merging, _ = merging_keys(tokens)
     conservative, _ = merging_keys(tokens, conservative=True)
     assert "khr" not in conservative["h-dot/h"]
+
+
+def test_inline_suffix_boundary_is_kept():
+    # COMP_017: TLA writes `tw=ꞽ`; the stored query has `tw i`. Writing `tw ꞽ` would
+    # lose the boundary (and A54 would read `tw` as an ASCII-only word).
+    source = "ptrꞽ tw=ꞽ ḥr ḏd n =k"
+    assert recipe_query(source, "simplified_transliteration") == "ptrꞽ tw=ꞽ ḏd"
+    query, residue, _ = aligned_query("ptri tw i djd", source)
+    assert query == "ptrꞽ tw=ꞽ ḏd" and residue == []
+    assert search_fold(query) == "ptri tw i djd"
+    # A separate suffix stays separate; an inline one whose host was dropped (stop
+    # token `hr`) is written as a separate suffix.
+    assert aligned_query("n f", "n =f")[0] == "n =f"
+    assert recipe_query("ḥr=f sḏm nfr", "simplified_transliteration") == "sḏm nfr"
+    assert aligned_query("f sdjm", "ḥr=f sḏm")[0] == "=f sḏm"
+
+
+def test_cleaned_movers_tokenise_the_query_like_the_corpus():
+    # Corpus keys of the cleaned method are `unfolded_reading_form` pieces, so the
+    # query must be split the same way: `pr-ḫrw` holds the piece `ḫrw`.
+    corpus = set(cleaned_pieces("pr-ḫrw ẖrw"))
+    assert corpus == {"pr", "ḫrw", "ẖrw"}
+    merging, _ = merging_keys(corpus)
+    assert "khrw" in merging["kh/khh"]
+    assert mover_tokens("pr-ḫrw", merging) == ([], [])
+    loose, strict = mover_tokens("pr-ḫrw", merging, cleaned_pieces)
+    assert loose == ["ḫrw[kh/khh]"] and strict == loose

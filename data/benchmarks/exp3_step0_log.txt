@@ -19,7 +19,7 @@ Distinct cleaned words (unfolded_reading_form pieces) 12260; distinct folded key
   can move (pre-registered rule): 20  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_018 COMP_019 COMP_020 COMP_021 COMP_022 COMP_023
   can move (token carries a letter of the pair): 18  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_019 COMP_020 COMP_022 COMP_023
   can move (conservative merging keys, sensitivity): 18
-  can move (CLEANED merging keys): 18; token carries a letter of the pair: 18  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_019 COMP_020 COMP_022 COMP_023
+  can move (CLEANED merging keys): 19; token carries a letter of the pair: 19  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_018 COMP_019 COMP_020 COMP_022 COMP_023
 == held-out 1 (20 queries, data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv)
   recipe fold-back differs: 3  HOLD_001 HOLD_008 HOLD_026
   faithful query (recipe where it folds back, else aligned) fold-back differs: 0  
@@ -58,7 +58,7 @@ Distinct cleaned words (unfolded_reading_form pieces) 12260; distinct folded key
   can move (CLEANED merging keys): 29; token carries a letter of the pair: 29  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_026 NAME_027 NAME_029 NAME_030
 
 Summary
-  v4: recipe fold-back fails 12/20, faithful fold-back fails 0/20, residue queries 10, char-aligned queries 2, movers 20/20 (strict 18/20; cleaned 18/20, cleaned strict 18/20), retrieval key differs 0/20
+  v4: recipe fold-back fails 12/20, faithful fold-back fails 0/20, residue queries 10, char-aligned queries 2, movers 20/20 (strict 18/20; cleaned 19/20, cleaned strict 19/20), retrieval key differs 0/20
   held-out 1: recipe fold-back fails 3/20, faithful fold-back fails 0/20, residue queries 0, char-aligned queries 2, movers 18/20 (strict 16/20; cleaned 16/20, cleaned strict 16/20), retrieval key differs 0/20
   LE-v1: recipe fold-back fails 0/30, faithful fold-back fails 0/30, residue queries 0, char-aligned queries 0, movers 30/30 (strict 27/30; cleaned 27/30, cleaned strict 27/30), retrieval key differs 0/30
   NAME-v1: recipe fold-back fails 0/30, faithful fold-back fails 0/30, residue queries 0, char-aligned queries 0, movers 29/30 (strict 28/30; cleaned 29/30, cleaned strict 29/30), retrieval key differs 0/30
