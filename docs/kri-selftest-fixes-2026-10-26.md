@@ -325,8 +325,8 @@ a measurement, and ten non-expert lines are not one either.
    benchmarks are retrieval/suggestion evaluations: they never decode through
    `ReadingModel.predict_sequence` or `Segmenter.segment`, so re-running them cannot validate
    anything on this branch. They can only show that nothing *else* broke. The measurement that
-   can see these changes is the paired on/off reading harness, which is why it exists (§6 of the
-   pre-registration, `docs/kri-fixes-preregistration-2026-10-26.md`).
+   can see these changes is the paired on/off harness `scripts/run_kri_fixes_eval.py`, which is
+   why it exists; its rules are in `docs/kri-fixes-preregistration-2026-10-26.md`.
 5. **Endpoint G reported folded *and* strict** (§2), with the convention stated in the run.
 6. **The transition smoothing** described at the end of §1. A once-seen reading-bigram scoring
    its single successor at ≈ 1.0 is what keeps the wrong reading on top even after the evidence

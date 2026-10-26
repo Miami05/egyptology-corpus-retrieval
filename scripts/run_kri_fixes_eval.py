@@ -442,6 +442,9 @@ def evaluate(
                     "boundary_fp_outside_cartouche": len(
                         (predicted_boundaries - gold_boundaries) - inside
                     ),
+                    "boundary_fn_outside_cartouche": len(
+                        (gold_boundaries - predicted_boundaries) - inside
+                    ),
                     "cartouches": len(spans),
                     "cartouches_split": len(predicted_boundaries & inside),
                 }
@@ -515,6 +518,13 @@ def summarise(positions: pd.DataFrame, lines: pd.DataFrame) -> tuple[list[dict],
                 "boundary_fp_outside_cartouche": int(
                     arm_lines["boundary_fp_outside_cartouche"].sum()
                 ),
+                "boundary_fn_outside_cartouche": int(
+                    arm_lines["boundary_fn_outside_cartouche"].sum()
+                ),
+                "boundary_errors_outside_cartouche": int(
+                    arm_lines["boundary_fp_outside_cartouche"].sum()
+                    + arm_lines["boundary_fn_outside_cartouche"].sum()
+                ),
                 "cartouches": int(arm_lines["cartouches"].sum()),
                 "cartouches_split": int(arm_lines["cartouches_split"].sum()),
                 "stage_changed_vs_baseline": stage_moved,
@@ -563,6 +573,16 @@ def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--split-manifest",
+        default="",
+        help=(
+            "Write the identity of every TEST row (source, text id, sentence id, sign "
+            "string) to this file. The split is a deterministic function of the corpus "
+            "and the split code, but a pre-registration that names it by code sha alone "
+            "cannot be checked afterwards; hashing this file pins it by content."
+        ),
+    )
+    parser.add_argument(
         "--arms",
         default="",
         help="Comma-separated arm names to run; empty = all of them.",
@@ -596,6 +616,16 @@ def main(argv: "list[str] | None" = None) -> None:
         f"{split.near_duplicates} near-duplicates, "
         f"{split.excluded_for_lexicon} lexicon-leaking rows"
     )
+    if args.split_manifest:
+        columns = [
+            c
+            for c in ("source", "source_text_id", "source_sentence_id", "hieroglyphs_norm")
+            if c in test.columns
+        ]
+        Path(args.split_manifest).parent.mkdir(parents=True, exist_ok=True)
+        test[columns].to_csv(args.split_manifest, index=False)
+        print(f"wrote the test-split manifest to {args.split_manifest}")
+
     if args.max_test_rows:
         test = test.head(args.max_test_rows)
         print(f"DRY RUN: decoding only the first {len(test)} test rows")

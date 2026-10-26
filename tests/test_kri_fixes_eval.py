@@ -271,10 +271,12 @@ def _summary_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
         [
             dict(arm="all_off", row_id="r", stage="Earlier Egyptian", line_exact=0,
                  seg_exact=1, boundary_tp=1, boundary_fp=1, boundary_fn=0,
-                 boundary_fp_outside_cartouche=1, cartouches=0, cartouches_split=0),
+                 boundary_fp_outside_cartouche=1, boundary_fn_outside_cartouche=0,
+                 cartouches=0, cartouches_split=0),
             dict(arm="all_on", row_id="r", stage="Late Egyptian", line_exact=0,
                  seg_exact=1, boundary_tp=1, boundary_fp=0, boundary_fn=0,
-                 boundary_fp_outside_cartouche=0, cartouches=0, cartouches_split=0),
+                 boundary_fp_outside_cartouche=0, boundary_fn_outside_cartouche=0,
+                 cartouches=0, cartouches_split=0),
         ]
     )
     return positions, lines
