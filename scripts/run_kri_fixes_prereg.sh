@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # The exact command list of docs/kri-fixes-preregistration-2026-10-26.md §5.
-# Run it as:   bash scripts/run_kri_fixes_prereg.sh
+# Run it as:   bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA
+# APPROVED_SHA is the full 40-character commit id the approver signed off on for this
+# run. Step 0 stops unless HEAD is exactly that commit (a different clean commit on the
+# branch, with different code, must not be able to run as the registered one).
 # (bash, not zsh: zsh does not word-split, and this file is the registered commands).
 # tests/test_check_kri_fixes_gates.py checks that §5 reproduces this file verbatim.
 #
@@ -9,6 +12,12 @@
 #   KRI_RUNS_BASE   parent directory of the attempt directory (default ~/egyptology-runs)
 #   KRI_STOP_AFTER  stop cleanly after this step number (default: run every step)
 set -euo pipefail
+
+if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "usage: bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA (the full 40-hex commit id)" >&2
+  exit 2
+fi
+APPROVED_SHA=$1
 
 WT=/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/kri-fixes-2026-10-26
 BRANCH=kri-fixes-2026-10-26
@@ -55,6 +64,8 @@ done_after() {
 cd "$WT"
 run step0-toplevel test "$(git rev-parse --show-toplevel)" = "$WT"
 run step0-branch test "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH"
+echo "$APPROVED_SHA" > "$R/approved_commit.txt"
+run step0-approved-commit test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 run step0-clean test -z "$(git status --porcelain)"
 run step0-private-dir test -d "$PRIV"
 run step0-attempt2-dir test -d "$BASE"

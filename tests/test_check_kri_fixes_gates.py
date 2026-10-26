@@ -22,8 +22,9 @@ from scripts.check_kri_fixes_gates import (
     check_verify,
     decide_pooled_fallback,
     main,
+    sign_test_p as checker_sign_test_p,
 )
-from scripts.run_kri_fixes_eval import summarise
+from scripts.run_kri_fixes_eval import sign_test_p, summarise
 
 ROOT = Path(__file__).resolve().parents[1]
 ARMS = ("all_off", "pooled_only", "discount_only", "cartouche_only", "all_on")
@@ -132,21 +133,73 @@ def test_cohorts_that_differ_between_arms_cannot_be_judged(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "n, lines, better, worse, p, expected",
+    "n, lines, better, worse, line_better, line_worse, expected",
     [
-        (0, 0, 0, 0, None, "NOT EXERCISED"),
-        (20, 20, 3, 5, 0.7, "DISABLE"),
-        (500, 100, 10, 11, 1.0, "DISABLE"),
-        (20, 20, 10, 0, 0.002, "SHIP AS UNVALIDATED"),  # low n: no claim
-        (40, 10, 30, 0, 1e-9, "SHIP AS UNVALIDATED"),  # too few distinct lines
-        (40, 30, 12, 8, 0.5, "SHIP AS UNVALIDATED"),  # not significant
-        (40, 30, 20, 2, 1e-4, "SHIP, IMPROVEMENT MAY BE STATED"),
+        (0, 0, 0, 0, 0, 0, "NOT EXERCISED"),
+        (20, 20, 3, 5, 3, 5, "DISABLE"),
+        (500, 100, 10, 11, 10, 11, "DISABLE"),
+        (20, 20, 10, 0, 10, 0, "SHIP AS UNVALIDATED"),  # low n: no claim
+        (40, 10, 30, 0, 10, 0, "SHIP AS UNVALIDATED"),  # too few distinct lines
+        (40, 30, 12, 8, 12, 8, "SHIP AS UNVALIDATED"),  # not significant
+        (39, 20, 20, 0, 1, 0, "SHIP AS UNVALIDATED"),  # all gains in one line
+        (40, 30, 20, 2, 18, 2, "SHIP, IMPROVEMENT MAY BE STATED"),
     ],
 )
 def test_rule_b_decides_shipping_on_harm_and_claims_on_evidence(
-    n, lines, better, worse, p, expected
+    n, lines, better, worse, line_better, line_worse, expected
 ):
-    assert decide_pooled_fallback(n, lines, better, worse, p).startswith(expected)
+    assert decide_pooled_fallback(
+        n, lines, better, worse, line_better, line_worse
+    ).startswith(expected)
+
+
+def test_the_checker_sign_test_is_the_harness_sign_test():
+    for better in range(0, 12):
+        for worse in range(0, 12):
+            assert checker_sign_test_p(better, worse) == sign_test_p(better, worse)
+
+
+def _write_harness(tmp_path: Path, positions: pd.DataFrame, lines: pd.DataFrame) -> Path:
+    summary, calibration = summarise(positions, lines)
+    positions.to_csv(tmp_path / "kri_positions.csv", index=False)
+    lines.to_csv(tmp_path / "kri_lines.csv", index=False)
+    pd.DataFrame(summary).to_csv(tmp_path / "kri_summary.csv", index=False)
+    pd.DataFrame(calibration).to_csv(tmp_path / "kri_summary_calibration.csv", index=False)
+    return tmp_path
+
+
+def test_gains_clustered_in_one_line_do_not_license_an_improvement_claim(tmp_path, capsys):
+    """Astra, round 2: 20 gains in one line plus 19 unchanged firing lines gave a
+    position-level p of 2e-6 and 'IMPROVEMENT MAY BE STATED'. The claim is now tested
+    over lines: 1 better line, 0 worse, p = 1.0."""
+    layout = [("TLA:0", i, True) for i in range(20)] + [
+        (f"TLA:{k}", 0, False) for k in range(1, 20)
+    ]
+    rows, line_rows = [], []
+    for arm in ARMS:
+        base = arm in ("all_off", "discount_only")
+        for row_id, position, gains in layout:
+            correct = 0 if (base and gains) else 1
+            rows.append(dict(arm=arm, row_id=row_id, source="TLA", position=position,
+                             group="g", gold_reading="x", predicted="x" if correct else "y",
+                             correct=correct, stage="", used_pooled_evidence=0,
+                             stage_attested_count=3, attested_count=37, confidence=0.5,
+                             confidence_legacy=0.5, confidence_undiscounted=0.5,
+                             confidence_discounted=0.5, **{"class": "firing"}))
+        for k in range(20):
+            line_rows.append(dict(arm=arm, row_id=f"TLA:{k}", source="TLA", stage="",
+                                  coverage="", line_exact=int(not (base and k == 0)),
+                                  seg_exact=1, boundary_tp=0, boundary_fp=0, boundary_fn=0,
+                                  boundary_fp_outside_cartouche=0,
+                                  boundary_fn_outside_cartouche=0, cartouches=0,
+                                  cartouches_split=0, boundaries_inside_cartouches=0))
+    run_dir = _write_harness(tmp_path, pd.DataFrame(rows), pd.DataFrame(line_rows))
+    assert main(["harness", "--run-dir", str(run_dir)]) == 0
+    out = capsys.readouterr().out
+    assert "n=39 in 20 lines, on-better=20 off-better=0" in out
+    assert "firing lines: on-better=1 off-better=0 tied=19 line sign-test p=1" in out
+    assert "IMPROVEMENT MAY BE STATED" not in out
+    assert "DECISION: SHIP AS UNVALIDATED HEURISTIC" in out
 
 
 # ---------- paste ----------
@@ -273,3 +326,39 @@ def test_the_preregistration_reproduces_the_runner_verbatim():
     assert len(blocks) == 1
     script = (ROOT / "scripts" / "run_kri_fixes_prereg.sh").read_text()
     assert blocks[0] == script
+
+
+RUNNER = ROOT / "scripts" / "run_kri_fixes_prereg.sh"
+REGISTERED_WT = Path(
+    "/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/kri-fixes-2026-10-26"
+)
+
+
+def _run_runner(tmp_path: Path, *args: str) -> subprocess.CompletedProcess:
+    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(tmp_path),
+           "KRI_RUNS_BASE": str(tmp_path / "runs"), "KRI_STOP_AFTER": "0"}
+    return subprocess.run(["bash", str(RUNNER), *args], env=env, capture_output=True,
+                          text=True, timeout=120)
+
+
+@pytest.mark.parametrize("args", [(), ("deadbeef",), ("0" * 40, "extra")])
+def test_the_runner_refuses_to_start_without_one_full_approved_sha(tmp_path, args):
+    """Round 2 (Astra): the runner must be told which commit was approved."""
+    result = _run_runner(tmp_path, *args)
+    assert result.returncode == 2
+    assert "usage" in result.stderr
+    assert not (tmp_path / "runs").exists()  # no attempt directory allocated
+
+
+@pytest.mark.skipif(
+    ROOT != REGISTERED_WT,
+    reason="the runner is pinned to the registered worktree; only checkable there",
+)
+def test_the_runner_stops_when_head_is_not_the_approved_commit(tmp_path):
+    """Round 2 (Astra): a different clean commit on the branch must not pass step 0."""
+    result = _run_runner(tmp_path, "0" * 40)
+    assert result.returncode != 0
+    (attempt,) = (tmp_path / "runs").iterdir()
+    log = (attempt / "run_log.txt").read_text()
+    assert "STOP at step0-approved-commit" in log
+    assert (attempt / "approved_commit.txt").read_text().strip() == "0" * 40

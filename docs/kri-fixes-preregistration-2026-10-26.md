@@ -159,8 +159,10 @@ an improvement.** **FAIL stops the run.**
 
 **(b) Firing positions: one decision rule, paired.** On the firing cohort, `all_on` against
 `all_off`: the on-better, off-better and unchanged counts, the number of distinct lines,
-and the exact two-sided sign test. Every firing position is listed individually. The
-decision, applied in this order:
+the exact two-sided sign test over positions (reported only), and the same counts and
+test over **firing lines**: a firing line is on-better if its firing positions gained more
+than they lost against `all_off`, off-better if they lost more, and tied otherwise. Every
+firing position is listed individually. The decision, applied in this order:
 
 1. **No firing position:** the feature was not exercised. It ships as an unvalidated
    heuristic, and the note says its effect is **unmeasured**.
@@ -168,14 +170,17 @@ decision, applied in this order:
    `use_pooled_fallback` must default to off before this branch merges, in a follow-up
    commit the results note names. This is the harm criterion. Low n does not suspend it.
 3. **on-better ≥ off-better, with at least 30 firing positions in at least 20 distinct
-   lines, on-better > off-better, and sign-test p < 0.05:** it ships, and the improvement
-   may be stated, with the paired counts and p.
+   lines, on-better > off-better in positions, on-better > off-better in lines, and the
+   line-level sign-test p < 0.05:** it ships, and the improvement may be stated, with the
+   paired position and line counts and the line-level p.
 4. **Otherwise:** it ships as an **unvalidated heuristic**. No harm was measured, but no
    improvement may be claimed, in the results note or to an expert, in either direction.
    §5.1 of the fixes doc stays open.
 
-The 20-line condition exists because 30 positions are not 30 independent observations
-when several sit in one line. (b) is a **decision**, not a stop: its outcome is recorded
+The 20-line condition and the line-level test exist because 30 positions are not 30
+independent observations when several sit in one line: positions in one line share one
+routing choice and one decode. The claim is therefore tested with the line as the unit.
+The position-level p is printed beside it, but no decision reads it. (b) is a **decision**, not a stop: its outcome is recorded
 and the run continues. That is why (a) and (c) are also gated on `cartouche_only`.
 
 **(c) Cartouche: no new boundary errors outside cartouches.** For `all_on` and for
@@ -250,7 +255,7 @@ The note must say whether the discount moved the Brier score and in which direct
 
 **(h) Stop on any failure, mechanically.** Every step runs through `run` in the runner
 below. Any non-zero exit (a failed gate, a pinned sha that does not match, a dirty tree, a
-missing input) is logged in `$R/run_log.txt` and **ends the run**. After a stop: fix it on a
+missing input, a HEAD that is not the approved commit) is logged in `$R/run_log.txt` and **ends the run**. After a stop: fix it on a
 new commit, write a dated addendum to this document, and re-run **all** of §5 on the new
 pinned commit. Each attempt gets its own `…-attemptN` directory, allocated fresh by the
 runner (an existing directory is never reused, so no evidence is overwritten), and every
@@ -260,16 +265,30 @@ failed attempt** (the A2.9 rule of `docs/remeasure-preregistration-2026-10-25.md
 ## 5. Exact commands
 
 The commands are `scripts/run_kri_fixes_prereg.sh`, reproduced verbatim below.
-`tests/test_check_kri_fixes_gates.py` fails if the two differ. Run it with **bash**, from
-anywhere: `bash scripts/run_kri_fixes_prereg.sh`. It enters the worktree itself and asserts
-the toplevel, the branch and a clean tree. Use bash because zsh does not word-split, and
+`tests/test_check_kri_fixes_gates.py` fails if the two differ. Run it with **bash**:
+
+```
+cd /Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/kri-fixes-2026-10-26
+bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA
+```
+
+`APPROVED_SHA` is the full 40-character id of the commit the approver signed off on for
+this run, written in the approval and copied into the results note. It is the one input
+the runner takes, and without exactly one 40-hex argument it exits 2 before allocating
+an attempt directory. It enters the worktree itself and asserts the toplevel, the branch,
+that `HEAD` **is** `APPROVED_SHA`, and a clean tree. Together, the last two fix every
+tracked file, the harness, the checker and the runner included. The shas in `shas.txt`
+are recorded so the note can quote them. Use bash because zsh does not word-split, and
 the command arrays need bash. Run one heavy process at a time, with nothing else running.
 The registered run sets neither `KRI_RUNS_BASE` nor `KRI_STOP_AFTER`.
 
 ```bash
 #!/usr/bin/env bash
 # The exact command list of docs/kri-fixes-preregistration-2026-10-26.md §5.
-# Run it as:   bash scripts/run_kri_fixes_prereg.sh
+# Run it as:   bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA
+# APPROVED_SHA is the full 40-character commit id the approver signed off on for this
+# run. Step 0 stops unless HEAD is exactly that commit (a different clean commit on the
+# branch, with different code, must not be able to run as the registered one).
 # (bash, not zsh: zsh does not word-split, and this file is the registered commands).
 # tests/test_check_kri_fixes_gates.py checks that §5 reproduces this file verbatim.
 #
@@ -278,6 +297,12 @@ The registered run sets neither `KRI_RUNS_BASE` nor `KRI_STOP_AFTER`.
 #   KRI_RUNS_BASE   parent directory of the attempt directory (default ~/egyptology-runs)
 #   KRI_STOP_AFTER  stop cleanly after this step number (default: run every step)
 set -euo pipefail
+
+if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "usage: bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA (the full 40-hex commit id)" >&2
+  exit 2
+fi
+APPROVED_SHA=$1
 
 WT=/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/kri-fixes-2026-10-26
 BRANCH=kri-fixes-2026-10-26
@@ -324,6 +349,8 @@ done_after() {
 cd "$WT"
 run step0-toplevel test "$(git rev-parse --show-toplevel)" = "$WT"
 run step0-branch test "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH"
+echo "$APPROVED_SHA" > "$R/approved_commit.txt"
+run step0-approved-commit test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 run step0-clean test -z "$(git status --porcelain)"
 run step0-private-dir test -d "$PRIV"
 run step0-attempt2-dir test -d "$BASE"
@@ -420,10 +447,12 @@ v1 set.
 
 The note is a dated file, `docs/kri-fixes-results-2026-10-26.md`. It must contain:
 
-* the attempt directory, the pinned commit and every sha from step 0;
+* the attempt directory, the approved commit (`approved_commit.txt`, equal to
+  `commit.txt`) and every sha from step 0;
 * each rule (a)–(h) marked PASS, FAIL, DECISION or REPORTED, with the integer counts it was
   decided on, the source-stratified counts beside the aggregates, and the step-3, -6, -7
   and -8 gate files quoted;
+* for (b), the firing-line counts and the line-level p beside the position counts;
 * the firing-position listing, the harness stage-change listing and the routing-change
   listing, in full;
 * the calibration table for the three comparisons of (g);
@@ -506,3 +535,27 @@ document had not been run, so it was edited in place, not amended.
 * **Test** (Astra, should_fix). The router-isolation test in `tests/test_stage.py` was
   vacuous: an ASCII paste normalises to nothing. It now uses a real sign and asserts both
   stages are scored. It fails if the router decodes with the pooled fallback on.
+
+**2026-10-26, round 2, before any full run** (Astra re-check of `a39cf4c`). Still not
+run, so edited in place again.
+
+* **(b) claim unit** (should_fix). The 20-line condition did not stop correlated
+  positions from producing a false significance: 20 gains in one line plus 19 unchanged
+  firing lines gave a position-level p of 2 × 10⁻⁶ and "improvement may be stated",
+  while the line-level sign test gives p = 1.0. The claim is now decided on a sign test
+  over firing lines. A line's firing positions are netted, and on-better lines must also
+  outnumber off-better lines. The position-level p is reported only. The harm criterion
+  (outcome 2) is unchanged and still reads positions, because that is the stricter
+  direction. `check_kri_fixes_gates.py` recomputes the line counts from
+  `kri_positions.csv` and stops if their total disagrees with the summary's
+  `firing_lines`. A test reproduces Astra's case.
+* **Approved commit** (should_fix). HEAD and the file shas were recorded but never
+  asserted, so any other clean commit on the branch would have passed step 0. The
+  runner now takes the approved commit id as its one argument. Without exactly one
+  40-hex id it refuses to start, and `step0-approved-commit` stops the run unless HEAD
+  is that commit. Tests cover both.
+* **Verification gap** (Astra could not create temporary directories in its sandbox).
+  The fixture-based tests of this file's two test modules and steps 0–1 of the runner
+  (`KRI_RUNS_BASE` set to a scratch directory, `KRI_STOP_AFTER=1`) were run outside the
+  sandbox before the registered run. The release aggregate check stays step 8 of the
+  registered run itself.

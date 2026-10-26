@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -54,6 +55,12 @@ LINE_NET_LOSS_BUDGET = 3
 CLAIM_MIN_FIRING_POSITIONS = 30
 CLAIM_MIN_FIRING_LINES = 20
 CLAIM_MAX_SIGN_TEST_P = 0.05
+# Review round 2 (Astra, 2026-10-26): the improvement claim is decided on a sign test
+# over LINES, not positions. Positions in one line are correlated (one routing choice,
+# one decode), so 20 gains in one line plus 19 unchanged lines gave a position-level
+# p of 2e-6 and "IMPROVEMENT MAY BE STATED" while the line-level test gives p = 1.0.
+# A firing line is better if its firing positions gained more than they lost against
+# all_off, worse if they lost more, tied otherwise; the test is on better vs worse lines.
 
 COMPETITIVE_SETS = ("v4", "holdout", "le_v1")
 COMPETITIVE_MODES = ("T", "L")
@@ -70,6 +77,17 @@ def read_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise InputError(f"missing input: {path}")
     return pd.read_csv(path, keep_default_na=False, dtype=str)
+
+
+def sign_test_p(better: int, worse: int) -> "float | None":
+    """Two-sided exact sign test on discordant units; None when there are none.
+    Same formula as scripts/run_kri_fixes_eval.sign_test_p (a test checks they agree);
+    kept local so this script runs without importing the app."""
+    n = better + worse
+    if n == 0:
+        return None
+    k = min(better, worse)
+    return min(1.0, 2 * sum(math.comb(n, i) for i in range(k + 1)) / 2**n)
 
 
 def as_int(value) -> int:
@@ -108,6 +126,25 @@ def _recount_cohort(positions: pd.DataFrame, arm: str, cohort: str) -> tuple[int
         better += int(correct == 1 and base_correct == 0)
         worse += int(correct == 0 and base_correct == 1)
     return len(part), better, worse
+
+
+def firing_line_counts(positions: pd.DataFrame, arm: str = DECISION_ARM) -> tuple[int, int, int]:
+    """(lines better, lines worse, lines tied) on the firing cohort, arm vs all_off.
+
+    A line's score is (firing positions gained) - (firing positions lost); positive is a
+    better line, negative a worse one. This is the unit rule (b)'s claim is tested on."""
+    base = positions[positions["arm"] == BASELINE_ARM].set_index(["row_id", "position"])
+    part = positions[(positions["arm"] == arm) & (positions["class"] == "firing")]
+    net: dict[str, int] = {}
+    for row in part.to_dict("records"):
+        key = (row["row_id"], row["position"])
+        if key not in base.index:
+            raise InputError(f"{arm} position {key} has no {BASELINE_ARM} partner")
+        delta = as_int(row["correct"]) - as_int(base.loc[key, "correct"])
+        net[row["row_id"]] = net.get(row["row_id"], 0) + delta
+    better = sum(1 for v in net.values() if v > 0)
+    worse = sum(1 for v in net.values() if v < 0)
+    return better, worse, len(net) - better - worse
 
 
 def check_harness(run_dir: Path) -> tuple[list[str], list[str]]:
@@ -186,12 +223,27 @@ def check_harness(run_dir: Path) -> tuple[list[str], list[str]]:
     better = as_int(row["firing_better"])
     worse = as_int(row["firing_worse"])
     p = as_float(row["firing_sign_test_p"])
+    line_better, line_worse, line_tied = firing_line_counts(positions)
+    if line_better + line_worse + line_tied != n_lines:
+        raise InputError(
+            f"(b) positions file has {line_better + line_worse + line_tied} firing lines, "
+            f"summary says {n_lines}"
+        )
+    line_p = sign_test_p(line_better, line_worse)
     out.append(
         f"(b) firing positions ({DECISION_ARM} vs all_off): n={n} in {n_lines} lines, "
         f"on-better={better} off-better={worse} unchanged={n - better - worse} "
-        f"sign-test p={'n/a' if p is None else f'{p:.4g}'}"
+        f"position sign-test p={'n/a' if p is None else f'{p:.4g}'} (reported only)"
     )
-    out.append(f"    DECISION: {decide_pooled_fallback(n, n_lines, better, worse, p)}")
+    out.append(
+        f"    firing lines: on-better={line_better} off-better={line_worse} "
+        f"tied={line_tied} line sign-test p={'n/a' if line_p is None else f'{line_p:.4g}'}"
+        f" (decides the claim)"
+    )
+    out.append(
+        "    DECISION: "
+        + decide_pooled_fallback(n, n_lines, better, worse, line_better, line_worse)
+    )
     base = positions[positions["arm"] == BASELINE_ARM].set_index(["row_id", "position"])
     firing = positions[(positions["arm"] == DECISION_ARM) & (positions["class"] == "firing")]
     for rec in firing.to_dict("records"):
@@ -256,9 +308,11 @@ def check_harness(run_dir: Path) -> tuple[list[str], list[str]]:
 
 
 def decide_pooled_fallback(
-    n: int, n_lines: int, better: int, worse: int, p: "float | None"
+    n: int, n_lines: int, better: int, worse: int, line_better: int, line_worse: int
 ) -> str:
-    """Rule (b), as pre-registered. Shipping is decided on harm; claims on evidence."""
+    """Rule (b), as pre-registered. Shipping is decided on harm (positions); a claim
+    on evidence, with the sign test taken over firing LINES (see CLAIM_* above)."""
+    line_p = sign_test_p(line_better, line_worse)
     if n == 0:
         return (
             "NOT EXERCISED - no firing position; ships as an unvalidated heuristic, "
@@ -273,13 +327,17 @@ def decide_pooled_fallback(
         n >= CLAIM_MIN_FIRING_POSITIONS
         and n_lines >= CLAIM_MIN_FIRING_LINES
         and better > worse
-        and p is not None
-        and p < CLAIM_MAX_SIGN_TEST_P
+        and line_better > line_worse
+        and line_p is not None
+        and line_p < CLAIM_MAX_SIGN_TEST_P
     ):
-        return "SHIP, IMPROVEMENT MAY BE STATED - with the paired counts and p"
+        return (
+            "SHIP, IMPROVEMENT MAY BE STATED - with the paired position and line "
+            "counts and the line-level p"
+        )
     return (
         "SHIP AS UNVALIDATED HEURISTIC - no harm measured, but no improvement may be "
-        "claimed (low n, too few lines, or p >= 0.05)"
+        "claimed (low n, too few lines, or line-level p >= 0.05)"
     )
 
 
