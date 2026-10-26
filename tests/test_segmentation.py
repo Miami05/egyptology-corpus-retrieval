@@ -290,3 +290,83 @@ def test_attested_group_reports_no_neighbours():
 def test_group_sharing_nothing_reports_nothing():
     model = train_reading_model(corpus([("AB", "x")] * 3))
     assert model.related_attested_groups("ZZ") == []
+
+
+# ---------- a cartouche is one sign group (KRI self-test, 2026-10-26) ----------
+
+# V011A / V011B, the cartouche written as signs. In data/processed/examples.csv
+# 1,841 sign groups contain a matched pair and only 13 hold one half on its own, so
+# "the cartouche is the group" is the rule the corpus supports; see
+# `app.data.normalizer.cartouche_spans`.
+CARTOUCHE_OPEN = "\U00013379"
+CARTOUCHE_CLOSE = "\U0001337A"
+
+
+def cartouche_corpus() -> pd.DataFrame:
+    """A corpus that attests the pieces of a royal name but never the name itself.
+
+    Exactly the trap the self-test fell into: every fragment is a common attested
+    group, the corpus has seen boundaries between all four of them, and the name as
+    a whole it has never seen — so a lattice free to cut inside the cartouche
+    prefers four cheap known groups to one expensive unknown one. The two fragments
+    carrying a cartouche sign are then unreadable as a name, and it leaves the
+    reading entirely.
+    """
+    return pd.concat(
+        [
+            corpus(
+                [(f"{CARTOUCHE_OPEN} A B {CARTOUCHE_CLOSE}", "open a b close")],
+                repeat=200,
+            ),
+            corpus([("A B", "a b")], repeat=200),
+            filler(),
+        ],
+        ignore_index=True,
+    )
+
+
+def test_cartouche_is_kept_whole_even_when_its_pieces_are_attested():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment([name]).groups == [name]
+
+
+def test_cartouche_is_kept_whole_across_the_pastes_own_spaces():
+    """The self-test's shape: the paste spaces the name by quadrat, not by word."""
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    result = seg.segment([CARTOUCHE_OPEN + "A", "B" + CARTOUCHE_CLOSE])
+    assert result.groups == [name]
+
+
+def test_signs_outside_a_cartouche_are_still_segmented_normally():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment(["AB" + name + "AB"]).groups == ["A", "B", name, "A", "B"]
+
+
+def test_an_unmatched_cartouche_sign_constrains_nothing():
+    # One half of a pair is not structure: the lattice segments as it always did,
+    # which here means splitting into the attested groups.
+    seg = segmenter(cartouche_corpus())
+    assert seg.segment([CARTOUCHE_OPEN + "AB"]).groups == [CARTOUCHE_OPEN, "A", "B"]
+
+
+def test_the_constraint_is_what_keeps_the_cartouche_whole(monkeypatch):
+    """The same lattice, with the constraint removed, cuts the name into four.
+
+    Pins what the fix is doing rather than only that the result is now right: with
+    `cartouche_spans` reporting nothing, nothing else in the objective keeps this
+    name together.
+    """
+    import app.services.segmentation as segmentation_module
+
+    monkeypatch.setattr(segmentation_module, "cartouche_spans", lambda stream: [])
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment([name]).groups == [
+        CARTOUCHE_OPEN,
+        "A",
+        "B",
+        CARTOUCHE_CLOSE,
+    ]

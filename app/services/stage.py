@@ -405,6 +405,10 @@ def build_stage_resources(
         pooled_model = pooled_reading_model
     else:
         pooled_model = train_reading_model(df, lexicon)
+    # Evidence of last resort for a group this stage's filter emptied (see
+    # `ReadingModel.uses_pooled_evidence`). A no-op at `target=None`, where the
+    # pooled model IS this model.
+    reading_model.attach_pooled(pooled_model)
     segmenter = Segmenter(pooled_model, weights, use_lexicon=use_lexicon)
 
     if target is not None and pooled_index is not None:
@@ -514,6 +518,14 @@ def choose_stage_by_likelihood(
     (Opus review, round 2). Not yet measured: the held-out stage-routing re-measure
     below must cover this rule too.
 
+    The per-group pooled-evidence fallback (`ReadingModel.uses_pooled_evidence`,
+    added for the KRI self-test) is switched OFF here, with
+    `use_pooled_fallback=False`: it exists so that a group this stage barely
+    attests is *read* from the pooled counts, and letting it also score the stage
+    would mean comparing stages partly on evidence that is not theirs. The
+    decision rule here is therefore bit-for-bit what it was; changing it needs its
+    own pre-registration (see the TODO below).
+
     Pass a dict as `coverage` to receive each scored stage's attested-group count,
     the number the choice is ranked on first; the returned scores alone no longer
     explain the decision (the winner need not have the highest score).
@@ -561,7 +573,7 @@ def choose_stage_by_likelihood(
             # (Demotic here). Its model is then a pooled one, not this stage's.
             continue
         predictions, reading_score = resources.reading_model.predict_sequence_scored(
-            groups, use_lexicon=False
+            groups, use_lexicon=False, use_pooled_fallback=False
         )
         scores[candidate] = reading_score / n_groups
         readable[candidate] = sum(

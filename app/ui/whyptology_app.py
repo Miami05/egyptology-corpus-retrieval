@@ -57,7 +57,7 @@ from app.services.retrieval import (
     retrieve_with_stage,
 )
 from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
-from app.services.reading_model import train_reading_model
+from app.services.reading_model import NO_READING_MARK, train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream, segment_paste
 from app.services.signs import (
     SEARCH_FOLD_LABEL,
@@ -1399,7 +1399,7 @@ def token_analysis(row: pd.Series) -> pd.DataFrame:
     return table
 
 
-UNREADABLE_MARK = "∅"
+UNREADABLE_MARK = NO_READING_MARK
 
 
 def assembled_reading(predictions) -> str:
@@ -1409,8 +1409,12 @@ def assembled_reading(predictions) -> str:
     already uses — instead of vanishing. Dropping it joined `ḏd`, ``, `=f` into
     `ḏd =f`, a continuous phrase the evidence does not support, and a copied
     reading lost where knowledge ends (Astra #8).
+
+    The placeholder comes from `ReadingPrediction.display_reading` rather than
+    being re-decided here, so every renderer of a prediction marks the same gap the
+    same way.
     """
-    return " ".join(p.predicted or UNREADABLE_MARK for p in predictions)
+    return " ".join(p.display_reading for p in predictions)
 
 
 def prediction_evidence(prediction, model) -> str:
@@ -1420,8 +1424,29 @@ def prediction_evidence(prediction, model) -> str:
     group M×": the group total alone, shown beside the chosen reading, credited a
     minority reading chosen by context with every competing reading's attestations
     (Astra #5).
+
+    Two things are said before the counts, because the counts on their own would
+    mislead (KRI self-test, 2026-10-26): that the chosen stage attests this group
+    too thinly to read it and the pooled corpus was used instead, and that the
+    readings are tied on a single attestation each so nothing in the corpus chose
+    between them.
     """
     p = prediction
+    if p.is_singleton_tie:
+        tied = ", ".join(p.tied_singleton_readings)
+        note = (
+            f"tied — {len(p.tied_singleton_readings)} readings attested once each "
+            f"({tied}); the corpus does not choose between them"
+        )
+        if p.used_pooled_evidence:
+            return f"{note}; all stages, this stage attests it {p.stage_attested_count}×"
+        return note
+    if p.used_pooled_evidence:
+        return (
+            f"all stages: this reading {p.reading_count}×; this group "
+            f"{p.attested_count}× — the chosen stage attests it only "
+            f"{p.stage_attested_count}×"
+        )
     if p.is_fallback:
         return (
             f"inferred from {display_sign_group(p.fallback_from)} "
@@ -2787,6 +2812,14 @@ def render_workspace(df: pd.DataFrame) -> None:
             from_lexicon = [p for p in predictions if p.is_lexicon]
             unreadable = [p for p in unseen if not p.is_borrowed and not p.is_lexicon]
             ambiguous = [p for p in predictions if p.is_ambiguous]
+            # Readings the corpus attests once each and therefore does not rank. The
+            # decode still had to pick one, but the pick is the tie-break's, not the
+            # evidence's, and it must not sit in the line looking as settled as a
+            # group attested hundreds of times (KRI self-test, 2026-10-26).
+            tied = [p for p in predictions if p.is_singleton_tie]
+            # Groups the chosen stage attests too thinly to read, taken from the
+            # pooled corpus instead (ReadingModel.uses_pooled_evidence).
+            pooled_evidence = [p for p in predictions if p.used_pooled_evidence]
 
             # The badge must reflect what the reading is worth: a tick claims every
             # group was attested in THIS corpus, which is false the moment anything
@@ -2795,6 +2828,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                 badge, badge_title = "!", "some sign groups could not be read"
             elif fallbacks:
                 badge, badge_title = "~", "some readings were inferred from similar groups"
+            elif tied:
+                badge, badge_title = (
+                    "≟",
+                    "some groups have several readings attested once each, and the "
+                    "corpus does not choose between them",
+                )
             elif from_lexicon:
                 badge, badge_title = (
                     "◇",
@@ -2813,6 +2852,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                 f"{len(ambiguous)} multivalent · {len(from_lexicon)} from the lexicon · "
                 f"{len(fallbacks)} inferred from a similar sign · "
                 + (f"{len(composed)} read sign by sign · " if composed else "")
+                + (f"{len(tied)} tied on one attestation · " if tied else "")
+                + (
+                    f"{len(pooled_evidence)} read across all stages · "
+                    if pooled_evidence
+                    else ""
+                )
                 + f"{len(unreadable)} unreadable</div>"
                 "</div>",
                 unsafe_allow_html=True,
@@ -2851,6 +2896,28 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "readings are right roughly a quarter of the time, against about "
                     "89% for attested groups — treat them as leads, not evidence."
                 )
+            if pooled_evidence:
+                st.info(
+                    f"{len(pooled_evidence)} sign group(s) are attested only a handful "
+                    "of times under the chosen language stage but many times in the "
+                    "corpus as a whole, so their reading was taken from the whole "
+                    "corpus rather than from the stage alone. The stage's own count "
+                    "is shown beside each of them."
+                )
+            if tied:
+                st.warning(
+                    f"{len(tied)} sign group(s) have several readings attested exactly "
+                    "once each. The decoder had to choose one to print, but the corpus "
+                    "does not rank them — treat the choice as arbitrary and read the "
+                    "alternatives beside it."
+                )
+                for p in tied:
+                    st.markdown(
+                        f"- **{md_escape(display_sign_group(p.sign))}** — tied: "
+                        + ", ".join(
+                            f"*{md_escape(r)}*" for r in p.tied_singleton_readings
+                        )
+                    )
             if unreadable:
                 st.warning(
                     f"{len(unreadable)} sign group(s) share too little with anything in "

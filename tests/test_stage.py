@@ -688,3 +688,86 @@ def test_choose_stage_by_likelihood_empty_paste_returns_none_and_no_scores():
     df = _likelihood_corpus()
     resources_by_stage = _likelihood_resources_by_stage(df)
     assert choose_stage_by_likelihood("", resources_by_stage) == (None, {})
+
+
+# ---------- pooled evidence for a stage-emptied group (KRI self-test, 2026-10-26) ----------
+
+
+def _stage_emptied_corpus() -> pd.DataFrame:
+    """'H' read 'haw' in 34 Late Egyptian rows, and once each in three others.
+
+    The shape traced on the self-test material: restricted to Earlier Egyptian the
+    group keeps three readings attested once apiece, ties them, and the tie-break
+    decides. Restricted to Earlier Egyptian the commonest reading is simply gone.
+    """
+    rows = [
+        {
+            "hieroglyphs_norm": "H",
+            "transliteration_gold": "haw",
+            "language_stage": "Late Egyptian",
+            "source_text_id": f"T{i}",
+            "source_sentence_id": f"S{i}",
+            "mdc_norm": "haw",
+        }
+        for i in range(34)
+    ]
+    rows += [
+        {
+            "hieroglyphs_norm": "H",
+            "transliteration_gold": reading,
+            "language_stage": "Earlier Egyptian",
+            "source_text_id": f"E{i}",
+            "source_sentence_id": f"F{i}",
+            "mdc_norm": reading,
+        }
+        for i, reading in enumerate(("hy", "wsht", "thr"))
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_build_stage_resources_attaches_the_pooled_model_to_a_stage_model():
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    assert resources.reading_model.pooled is not None
+    assert resources.reading_model.uses_pooled_evidence("H") is True
+
+
+def test_build_stage_resources_pooled_model_is_its_own_evidence():
+    df = _stage_emptied_corpus()
+    assert build_stage_resources(df, None).reading_model.pooled is None
+
+
+def test_a_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    prediction = resources.reading_model.predict_sequence(["H"])[0]
+    assert prediction.used_pooled_evidence is True
+    assert prediction.predicted == "haw"
+    assert prediction.stage_attested_count == 3
+    assert prediction.is_singleton_tie is False
+
+
+def test_the_stage_router_does_not_see_the_pooled_fallback():
+    """The per-group evidence rule must not move the stage decision itself.
+
+    `choose_stage_by_likelihood` decodes with `use_pooled_fallback=False`, so the
+    Earlier Egyptian model still scores this paste on its own three singletons. The
+    per-stage likelihoods are the same with and without a pooled model attached.
+    """
+    df = _stage_emptied_corpus()
+    cache: dict[str | None, object] = {}
+
+    def resources_by_stage(stage):
+        if stage not in cache:
+            cache[stage] = build_stage_resources(df, stage, use_lexicon=False)
+        return cache[stage]
+
+    _stage, with_pooled = choose_stage_by_likelihood("H", resources_by_stage)
+
+    for stage, resources in cache.items():
+        resources.reading_model.pooled = None
+    cache_without = dict(cache)
+    _stage2, without_pooled = choose_stage_by_likelihood(
+        "H", lambda stage: cache_without[stage]
+    )
+    assert with_pooled == without_pooled

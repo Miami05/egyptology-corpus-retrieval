@@ -32,6 +32,13 @@ orders of magnitude, which is exactly what keeps the classifier 𓀀 attached to
 on held-out corpus sentences whose spacing was removed or scrambled; the numbers in
 `DEFAULT_SEGMENTATION_WEIGHTS` are the ones that measured best.
 
+One structure overrides the lattice rather than competing with it: a cartouche is
+one sign group, so no boundary may fall between a matched pair of cartouche signs
+(`Segmenter.segment`; the corpus count behind the rule is on
+`app.data.normalizer.cartouche_spans`). It is a constraint, not a weight, because the
+pieces of a royal name are usually common attested groups while the name as a whole
+is not, so no penalty short of a veto survives the arithmetic.
+
 The segmenter does not read the groups. It hands the chosen groups to
 ReadingModel.predict_sequence, which is unchanged, so the two stages stay inspectable
 on their own.
@@ -44,7 +51,7 @@ from copy import copy
 from dataclasses import dataclass, field
 from math import log
 
-from app.data.normalizer import normalize_hieroglyphs, quadrat_hints
+from app.data.normalizer import cartouche_spans, normalize_hieroglyphs, quadrat_hints
 from app.services.boundary_model import BoundaryModel, fit_boundary_model
 from app.services.reading_model import ReadingModel
 
@@ -343,6 +350,26 @@ class Segmenter:
         if n == 0:
             return Segmentation(groups=[], score=0.0)
 
+        # A cartouche is one sign group (`normalizer.cartouche_spans`, and the corpus
+        # count quoted there). `inside_cartouche` holds the boundary positions that
+        # would cut inside one; no group may start at one, which — the groups being
+        # contiguous — also means none may end at one. This is a hard constraint, not
+        # a penalty: the corpus writes 1,841 of 1,854 such groups whole, so a cut
+        # inside a cartouche is not a hypothesis worth scoring. Without it the royal
+        # name in the KRI self-test came apart into four groups, two of them unseen
+        # and unreadable, and the king's name left the line reading.
+        #
+        # `cartouche_opening` keeps each span reachable: a cartouche longer than
+        # `max_group_glyphs` is not offered by the sliding window, and if it were
+        # unattested as a whole group no path through it would exist at all.
+        inside_cartouche: set[int] = set()
+        cartouche_opening: dict[int, int] = {}
+        whole_cartouches: set[tuple[int, int]] = set()
+        for start, end in cartouche_spans(stream):
+            inside_cartouche.update(range(start + 1, end))
+            cartouche_opening[end] = start
+            whole_cartouches.add((start, end))
+
         # best[j] = (score, start_of_last_group) for the best segmentation of
         # stream[:j]. best[0] is the empty prefix.
         best: list[tuple[float, int]] = [(float("-inf"), -1)] * (n + 1)
@@ -356,17 +383,24 @@ class Segmenter:
         for j in range(1, n + 1):
             top = float("-inf")
             arg = -1
-            starts = range(max(0, j - self.max_group_glyphs), j)
+            window_start = max(0, j - self.max_group_glyphs)
+            starts: range | list[int] = range(window_start, j)
+            extra: list[int] = []
             if self._long_lengths:
                 # Known groups longer than the window: one set lookup per length.
-                long_starts = [
+                extra.extend(
                     j - length
                     for length in self._long_lengths
                     if j - length >= 0 and self.is_known(stream[j - length : j])
-                ]
-                if long_starts:
-                    starts = [*long_starts, *starts]
+                )
+            opening = cartouche_opening.get(j)
+            if opening is not None and opening < window_start and opening not in extra:
+                extra.append(opening)
+            if extra:
+                starts = [*extra, *starts]
             for i in starts:
+                if i in inside_cartouche:
+                    continue
                 prefix_score = best[i][0]
                 if prefix_score == float("-inf"):
                     continue
@@ -379,10 +413,19 @@ class Segmenter:
                     # `unattested_may_cross_hints` (item C1b) the veto is lifted and
                     # the span is merely charged the usual `hint_crossed` per crossed
                     # hint below, plus κ per glyph here.
+                    # One exception: a span that is exactly a cartouche. The veto's
+                    # reasoning is that a made-up span across a user boundary is not
+                    # worth paying for, but the corpus says a cartouche is one group,
+                    # and the paste routinely spaces a royal name by quadrat — so
+                    # here the hypothesis *is* supported, and without this the
+                    # cartouche constraint above could leave the lattice no path at
+                    # all through an unattested royal name. It still pays
+                    # `hint_crossed` per crossed space and κ per glyph below.
                     if (
                         not w.unattested_may_cross_hints
                         and len(span) > 1
                         and any(i < b < j for b in hints)
+                        and (i, j) not in whole_cartouches
                     ):
                         continue
                     group_score = -self.unattested_cost(span)
