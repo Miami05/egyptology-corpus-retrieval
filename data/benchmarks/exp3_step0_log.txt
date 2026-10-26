@@ -1,0 +1,62 @@
+Experiment 3, step 0 — faithful query variants (read-only, no ranker code)
+
+Corpus data/processed/examples.csv: 130472 rows, sha256 44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2
+Distinct whitespace tokens 72176; distinct folded keys 35942
+  merging keys aleph/ayin: 611 (recorded 2026-09-07: 681); conservative variant 578
+  merging keys kh/khh: 263 (recorded 2026-09-07: 242); conservative variant 240
+  merging keys h-dot/h: 402 (recorded 2026-09-07: 638); conservative variant 338
+  (not reproduced: 35,808 keys then, the fold has changed since (audit fixes) and the 2026-09-07 counting code was not kept; the conservative variant is a sensitivity check on the mover counts)
+
+== v4 (20 queries, data/benchmarks/competitive_ambiguity_eval_queries_v4.csv)
+  recipe fold-back differs: 12  COMP_001 COMP_002 COMP_003 COMP_011 COMP_012 COMP_013 COMP_014 COMP_017 COMP_018 COMP_019 COMP_021 COMP_022
+  aligned fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 20}
+  A54 re-rank mode of the faithful queries: {'mixed': 20}
+  queries with ASCII residue tokens: 11  COMP_001(pl) COMP_002(pl) COMP_011(pl pl pl) COMP_012(rit kawtpl) COMP_013(pl pl) COMP_014(pl pl) COMP_017(pl) COMP_018(mntt maa-hr-b) COMP_019(pl) COMP_021(twpl) COMP_022(pl)
+  can move (pre-registered rule): 20  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_018 COMP_019 COMP_020 COMP_021 COMP_022 COMP_023
+  can move (token carries a letter of the pair): 18  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_019 COMP_020 COMP_022 COMP_023
+  can move (conservative merging keys, sensitivity): 18
+== held-out 1 (20 queries, data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv)
+  recipe fold-back differs: 3  HOLD_001 HOLD_008 HOLD_026
+  aligned fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 20}
+  A54 re-rank mode of the faithful queries: {'mixed': 19, 'strict': 1}
+  queries with ASCII residue tokens: 4  HOLD_008(i) HOLD_024(irt-hr-rr) HOLD_026(kh) HOLD_027(f-khpr iir-hr)
+  can move (pre-registered rule): 18  HOLD_001 HOLD_002 HOLD_005 HOLD_007 HOLD_008 HOLD_010 HOLD_011 HOLD_014 HOLD_016 HOLD_017 HOLD_019 HOLD_020 HOLD_022 HOLD_023 HOLD_024 HOLD_025 HOLD_026 HOLD_027
+  can move (token carries a letter of the pair): 16  HOLD_002 HOLD_005 HOLD_007 HOLD_010 HOLD_011 HOLD_014 HOLD_016 HOLD_017 HOLD_019 HOLD_020 HOLD_022 HOLD_023 HOLD_024 HOLD_025 HOLD_026 HOLD_027
+  can move (conservative merging keys, sensitivity): 16
+== LE-v1 (30 queries, data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv)
+  recipe fold-back differs: 0  
+  aligned fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 30}
+  A54 re-rank mode of the faithful queries: {'mixed': 29, 'strict': 1}
+  queries with ASCII residue tokens: 0  
+  can move (pre-registered rule): 30  LE_001 LE_002 LE_004 LE_005 LE_007 LE_008 LE_010 LE_011 LE_013 LE_014 LE_016 LE_017 LE_019 LE_020 LE_022 LE_023 LE_025 LE_026 LE_028 LE_029 LE_031 LE_032 LE_034 LE_035 LE_037 LE_038 LE_040 LE_041 LE_043 LE_044
+  can move (token carries a letter of the pair): 27  LE_002 LE_004 LE_005 LE_007 LE_008 LE_010 LE_011 LE_013 LE_014 LE_016 LE_017 LE_019 LE_022 LE_025 LE_026 LE_028 LE_029 LE_031 LE_032 LE_034 LE_035 LE_037 LE_038 LE_040 LE_041 LE_043 LE_044
+  can move (conservative merging keys, sensitivity): 27
+== NAME-v1 (30 queries, data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv)
+  recipe fold-back differs: 0  
+  aligned fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 30}
+  A54 re-rank mode of the faithful queries: {'mixed': 29, 'strict': 1}
+  queries with ASCII residue tokens: 0  
+  can move (pre-registered rule): 29  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_027 NAME_028 NAME_029 NAME_030
+  can move (token carries a letter of the pair): 28  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_027 NAME_029 NAME_030
+  can move (conservative merging keys, sensitivity): 28
+
+Summary
+  v4: recipe residue 12/20, aligned residue 0/20, movers 20/20 (strict 18/20), retrieval key differs 0/20
+  held-out 1: recipe residue 3/20, aligned residue 0/20, movers 18/20 (strict 16/20), retrieval key differs 0/20
+  LE-v1: recipe residue 0/30, aligned residue 0/30, movers 30/30 (strict 27/30), retrieval key differs 0/30
+  NAME-v1: recipe residue 0/30, aligned residue 0/30, movers 29/30 (strict 28/30), retrieval key differs 0/30
+Stop rule (0 movers on every set): not triggered
+
+Baselines of the STORED (folded-ASCII) queries. Not the faithful sets' baseline: their retrieval key is identical, but A54 re-ranks them in strict/mixed mode, so today's faithful-set numbers must be measured (addendum 2026-10-26).
+  v4 (20): legacy pool L-auto 0.9000 / MRR 0.8000; twin-controlled T-auto 0.8500 / MRR 0.7500  [attempt 2, remeasure-2026-10-25]
+  held-out 1 (20): legacy pool L-auto 0.7500 / MRR 0.6750; twin-controlled T-auto 0.7500 / MRR 0.6667  [attempt 2, remeasure-2026-10-25]
+  LE-v1 (30): legacy pool L-auto 0.8667 / MRR 0.8000; twin-controlled T-auto 0.8667 / MRR 0.8000  [attempt 2, remeasure-2026-10-25]
+  NAME-v1 (30): committed 0.9667 / MRR 0.8833  [pre-audit D' tree; not re-measured in attempt 2 — step 3 must re-measure it]
