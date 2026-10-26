@@ -577,3 +577,103 @@ run, so edited in place again.
   needs the full competitive and paste evaluations, so it is still verified only by
   step 8 of the registered run. Its parsing and floor logic are covered by the fixture
   tests.
+
+## Addendum 2026-10-27 — after attempt 1
+
+Appended after attempt 1 ran and failed. Everything above this heading is unchanged and
+stays the registration. This addendum adds nothing to the rules: it records what failed,
+what was changed on new commits and why, and what attempt 2 runs.
+
+### What failed
+
+Attempt 1 ran §5 at the approved commit `1733c165e23c017d0c121e7c9b9809f67c325b8e` into
+`~/egyptology-runs/kri-fixes-2026-10-26-attempt1` and **stopped at step 3**. Gated rule
+(c) failed for `all_on` and for `cartouche_only`: 3,300 boundary errors outside
+cartouches against 3,299 for `all_off`. The +1 is one line, TLA:1980 (outside false
+boundaries +1, inside −2). Steps 4–9 did not run, so (e), (e2), (e3) and (f) have no
+result. Rule (a) passed; rule (b) decided **DISABLE** (37 firing positions, on-better 4,
+off-better 7); (g) reported the `/k` discount raising the Brier score (+0.000117323 over
+all positions). The results note, `docs/kri-fixes-results-2026-10-26.md` (`6b66d34`,
+corrected in `e4ecab9`), records it. **Attempt 1 stays FAILED, and no number from it is
+reused.**
+
+### What changed, and why
+
+1. **Rule (b) outcome 2: the pooled fallback defaults to off** — commit `97ddff2`.
+   Outcome 2 requires that "`use_pooled_fallback` must default to off before this branch
+   merges, in a follow-up commit the results note names"; this is that commit.
+   `app/services/reading_model.py` gains `USE_POOLED_FALLBACK_BY_DEFAULT = False`, and
+   `predict_sequence` / `predict_sequence_scored` take `use_pooled_fallback=None`,
+   meaning that default. The code, the `POOLED_FALLBACK_*` constants and `attach_pooled`
+   stay; `app.services.stage.build_stage_resources` still attaches the pooled model, so
+   the fallback is available but used only when a caller passes `True`. The stage
+   router already passed `False`. Tests assert it is off by default (on the model and
+   through `build_stage_resources`) and that passing `True` still reads pooled.
+2. **The cartouche constraint's candidate window** — commit `43fbecb`. Two independent
+   post-run diagnoses (Opus and Astra, re-decoding TLA:1980 from the run commit's code)
+   both classified the failure as an **implementation defect**, with the same numbers.
+   `Segmenter.segment` counted its 10-glyph candidate window in raw glyphs; the
+   constraint forbids every start inside a cartouche; and the only extra candidate was
+   the span that is *exactly* the cartouche. A group holding a cartouche longer than the
+   window plus a neighbouring sign was therefore never proposed, and every path had to
+   cut at the cartouche's edge. On TLA:1980 (cartouche [12, 24)) that forced a new false
+   boundary at 24, and `segment` returned −126.3658 while `score_segmentation`, the same
+   objective, scores the legal grouping without that cut at −122.0077. The optimiser
+   failing to find the best legal grouping breaks the invariant `score_segmentation`
+   documents. The fix is general: the window is measured in units, a complete cartouche
+   counting as one unit. With no cartouche in the stream it is exactly the old window,
+   and the harness's constraint-off arms (which blank `cartouche_spans`) take that path,
+   so `all_off`, `pooled_only` and `discount_only` segment exactly as before. Weights,
+   forbidden interior cuts, the known-long-group candidates and the hint veto are
+   unchanged. Seven synthetic tests (a cartouche of 11, 12 or 15 glyphs with one sign
+   on its left or right, under a constant boundary prior; and a 15-glyph line on an
+   attested toy corpus) fail before the fix and pass after; none uses TLA:1980.
+   **TLA:121 is a different case and is not changed**: its gold cuts inside a matched
+   cartouche (at 7, in [4, 11)), so the constrained decoder cannot produce that
+   boundary by design, and no legal grouping scores better than the one chosen. That
+   loss is a consequence of the rule, not a defect, and is not gated by (c).
+   Whether attempt 2 passes (c) is not known in advance; the fix changes every line with
+   a cartouche longer than the window, so no attempt-1 count carries over.
+3. **A test double that step 9 would have stopped on** — commit `744d10b`. Two recording
+   doubles in `tests/test_batch2_ranking.py` did not accept the `use_pooled_fallback`
+   keyword the stage router has passed since the KRI self-test fixes, so 11 tests
+   failed with `TypeError` at `1733c16`. Attempt 1 never reached step 9, so this did not
+   affect it. Test-only change.
+4. **The singleton `/k` discount is left as it is.** (g) is reported, never gated, and
+   no target was registered. Attempt 1 measured it raising the Brier score by
+   +0.000117323 (all positions) and +0.000118036 (with a reading); that is recorded,
+   and nothing is changed because of it.
+
+### What did not change
+
+No rule, budget, threshold, constant, split, arm definition or command changed. §4 and
+§5 stand as written; `scripts/check_kri_fixes_gates.py` and
+`scripts/run_kri_fixes_prereg.sh` are byte-identical to `1733c16`. The runner has no
+hard-coded commit pin to update: it takes the approved commit as its one argument and
+asserts `HEAD` equals it at step 0. No change above was chosen to make a rule pass; the
+cartouche fix is justified by the optimality invariant on synthetic input, not by the
+gate count.
+
+### Arms in attempt 2
+
+The five arms are unchanged and still toggle each feature. The harness passes
+`use_pooled_fallback=arm.pooled` explicitly on every decode, so `pooled_only` and
+`all_on` still run the pooled fallback **on**, and the other three run it off, exactly
+as in attempt 1; the change of the shipped default does not reach the harness. What
+changed is only which configuration ships: with the fallback off by default, the shipped
+reading configuration corresponds to `cartouche_only` with the `/k` discount. That is
+why (a) and (c) were already gated on `cartouche_only` as well as `all_on` (§4a). Rule
+(b) is decided afresh in attempt 2 by the unchanged rule; whether the default is
+switched back on after attempt 2 is the lead's decision, not this addendum's.
+
+### Attempt 2
+
+* **Run commit:** the commit that adds this addendum. It is passed to the runner as
+  `APPROVED_SHA` (`bash scripts/run_kri_fixes_prereg.sh APPROVED_SHA`) and its full
+  id is copied into the attempt-2 results note.
+* **Run directory:** `~/egyptology-runs/kri-fixes-2026-10-26-attempt2`, allocated fresh
+  by the runner; attempt 1's directory is not touched.
+* **Scope:** all of §5, steps 0–9. No subset re-run, no reuse of an attempt-1 number.
+* **Before the run:** the test files touched by these commits were run one file at a
+  time, and steps 0–1 of the runner ran on the run commit into a scratch
+  `KRI_RUNS_BASE` with `KRI_STOP_AFTER=1`.
