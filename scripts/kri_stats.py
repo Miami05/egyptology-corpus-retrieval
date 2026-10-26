@@ -16,10 +16,18 @@ Nothing here is endpoint-specific: endpoints R and G hand it the same shape (per
 line, a binary success for each side) and are analysed separately, never pooled.
 
 The sign test is computed in exact integer arithmetic (`math.comb` over `2 ** n`),
-so a p-value at the boundary is decided by the rational, not by a float. The
-interval is Newcombe's method 10 for the difference of paired proportions (the
-MOVER/"square-and-add" combination of two Wilson score intervals with the sample
-correlation), which is what "Newcombe (score, paired)" names.
+and the Holm decisions compare that exact rational with exact rational thresholds
+(`ALPHA_EXACT / k`), so a decision at the boundary is made by the rational end to
+end; floats exist only for display. The interval is Newcombe's method 10 for the
+difference of paired proportions (Newcombe 1998, Stat Med 17:2635): the
+"square-and-add" combination of two Wilson score intervals with the sample
+correlation phi, **with phi's continuity correction** — when `ad - bc > 0` its
+numerator is `max(ad - bc - n/2, 0)`. Without that correction the intervals of a
+positively correlated table come out too narrow (review round 2026-10-26). The published worked values of method 10 are pinned in
+`tests/test_kri_stats.py`.
+
+Small n (§4d): below `SMALL_N` lines an endpoint is described case by case, "k of
+n", with no percentages and no intervals; `EndpointResult.describe` obeys that.
 """
 
 from __future__ import annotations
@@ -32,6 +40,11 @@ from fractions import Fraction
 Z_95 = 1.959963984540054
 
 ALPHA = 0.05
+#: The same alpha as an exact rational: every Holm decision is made with this.
+ALPHA_EXACT = Fraction(1, 20)
+
+#: §4d: below 30 lines, "case by case … no percentages or intervals".
+SMALL_N = 30
 
 #: §4e: "about 150 lines of this endpoint", judged separately per endpoint.
 POWER_FLOOR = 150
@@ -131,7 +144,12 @@ def newcombe_paired_interval(counts: PairedCounts, z: float = Z_95) -> tuple[flo
     l1, u1 = wilson_interval(a + b, n, z)
     l2, u2 = wilson_interval(a + c, n, z)
     denominator = (a + b) * (c + d) * (a + c) * (b + d)
-    phi = ((a * d - b * c) / math.sqrt(denominator)) if denominator > 0 else 0.0
+    # Newcombe's method 10 continuity-corrects phi: a positive association is
+    # shrunk by n/2 (and floored at 0); a non-positive one is left as it is.
+    numerator = a * d - b * c
+    if numerator > 0:
+        numerator = max(numerator - n / 2, 0.0)
+    phi = (numerator / math.sqrt(denominator)) if denominator > 0 else 0.0
     lower_radicand = (p1 - l1) ** 2 - 2 * phi * (p1 - l1) * (u2 - p2) + (u2 - p2) ** 2
     upper_radicand = (u1 - p1) ** 2 - 2 * phi * (u1 - p1) * (p2 - l2) + (p2 - l2) ** 2
     lower = diff - math.sqrt(max(0.0, lower_radicand))
@@ -151,6 +169,12 @@ class EndpointResult:
     underpowered: bool
     holm_threshold: float = ALPHA
     holm_reject: bool = False
+    holm_threshold_exact: Fraction = ALPHA_EXACT
+
+    @property
+    def small_n(self) -> bool:
+        """§4d: case by case, no percentages, no intervals."""
+        return self.counts.n < SMALL_N
 
     @property
     def interval_excludes_zero(self) -> bool:
@@ -170,6 +194,16 @@ class EndpointResult:
         return "no difference shown"
 
     def describe(self) -> str:
+        if self.small_n:
+            # §4d: k of n and the discordant pairs only — no rate, no margin, no
+            # interval, no p-value and no verdict beyond "on these lines".
+            counts = self.counts
+            return (
+                f"endpoint {self.endpoint}: app {counts.both + counts.app_only} of "
+                f"{counts.n}, baseline {counts.both + counts.baseline_only} of {counts.n}; "
+                f"W={counts.app_only} L={counts.baseline_only} ties={counts.ties}; "
+                f"n < {SMALL_N}, reported case by case on these lines only"
+            )
         low, high = self.interval
         return (
             f"endpoint {self.endpoint}: n={self.counts.n}, app {self.counts.app_rate:.0%} "
@@ -181,35 +215,34 @@ class EndpointResult:
         )
 
 
-def holm_thresholds(p_values: dict[str, float], alpha: float = ALPHA) -> dict[str, float]:
+def holm_thresholds(p_values: dict, alpha: Fraction = ALPHA_EXACT) -> dict[str, Fraction]:
     """Holm's step-down thresholds for a family, keyed as `p_values` is.
 
     The family is every endpoint analysed, including one that is uninformative: §4e
     says an underpowered endpoint "still counts in the family", so the smallest
     threshold stays alpha / 2 for a family of two whether or not both are informative.
+    Thresholds are exact rationals; pass exact p-values (`Fraction`) to keep the
+    whole decision exact. A float p is compared exactly too (Python compares a float
+    and a Fraction as rationals), but it has already been rounded once.
     """
+    alpha = Fraction(alpha) if not isinstance(alpha, Fraction) else alpha
     family = len(p_values)
     order = sorted(p_values, key=lambda key: (p_values[key], key))
-    thresholds: dict[str, float] = {}
-    still_rejecting = True
-    for rank, key in enumerate(order):
-        threshold = alpha / (family - rank)
-        thresholds[key] = threshold
-        if still_rejecting and p_values[key] > threshold:
-            # Holm is step-down: once one hypothesis is not rejected, nothing after
-            # it is either, however small its own threshold.
-            still_rejecting = False
-    return thresholds
+    return {key: alpha / (family - rank) for rank, key in enumerate(order)}
 
 
-def holm_rejections(p_values: dict[str, float], alpha: float = ALPHA) -> dict[str, bool]:
+def holm_rejections(p_values: dict, alpha: Fraction = ALPHA_EXACT) -> dict[str, bool]:
+    """Holm's step-down decisions. Strict `p < threshold`, as the pre-registration
+    words it ("p < 0.05"); with dyadic sign-test p-values and thresholds carrying a
+    factor of 5, equality cannot occur, so `<` and `<=` never differ in practice."""
+    alpha = Fraction(alpha) if not isinstance(alpha, Fraction) else alpha
     family = len(p_values)
     order = sorted(p_values, key=lambda key: (p_values[key], key))
     rejected: dict[str, bool] = {}
     still_rejecting = True
     for rank, key in enumerate(order):
         threshold = alpha / (family - rank)
-        if still_rejecting and p_values[key] <= threshold:
+        if still_rejecting and p_values[key] < threshold:
             rejected[key] = True
         else:
             still_rejecting = False
@@ -232,14 +265,15 @@ def analyse_endpoint(endpoint: str, pairs: list[tuple[bool, bool]]) -> EndpointR
 
 
 def analyse_family(
-    pairs_by_endpoint: dict[str, list[tuple[bool, bool]]], alpha: float = ALPHA
+    pairs_by_endpoint: dict[str, list[tuple[bool, bool]]], alpha: Fraction = ALPHA_EXACT
 ) -> dict[str, EndpointResult]:
     """Analyse each endpoint and apply Holm across the family. Never pools them."""
     results = {
         endpoint: analyse_endpoint(endpoint, pairs)
         for endpoint, pairs in pairs_by_endpoint.items()
     }
-    p_values = {endpoint: result.p_value for endpoint, result in results.items()}
+    # Exact p-values into exact thresholds: no float anywhere in the decision.
+    p_values = {endpoint: result.p_value_exact for endpoint, result in results.items()}
     thresholds = holm_thresholds(p_values, alpha)
     rejections = holm_rejections(p_values, alpha)
     return {
@@ -250,8 +284,9 @@ def analyse_family(
             p_value_exact=result.p_value_exact,
             interval=result.interval,
             underpowered=result.underpowered,
-            holm_threshold=thresholds[endpoint],
+            holm_threshold=float(thresholds[endpoint]),
             holm_reject=rejections[endpoint],
+            holm_threshold_exact=thresholds[endpoint],
         )
         for endpoint, result in results.items()
     }

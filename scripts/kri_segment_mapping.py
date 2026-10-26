@@ -204,9 +204,12 @@ def map_app_segments_to_gold(
 
     Raises `MappingError` when the two describe different glyph input — an empty app
     output is not that case (it is every group `absent`, a clean sweep of misses),
-    but a different sign string is: it means the run was mis-assembled, and scoring
-    it would quietly compare two different lines. The message carries lengths and
-    offsets only, never glyphs: this runs on KRI material.
+    but a different sign string is: no span of one can be read in the other. The
+    driver refuses a gold division that is not its glyph input before the app runs,
+    so at scoring time this error means the app's own output lost or changed signs;
+    the driver then scores every group of that line as a miss for the app (§4e: a
+    group the app does not produce) and flags the line. The message carries lengths
+    and offsets only, never glyphs: this runs on KRI material.
     """
     if len(app_segments) != len(app_candidates):
         raise MappingError(

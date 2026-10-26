@@ -28,7 +28,8 @@ code — see **Eligibility** below.
 | `docs/kri/exclusion-manifest.csv` | the manifest itself, with its first entry (the self-test passage, by reference) |
 | `scripts/kri_stats.py` | the exact sign test, the Newcombe paired interval, Holm, the power floor |
 | `scripts/run_kri_endpoints.py` | the driver that ties all of it together and writes the run's outputs |
-| `tests/test_kri_overlap.py`, `tests/test_kri_segment_mapping.py`, `tests/test_kri_declaration.py`, `tests/test_kri_exclusion_manifest.py`, `tests/test_kri_stats.py`, `tests/test_run_kri_endpoints.py` | 136 tests (29 + 22 + 23 + 25 + 22 + 15), synthetic fixtures only |
+| `tests/test_kri_overlap.py`, `tests/test_kri_segment_mapping.py`, `tests/test_kri_declaration.py`, `tests/test_kri_exclusion_manifest.py`, `tests/test_kri_stats.py`, `tests/test_run_kri_endpoints.py` | synthetic fixtures only (counts after the 2026-10-26 review round are in **Review round** below) |
+| `tests/test_kri_tooling_freeze.py` | keeps the tooling's sha256 record below honest, as `test_kri_bfreq_freeze.py` does for B-freq |
 
 The frozen B-freq files (`scripts/bfreq_baseline.py`, `scripts/build_bfreq_table.py`,
 `tests/test_bfreq_baseline.py`) are **not touched**; `tests/test_kri_bfreq_freeze.py`
@@ -38,6 +39,25 @@ still passes (23 tests), so the freeze record's hashes still hold.
 
 ## How to run it
 
+### 0. The one lines file
+
+Both scripts read the **same** private lines file,
+`~/egyptology-private-kri/lines.csv`, with the columns
+`line_id, kri_reference, glyph_input, gold_groups, gold_reading, query_transliteration`
+(`scripts.kri_overlap.LINES_FILE_COLUMNS`):
+
+* `kri_reference` — `KRI <vol> <page> (line n)`; required for a confirmation line,
+  since exclusion by reference needs it;
+* `glyph_input` — what is pasted into the app, as received;
+* `gold_groups` — Camilla's word division, as glyph groups separated by spaces; they
+  must concatenate to exactly `glyph_input` (checked before anything runs);
+* `gold_reading` — one reading per gold group;
+* `query_transliteration` — endpoint R's input.
+
+The overlap checker checks two views of every line — the gold reading over the glyph
+input (what endpoint G reads) and the query transliteration (what endpoint R searches
+with) — and labels the line by the more severe.
+
 ### 1. Overlap-check the lines (§4a, §4d)
 
 ```bash
@@ -45,16 +65,35 @@ still passes (23 tests), so the freeze record's hashes still hold.
     --lines ~/egyptology-private-kri/lines.csv \
     --examples data/processed/examples.csv \
     --manifest docs/kri/exclusion-manifest.csv \
+    --excluded-texts ~/egyptology-private-kri/excluded-texts.csv \
     --output ~/egyptology-private-kri/overlap-report.csv
 ```
 
-`--lines` is the one argument that may point into custody. The report holds line
-ids, labels, the predicates that fired, corpus witnesses and Jaccard values — never a
-line. `--private-dir DIR` adds `standrews.csv` to the gate corpus G and records its
-sha256.
+`--lines` and `--excluded-texts` are the arguments that may point into custody. The
+report holds line ids, labels, the predicates that fired, corpus witnesses, manifest
+entry ids, word offsets and Jaccard values — never a line (a P2 hit says how many
+three-word runs are shared and at which word offsets of the line, never which words).
+`--private-dir DIR` adds `standrews.csv` to the gate corpus G and records its sha256.
 
-A line is run only if it is labelled `new` **and** the manifest does not already
-exclude it. `contained` and `partial` lines are reported as "found", never as "read".
+The sidecar `overlap-report.csv.json` binds the report to its inputs: the sha256 of
+the lines file, the corpus, the private corpus, the manifest, the excluded texts, the
+checker's own code, and the report itself, plus whether the manifest is complete. The
+driver refuses a report whose sidecar does not match what it is given.
+
+A line is **runnable** if it is labelled `new`. It is **confirmation-eligible** only
+if, in addition, no manifest entry covers it by any of three routes: the canonical
+hash of one of its texts; its `kri_reference` inside an entry's KRI span; or the §4a
+predicates (pinned Jaccard ≥ 0.5, identical fold, containment, shared word run,
+shared sign trigrams) firing against the entry's private excluded text. That last
+route is what catches a subsection of an excluded passage, a near-twin, and another
+edition. `contained` and `partial` lines are reported as "found", never as "read".
+
+`excluded-texts.csv` (custody only: `entry_id, transliteration, hieroglyphs`) holds
+the text of each manifest entry. Each row must hash to its entry's committed sha256,
+so the private comparison text is bound to the committed manifest. The manifest is
+**complete** only when no hash is pending, every `line`/`passage` reference parses as
+a KRI citation, and every entry has its text; only a complete manifest can back a
+confirmation run.
 
 ### 2. Declare the runs, before running anything (§4d)
 
@@ -85,7 +124,10 @@ the whole file; `--stage auto` throughout; no Egyptian text in any field.
 ```
 
 The text file is read, hashed in place and dropped: the manifest records the digest
-and the citation. The hash is taken over a canonical form (`strict_reading_key`, or
+and the citation. Keep the same text, by entry id, in
+`~/egyptology-private-kri/excluded-texts.csv` for the near-match checks; the
+reference must begin with a KRI citation (`KRI II 569 (lines 3–16), …`) for
+`validate --strict` to pass. The hash is taken over a canonical form (`strict_reading_key`, or
 the §4a sign key), so two editions of one passage are one exclusion. `validate`
 refuses any entry whose reference, source or note carries hieroglyphs or
 Egyptological letters — that is how a line would otherwise leak into git.
@@ -103,20 +145,64 @@ Egyptological letters — that is how a line would otherwise leak into git.
     --out ~/egyptology-private-kri/run-<date>
 ```
 
-The private **lines** file carries, per line: `line_id`, `glyph_input` (what is
-pasted into the app, as received), `gold_groups` (Camilla's word division, as glyph
-groups separated by spaces), `gold_reading` (one reading per gold group) and
-`query_transliteration` (endpoint R's input). The **judgements** file carries
-`line_id, app_success, baseline_success` — endpoint R's binary outcomes from
-Camilla's blind judging, which no script can produce.
+`--lines` is the same file as in step 1 (see step 0). The **judgements** file
+carries `line_id, app_success, baseline_success` (and optionally `bm25_success`) —
+endpoint R's binary outcomes from Camilla's blind judging, which no script can
+produce. Each value must be one of `1/0/yes/no/true/false`; anything else, an empty
+cell included, is refused before scoring rather than read as a failure.
 
-The driver stops rather than improvises. It refuses to run at all if the
-declaration is invalid, if `--examples` is not the declared corpus sha256, if HEAD is
-not the declared commit, or if any declared line is missing from the overlap report
-or is not runnable. It records — and fails the run on — any line whose app output is
-not the same sign string as its gold division, and any endpoint-R line with no
-judgement. Outputs: `endpoint_g_lines.csv`, `endpoint_r_lines.csv`, `summary.json`,
+The driver stops rather than improvises. **It refuses to run at all** if:
+
+* the declaration is invalid, `--examples` is not the declared corpus sha256, or HEAD
+  is not the declared commit;
+* the overlap report's sidecar does not match the lines file, the corpus, the
+  checker code or the report itself; or a declared line is missing from the report or
+  not labelled `new` (the label is checked, not only the `runnable` flag);
+* a **confirmation** line is covered by a manifest entry, has no parseable
+  `kri_reference`, or the report was made without a complete manifest, or against a
+  different manifest than `--manifest`;
+* a declared record is missing or duplicated, a judgement is malformed or
+  duplicated, a G line has no glyph input, a different number of gold groups and gold
+  readings, or a gold division that is not its glyph input — all checked **before
+  the app is called once**, so no output exists that could tempt a second evaluation;
+* the B-freq table's `bfreq_header.json` does not tie it to the declared corpus, top
+  3 and the frozen B-freq code; and, for a confirmation, its sha256 is not the one
+  recorded (or last amended) in the freeze record;
+* a confirmation line is declared together with an experimental override
+  (`--build-bfreq`, `--no-lexicon`, `--top-k` other than 3).
+
+The statistics use **confirmation lines only**. Exploratory lines are reported as
+descriptive counts (k of n, W/L/ties) and never enter a p-value, an interval, the Holm
+family or a `beats_baseline` flag. Below 30 confirmation lines only k of n is written —
+no percentage, margin, interval or p-value. Below the power floor of 150 the endpoint
+is "uninformative" and `beats_baseline` is false. **No verdict field is written** for
+a run with any failed line (an unjudged endpoint-R line) or in an experimental
+configuration; the counts are still written, and the exit code is 1 for a failed line.
+
+If the app's own output drops or changes signs of a correctly divided line, the app
+did not produce those groups: the line is scored with every group a miss for the
+app, flagged `app_sign_mismatch`, and counted in the secondary outputs.
+
+Secondary outputs (descriptive, outside the Holm family): G group-level hit counts,
+G against B-freq restricted to Late Egyptian (`bfreq_table_late_egyptian.csv` from the
+same build, sha-checked against its header), and R against BM25 when the judgements
+carry `bm25_success`.
+
+Outputs: `endpoint_g_lines.csv`, `endpoint_r_lines.csv`, `summary.json`,
 `summary.md`; ids, counts and numbers only, but KRI-derived, so they live in custody.
+
+**Not built**, and therefore not part of any run yet:
+
+* **endpoint R's blind pack** — both systems' top 3 for each line, merged and
+  shuffled, for Camilla to judge. The driver only ingests the judgements. Until a
+  pack generator is built, frozen and reviewed, endpoint R cannot be run;
+* **BM25's per-pool statistics** (§4e) — only BM25's paired counts are reported;
+* **clustering by passage** (§4e "clustered by passage") — the sign test treats lines
+  as independent units.
+
+How the two endpoint-R statements fit: an endpoint-R line with no judgement is
+recorded as *unjudged* (never as a loss, so it cannot shrink or bias n), **and** its
+absence makes the run incomplete, so no verdict is written for either endpoint.
 
 ### 5. The dev fixture gate (any time)
 
@@ -147,6 +233,10 @@ When part 3 is committed, the gate fixture is built like this:
    excluding every row used in the dev fixture.
 2. Have Opus and Astra each verify every predicate of every row **alone**, with their
    own scripts calling the pinned repo functions directly, never `check_overlap.py`.
+   For C2 and P3, `signs` is **`scripts.bfreq_baseline.sign_key`** (`glyph_key` after
+   `normalize_hieroglyphs`), not bare `glyph_key` — see decision 1 below. An
+   adjudicator using bare `glyph_key` would disagree with the checker on variant
+   codepoints, and gate rows would be dropped for that reason alone.
    Keep a row only where the two per-predicate tables agree exactly and the label is
    the stratum's intended one. Never relabel a row to fit; take the next seeded row.
 3. Write `tests/fixtures/overlap_gate_v1.csv` with the columns the runner expects
@@ -244,14 +334,29 @@ Each of these is also stated in the code that implements it.
    wrong for an alignment, where deleting a character would give a placeholder-only
    gold group a zero-length span and shift every later group. Lookup uses `signs`;
    alignment uses `normalize_hieroglyphs` with spaces removed.
-5. **"The app's top 3 for that group"** is frozen as what the app's own sign table
-   shows: the chosen (Viterbi) reading first, then that group's remaining candidates
-   in frequency order. Measuring anything else would measure a view no reader sees.
-6. **A mis-assembled line is a failure, not a zero.** If the app's output is not the
-   same sign string as the gold division, the driver records the line with its reason
-   and fails the run. Scoring it would compare two different lines.
+5. **"The app's top 3 for that group"** is a frozen operational definition in the
+   order of the app's own sign table: the chosen (Viterbi) reading first, then that
+   group's remaining candidates in frequency order, truncated to three. The UI lists
+   more alternatives than three, so this is not a copy of the screen; it is the first
+   three of the order a reader of the app sees. Candidates come from
+   `most_common(5)`, so ties follow corpus row order, fixed once the corpus sha is
+   pinned.
+6. **Input errors are refused; app errors are misses** (revised in the review
+   round). A gold division that is not its glyph input is a data-entry error and is
+   refused before the app is called once. If the app's own output then drops or
+   changes signs, the app did not produce those groups — §4e's miss — and the line is
+   scored with every group a miss for the app, flagged `app_sign_mismatch`.
 7. **Endpoint R with no judgements** is `n = 0`, `p = 1`, uninformative — and still a
    member of the Holm family of two, exactly as §4e says an underpowered endpoint is.
+   *Partial* judgements do not quietly shrink n: a missing judgement makes the run
+   incomplete, and an incomplete run gets no verdict.
+8. **Newcombe method 10 with phi's continuity correction** (corrected in the review
+   round): when `ad − bc > 0` the correlation's numerator is `max(ad − bc − n/2, 0)`.
+   The first version lacked it, so its intervals were too narrow. Published worked
+   values are now pinned in `tests/test_kri_stats.py`.
+9. **Exploratory execution is separate from permanent exclusion.** Every line seen
+   in §4d goes into the (B) manifest *and* is run there, exploratorily. So an excluded
+   `new` line is `runnable`; it is never `confirmation_eligible`.
 
 ---
 
@@ -275,3 +380,57 @@ Each of these is also stated in the code that implements it.
   tie-break and the surface rule do not change; only the counts do.
 * **Decide nothing from an exploratory G number.** No G number from the 2026-10-26
   PDFs goes to experts.
+
+---
+
+## Review round 2026-10-26 (Opus + Astra) — what changed
+
+Two independent reviews (Opus: `merge_after_small_fixes`; Astra, gpt-6-astra high:
+`do_not_merge`) were applied in full before any KRI material was run. Where they
+disagreed on a judgement call the more conservative option was taken; the commit
+message lists each item. In short:
+
+* **Newcombe interval**: phi's continuity correction added (method 10 proper); the
+  published worked values are pinned.
+* **Exact Holm**: exact p-values against exact thresholds, strict `<` as the
+  pre-registration words it.
+* **Eligibility**: only eligible confirmation lines enter the test, the interval, the
+  Holm family and the flags; exploratory lines are descriptive counts.
+* **No text leaks**: P2 reports counts and word offsets, never words; declaration and
+  manifest errors name rows and fields, never contents.
+* **Overlap gate**: one shared lines file; both views of a line checked; the report
+  bound to its inputs by a sidecar; the label checked, not only `runnable`.
+* **Exclusions**: by hash, by KRI reference and by the §4a predicates against private
+  excluded texts bound to the committed hashes; confirmation needs a complete
+  manifest; exploratory execution separated from permanent exclusion.
+* **Configuration**: the B-freq table tied to its header (corpus, top 3, frozen code)
+  and, for a confirmation, to the freeze record's sha256; experimental overrides
+  refused for confirmation lines and never given a verdict.
+* **Records**: everything checked before the app runs; a gold division that is not
+  its glyph input refused; app-side sign loss scored as misses; malformed or duplicate
+  records refused; an incomplete run gets no verdict.
+* **Small n**: counts only below 30 lines; `beats_baseline` false below the power
+  floor.
+* **Secondaries**: Late-Egyptian B-freq and group-level hits for G, BM25 counts for R;
+  the blind pack, BM25 per-pool statistics and passage clustering are listed above as
+  not built.
+* **Freeze**: the tooling's sha256s are recorded below; the repeated-group rule is
+  appended as a dated amendment to the B-freq record; §4a's `signs = sign_key` is
+  appended to the plan for the gate adjudicators.
+
+## The frozen tooling
+
+Recorded at the review-round commit, before any KRI scoring run. Enforced by
+`tests/test_kri_tooling_freeze.py`: a change to any of these files fails the suite
+until a new row for it is **appended** here (the last row per file is the one in
+force), with a note on whether any KRI result had been seen.
+
+| File | sha256 |
+|---|---|
+| `scripts/check_overlap.py` | sha256 `34c4452eaf71aef794edeb0ff9f2166473a3033492007b29b08b43a4e8d62778` |
+| `scripts/kri_declaration.py` | sha256 `a489b6cc9433a22f23e764bd093a5e09abf6e8b6afb0c51ee1185882193bdeb4` |
+| `scripts/kri_exclusion_manifest.py` | sha256 `ecfb2a78d42ab1fc6dad598459414f968dbe8f07eeee8c209c4ac9485a06b9b8` |
+| `scripts/kri_overlap.py` | sha256 `72e1141b2bb865ee4f133edea8057b456a965c4ae7258b7895f3551f16ac71a1` |
+| `scripts/kri_segment_mapping.py` | sha256 `6c9e7d1358ed19954806226d524e6a83a17be48dcf97c708a5d590e12f1a5833` |
+| `scripts/kri_stats.py` | sha256 `5f8e5e06380eb17374897b53523601d34326738ff57b379fca2ff8d3416123ca` |
+| `scripts/run_kri_endpoints.py` | sha256 `f29835c91c6950967678960175b2fbde0e911f1a9523ce8f3166ad5cc39b5b3b` |

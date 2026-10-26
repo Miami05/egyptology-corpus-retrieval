@@ -305,12 +305,26 @@ def test_a_gate_failure_is_reported_row_by_row(tmp_path, capsys):
 
 
 def write_lines(path: Path, records: list[dict]) -> None:
+    """Write the SHARED lines file (the driver reads the same one).
+
+    Records may use the short names `transliteration` / `hieroglyphs`, which become
+    the gold reading and the glyph input.
+    """
+    from scripts.kri_overlap import LINES_FILE_COLUMNS
+
+    rows = []
+    for record in records:
+        row = {column: "" for column in LINES_FILE_COLUMNS}
+        row.update({k: v for k, v in record.items() if k in LINES_FILE_COLUMNS})
+        if "transliteration" in record:
+            row["gold_reading"] = record["transliteration"]
+        if "hieroglyphs" in record:
+            row["glyph_input"] = record["hieroglyphs"]
+        rows.append(row)
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(
-            handle, fieldnames=["line_id", "transliteration", "hieroglyphs"], lineterminator="\n"
-        )
+        writer = csv.DictWriter(handle, fieldnames=list(LINES_FILE_COLUMNS), lineterminator="\n")
         writer.writeheader()
-        writer.writerows(records)
+        writer.writerows(rows)
 
 
 def test_the_report_carries_no_line_text(tmp_path):
@@ -330,8 +344,209 @@ def test_the_report_carries_no_line_text(tmp_path):
     assert "examples_sha256" in sidecar.read_text(encoding="utf-8")
 
 
-def test_the_cli_marks_an_excluded_line_as_not_runnable(tmp_path):
-    """A line already in the (B) manifest may never be run, label notwithstanding."""
+def test_a_partial_line_never_leaks_its_shared_words(tmp_path, capsys):
+    """P2's evidence is counts and offsets, never the shared run (review 2026-10-26).
+
+    The line shares `ḏd mdw ꞽn` with TLA_5, so P2 fires; neither the report, nor
+    stdout, nor the sidecar may carry those words — raw or folded.
+    """
+    lines = tmp_path / "lines.csv"
+    secret = "bꜣk ḏd mdw ꞽn sḫt ḥw ꞽwn wr bnr ḏw"
+    write_lines(lines, [{"line_id": "L1", "transliteration": secret}])
+    out = tmp_path / "report.csv"
+    assert check_overlap.main(
+        ["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(out)]
+    ) == 0
+    row = list(csv.DictReader(out.open(encoding="utf-8")))[0]
+    assert "P2" in row["predicates_fired"]
+    assert "offset(s) 1" in row["evidence"]
+    written = out.read_text(encoding="utf-8") + capsys.readouterr().out
+    written += out.with_suffix(".csv.json").read_text(encoding="utf-8")
+    for token in set(secret.split()) | set(search_fold(secret).split()):
+        assert f" {token} " not in f" {written} ".replace("[", " ").replace("]", " "), token
+
+
+def test_p2_detail_is_counts_and_offsets_only():
+    row = prepare("r", "nfr ḥtp nswt nṯr pr", "", source="TLA")
+    detail = predicates_for(line(["bꜣk", "ḥtp", "nswt", "nṯr", "bnr"]), row)["P2"]
+    assert detail == "1 shared 3-word run(s) at line word offset(s) 1"
+
+
+def test_the_query_transliteration_is_checked_too(tmp_path):
+    """Endpoint R's input is part of the line: a contained query makes it `contained`."""
+    lines = tmp_path / "lines.csv"
+    write_lines(
+        lines,
+        [{"line_id": "L1", "transliteration": "bꜣk ꞽm bnr", "query_transliteration": "ḏd mdw ꞽn wsꞽr"}],
+    )
+    out = tmp_path / "report.csv"
+    check_overlap.main(["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(out)])
+    row = list(csv.DictReader(out.open(encoding="utf-8")))[0]
+    assert row["label"] == CONTAINED and "C1" in row["predicates_fired"]
+
+
+def test_the_lines_file_is_the_drivers_schema(tmp_path):
+    """One shared schema: the old checker-only columns are refused, not guessed."""
+    lines = tmp_path / "lines.csv"
+    lines.write_text("line_id,transliteration,hieroglyphs\nL1,bꜣk,\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as error:
+        check_overlap.main(["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(tmp_path / "r.csv")])
+    assert "run_kri_endpoints.py" in str(error.value)
+    from scripts import run_kri_endpoints
+
+    assert run_kri_endpoints.LINE_COLUMNS == check_overlap.LINES_FILE_COLUMNS
+
+
+def test_the_sidecar_binds_the_report_to_its_inputs(tmp_path):
+    lines = tmp_path / "lines.csv"
+    write_lines(lines, [{"line_id": "L1", "transliteration": "bꜣk ꞽm bnr"}])
+    out = tmp_path / "report.csv"
+    check_overlap.main(["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(out)])
+    import json
+
+    from scripts.kri_exclusion_manifest import sha256_file
+
+    sidecar = json.loads(out.with_suffix(".csv.json").read_text(encoding="utf-8"))
+    assert sidecar["lines_sha256"] == sha256_file(lines)
+    assert sidecar["report_sha256"] == sha256_file(out)
+    assert sidecar["checker_sha256"] == check_overlap.checker_sha256()
+    assert sidecar["examples_sha256"] == sha256_file(DEV_CORPUS)
+    assert sidecar["manifest_complete"] is False
+
+
+def _manifest_with(tmp_path, *entries) -> Path:
+    from scripts import kri_exclusion_manifest as manifest_mod
+
+    path = tmp_path / "manifest.csv"
+    manifest_mod.main(["init", "--manifest", str(path)])
+    for scope, reference, extra in entries:
+        manifest_mod.main(
+            ["add", "--manifest", str(path), "--scope", scope, "--reference", reference,
+             "--added", "2026-10-26"] + extra
+        )
+    return path
+
+
+def _excluded_texts(tmp_path, rows) -> Path:
+    path = tmp_path / "excluded.csv"
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["entry_id", "transliteration", "hieroglyphs"], lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+PASSAGE = "bꜣk ꞽm bnr sḫt ḏw ḥw ꞽwn wr ḫpr mꜣꜥ"
+
+
+def _passage_manifest(tmp_path):
+    from scripts.kri_exclusion_manifest import content_hash
+
+    digest = content_hash(PASSAGE, basis="canonical_transliteration")
+    manifest = _manifest_with(
+        tmp_path,
+        ("passage", "KRI II 569 (lines 3-16), test passage",
+         ["--sha256", digest, "--hash-basis", "canonical_transliteration"]),
+    )
+    texts = _excluded_texts(tmp_path, [{"entry_id": "EX001", "transliteration": PASSAGE, "hieroglyphs": ""}])
+    return manifest, texts
+
+
+def _run_with_manifest(tmp_path, records, manifest, texts=None):
+    lines = tmp_path / "lines.csv"
+    write_lines(lines, records)
+    out = tmp_path / "report.csv"
+    argv = ["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(out),
+            "--manifest", str(manifest)]
+    if texts is not None:
+        argv += ["--excluded-texts", str(texts)]
+    assert check_overlap.main(argv) == 0
+    return {row["line_id"]: row for row in csv.DictReader(out.open(encoding="utf-8"))}, out
+
+
+def test_a_subsection_and_a_near_twin_of_an_excluded_passage_are_excluded(tmp_path):
+    """Exact hashes alone let both escape (review 2026-10-26); the predicates catch them."""
+    manifest, texts = _passage_manifest(tmp_path)
+    rows, _out = _run_with_manifest(
+        tmp_path,
+        [
+            {"line_id": "SUB", "transliteration": "sḫt ḏw ḥw ꞽwn"},  # a subsection
+            {"line_id": "TWIN", "transliteration": "bꜣk ꞽm bnr sḫt ḏw ḥw ꞽwn wr ḫpr nfr"},  # near-twin
+            {"line_id": "OTHER", "transliteration": "nb pt tꜣ dwꜣt"},
+        ],
+        manifest,
+        texts,
+    )
+    assert rows["SUB"]["excluded_by"] == "EX001" and "C4" in rows["SUB"]["exclusion_evidence"]
+    assert rows["TWIN"]["excluded_by"] == "EX001" and "C3" in rows["TWIN"]["exclusion_evidence"]
+    assert rows["OTHER"]["excluded_by"] == ""
+    for row in rows.values():  # an excluded line may still be run exploratorily
+        assert row["runnable"] == ("yes" if row["label"] == NEW else "no")
+    assert rows["SUB"]["confirmation_eligible"] == "no"
+    assert rows["OTHER"]["confirmation_eligible"] == "yes"
+
+
+def test_a_line_inside_an_excluded_kri_span_is_excluded_by_reference(tmp_path):
+    manifest = _manifest_with(tmp_path, ("passage", "KRI II 569 (lines 3-16), test", ["--pending"]))
+    rows, _out = _run_with_manifest(
+        tmp_path,
+        [
+            {"line_id": "IN", "transliteration": "nb pt", "kri_reference": "KRI II 569 (line 5)"},
+            {"line_id": "OUT", "transliteration": "nb pt tꜣ", "kri_reference": "KRI II 569 (line 17)"},
+            {"line_id": "NOREF", "transliteration": "nb tꜣ"},
+        ],
+        manifest,
+    )
+    assert rows["IN"]["exclusion_evidence"] == "EX001:reference"
+    assert rows["OUT"]["excluded_by"] == "" and rows["OUT"]["kri_reference_checked"] == "yes"
+    assert rows["NOREF"]["kri_reference_checked"] == "no"
+
+
+def test_an_excluded_text_that_does_not_hash_to_its_entry_is_refused(tmp_path):
+    manifest, _texts = _passage_manifest(tmp_path)
+    wrong = _excluded_texts(tmp_path, [{"entry_id": "EX001", "transliteration": "nb pt", "hieroglyphs": ""}])
+    lines = tmp_path / "lines.csv"
+    write_lines(lines, [{"line_id": "L1", "transliteration": "nb tꜣ"}])
+    with pytest.raises(SystemExit) as error:
+        check_overlap.main(
+            ["--lines", str(lines), "--examples", str(DEV_CORPUS), "--output", str(tmp_path / "r.csv"),
+             "--manifest", str(manifest), "--excluded-texts", str(wrong)]
+        )
+    assert "does not hash" in str(error.value) and "nb pt" not in str(error.value)
+
+
+def test_the_manifest_is_complete_only_with_every_hash_and_every_text(tmp_path):
+    import json
+
+    manifest, texts = _passage_manifest(tmp_path)
+    _rows, out = _run_with_manifest(tmp_path, [{"line_id": "L1", "transliteration": "nb tꜣ"}], manifest, texts)
+    assert json.loads(out.with_suffix(".csv.json").read_text(encoding="utf-8"))["manifest_complete"] is True
+    _rows, out = _run_with_manifest(tmp_path, [{"line_id": "L1", "transliteration": "nb tꜣ"}], manifest)
+    assert json.loads(out.with_suffix(".csv.json").read_text(encoding="utf-8"))["manifest_complete"] is False
+    pending = _manifest_with(tmp_path, ("passage", "KRI II 569 (lines 3-16), test", ["--pending"]))
+    _rows, out = _run_with_manifest(tmp_path, [{"line_id": "L1", "transliteration": "nb tꜣ"}], pending)
+    sidecar = json.loads(out.with_suffix(".csv.json").read_text(encoding="utf-8"))
+    assert sidecar["manifest_complete"] is False
+    assert any("pending" in reason or "fill it in" in reason for reason in sidecar["manifest_incomplete_reasons"])
+
+
+def test_a_fixture_without_a_corpus_sha_is_refused(tmp_path):
+    broken = tmp_path / "nosha.csv"
+    rows = list(csv.DictReader(DEV_FIXTURE.open(encoding="utf-8")))
+    for row in rows:
+        row["corpus_sha"] = ""
+    with broken.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    with pytest.raises(SystemExit) as error:
+        check_overlap.main(["--fixture", str(broken), "--examples", str(DEV_CORPUS)])
+    assert "corpus_sha is empty" in str(error.value)
+
+
+def test_the_cli_marks_an_excluded_line_as_not_confirmation_eligible(tmp_path):
+    """A line in the (B) manifest never counts toward §4e, label notwithstanding;
+    it may still be run exploratorily (§4d runs every line it then excludes)."""
     from scripts import kri_exclusion_manifest as manifest_mod
 
     secret = "bꜣk ꞽm bnr sḫt ḏw"
@@ -350,7 +565,9 @@ def test_the_cli_marks_an_excluded_line_as_not_runnable(tmp_path):
          "--manifest", str(manifest)]
     )
     row = list(csv.DictReader(out.open(encoding="utf-8")))[0]
-    assert row["label"] == NEW and row["excluded_by"] == "EX001" and row["runnable"] == "no"
+    assert row["label"] == NEW and row["excluded_by"] == "EX001"
+    assert row["runnable"] == "yes" and row["confirmation_eligible"] == "no"
+    assert "EX001:" in row["exclusion_evidence"] and "hash" in row["exclusion_evidence"]
 
 
 def test_the_corpus_argument_may_not_point_at_kri_custody(tmp_path):

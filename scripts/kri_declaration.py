@@ -168,36 +168,40 @@ def _dirty_fields(run: DeclaredRun) -> list[str]:
 
 
 def validate_run(run: DeclaredRun) -> list[str]:
-    """Every problem with one declared run. Empty list = valid."""
+    """Every problem with one declared run. Empty list = valid.
+
+    Messages name the field and, where it helps, the allowed values — never the
+    field's own content: a malformed field may be exactly where a line was pasted by
+    mistake, and these messages go to the terminal (review round 2026-10-26).
+    """
     problems: list[str] = []
     if not run.declaration_id.strip():
         problems.append("declaration_id is empty")
     if not run.line_id.strip():
         problems.append("line_id is empty")
     if run.input_modality not in PAIRINGS:
-        problems.append(
-            f"input_modality {run.input_modality!r} is not one of {sorted(PAIRINGS)}"
-        )
+        problems.append(f"input_modality is not one of {sorted(PAIRINGS)}")
     elif PAIRINGS[run.input_modality] != run.endpoint:
+        # input_modality is from PAIRINGS here, so naming it echoes no free text.
         problems.append(
             f"§4d pairs {run.input_modality} input with endpoint "
-            f"{PAIRINGS[run.input_modality]}, not {run.endpoint!r}; a line with both "
+            f"{PAIRINGS[run.input_modality]}, not the endpoint declared; a line with both "
             f"kinds of input gets two declared runs"
         )
     elif run.endpoint not in ENDPOINTS:
-        problems.append(f"endpoint {run.endpoint!r} is not one of {list(ENDPOINTS)}")
+        problems.append(f"endpoint is not one of {list(ENDPOINTS)}")
     if run.stage != REQUIRED_STAGE:
-        problems.append(f"stage must be {REQUIRED_STAGE!r} (§4d), not {run.stage!r}")
+        problems.append(f"stage must be {REQUIRED_STAGE!r} (§4d)")
     if run.cohort not in COHORTS:
-        problems.append(f"cohort {run.cohort!r} is not one of {list(COHORTS)}")
+        problems.append(f"cohort is not one of {list(COHORTS)}")
     if not _ISO_DATE.match(run.material_received):
-        problems.append(f"material_received {run.material_received!r} is not an ISO date")
+        problems.append("material_received is not an ISO date")
     if not _ISO_DATE.match(run.declared_on):
-        problems.append(f"declared_on {run.declared_on!r} is not an ISO date")
+        problems.append("declared_on is not an ISO date")
     if not _HEX40.match(run.commit):
-        problems.append(f"commit {run.commit!r} is not a 40-character sha")
+        problems.append("commit is not a 40-character sha")
     if not _HEX64.match(run.corpus_sha256):
-        problems.append(f"corpus_sha256 {run.corpus_sha256!r} is not a sha256")
+        problems.append("corpus_sha256 is not a sha256")
     if (
         run.cohort == CONFIRMATION
         and run.endpoint == ENDPOINT_G
@@ -224,23 +228,27 @@ def validate(declaration: Declaration) -> list[str]:
     if not declaration.runs:
         return ["the declaration is empty: there is nothing declared to run"]
     seen_ids: set[str] = set()
-    seen_pairs: set[tuple[str, str]] = set()
-    for run in declaration.runs:
-        problems.extend(f"{run.declaration_id or '(no id)'}: {p}" for p in validate_run(run))
+    seen_pairs: dict[tuple[str, str], int] = {}
+    for row_number, run in enumerate(declaration.runs, start=2):
+        # Rows are named by their line in the file (the header is line 1), never by a
+        # field's content.
+        label = f"row {row_number}"
+        problems.extend(f"{label}: {p}" for p in validate_run(run))
         if run.declaration_id in seen_ids:
-            problems.append(f"{run.declaration_id}: duplicate declaration_id")
+            problems.append(f"{label}: duplicate declaration_id")
         seen_ids.add(run.declaration_id)
         pair = (run.line_id, run.endpoint)
         if pair in seen_pairs:
+            endpoint = run.endpoint if run.endpoint in ENDPOINTS else "(invalid)"
             problems.append(
-                f"{run.declaration_id}: line {run.line_id} is declared twice for endpoint "
-                f"{run.endpoint}; one line is one unit per endpoint (§4e)"
+                f"{label}: the line of row {seen_pairs[pair]} is declared twice for endpoint "
+                f"{endpoint}; one line is one unit per endpoint (§4e)"
             )
-        seen_pairs.add(pair)
+        seen_pairs.setdefault(pair, row_number)
     commits = {run.commit for run in declaration.runs}
     if len(commits) > 1:
         problems.append(
-            f"the declaration pins {len(commits)} different commits {sorted(commits)}; "
+            f"the declaration pins {len(commits)} different commits; "
             f"§4e allows one evaluation on one pinned commit"
         )
     shas = {run.corpus_sha256 for run in declaration.runs}
@@ -346,7 +354,8 @@ def _cmd_validate(args: argparse.Namespace) -> int:
             f"  endpoint G: {len(exploratory_g)} of {counts[ENDPOINT_G]} lines are "
             f"exploratory; no exploratory G number goes to experts"
         )
-    if declaration.runs:
+    if declaration.runs and not problems:
+        # Echoed only once valid: a 40/64-hex pin cannot carry a line.
         print(f"commit {declaration.commit}  corpus {declaration.corpus_sha256}")
     print(f"declaration sha256 {declaration.sha256()}")
     print("Commit that sha256 before the first run (§4d). Nothing is re-declared after results.")

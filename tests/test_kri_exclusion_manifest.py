@@ -249,3 +249,34 @@ def test_validate_passes_a_pending_manifest_and_fails_it_under_strict(tmp_path, 
     assert manifest_mod.main(["validate", "--manifest", str(path)]) == 0
     assert manifest_mod.main(["validate", "--manifest", str(path), "--strict"]) == 1
     assert "manifest sha256" in capsys.readouterr().out
+
+
+def test_manifest_problems_never_echo_a_fields_content(tmp_path, capsys):
+    secret = f"{A1} ꞽri̯.n=f"
+    bad = entry(entry_id=secret, added=secret, scope=secret, hash_basis=secret, sha256=secret, reference=secret)
+    problems = manifest_mod.validate(Manifest(entries=[bad]))
+    assert problems and all(A1 not in problem and "ꞽri̯" not in problem for problem in problems)
+    path = tmp_path / "m.csv"
+    write_manifest(Manifest(entries=[entry(reference=f"KRI II 569 {A1}", sha256=PENDING_HASH, hash_basis="pending")]), path)
+    assert manifest_mod.main(["validate", "--manifest", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert A1 not in captured.out + captured.err
+
+
+def test_kri_spans_parse_and_overlap_toward_exclusion():
+    from scripts.kri_exclusion_manifest import parse_kri_span, spans_overlap
+
+    passage = parse_kri_span("KRI II 569 (lines 3–16), Karnak")
+    assert (passage.volume, passage.page_start, passage.line_start, passage.line_end) == ("II", 569, 3, 16)
+    assert spans_overlap(parse_kri_span("KRI II 569 (line 5)"), passage)
+    assert not spans_overlap(parse_kri_span("KRI II 569 (line 17)"), passage)
+    assert not spans_overlap(parse_kri_span("KRI III 569 (line 5)"), passage)
+    assert spans_overlap(parse_kri_span("KRI II 569"), passage)  # no line given: whole page
+    assert spans_overlap(parse_kri_span("KRI II 569, line 9"), parse_kri_span("KRI II 568-570 (lines 1-2)"))
+    assert parse_kri_span("Urk. IV 1") is None
+
+
+def test_strict_validation_needs_a_kri_citation_for_line_and_passage_entries():
+    loose = entry(scope="passage", reference="Karnak hypostyle, somewhere")
+    assert any("KRI citation" in p for p in validate_entry(loose, strict=True))
+    assert not any("KRI citation" in p for p in validate_entry(loose))

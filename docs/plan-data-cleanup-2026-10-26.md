@@ -971,3 +971,19 @@ Expert answers that can change this plan:
 * Nederhof: Old Egyptian as its own stage.
 
 None blocks parts 1–3. Each would be its own later item.
+
+---
+
+## Addendum 2026-10-26: §4a `signs` as implemented (appended; nothing above is edited)
+
+*From the Opus + Astra review of the KRI tooling branch, before any gate fixture or
+KRI run.* §4a defines `signs` as "the same definition as `glyph_key` in
+`import_ud_egyptian_pc.py`, imported, not re-written". The checker and the frozen
+B-freq baseline both use **`scripts.bfreq_baseline.sign_key`**, which is that
+imported `glyph_key` applied after the app's `normalize_hieroglyphs` (so a variant
+codepoint such as TLA's Z15B matches the corpus's Z2). Both reviewers accepted this as
+an explicit protocol amendment: it errs toward finding overlap, and any C2/P3 hit
+that needed the normalisation is marked `normalised-only` in the report. **The gate
+fixture's independent adjudicators must use `sign_key` too**, or their C2/P3 tables
+will disagree with the checker on variant codepoints and rows will be dropped for
+that reason alone. Details: `docs/kri-official-test-tooling-2026-10-26.md`.

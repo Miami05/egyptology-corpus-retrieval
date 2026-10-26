@@ -324,3 +324,32 @@ change after seeing results retires the set" requires.
    `examples.csv` changes first (part 1 cleanup and part 3 PT admission both change
    it). The rule, the keys, the tie-break and the surface rule do not change; only the
    counts do.
+
+## Amendment 2026-10-26 (rev. 3): repeated gold groups, and the mapping is built
+
+*Appended after the Opus + Astra review of the KRI tooling branch
+(`kri-official-prep-2026-10-26`), before any KRI scoring run and before any
+endpoint-G number existed. Nothing above is edited; this section supersedes the
+parenthetical noted below.*
+
+**Repeated gold groups are not misses.** "Not built yet" above lists "merges, splits
+and repeated groups" and says "(all three are misses for the app …)". For repeated
+groups that parenthetical is superseded. §4e lists as misses only a group the app
+"does not produce, or that it merges or splits", and this record's own scoring section
+says the same. B-freq scores every repeat on its own, so penalising a correctly
+aligned repeat would treat the two sides differently and cost the app a group for a
+line that repeats a word. The hazard the phrase named — a string-keyed mapping pairing
+a gold group with the wrong segment, or one segment answering two groups — is removed
+by construction: the mapping aligns by character offset. The frozen rule, verbatim
+from `scripts/kri_segment_mapping.py` (`REPEATED_GROUP_RULE`):
+
+> Repeated identical gold groups are told apart by their character offsets: each occurrence is answered by the app segment at its own position, and no app segment answers two gold groups. Repeats are counted and reported per line, never scored as misses for being repeats.
+
+**Step 1 of "Still to be done" is done.** The app-segment → gold-span mapping is
+built (`scripts/kri_segment_mapping.py`) and tested, and its sha256 — with those of
+the overlap checker, the manifest and declaration tooling, the statistics and the
+driver — is recorded in `docs/kri-official-test-tooling-2026-10-26.md` and enforced
+by `tests/test_kri_tooling_freeze.py`.
+
+This amendment changes no B-freq rule, key, tie-break, surface rule, scorer or table;
+the frozen files and their sha256s above are unchanged.

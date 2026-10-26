@@ -40,7 +40,28 @@ Commands
 
 `validate` is the gate: it refuses a manifest whose reference or note contains
 hieroglyphs or Egyptological letters, because that is how a line leaks into git one
-"helpful" field at a time.
+"helpful" field at a time. Its messages name the entry and the field, never the
+field's content.
+
+How an entry excludes a line (review round 2026-10-26)
+------------------------------------------------------
+
+§4e's exclusion checks are "pinned Jaccard >= 0.5, identical fold, same text, edition
+link". An exact hash alone catches only an identical canonical text, so an entry now
+excludes a line by any of three routes, all reported by entry id:
+
+* **hash** — the line's canonical text has the entry's sha256 (`excludes_text`);
+* **reference** — the line's `kri_reference` falls inside the entry's KRI span
+  (`excludes_reference`; `parse_kri_span` is the grammar, and `validate --strict`
+  requires every `line`/`passage` entry's reference to parse);
+* **text** — the §4a predicates C1-C4/P1-P3 (pinned Jaccard >= 0.5, identical fold,
+  containment, shared word run, shared sign trigrams) fire between the line and the
+  entry's excluded text, which lives in a *private* file in custody
+  (`read_excluded_texts`) and is bound to the committed entry by its sha256. This is
+  what catches a subsection of an excluded passage, a near-twin, and another edition.
+
+A manifest is **complete** (`completeness_problems`) only when it is strictly valid
+and every entry has its private text: only then can a run be a confirmation.
 """
 
 from __future__ import annotations
@@ -102,6 +123,17 @@ HASH_BASES = {
 HASH_DOMAIN = "kri-exclusion-v1"
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+#: The citation grammar both the manifest's `reference` and a lines file's
+#: `kri_reference` are read with: `KRI <volume> <page>[-<page>]`, optionally followed
+#: by `(line n)`, `(lines a-b)` or `, line n`. Anything after it is free text.
+_KRI_SPAN = re.compile(
+    r"^\s*KRI\s+(?P<vol>[IVXLC]+)\s+(?P<p1>\d+)(?:\s*[-–]\s*(?P<p2>\d+))?"
+    r"(?:\s*(?:,|\()\s*lines?\s+(?P<l1>\d+)(?:\s*[-–]\s*(?P<l2>\d+))?\)?)?"
+)
+
+#: The private excluded-text file's columns (custody only, never committed).
+EXCLUDED_TEXT_COLUMNS = ("entry_id", "transliteration", "hieroglyphs")
 _ENTRY_ID = re.compile(r"^EX\d{3,}$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -144,6 +176,55 @@ def sha256_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1 << 16), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# references
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class KriSpan:
+    """A KRI citation: volume, page range, optional line range."""
+
+    volume: str
+    page_start: int
+    page_end: int
+    line_start: int | None = None
+    line_end: int | None = None
+
+
+def parse_kri_span(text: str) -> KriSpan | None:
+    """Read a KRI citation by `_KRI_SPAN`; `None` when it is not one."""
+    match = _KRI_SPAN.match(text or "")
+    if not match:
+        return None
+    p1 = int(match["p1"])
+    p2 = int(match["p2"]) if match["p2"] else p1
+    l1 = int(match["l1"]) if match["l1"] else None
+    l2 = int(match["l2"]) if match["l2"] else l1
+    if p2 < p1 or (l1 is not None and l2 < l1):
+        return None
+    return KriSpan(match["vol"], p1, p2, l1, l2)
+
+
+def spans_overlap(line: KriSpan, entry: KriSpan) -> bool:
+    """Whether a line's citation falls inside an entry's. Errs toward overlap.
+
+    Different volumes or disjoint pages never overlap. Line ranges are only used to
+    rule a line *out* when both citations are on one and the same page and both name
+    lines; a multi-page entry's line range is ambiguous, so it covers whole pages.
+    """
+    if line.volume != entry.volume:
+        return False
+    if line.page_end < entry.page_start or entry.page_end < line.page_start:
+        return False
+    single_same_page = (
+        line.page_start == line.page_end == entry.page_start == entry.page_end
+    )
+    if single_same_page and line.line_start is not None and entry.line_start is not None:
+        return not (line.line_end < entry.line_start or entry.line_end < line.line_start)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +286,24 @@ class Manifest:
             )
         return hits
 
+    def excludes_reference(self, kri_reference: str) -> list[ManifestEntry]:
+        """Which `line`/`passage` entries' KRI span covers this line's citation.
+
+        A pending entry counts: its reference is real even before its hash is.
+        """
+        line = parse_kri_span(kri_reference)
+        if line is None:
+            return []
+        hits = []
+        for entry in self.entries:
+            span = parse_kri_span(entry.reference)
+            if span is not None and spans_overlap(line, span):
+                hits.append(entry)
+        return hits
+
+    def entry(self, entry_id: str) -> ManifestEntry | None:
+        return next((entry for entry in self.entries if entry.entry_id == entry_id), None)
+
 
 def _text_fields_are_clean(entry: ManifestEntry) -> list[str]:
     """Which free-text fields look like they carry Egyptian rather than a citation."""
@@ -218,17 +317,24 @@ def _text_fields_are_clean(entry: ManifestEntry) -> list[str]:
 
 def validate_entry(entry: ManifestEntry, *, strict: bool = False) -> list[str]:
     """Every problem with one entry, as plain sentences. Empty list = valid."""
+    # Messages name the field, never its content: a malformed field may be exactly
+    # where a line was pasted by mistake.
     problems: list[str] = []
     if not _ENTRY_ID.match(entry.entry_id):
-        problems.append(f"entry_id {entry.entry_id!r} is not of the form EX001")
+        problems.append("entry_id is not of the form EX001")
     if not _ISO_DATE.match(entry.added):
-        problems.append(f"added {entry.added!r} is not an ISO date (YYYY-MM-DD)")
+        problems.append("added is not an ISO date (YYYY-MM-DD)")
     if entry.scope not in SCOPES:
-        problems.append(f"scope {entry.scope!r} is not one of {list(SCOPES)}")
+        problems.append(f"scope is not one of {list(SCOPES)}")
     if not entry.reference.strip():
         problems.append("reference is empty: an exclusion with no citation excludes nothing")
+    elif strict and entry.scope in ("line", "passage") and parse_kri_span(entry.reference) is None:
+        problems.append(
+            "reference does not start with a KRI citation (`KRI <vol> <page>[-<page>]"
+            " [(lines a-b)]`), so no line can be excluded by reference"
+        )
     if entry.hash_basis not in HASH_BASES:
-        problems.append(f"hash_basis {entry.hash_basis!r} is not one of {sorted(HASH_BASES)}")
+        problems.append(f"hash_basis is not one of {sorted(HASH_BASES)}")
     if entry.pending:
         if entry.hash_basis != "pending":
             problems.append("a pending hash must carry hash_basis 'pending'")
@@ -238,7 +344,7 @@ def validate_entry(entry: ManifestEntry, *, strict: bool = False) -> list[str]:
             )
     elif not _HEX64.match(entry.sha256):
         problems.append(
-            f"sha256 {entry.sha256!r} is neither 64 lower-case hex digits nor {PENDING_HASH!r}"
+            f"sha256 is neither 64 lower-case hex digits nor {PENDING_HASH!r}"
         )
     elif entry.hash_basis == "pending":
         problems.append("hash_basis 'pending' but a hash is present; name the basis used")
@@ -255,11 +361,95 @@ def validate(manifest: Manifest, *, strict: bool = False) -> list[str]:
     """Every problem with the whole manifest, entry problems prefixed by entry id."""
     problems: list[str] = []
     seen: set[str] = set()
-    for entry in manifest.entries:
-        problems.extend(f"{entry.entry_id}: {problem}" for problem in validate_entry(entry, strict=strict))
+    for row_number, entry in enumerate(manifest.entries, start=1):
+        # The entry id is echoed only when it is a well-formed id.
+        label = entry.entry_id if _ENTRY_ID.match(entry.entry_id) else f"row {row_number}"
+        problems.extend(f"{label}: {problem}" for problem in validate_entry(entry, strict=strict))
         if entry.entry_id in seen:
-            problems.append(f"{entry.entry_id}: duplicate entry_id")
+            problems.append(f"{label}: duplicate entry_id")
         seen.add(entry.entry_id)
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# the private excluded texts (custody only)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExcludedText:
+    entry_id: str
+    transliteration: str
+    hieroglyphs: str
+
+
+def read_excluded_texts(path: str | Path, manifest: Manifest) -> list[ExcludedText]:
+    """Read the private excluded texts and bind each to its committed manifest entry.
+
+    Every row must name a manifest entry. When that entry has a real hash, the row's
+    text — transliteration for `canonical_transliteration`, hieroglyphs for
+    `canonical_glyphs` — must hash to it: that is what ties the private comparison
+    material to the committed manifest. Errors give the row number and entry id,
+    never the text.
+    """
+    texts: list[ExcludedText] = []
+    with open(Path(path).expanduser(), "r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        missing = [c for c in EXCLUDED_TEXT_COLUMNS if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ManifestError(f"excluded-texts file is missing column(s) {missing}")
+        for row_number, row in enumerate(reader, start=2):
+            entry_id = (row.get("entry_id") or "").strip()
+            entry = manifest.entry(entry_id) if _ENTRY_ID.match(entry_id) else None
+            if entry is None:
+                raise ManifestError(
+                    f"excluded-texts row {row_number}: entry_id is not an entry of the manifest"
+                )
+            text = ExcludedText(
+                entry_id=entry_id,
+                transliteration=row.get("transliteration") or "",
+                hieroglyphs=row.get("hieroglyphs") or "",
+            )
+            if not entry.pending:
+                hashed = (
+                    text.transliteration
+                    if entry.hash_basis == "canonical_transliteration"
+                    else text.hieroglyphs
+                )
+                try:
+                    digest = content_hash(hashed, basis=entry.hash_basis)
+                except ManifestError:
+                    digest = ""
+                if digest != entry.sha256:
+                    raise ManifestError(
+                        f"excluded-texts row {row_number} ({entry_id}): the text does not hash "
+                        f"to the manifest's sha256 under {entry.hash_basis}; it is not the "
+                        f"excluded text, or the manifest is stale"
+                    )
+            texts.append(text)
+    return texts
+
+
+def completeness_problems(manifest: Manifest, texts: list[ExcludedText] | None) -> list[str]:
+    """Why this manifest cannot back a confirmation run. Empty list = complete.
+
+    Complete = strictly valid (no pending hash, every KRI reference parses) and every
+    entry's text supplied privately, so the near-match and edition checks of §4e can
+    run against it.
+    """
+    problems = validate(manifest, strict=True)
+    if not manifest.entries:
+        problems.append("the manifest has no entries; §4e requires the 4d exclusions in it")
+    if texts is None:
+        problems.append("no excluded-texts file: near-match exclusion cannot be checked")
+    else:
+        covered = {text.entry_id for text in texts}
+        problems.extend(
+            f"{entry.entry_id}: no private excluded text, so near-match exclusion "
+            f"cannot be checked against it"
+            for entry in manifest.entries
+            if entry.entry_id not in covered
+        )
     return problems
 
 
@@ -359,7 +549,9 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     pending = manifest.pending_entries
     print(f"{len(manifest.entries)} entries, {len(pending)} with a pending hash")
     for entry in pending:
-        print(f"  pending: {entry.entry_id}  {entry.reference}")
+        # The reference is echoed only when it passed the no-text check.
+        shown = entry.reference if not _text_fields_are_clean(entry) else "(reference withheld: see INVALID)"
+        print(f"  pending: {entry.entry_id}  {shown}")
     print(f"manifest sha256 {sha256_file(path)}")
     return 1 if problems else 0
 

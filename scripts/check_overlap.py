@@ -3,8 +3,14 @@
     python -I scripts/check_overlap.py --lines ~/egyptology-private-kri/lines.csv \
         --examples data/processed/examples.csv \
         [--private-dir ~/egyptology-private-kri/standrews] \
-        [--manifest docs/kri/exclusion-manifest.csv] \
+        [--manifest docs/kri/exclusion-manifest.csv \
+         --excluded-texts ~/egyptology-private-kri/excluded-texts.csv] \
         --output ~/egyptology-private-kri/overlap-report.csv
+
+`--lines` is the same file `scripts/run_kri_endpoints.py` reads
+(`kri_overlap.LINES_FILE_COLUMNS`). Each line is checked through both of its views
+(`kri_overlap.LINE_VIEWS`: the gold reading over the glyph input, and endpoint R's
+query transliteration) and labelled by the more severe.
 
     # the gate (and, with the dev corpus, the dev fixture the checker is built on)
     python -I scripts/check_overlap.py --fixture tests/fixtures/overlap_dev_v1.csv \
@@ -13,10 +19,18 @@
 The rules live in `scripts/kri_overlap.py`; this file is the front end, the fixture
 runner, and the custody boundary.
 
-Custody (§4b). `--lines` is the one argument that may point into
-`~/egyptology-private-kri/`, and it is never written back, echoed or copied: the
-report holds `line_id`s, labels, predicate names, corpus witnesses and Jaccard
-values — no transliteration, no signs, no KRI text of any kind. `--examples` is
+Custody (§4b). `--lines` and `--excluded-texts` are the arguments that may point
+into `~/egyptology-private-kri/`, and they are never written back, echoed or copied:
+the report holds `line_id`s, labels, predicate names, corpus witnesses, manifest
+entry ids, word offsets and Jaccard values — no transliteration, no signs, no KRI
+text of any kind (a P2 hit reports how many runs are shared and where, never which
+words).
+
+Binding (review round 2026-10-26). The sidecar `<report>.json` records the sha256 of
+the lines file, the corpus, the private corpus, the manifest and the excluded texts,
+the checker's own code (`checker_sha256`), whether the manifest is complete, and the
+report's own sha256. The driver refuses a report whose sidecar does not match the
+files it is given, so a stale or hand-edited report cannot open the gate. `--examples` is
 guarded by `scripts.bfreq_baseline.assert_public_path`, so the public corpus can
 never be read out of the custody directory by a slip of the shell.
 
@@ -50,16 +64,53 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import hashlib  # noqa: E402
+
 from scripts.bfreq_baseline import assert_public_path  # noqa: E402
-from scripts.kri_exclusion_manifest import Manifest, read_manifest, sha256_file  # noqa: E402
+from scripts.kri_exclusion_manifest import (  # noqa: E402
+    ExcludedText,
+    Manifest,
+    ManifestError,
+    completeness_problems,
+    parse_kri_span,
+    read_excluded_texts,
+    read_manifest,
+    sha256_file,
+    validate as validate_manifest,
+)
 from scripts.kri_overlap import (  # noqa: E402
+    CONTAINMENT_PREDICATES,
     CORPUS_COLUMNS,
-    LINE_COLUMNS,
+    LINE_VIEWS,
+    LINES_FILE_COLUMNS,
+    PARTIAL_PREDICATES,
     LineResult,
     check_lines,
+    label_for,
+    prepare,
     prepare_corpus,
     prepare_lines,
 )
+
+#: The code that decides a label or an exclusion. Its combined sha256 is written to
+#: every report's sidecar, and the driver refuses a report made by other code.
+CHECKER_FILES = (
+    "scripts/check_overlap.py",
+    "scripts/kri_exclusion_manifest.py",
+    "scripts/kri_overlap.py",
+)
+
+#: Separates a line id from its view in the internal keys (never written out).
+_VIEW_SEP = "\x1f"
+
+
+def checker_sha256() -> str:
+    """One sha256 over the checker's code files, in name order."""
+    digest = hashlib.sha256()
+    for name in CHECKER_FILES:
+        digest.update(name.encode("utf-8") + b"\n")
+        digest.update((PROJECT_ROOT / name).read_bytes())
+    return digest.hexdigest()
 
 #: The file the private corpus contributes to G (§4a: "With `--private-dir`, G also
 #: includes `standrews.csv` at a recorded sha256"). Exactly this name, exactly this
@@ -85,6 +136,7 @@ REPORT_COLUMNS = (
     "line_id",
     "label",
     "runnable",
+    "confirmation_eligible",
     "predicates_fired",
     "evidence",
     "max_jaccard",
@@ -92,6 +144,8 @@ REPORT_COLUMNS = (
     "nearest_ramses_jaccard",
     "nearest_ramses_witness",
     "excluded_by",
+    "exclusion_evidence",
+    "kri_reference_checked",
     "rows_checked",
 )
 
@@ -120,15 +174,86 @@ def read_corpus(path: str | Path) -> pd.DataFrame:
 
 
 def read_lines(path: str | Path) -> list[dict]:
-    """Read the lines under test. This path may be the custody directory (§4b)."""
+    """Read the shared lines file. This path may be the custody directory (§4b).
+
+    Errors name a row number and a column, never a value.
+    """
     with open(Path(path).expanduser(), "r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames is None or "transliteration" not in reader.fieldnames:
+        missing = [c for c in LINES_FILE_COLUMNS if c not in (reader.fieldnames or [])]
+        if missing:
             raise SystemExit(
-                f"{path}: a --lines file needs columns {list(LINE_COLUMNS)} "
-                f"(hieroglyphs may be empty)"
+                f"{path}: the lines file needs columns {list(LINES_FILE_COLUMNS)} "
+                f"(the same file run_kri_endpoints.py reads); missing {missing}"
             )
-        return [{key: (row.get(key) or "") for key in LINE_COLUMNS} for row in reader]
+        records = [{key: (row.get(key) or "") for key in LINES_FILE_COLUMNS} for row in reader]
+    seen: set[str] = set()
+    for row_number, record in enumerate(records, start=2):
+        line_id = record["line_id"].strip()
+        if not line_id:
+            raise SystemExit(f"{path}: row {row_number} has no line_id")
+        if line_id in seen:
+            raise SystemExit(f"{path}: row {row_number} repeats a line_id; a line is one unit")
+        seen.add(line_id)
+        if not any(record[text].strip() for _view, text, _glyphs in LINE_VIEWS) and not any(
+            record[glyphs].strip() for _view, _text, glyphs in LINE_VIEWS
+        ):
+            raise SystemExit(f"{path}: row {row_number} carries nothing to check")
+        record["line_id"] = line_id
+    return records
+
+
+def line_views(records: list[dict]) -> list[dict]:
+    """One checkable record per (line, view) that has any text, keyed internally."""
+    views = []
+    for record in records:
+        for view, text_column, glyph_column in LINE_VIEWS:
+            if record[text_column].strip() or record[glyph_column].strip():
+                views.append(
+                    {
+                        "line_id": f"{record['line_id']}{_VIEW_SEP}{view}",
+                        "transliteration": record[text_column],
+                        "hieroglyphs": record[glyph_column],
+                    }
+                )
+    return views
+
+
+def merge_views(view_results: list[LineResult], records: list[dict]) -> list[LineResult]:
+    """Fold each line's per-view results into one: the most severe label wins.
+
+    Per predicate the witness with the highest Jaccard is kept, as `check_lines` does
+    within one view, so the merged evidence is what a single view would have shown.
+    """
+    merged = {record["line_id"]: LineResult(line_id=record["line_id"]) for record in records}
+    for result in view_results:
+        line_id = result.line_id.split(_VIEW_SEP, 1)[0]
+        target = merged[line_id]
+        target.rows_checked = max(target.rows_checked, result.rows_checked)
+        if result.max_jaccard > target.max_jaccard:
+            target.max_jaccard, target.max_jaccard_witness = (
+                result.max_jaccard,
+                result.max_jaccard_witness,
+            )
+        if result.nearest_ramses_witness and (
+            not target.nearest_ramses_witness or result.nearest_ramses > target.nearest_ramses
+        ):
+            target.nearest_ramses, target.nearest_ramses_witness = (
+                result.nearest_ramses,
+                result.nearest_ramses_witness,
+            )
+        for predicate, evidence in result.evidence.items():
+            previous = target.evidence.get(predicate)
+            if previous is None or evidence.jaccard > previous.jaccard:
+                target.evidence[predicate] = evidence
+    for result in merged.values():
+        result.label = label_for(result.fired)
+    return [merged[record["line_id"]] for record in records]
+
+
+def check_records(records: list[dict], rows) -> list[LineResult]:
+    """§4a over every view of every line, merged per line."""
+    return merge_views(check_lines(prepare_lines(line_views(records)), rows), records)
 
 
 def corpus_streams(examples: str | Path, private_dir: str | Path | None):
@@ -163,18 +288,60 @@ def corpus_streams(examples: str | Path, private_dir: str | Path | None):
     return stream, provenance
 
 
-def apply_manifest(results: list[LineResult], records: list[dict], manifest: Manifest) -> None:
-    """Record, per line, which exclusion entries already cover it (§4d/§4e)."""
+#: Which evidence makes an excluded text cover a line: any §4a containment or
+#: partial predicate (pinned Jaccard >= 0.5, identical fold, containment, shared
+#: word run, shared sign trigrams) and the extra-fold identity. Deliberately wider
+#: than a label: an exclusion errs toward excluding.
+EXCLUSION_PREDICATES = CONTAINMENT_PREDICATES + PARTIAL_PREDICATES + ("EXTRA_FOLD",)
+
+
+def apply_manifest(
+    results: list[LineResult],
+    records: list[dict],
+    manifest: Manifest,
+    excluded_texts: list[ExcludedText] | None = None,
+) -> None:
+    """Record, per line, which exclusion entries cover it, and by which route.
+
+    Three routes (see `scripts/kri_exclusion_manifest.py`): the canonical hash of any
+    of the line's texts, its KRI reference inside an entry's span, and the §4a
+    predicates against each entry's private excluded text.
+    """
     by_id = {record["line_id"]: record for record in records}
+    views_by_line: dict[str, list] = {}
+    for view in prepare_lines(line_views(records)):
+        views_by_line.setdefault(view.key.split(_VIEW_SEP, 1)[0], []).append(view)
+    prepared_texts = [
+        (
+            text.entry_id,
+            prepare(
+                key=f"manifest/{text.entry_id}",
+                transliteration=text.transliteration,
+                hieroglyphs=text.hieroglyphs,
+                source="excluded",
+            ),
+        )
+        for text in (excluded_texts or [])
+    ]
     for result in results:
         record = by_id.get(result.line_id, {})
-        hits = list(manifest.excludes_text(record.get("transliteration", "")))
-        hits += [
-            entry
-            for entry in manifest.excludes_text(record.get("hieroglyphs", ""))
-            if entry not in hits
-        ]
-        result.excluded_by = tuple(sorted(entry.entry_id for entry in hits))
+        routes: dict[str, set[str]] = {}
+        for column in ("glyph_input", "gold_reading", "query_transliteration"):
+            for entry in manifest.excludes_text(record.get(column, "")):
+                routes.setdefault(entry.entry_id, set()).add("hash")
+        reference = record.get("kri_reference", "")
+        result.reference_checked = parse_kri_span(reference) is not None
+        for entry in manifest.excludes_reference(reference):
+            routes.setdefault(entry.entry_id, set()).add("reference")
+        for entry_id, prepared_text in prepared_texts:
+            for view_result in check_lines(views_by_line.get(result.line_id, []), [prepared_text]):
+                fired = [p for p in EXCLUSION_PREDICATES if p in view_result.evidence]
+                if fired:
+                    routes.setdefault(entry_id, set()).update(fired)
+        result.excluded_by = tuple(sorted(routes))
+        result.exclusion_evidence = tuple(
+            f"{entry_id}:{'+'.join(sorted(routes[entry_id]))}" for entry_id in sorted(routes)
+        )
 
 
 def report_rows(results: list[LineResult]) -> list[dict]:
@@ -185,6 +352,7 @@ def report_rows(results: list[LineResult]) -> list[dict]:
                 "line_id": result.line_id,
                 "label": result.label,
                 "runnable": "yes" if result.runnable else "no",
+                "confirmation_eligible": "yes" if result.confirmation_eligible else "no",
                 "predicates_fired": " ".join(result.fired),
                 "evidence": "; ".join(
                     result.evidence[p].describe() for p in sorted(result.evidence)
@@ -194,6 +362,8 @@ def report_rows(results: list[LineResult]) -> list[dict]:
                 "nearest_ramses_jaccard": f"{float(result.nearest_ramses):.4f}",
                 "nearest_ramses_witness": result.nearest_ramses_witness,
                 "excluded_by": " ".join(result.excluded_by),
+                "exclusion_evidence": " ".join(result.exclusion_evidence),
+                "kri_reference_checked": "yes" if result.reference_checked else "no",
                 "rows_checked": result.rows_checked,
             }
         )
@@ -208,13 +378,23 @@ def write_report(results: list[LineResult], path: str | Path, provenance: dict) 
         writer = csv.DictWriter(handle, fieldnames=list(REPORT_COLUMNS), lineterminator="\n")
         writer.writeheader()
         writer.writerows(report_rows(results))
+    digest = sha256_file(out)
     sidecar = out.with_suffix(out.suffix + ".json")
     sidecar.write_text(
-        json.dumps({**provenance, "commit": git_commit(), "lines": len(results)}, indent=2)
+        json.dumps(
+            {
+                **provenance,
+                "commit": git_commit(),
+                "checker_sha256": checker_sha256(),
+                "lines": len(results),
+                "report_sha256": digest,
+            },
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )
-    return sha256_file(out)
+    return digest
 
 
 # --------------------------------------------------------------------------- fixtures
@@ -240,7 +420,12 @@ def run_fixture(fixture_path: str | Path, examples: str | Path, private_dir: str
     if len(expected_sha) != 1:
         raise SystemExit(f"{fixture_path}: rows disagree about corpus_sha {sorted(expected_sha)}")
     frozen = expected_sha.pop()
-    if frozen and frozen != provenance["examples_sha256"]:
+    if not frozen:
+        raise SystemExit(
+            f"{fixture_path}: corpus_sha is empty. A fixture is frozen on one corpus "
+            f"(§4a); without its sha256 it would run on any corpus. The gate is NOT run."
+        )
+    if frozen != provenance["examples_sha256"]:
         raise SystemExit(
             f"{fixture_path} was frozen on corpus sha256 {frozen}, but --examples is "
             f"{provenance['examples_sha256']}. §4a retires a fixture whose corpus "
@@ -298,6 +483,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--examples", required=True, help="the public corpus CSV (gate corpus G)")
     parser.add_argument("--private-dir", default=None, help=f"directory holding {PRIVATE_FILE}")
     parser.add_argument("--manifest", default=None, help="the (B) exclusion manifest")
+    parser.add_argument(
+        "--excluded-texts",
+        default=None,
+        help="private (custody) CSV of each manifest entry's text: entry_id, "
+        "transliteration, hieroglyphs; bound to the manifest by sha256",
+    )
     parser.add_argument("--output", help="where the per-line report is written")
     parser.add_argument("--fixture", default=None, help="run a dev/gate fixture instead")
     args = parser.parse_args(argv)
@@ -308,16 +499,52 @@ def main(argv: list[str] | None = None) -> int:
     if not args.lines or not args.output:
         parser.error("--lines and --output are required unless --fixture is given")
 
+    if args.excluded_texts and not args.manifest:
+        parser.error("--excluded-texts binds to a manifest: pass --manifest too")
+
     records = read_lines(args.lines)
     if not records:
         raise SystemExit(f"{args.lines}: no lines to check")
     stream, provenance = corpus_streams(args.examples, args.private_dir)
-    results = check_lines(prepare_lines(records), stream())
+    provenance["lines_sha256"] = sha256_file(Path(args.lines).expanduser())
+    results = check_records(records, stream())
 
+    provenance.update(
+        {
+            "manifest": "",
+            "manifest_sha256": "",
+            "excluded_texts_sha256": "",
+            "manifest_complete": False,
+            "manifest_incomplete_reasons": ["no --manifest"],
+        }
+    )
     if args.manifest:
-        apply_manifest(results, records, read_manifest(args.manifest))
-        provenance["manifest"] = str(args.manifest)
-        provenance["manifest_sha256"] = sha256_file(args.manifest)
+        try:
+            manifest = read_manifest(args.manifest)
+            problems = validate_manifest(manifest)
+            if problems:
+                for problem in problems:
+                    print(f"INVALID {problem}", file=sys.stderr)
+                raise SystemExit(f"{args.manifest}: the manifest is not valid; nothing was checked")
+            texts = (
+                read_excluded_texts(args.excluded_texts, manifest) if args.excluded_texts else None
+            )
+        except ManifestError as error:
+            raise SystemExit(f"error: {error}")
+        apply_manifest(results, records, manifest, texts)
+        incomplete = completeness_problems(manifest, texts)
+        provenance.update(
+            {
+                "manifest": str(args.manifest),
+                "manifest_sha256": sha256_file(args.manifest),
+                "excluded_texts_sha256": (
+                    sha256_file(Path(args.excluded_texts).expanduser()) if args.excluded_texts else ""
+                ),
+                "manifest_complete": not incomplete,
+                # Entry ids and fixed sentences only (see `validate_entry`).
+                "manifest_incomplete_reasons": incomplete,
+            }
+        )
 
     digest = write_report(results, args.output, provenance)
     for result in results:
@@ -328,14 +555,21 @@ def main(argv: list[str] | None = None) -> int:
             + (f"; excluded by {' '.join(result.excluded_by)}" if result.excluded_by else "")
         )
     runnable = [r for r in results if r.runnable]
+    eligible = [r for r in results if r.confirmation_eligible]
     print(
         f"\n{len(results)} lines: "
         + ", ".join(
             f"{label} {sum(1 for r in results if r.label == label)}"
             for label in ("contained", "partial", "new")
         )
-        + f"; {len(runnable)} runnable (new and not excluded)"
+        + f"; {len(runnable)} runnable (new), {len(eligible)} confirmation-eligible "
+        f"(new and not excluded)"
     )
+    if not provenance["manifest_complete"]:
+        print(
+            "The manifest is not complete (see the sidecar's manifest_incomplete_reasons): "
+            "no line of this report can enter a confirmation run."
+        )
     print(f"report {args.output} sha256 {digest}")
     print(
         "Reminder (§4d): `contained` / `partial` lines are reported as \"found\", "

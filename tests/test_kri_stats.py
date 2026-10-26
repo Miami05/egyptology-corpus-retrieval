@@ -6,9 +6,11 @@ Note on verification: the sign test is checked against exact binomial arithmetic
 computed independently in the test, and the Wilson interval against the textbook
 value for 10/10 (0.7225, 1.0). The Newcombe paired interval is checked on its
 *properties* (containment of the point estimate, antisymmetry under swapping the two
-sides, degeneracy at zero discordance, and the phi = 0 fallback), not against a
-published worked example — none was available offline, and a regression value
-produced by this code would only pin this code to itself.
+sides, degeneracy at zero discordance, and the phi = 0 fallback) and, since the
+2026-10-26 review round, against Newcombe's (1998) published method-10 values as
+independently recomputed by both reviewers (Astra reproduced the published examples
+to printed precision; Opus's (36, 12, 2, 0) check agrees). Those values include
+phi's continuity correction, which the first version of this code lacked.
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from scripts.kri_stats import (
     ALPHA,
+    ALPHA_EXACT,
+    SMALL_N,
     POWER_FLOOR,
     PairedCounts,
     analyse_endpoint,
@@ -201,5 +205,61 @@ def test_the_counts_split_ties_from_discordant_pairs():
 
 
 def test_the_description_names_the_endpoint_and_both_conditions():
-    text = analyse_endpoint("G", pairs(1, 5, 1, 1)).describe()
+    text = analyse_endpoint("G", pairs(10, 15, 3, 12)).describe()
     assert text.startswith("endpoint G:") and "margin" in text and "Holm threshold" in text
+
+
+def test_a_small_n_description_has_no_percentages_intervals_or_p_values():
+    """§4d: below 30 lines, case by case — "k of n", no percentages, no intervals."""
+    text = analyse_endpoint("G", pairs(1, 2, 0, 1)).describe()
+    assert "3 of 4" in text and "W=2" in text and "L=0" in text
+    for forbidden in ("%", "[", "margin", "p=", "Holm", "beats"):
+        assert forbidden not in text, forbidden
+
+
+# --------------------------------------------------------------------- published values
+
+
+@pytest.mark.parametrize(
+    "table,expected",
+    [
+        # (both, app only, baseline only, neither) -> Newcombe 1998 method 10
+        ((36, 12, 2, 0), (0.0569, 0.3404)),
+        ((20, 12, 2, 16), (0.056156, 0.329207)),
+        ((30, 0, 0, 24), (-0.035838, 0.035838)),
+    ],
+)
+def test_the_newcombe_interval_matches_the_published_method_10_values(table, expected):
+    low, high = newcombe_paired_interval(PairedCounts(*table))
+    places = len(str(expected[0]).split(".")[1])
+    assert round(low, places) == pytest.approx(expected[0], abs=10 ** -places)
+    assert round(high, places) == pytest.approx(expected[1], abs=10 ** -places)
+
+
+def test_phi_is_continuity_corrected_when_the_association_is_positive():
+    """Without the correction (20, 12, 2, 16) gives the too-narrow [0.0618, 0.3242]."""
+    low, high = newcombe_paired_interval(PairedCounts(20, 12, 2, 16))
+    assert low < 0.0600 and high > 0.3280
+
+
+# --------------------------------------------------------------------- exact Holm
+
+
+def test_holm_decides_on_the_exact_rational():
+    """Thresholds are exact; an exact p a hair above alpha/2 is not rejected."""
+    thresholds = holm_thresholds({"G": Fraction(1, 64), "R": Fraction(1)})
+    assert thresholds["G"] == ALPHA_EXACT / 2 and isinstance(thresholds["G"], Fraction)
+    just_above = ALPHA_EXACT / 2 + Fraction(1, 10**30)
+    assert float(just_above) == 0.025  # a float cannot even see the difference
+    assert holm_rejections({"G": just_above, "R": Fraction(1)}) == {"G": False, "R": False}
+    analysis = analyse_family({"G": pairs(0, 6, 0, 0), "R": []})
+    assert analysis["G"].holm_threshold_exact == Fraction(1, 40)
+
+
+def test_holm_is_strict_as_the_pre_registration_words_it():
+    """"p < 0.05": a p exactly at its threshold is not rejected."""
+    assert holm_rejections({"G": Fraction(1, 40), "R": Fraction(1)}) == {"G": False, "R": False}
+
+
+def test_small_n_is_thirty():
+    assert SMALL_N == 30

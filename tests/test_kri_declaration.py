@@ -218,3 +218,21 @@ def test_validate_fails_on_a_crossed_pairing(tmp_path, capsys):
     path = tmp_path / "declaration.csv"
     write_declaration(Declaration(runs=[run(endpoint="R")]), path)
     assert decl.main(["validate", "--declaration", str(path)]) == 1
+
+
+def test_problems_never_echo_a_fields_content(tmp_path, capsys):
+    """A text-bearing id or a pasted line in any field is named, never repeated."""
+    secret = f"{A1} ꞽri̯.n=f"
+    runs = [
+        run(declaration_id=secret, notes=secret),
+        run(declaration_id=secret, input_modality=secret, stage=secret, cohort=secret,
+            material_received=secret, declared_on=secret, commit=secret, corpus_sha256=secret),
+    ]
+    problems = validate(Declaration(runs=runs))
+    assert problems and all(secret not in problem and A1 not in problem for problem in problems)
+    assert any(problem.startswith("row 2:") for problem in problems)
+    path = tmp_path / "declaration.csv"
+    write_declaration(Declaration(runs=runs), path)
+    assert decl.main(["validate", "--declaration", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert A1 not in captured.out + captured.err

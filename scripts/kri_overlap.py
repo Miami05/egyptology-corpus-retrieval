@@ -271,6 +271,11 @@ class LineResult:
     rows_checked: int = 0
     #: Exclusion-manifest entries that already cover this line (§4d/§4e).
     excluded_by: tuple[str, ...] = ()
+    #: Per manifest entry, how it covers the line (hash, reference, or C/P predicates
+    #: against the private excluded text). Ids and predicate names only.
+    exclusion_evidence: tuple[str, ...] = ()
+    #: Whether the line's KRI reference parsed, so exclusion by reference was checked.
+    reference_checked: bool = False
 
     @property
     def fired(self) -> tuple[str, ...]:
@@ -278,7 +283,17 @@ class LineResult:
 
     @property
     def runnable(self) -> bool:
-        """§4d: "The tool runs only on `new` lines" — and never on an excluded one."""
+        """§4d: "The tool runs only on `new` lines".
+
+        Exploratory execution and permanent exclusion are separate questions: every
+        line seen in §4d goes into the (B) manifest *and* is run there, exploratorily.
+        So an excluded `new` line is runnable; it is never `confirmation_eligible`.
+        """
+        return self.label == NEW
+
+    @property
+    def confirmation_eligible(self) -> bool:
+        """§4e: a `new` line no manifest entry covers, by any route."""
         return self.label == NEW and not self.excluded_by
 
     def summary(self) -> str:
@@ -334,7 +349,17 @@ def predicates_for(query: Prepared, row: Prepared) -> dict[str, str]:
     # trigram with the line, so one test covers both directions.
     shared_runs = query.word_runs & row.word_runs
     if shared_runs:
-        hits["P2"] = " ".join(min(shared_runs))
+        # Never the words themselves: the line is KRI material and this detail is
+        # written to the report and printed. Counts and word offsets in the line only.
+        offsets = [
+            index
+            for index in range(len(query.words) - MIN_RUN_WORDS + 1)
+            if tuple(query.words[index : index + MIN_RUN_WORDS]) in shared_runs
+        ]
+        hits["P2"] = (
+            f"{len(shared_runs)} shared {MIN_RUN_WORDS}-word run(s) at line word "
+            f"offset(s) {','.join(str(offset) for offset in offsets)}"
+        )
 
     # P3 — shared sign trigrams, as a share of the line's own.
     if (
@@ -453,9 +478,32 @@ def prepare_corpus(frame, *, label: str = "") -> Iterator[Prepared]:
         )
 
 
-#: The columns a `--lines` file must carry. `hieroglyphs` may be empty for a line
-#: supplied as transliteration only; C2/P3 then simply cannot fire.
+#: The columns the predicates read from one prepared record (fixtures carry these).
 LINE_COLUMNS = ("line_id", "transliteration", "hieroglyphs")
+
+#: The ONE private lines file both `check_overlap.py` and `run_kri_endpoints.py`
+#: read (review round 2026-10-26: two schemas meant the documented workflow could
+#: not run). Per line: its KRI reference (`KRI <vol> <page> (line n)`), the glyph
+#: input as pasted, the gold word division as space-separated glyph groups, one gold
+#: reading per group, and endpoint R's transliteration query. Any may be empty
+#: except `line_id`; what a declared run needs is checked by the driver.
+LINES_FILE_COLUMNS = (
+    "line_id",
+    "kri_reference",
+    "glyph_input",
+    "gold_groups",
+    "gold_reading",
+    "query_transliteration",
+)
+
+#: Which texts of a lines-file record are overlap-checked, as (view, transliteration
+#: column, hieroglyphs column). Endpoint G's line is the gold reading over the glyph
+#: input; endpoint R's is the query transliteration (with the same glyphs, since it
+#: is the same line). A line's label is the most severe over its views.
+LINE_VIEWS = (
+    ("gold", "gold_reading", "glyph_input"),
+    ("query", "query_transliteration", "glyph_input"),
+)
 
 
 def prepare_lines(records: Iterable[dict]) -> list[Prepared]:
