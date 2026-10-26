@@ -339,3 +339,76 @@ def test_validation_never_prints_a_rejected_entrys_raw_fields(tmp_path, capsys):
     assert "entry 1" in shown and "entry 2" in shown
     problems = validate(read_manifest(path))
     assert problems and all("ḥtp" not in p and A1 not in p for p in problems)
+
+
+# --------------------------------------------------------------------------- review round 3
+#
+# `validate` used to withhold a pending entry's fields only when `validate_entry`
+# (non-strict) rejected it, so an entry rejected by --strict or by a manifest-level
+# check (duplicate id, dangling edition link) had its raw entry_id and reference
+# printed. Each case below carries one entry with Egyptian text in both fields and
+# one whose fields pass the entry-level check (so it was printed before the fix).
+
+EGYPTIAN = f"ḥtp-dj-nsw {A1} ꜣḫ"
+
+
+def _shown_after_validate(tmp_path, capsys, entries, *extra) -> str:
+    path = tmp_path / "m.csv"
+    write_manifest(Manifest(entries=list(entries)), path)
+    assert manifest_mod.main(["validate", "--manifest", str(path), *extra]) == 1
+    captured = capsys.readouterr()
+    return captured.out + captured.err
+
+
+def _assert_nothing_leaked(shown: str, *secrets: str) -> None:
+    for secret in ("ḥtp", A1, "ꜣḫ", EGYPTIAN, *secrets):
+        assert secret not in shown
+
+
+def test_strict_validate_withholds_the_fields_of_a_pending_entry(tmp_path, capsys):
+    shown = _shown_after_validate(
+        tmp_path, capsys,
+        [
+            entry(entry_id=f"EX001 {EGYPTIAN}", reference=f"KRI II 569 {EGYPTIAN}"),
+            entry(entry_id="EX417", reference="KRI II 571, marker-strict"),
+        ],
+        "--strict",
+    )
+    _assert_nothing_leaked(shown, "EX417", "marker-strict")
+    assert "entry 1" in shown and "entry 2" in shown and "fields withheld" in shown
+
+
+def test_validate_withholds_the_fields_of_both_duplicate_entries(tmp_path, capsys):
+    shown = _shown_after_validate(
+        tmp_path, capsys,
+        [
+            entry(entry_id=f"EX001 {EGYPTIAN}", reference=f"KRI II 569 {EGYPTIAN}"),
+            entry(entry_id=f"EX001 {EGYPTIAN}", reference=f"KRI II 569 {EGYPTIAN}"),
+            entry(entry_id="EX418", reference="KRI II 572, marker-dup-a"),
+            entry(entry_id="EX418", reference="KRI II 573, marker-dup-b"),
+        ],
+    )
+    _assert_nothing_leaked(shown, "EX418", "marker-dup-a", "marker-dup-b")
+    assert "duplicate entry_id" in shown and shown.count("fields withheld") == 4
+
+
+def test_validate_withholds_the_fields_of_an_edition_entry_naming_a_missing_id(tmp_path, capsys):
+    shown = _shown_after_validate(
+        tmp_path, capsys,
+        [
+            entry(entry_id=f"EX001 {EGYPTIAN}", scope="edition",
+                  reference=f"KRI VII 45, second edition of EX009 {EGYPTIAN}"),
+            entry(entry_id="EX419", scope="edition",
+                  reference="KRI VII 46, marker-dangling, second edition of EX099"),
+        ],
+    )
+    _assert_nothing_leaked(shown, "EX419", "marker-dangling", "EX099", "EX009")
+    assert "does not have" in shown and shown.count("fields withheld") == 2
+
+
+def test_a_clean_pending_entry_is_still_listed_with_its_fields(tmp_path, capsys):
+    path = tmp_path / "m.csv"
+    write_manifest(Manifest(entries=[entry(entry_id="EX420", reference="KRI II 574, clean")]), path)
+    assert manifest_mod.main(["validate", "--manifest", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "EX420" in out and "KRI II 574, clean" in out

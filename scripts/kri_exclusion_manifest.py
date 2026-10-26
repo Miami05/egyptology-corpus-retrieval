@@ -444,29 +444,55 @@ def entry_label(index: int) -> str:
     return f"entry {index}"
 
 
-def validate(manifest: Manifest, *, strict: bool = False) -> list[str]:
-    """Every problem with the whole manifest, each prefixed by the entry's position."""
-    problems: list[str] = []
+def problems_by_entry(manifest: Manifest, *, strict: bool = False) -> dict[int, list[str]]:
+    """Every problem with the manifest, keyed by the 1-based position of the entry.
+
+    Entry-level, strict and manifest-level checks all land here, so a caller that
+    must decide whether an entry was rejected asks one place (review round 3).
+    Every entry with a key is rejected; a duplicate entry_id rejects both entries
+    that carry it, though the message is filed under the later one.
+    """
+    problems: dict[int, list[str]] = {}
+    rejected: set[int] = set()
     seen: dict[str, int] = {}
     ids = {entry.entry_id for entry in manifest.entries}
     links = manifest.edition_links()
     for index, entry in enumerate(manifest.entries, start=1):
-        label = entry_label(index)
-        problems.extend(f"{label}: {problem}" for problem in validate_entry(entry, strict=strict))
+        found = list(validate_entry(entry, strict=strict))
         if entry.entry_id in seen:
-            problems.append(f"{label}: duplicate entry_id (same as {entry_label(seen[entry.entry_id])})")
+            found.append(f"duplicate entry_id (same as {entry_label(seen[entry.entry_id])})")
+            rejected.add(seen[entry.entry_id])
         else:
             seen[entry.entry_id] = index
         if entry.scope == "edition":
             named = set(_ENTRY_LINK.findall(entry.reference))
             if named - ids:
-                problems.append(f"{label}: an edition entry names an entry id the manifest does not have")
+                found.append("an edition entry names an entry id the manifest does not have")
             if strict and not links.get(entry.entry_id) and len(parse_kri_spans(entry.reference)) < 2:
-                problems.append(
-                    f"{label}: an edition entry relates no references: cite every edition "
-                    f"as a KRI span, or name the excluded entry's id (EX001)"
+                found.append(
+                    "an edition entry relates no references: cite every edition "
+                    "as a KRI span, or name the excluded entry's id (EX001)"
                 )
+        if found:
+            problems[index] = found
+    for index in rejected:
+        problems.setdefault(index, [])
     return problems
+
+
+def rejected_entries(manifest: Manifest, *, strict: bool = False) -> set[int]:
+    """The 1-based positions of every entry any check rejects."""
+    return set(problems_by_entry(manifest, strict=strict))
+
+
+def validate(manifest: Manifest, *, strict: bool = False) -> list[str]:
+    """Every problem with the whole manifest, each prefixed by the entry's position."""
+    by_entry = problems_by_entry(manifest, strict=strict)
+    return [
+        f"{entry_label(index)}: {problem}"
+        for index in sorted(by_entry)
+        for problem in by_entry[index]
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +668,10 @@ def _cmd_add(args: argparse.Namespace) -> int:
 def _cmd_validate(args: argparse.Namespace) -> int:
     path = Path(args.manifest)
     manifest = read_manifest(path)
+    # Review round 3: the complete result (entry-level, strict and manifest-level)
+    # is computed first, and every entry any check rejects is named by its position
+    # only. A field is echoed only for an entry with no problem at all.
+    rejected = rejected_entries(manifest, strict=args.strict)
     problems = validate(manifest, strict=args.strict)
     for problem in problems:
         print(f"INVALID {problem}", file=sys.stderr)
@@ -650,9 +680,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     for index, entry in enumerate(manifest.entries, start=1):
         if not entry.pending:
             continue
-        # Review round 2: a field is echoed only for an entry with no problem at all;
-        # a rejected entry is named by its position and nothing else.
-        if validate_entry(entry):
+        if index in rejected:
             print(f"  pending: {entry_label(index)}  (rejected: fields withheld, see INVALID)")
         else:
             print(f"  pending: {entry_label(index)}  {entry.entry_id}  {entry.reference}")

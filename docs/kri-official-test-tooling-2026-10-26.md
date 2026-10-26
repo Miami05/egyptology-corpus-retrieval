@@ -453,6 +453,20 @@ Re-frozen: the three changed files have new rows appended below. No KRI scoring 
 is recorded in this document before these rows (endpoint R's blind pack is still not
 built); the lead confirms that before the first declaration.
 
+## Review round 3 2026-10-26 (Astra) — what changed
+
+* **Withheld fields for every rejected entry**: `validate` used to decide whether to
+  echo a pending entry's id and reference from the non-strict entry check alone, so
+  an entry rejected only by `--strict` (pending hash), by a duplicate `entry_id`, or
+  by an edition link naming a missing entry id had its raw fields printed. The
+  complete result (entry-level, strict and manifest-level, `problems_by_entry`) is
+  now computed first, and every entry any check rejects, including both carriers of
+  a duplicate id, is named by its position only. Regression tests cover all three
+  cases with Egyptian text in `entry_id` and `reference`.
+
+Re-frozen: `scripts/kri_exclusion_manifest.py` has a new row appended below. No KRI
+scoring run is recorded in this document before that row.
+
 ## The frozen tooling
 
 Recorded at the review-round commit, before any KRI scoring run. Enforced by
@@ -472,3 +486,4 @@ force), with a note on whether any KRI result had been seen.
 | `scripts/check_overlap.py` | sha256 `3b4f40897700ea9d7d46610cd320fcc894e58eed4c4141e2902a5b96f7ba0632` |
 | `scripts/kri_exclusion_manifest.py` | sha256 `65f55246ed9f9ff164aad85da7850e3d7031108914c5e8422d7b1e8dc3ba5da0` |
 | `scripts/run_kri_endpoints.py` | sha256 `185b9f9c15637f16e264cae77ae530c98d7676ad52529bad37c434c87c7afe52` |
+| `scripts/kri_exclusion_manifest.py` | sha256 `d4cf7b20d45a815d6f1a53ece1edc80f3e6a04bc52287071e9445c324f6a48a2` |
