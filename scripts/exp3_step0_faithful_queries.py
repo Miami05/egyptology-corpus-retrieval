@@ -17,22 +17,32 @@ Two derivations, both reported:
   decision the builder takes (strip a light ending, drop a stop token, truncate) is
   taken on the *folded* token and applied to the faithful one. NAME-v1's respelled
   name (recorded in `notes`) is substituted first, as the builder did.
-* **aligned** (the repair) — each stored query token is replaced by a faithful
-  spelling from the expected transliteration that folds to exactly that token;
-  a token with no such spelling stays as stored (ASCII). So the fold-back holds by
-  construction wherever the stored query is a fixed point of `search_fold`, and the
-  ASCII tokens left are the recorded residue.
+* **aligned** (the repair, used only where the recipe's fold-back fails) — each
+  stored query token is replaced by a faithful spelling from the expected
+  transliteration that folds to exactly that token (whole tokens first, repeated
+  occurrences kept, suffix pronouns keep their `=`); a token with no such spelling is
+  then aligned character by character against the expected words (the fewest
+  skipped characters; e.g. `kh` -> `ḫ` from `wḫꜣ{ḫ}`, `maa-hr-b` -> `mꜣꜥ-ḥr-b`), and
+  only a token with neither stays as stored (ASCII residue).
 
-The movers are counted on the aligned variant. A token counts under the
+The faithful query is the recipe's where its fold-back holds, otherwise the aligned
+one (revision 2026-10-26 after the Opus/Astra review; the first run replaced every
+recipe output, which lost distinctions in HOLD_024 and HOLD_027).
+
+The movers are counted on the faithful query. A token counts under the
 pre-registered rule when its `search_fold` key is a merging key; the stricter count
 also requires the token itself to carry a letter of that pair (a token typed as
 plain `nb` cannot be told apart by any key).
 
-Merging keys follow the method recorded with the 2026-09-07 measurement (expert-round-2
-write-up): every whitespace token of `transliteration_gold` is folded with
+Merging keys, two methods. *Pre-registered*: a reconstruction of the method of the
+2026-09-07 measurement (its write-up and code were never tracked, so it cannot be
+checked): every raw whitespace token of `transliteration_gold` is folded with
 `search_fold`; a key merges pair (x, y) when tokens with and without the second letter
-y fold to it. The script prints its counts next to the recorded 681 / 242 / 638 so
-the reuse can be checked.
+y fold to it. Raw tokens keep editorial text (`n{ꜣ}`, `{ꜥ}〈n〉`) that `search_fold`
+deletes, so `n`, `m`, `nb`, `pn` become "merging" keys: inflated. *Cleaned* (the
+meaningful number): the same grouping on the pieces of `unfolded_reading_form` (the
+faithful words with editorial text removed). Both are printed, next to the recorded
+681 / 242 / 638 (which were probably inflated the same way).
 
 Light: string work on 100 queries plus one pass over one corpus column.
 
@@ -85,9 +95,9 @@ PAIRS = (("aleph/ayin", "ꜣ", "ꜥ"), ("kh/khh", "ḫ", "ẖ"), ("h-dot/h", "�
 RECORDED_MERGING_KEYS = {"aleph/ayin": 681, "kh/khh": 242, "h-dot/h": 638}
 # Attempt-2 run files (outside the repo) per set, for the baseline printout.
 BASELINE_FILES = {
-    "v4": ("v4_L_auto.csv", "v4_T_auto.csv"),
-    "held-out 1": ("holdout_L_auto.csv", "holdout_T_auto.csv"),
-    "LE-v1": ("le_v1_L_auto.csv", "le_v1_T_auto.csv"),
+    "v4": ("v4_L_auto.csv", "v4_C_auto.csv", "v4_T_auto.csv"),
+    "held-out 1": ("holdout_L_auto.csv", "holdout_C_auto.csv", "holdout_T_auto.csv"),
+    "LE-v1": ("le_v1_L_auto.csv", "le_v1_C_auto.csv", "le_v1_T_auto.csv"),
 }
 NAME_COMMITTED = "data/benchmarks/ceval_name_v1_app_auto_results.csv"
 RESPELLED_RE = re.compile(r"respelled (\S+) -> (\S+?)\.?$")
@@ -110,11 +120,14 @@ def faithful_pairs(transliteration: str) -> list[tuple[str, str]]:
     """
     text = PARENTHESISED_YOD_RE.sub("", normalize_notation(str(transliteration)))
     pairs: list[tuple[str, str]] = []
-    for piece in unfolded_reading_form(text).split():
-        piece = ASCII_EDITORIAL_RE.sub("", piece)
-        folded = loose_reading_form(piece)
-        if piece and folded:
-            pairs.append((piece, folded))
+    for word in text.split():
+        suffix = word.replace("⸗", "=").startswith("=")
+        for index, piece in enumerate(unfolded_reading_form(word).split()):
+            piece = ASCII_EDITORIAL_RE.sub("", piece)
+            folded = loose_reading_form(piece)
+            if piece and folded:
+                # A suffix pronoun keeps its `=` (it folds away, so fold-back holds).
+                pairs.append(("=" + piece if suffix and index == 0 else piece, folded))
     return pairs
 
 
@@ -162,15 +175,59 @@ def _candidate_spellings(transliteration: str) -> tuple[list[str], list[str]]:
     words: list[str] = []
     for word in text.split():
         whole = ASCII_EDITORIAL_RE.sub("", fold_strict_aliases(strict_reading_key(word)))
-        if whole and whole not in tokens and whole not in words:
+        # Repeated words are kept: each occurrence can be used once (`used` below).
+        if whole and whole not in tokens:
             words.append(whole)
     return tokens, words
 
 
-def aligned_query(query_input: str, transliteration: str) -> tuple[str, list[str]]:
+def _raw_words(transliteration: str) -> list[str]:
+    """The expected reading's whitespace words, notation normalised, nothing removed
+    (the character alignment may need text the search key deletes, e.g. `{ḫ}`)."""
+    text = PARENTHESISED_YOD_RE.sub("", normalize_notation(str(transliteration)))
+    return [fold_strict_aliases(word) for word in text.split()]
+
+
+def char_align(token: str, spelling: str) -> tuple[str, int] | None:
+    """A faithful spelling for the ASCII `token` built from `spelling`'s characters in
+    order: each kept chunk (1-3 code points: letters, combining marks, digits or `-`)
+    folds to the next piece of the token, any other character is skipped. Returns (spelling, skipped) with the fewest skips, or
+    None. Upper-case ASCII (`PL`) is lower-cased; the result must fold back exactly."""
+    n, m = len(spelling), len(token)
+    best: dict[tuple[int, int], tuple[int, str]] = {(0, 0): (0, "")}
+    for i in range(n + 1):
+        for j in range(m + 1):
+            state = best.get((i, j))
+            if state is None or i == n:
+                continue
+            cost, built = state
+            moves = [((i + 1, j), cost + 1, built)]
+            for k in range(i + 1, min(n, i + 3) + 1):
+                chunk = spelling[i:k]
+                if not all(
+                    unicodedata.category(char)[0] in "LMN" or char == "-" for char in chunk
+                ):
+                    continue  # brackets, dots, `=`: skipped, never carried inside a chunk
+                folded = search_fold(chunk) if chunk != "-" else "-"
+                if folded and token.startswith(folded, j):
+                    text = chunk.lower() if chunk.isascii() else chunk
+                    moves.append(((k, j + len(folded)), cost, built + text))
+            for key, new_cost, new_built in moves:
+                if key not in best or new_cost < best[key][0]:
+                    best[key] = (new_cost, new_built)
+    final = best.get((n, m))
+    if final is None or search_fold(final[1]) != token:
+        return None
+    return final[1], final[0]
+
+
+def aligned_query(
+    query_input: str, transliteration: str
+) -> tuple[str, list[str], list[str]]:
     """Each stored token rewritten as a faithful spelling that folds to it exactly;
-    returns (query, stored tokens left as typed). The first unused match at or after
-    the previous match wins, then any unused match, so repeated words keep order."""
+    returns (query, stored tokens left as typed, tokens repaired by character
+    alignment as `stored->faithful`). The first unused match at or after the previous
+    match wins, then any unused match, so repeated words keep order."""
     tokens, words = _candidate_spellings(transliteration)
     spellings = tokens + words
     folds = [search_fold(spelling) for spelling in spellings]
@@ -178,6 +235,8 @@ def aligned_query(query_input: str, transliteration: str) -> tuple[str, list[str
     cursor = 0
     out: list[str] = []
     residue: list[str] = []
+    char_aligned: list[str] = []
+    raw_words = _raw_words(transliteration)
     for token in str(query_input).split():
         order = (
             list(range(cursor, len(tokens)))
@@ -186,14 +245,24 @@ def aligned_query(query_input: str, transliteration: str) -> tuple[str, list[str
         )
         match = next((i for i in order if i not in used and folds[i] == token), None)
         if match is None:
-            out.append(token)
-            residue.append(token)
+            options = [
+                (result[1], index, result[0])
+                for index, word in enumerate(raw_words)
+                if (result := char_align(token, word)) is not None
+            ]
+            if options:
+                _, _, spelling = min(options)
+                out.append(spelling)
+                char_aligned.append(f"{token}->{spelling}")
+            else:
+                out.append(token)
+                residue.append(token)
             continue
         used.add(match)
         if match < len(tokens):
             cursor = match + 1
         out.append(spellings[match])
-    return " ".join(out), residue
+    return " ".join(out), residue, char_aligned
 
 
 def apply_respelling(transliteration: str, notes: str) -> str:
@@ -243,8 +312,9 @@ def merging_keys(
     return merging, len(by_key)
 
 
-def corpus_tokens(path: str) -> tuple[set[str], set[str], int, str]:
-    """(lower-cased NFC whitespace tokens of `transliteration_gold`, the search
+def corpus_tokens(path: str) -> tuple[set[str], set[str], set[str], int, str]:
+    """(lower-cased NFC whitespace tokens of `transliteration_gold`, the lower-cased
+    pieces of its `unfolded_reading_form` (editorial text removed), the search
     vocabulary, row count, sha256). The vocabulary is what `parse_query` is handed by
     the app (`SearchIndex.stats.mdc_frequencies`): the tokens of `mdc_norm`, which
     the loader folds from the transliteration and falls back to the stored `mdc`
@@ -255,14 +325,17 @@ def corpus_tokens(path: str) -> tuple[set[str], set[str], int, str]:
         path, usecols=["transliteration_gold", "mdc"], dtype=str, keep_default_na=False
     )
     tokens: set[str] = set()
+    cleaned: set[str] = set()
     for value in frame["transliteration_gold"]:
         tokens.update(nfc_lower(value).split())
+    for value in frame["transliteration_gold"].unique():
+        cleaned.update(unfolded_reading_form(unicodedata.normalize("NFC", value)).lower().split())
     has_reading = frame["transliteration_gold"].str.strip() != ""
     keys = frame["transliteration_gold"].map(search_fold).where(
         has_reading, frame["mdc"].map(normalize_mdc)
     )
     vocabulary = vocabulary_from(keys)
-    return tokens, vocabulary, len(frame), sha
+    return tokens, cleaned, vocabulary, len(frame), sha
 
 
 def nfc_lower(value: str) -> str:
@@ -288,12 +361,13 @@ def mover_tokens(query: str, merging: dict[str, set[str]]) -> tuple[list[str], l
 # ------------------------------------------------------------------------ baselines
 
 
-def _metrics(path: Path) -> tuple[float, float, int]:
+def _metrics(path: Path) -> tuple[float, float, int, int]:
+    """(top-3 useful, MRR, rank-1 count, queries)."""
     frame = pd.read_csv(path)
     ranks = pd.to_numeric(frame["useful_family_rank"], errors="coerce")
     top3 = float(frame["top3_useful_family_hit"].astype(bool).mean())
     mrr = float((1.0 / ranks).fillna(0.0).mean())
-    return top3, mrr, len(frame)
+    return top3, mrr, int((ranks == 1).sum()), len(frame)
 
 
 def print_baselines(baseline_dir: Path | None, log: list[str]) -> None:
@@ -302,21 +376,24 @@ def print_baselines(baseline_dir: Path | None, log: list[str]) -> None:
         "their retrieval key is identical, but A54 re-ranks them in strict/mixed mode, so "
         "today's faithful-set numbers must be measured (addendum 2026-10-26)."
     )
-    for name, (legacy, twin) in BASELINE_FILES.items():
-        if baseline_dir is None or not (baseline_dir / legacy).exists():
+    log.append(
+        "  (top-3 / MRR / rank-1; L = legacy pool, --expected-tokens frozen; C = legacy "
+        "pool, current; T = twin-controlled 0.7, current. Experiment 3 compares C and T.)"
+    )
+    for name, files in BASELINE_FILES.items():
+        if baseline_dir is None or not all((baseline_dir / f).exists() for f in files):
             log.append(f"  {name}: attempt-2 files not available")
             continue
-        l3, lm, n = _metrics(baseline_dir / legacy)
-        t3, tm, _ = _metrics(baseline_dir / twin)
-        log.append(
-            f"  {name} ({n}): legacy pool L-auto {l3:.4f} / MRR {lm:.4f}; "
-            f"twin-controlled T-auto {t3:.4f} / MRR {tm:.4f}  [attempt 2, {baseline_dir.name}]"
-        )
+        parts = []
+        for label, file in zip(("L-auto", "C-auto", "T-auto"), files):
+            top3, mrr, rank1, n = _metrics(baseline_dir / file)
+            parts.append(f"{label} {top3:.4f} / {mrr:.4f} / {rank1}")
+        log.append(f"  {name} ({n}): " + "; ".join(parts) + f"  [attempt 2, {baseline_dir.name}]")
     if Path(NAME_COMMITTED).exists():
-        n3, nm, n = _metrics(Path(NAME_COMMITTED))
+        n3, nm, r1, n = _metrics(Path(NAME_COMMITTED))
         log.append(
-            f"  NAME-v1 ({n}): committed {n3:.4f} / MRR {nm:.4f}  [pre-audit D' tree; "
-            "not re-measured in attempt 2 — step 3 must re-measure it]"
+            f"  NAME-v1 ({n}): committed {n3:.4f} / {nm:.4f} / {r1}  [pre-audit D' tree; "
+            "not re-measured in attempt 2 — the baseline run must re-measure it]"
         )
 
 
@@ -329,6 +406,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--out-csv", default="")
     parser.add_argument("--log", default="")
     parser.add_argument("--baseline-dir", default="")
+    parser.add_argument(
+        "--faithful-benchmarks-dir",
+        default="",
+        help="Also write each set's benchmark file with query_input replaced by the "
+        "faithful query (other columns unchanged; the stored query kept as "
+        "stored_query_input), for the baseline and F-a runs.",
+    )
     return parser.parse_args()
 
 
@@ -336,20 +420,29 @@ def main() -> int:
     args = _parse_args()
     log: list[str] = ["Experiment 3, step 0 — faithful query variants (read-only, no ranker code)", ""]
 
-    tokens, vocabulary, rows, sha = corpus_tokens(args.examples)
+    tokens, cleaned_tokens, vocabulary, rows, sha = corpus_tokens(args.examples)
     merging, key_count = merging_keys(tokens)
     conservative, _ = merging_keys(tokens, conservative=True)
+    cleaned, cleaned_key_count = merging_keys(cleaned_tokens)
     log.append(f"Corpus {args.examples}: {rows} rows, sha256 {sha}")
     log.append(f"Distinct whitespace tokens {len(tokens)}; distinct folded keys {key_count}")
+    log.append(
+        f"Distinct cleaned words (unfolded_reading_form pieces) {len(cleaned_tokens)}; "
+        f"distinct folded keys {cleaned_key_count}"
+    )
     for name, _, _ in PAIRS:
         log.append(
-            f"  merging keys {name}: {len(merging[name])} (recorded 2026-09-07: "
-            f"{RECORDED_MERGING_KEYS[name]}); conservative variant {len(conservative[name])}"
+            f"  merging keys {name}: pre-registered (raw tokens) {len(merging[name])} "
+            f"(recorded 2026-09-07: {RECORDED_MERGING_KEYS[name]}); conservative variant "
+            f"{len(conservative[name])}; CLEANED {len(cleaned[name])}"
         )
     log.append(
-        "  (not reproduced: 35,808 keys then, the fold has changed since (audit fixes) and "
-        "the 2026-09-07 counting code was not kept; the conservative variant is a "
-        "sensitivity check on the mover counts)"
+        "  (the recorded counts are not reproduced: 35,808 keys then; the 2026-09-07 "
+        "counting code and write-up were never tracked, so the method here is a "
+        "reconstruction and the cause of the difference is unknown. Raw tokens keep "
+        "editorial text that search_fold deletes (n{ꜣ} -> n), which inflates the raw "
+        "and conservative counts; the recorded numbers were probably inflated the same "
+        "way. The cleaned count is the meaningful one.)"
     )
     log.append("")
 
@@ -366,15 +459,23 @@ def main() -> int:
         movers_pre: list[str] = []
         movers_strict: list[str] = []
         movers_conservative: list[str] = []
+        movers_cleaned: list[str] = []
+        movers_cleaned_strict: list[str] = []
+        char_ids: list[str] = []
+        faithful_inputs: list[str] = []
         for row in frame.itertuples(index=False):
             source = row.expected_transliteration
             if set_name == "NAME-v1":
                 source = apply_respelling(source, row.notes)
             stored = row.query_input
             recipe = recipe_query(source, row.query_type)
-            aligned, residue = aligned_query(stored, source)
             recipe_ok = search_fold(recipe) == stored
+            if recipe_ok:
+                aligned, residue, char_aligned = recipe, [], []
+            else:
+                aligned, residue, char_aligned = aligned_query(stored, source)
             aligned_ok = search_fold(aligned) == stored
+            faithful_inputs.append(aligned)
             stored_parse = parse_query(stored, vocabulary=vocabulary)
             faithful_parse = parse_query(aligned, vocabulary=vocabulary)
             same_key = stored_parse.search_key == faithful_parse.search_key
@@ -385,6 +486,7 @@ def main() -> int:
             modes[mode] += 1
             loose_hits, strict_hits = mover_tokens(aligned, merging)
             _, conservative_hits = mover_tokens(aligned, conservative)
+            cleaned_hits, cleaned_strict_hits = mover_tokens(aligned, cleaned)
             if not recipe_ok:
                 recipe_bad.append(row.benchmark_id)
             if not aligned_ok:
@@ -393,6 +495,12 @@ def main() -> int:
                 key_differs.append(row.benchmark_id)
             if residue:
                 residue_ids.append(f"{row.benchmark_id}({' '.join(residue)})")
+            if char_aligned:
+                char_ids.append(f"{row.benchmark_id}({' '.join(char_aligned)})")
+            if cleaned_hits:
+                movers_cleaned.append(row.benchmark_id)
+            if cleaned_strict_hits:
+                movers_cleaned_strict.append(row.benchmark_id)
             if loose_hits:
                 movers_pre.append(row.benchmark_id)
             if strict_hits:
@@ -407,6 +515,7 @@ def main() -> int:
                     "query_input": stored,
                     "faithful_recipe": recipe,
                     "recipe_foldback_ok": recipe_ok,
+                    "faithful_source": "recipe" if recipe_ok else "aligned",
                     "faithful_query": aligned,
                     "foldback_ok": aligned_ok,
                     "stored_notation": stored_parse.notation,
@@ -414,22 +523,33 @@ def main() -> int:
                     "same_retrieval_key": same_key,
                     "a54_rerank_mode": mode,
                     "ascii_residue_tokens": " ".join(residue),
+                    "char_aligned_tokens": " ".join(char_aligned),
                     "merging_tokens": " ".join(loose_hits),
                     "merging_tokens_with_pair_letter": " ".join(strict_hits),
                     "can_move": bool(loose_hits),
                     "can_move_strict": bool(strict_hits),
+                    "merging_tokens_cleaned": " ".join(cleaned_hits),
+                    "can_move_cleaned": bool(cleaned_hits),
+                    "can_move_cleaned_strict": bool(cleaned_strict_hits),
                 }
             )
         n = len(frame)
         log.append(f"== {set_name} ({n} queries, {path})")
         log.append(f"  recipe fold-back differs: {len(recipe_bad)}  {' '.join(recipe_bad)}")
-        log.append(f"  aligned fold-back differs: {len(aligned_bad)}  {' '.join(aligned_bad)}")
+        log.append(
+            f"  faithful query (recipe where it folds back, else aligned) fold-back "
+            f"differs: {len(aligned_bad)}  {' '.join(aligned_bad)}"
+        )
         log.append(
             f"  retrieval key (parse_query with the corpus vocabulary) differs from the "
             f"stored query's: {len(key_differs)}  {' '.join(key_differs)}"
         )
         log.append(f"  faithful queries read as: {dict(sorted(notations.items()))}")
         log.append(f"  A54 re-rank mode of the faithful queries: {dict(sorted(modes.items()))}")
+        log.append(
+            f"  queries with tokens repaired by character alignment: {len(char_ids)}  "
+            f"{' '.join(char_ids)}"
+        )
         log.append(f"  queries with ASCII residue tokens: {len(residue_ids)}  {' '.join(residue_ids)}")
         log.append(f"  can move (pre-registered rule): {len(movers_pre)}  {' '.join(movers_pre)}")
         log.append(
@@ -440,9 +560,27 @@ def main() -> int:
             f"  can move (conservative merging keys, sensitivity): "
             f"{len(movers_conservative)}"
         )
+        log.append(
+            f"  can move (CLEANED merging keys): {len(movers_cleaned)}; token carries a "
+            f"letter of the pair: {len(movers_cleaned_strict)}  {' '.join(movers_cleaned_strict)}"
+        )
+        if args.faithful_benchmarks_dir:
+            out_dir = Path(args.faithful_benchmarks_dir).expanduser()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            faithful_frame = frame.copy()
+            faithful_frame.insert(
+                faithful_frame.columns.get_loc("query_input") + 1,
+                "stored_query_input",
+                faithful_frame["query_input"],
+            )
+            faithful_frame["query_input"] = faithful_inputs
+            faithful_frame.to_csv(out_dir / f"faithful_{Path(path).name}", index=False)
         summary.append(
-            f"  {set_name}: recipe residue {len(recipe_bad)}/{n}, aligned residue "
-            f"{len(aligned_bad)}/{n}, movers {len(movers_pre)}/{n} (strict {len(movers_strict)}/{n}), retrieval key differs {len(key_differs)}/{n}"
+            f"  {set_name}: recipe fold-back fails {len(recipe_bad)}/{n}, faithful fold-back "
+            f"fails {len(aligned_bad)}/{n}, residue queries {len(residue_ids)}, char-aligned "
+            f"queries {len(char_ids)}, movers {len(movers_pre)}/{n} (strict "
+            f"{len(movers_strict)}/{n}; cleaned {len(movers_cleaned)}/{n}, cleaned strict "
+            f"{len(movers_cleaned_strict)}/{n}), retrieval key differs {len(key_differs)}/{n}"
         )
 
     total_movers = sum(1 for record in records if record["can_move"])

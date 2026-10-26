@@ -6,6 +6,7 @@ from app.data.normalizer import search_fold
 from scripts.exp3_step0_faithful_queries import (
     aligned_query,
     apply_respelling,
+    char_align,
     faithful_pairs,
     merging_keys,
     mover_tokens,
@@ -34,16 +35,38 @@ def test_recipe_partial_keeps_sixty_percent():
 
 
 def test_aligned_query_restores_letters_and_keeps_residue():
-    query, residue = aligned_query("ankh pl djd", "ꜥnḫ ḏd")
+    query, residue, char_aligned = aligned_query("ankh pl djd", "ꜥnḫ ḏd")
     assert query == "ꜥnḫ pl ḏd"
-    assert residue == ["pl"]
+    assert residue == ["pl"] and char_aligned == []
     assert search_fold(query) == search_fold("ꜥnḫ") + " pl " + search_fold("ḏd")
 
 
 def test_aligned_query_keeps_repeated_words_in_order():
-    query, residue = aligned_query("pa pa", "pꜣ pꜥ")
+    query, residue, _ = aligned_query("pa pa", "pꜣ pꜥ")
     assert query == "pꜣ pꜥ"
     assert residue == []
+
+
+def test_aligned_query_uses_a_repeated_hyphenated_word_twice():
+    # HOLD_027: `ꞽ.ꞽr-ḥr` occurs twice in the reading and `iir-hr` twice in the query.
+    query, residue, _ = aligned_query("iir-hr pa iir-hr", "ꞽ.ꞽr-ḥr pꜣ ꞽ.ꞽr-ḥr")
+    assert query == "ꞽꞽr-ḥr pꜣ ꞽꞽr-ḥr"
+    assert residue == []
+
+
+def test_suffix_pronoun_keeps_its_boundary():
+    query, residue, _ = aligned_query("iw f hr", "ꞽw =f ḥr")
+    assert query == "ꞽw =f ḥr"
+    assert search_fold(query) == "iw f hr"
+
+
+def test_char_align_repairs_stale_tokens():
+    assert char_align("kh", "wḫꜣ{ḫ}") == ("ḫ", 5)
+    assert char_align("maa-hr-b", "mꜣꜥ-ḥr-ꞽb") == ("mꜣꜥ-ḥr-b", 1)
+    assert char_align("pl", "ꜥnḫ") is None
+    query, residue, char_aligned = aligned_query("wkha kh djd", "wḫꜣ{ḫ} =k ḏd")
+    assert query == "wḫꜣ ḫ ḏd"
+    assert residue == [] and char_aligned == ["kh->ḫ"]
 
 
 def test_apply_respelling_from_notes():

@@ -2745,7 +2745,12 @@ committed numbers, since no benchmark query is a plain-ASCII user), renaming `qu
 #### Addendum 2026-10-26 — re-scope after the audit fixes
 
 Written on branch `exp3-2026-10-26` (from `619bf79`). The text above is unchanged; where this
-addendum differs, this addendum governs from now on. Reason: since the pre-registration the
+addendum differs, this addendum governs from now on.
+*Revision note (2026-10-26, same night, after the Opus and Astra review; nothing beyond step 0
+had run): F-a's unit of decision fixed, A54 claim narrowed, both pools pinned to
+`--expected-tokens current` with explicit commands, step 4 rule stated, identity reference moved
+to the parent commit of the F-a run, step 0 regenerated (recipe kept where it folds back, repeated
+words, suffix `=`, character repair, cleaned merging keys).* Reason: since the pre-registration the
 audit fixes merged (`3465478`), among them A54 (strict/loose per-word matching in the
 suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fold
 `ʿ ȝ ỉ` → `ꜥ ꜣ ꞽ`), the twin guard at eval time (`--exclude-twins`) and release floors
@@ -2764,8 +2769,12 @@ suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fo
   (`:921–923`), `char_similarity` uses the same per-mode form (`:939`, `:607–620`), and the
   exact/near bonus compares the strict key, then the per-mode form (`:940–942`). The shared-word
   evidence text uses the same forms (`:706–746`).
-- **F-b is therefore shipped for Unicode-notation queries** (more than F-b specified: three
-  signals, not one). **It is not shipped for MdC-notation queries.** `aHa n stX` is read as MdC
+- **F-b is therefore shipped for the words written with an Egyptological letter** (more than
+  F-b specified: three signals, not one). **ASCII-only words inside a Unicode query remain
+  loose:** `ḥtp hr` against `ḥtp ḥr` gets overlap 1.0, character similarity ≈ 1.0 and the 0.85
+  near bonus, so a plain-`h` word typed faithfully (`hrw`, `hb`, `hn`) still matches `ḥrw`,
+  `ḫrw`, which pre-registered F-b would not allow ("every token by its faithful key"). 97 of the
+  100 faithful queries contain such words. **It is not shipped for MdC-notation queries.** `aHa n stX` is read as MdC
   by `parse_query` (`app/data/query.py:131–182`) and resolved to `ꜥḥꜥ n stẖ`, but the typed text
   has no Egyptological letter, so the re-rank runs in loose mode; only the strict-key branch of
   the max and the 1.0 exact bonus see the distinction, and the loose branch dominates the max.
@@ -2773,9 +2782,13 @@ suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fo
 - **Retrieval is unchanged by A54.** The search key is `parse_query(...).search_key`, the lossy
   `search_fold` (`app/services/retrieval.py:88–99`), so the pool of up to 50 rows, the TF-IDF and
   IDF-overlap scores (`:137`, `:168–174`), and through them the re-rank's `relative_score` and
-  `mean_score` (0.36 of the weight mass, `suggestions.py:905–909`), still treat ꜣ/ꜥ, ḫ/ẖ and ḥ/h
-  as one letter. **F-a would add exactly this:** lossy-only matches stop counting in retrieval,
-  which changes which rows enter the pool and the two relative scores, on top of today's re-rank.
+  `mean_score` (0.36 of the full weight mass; 0.39 of the 0.92 that is live for a text query,
+  where `reading_similarity` is off; `suggestions.py:905–909`), still treat ꜣ/ꜥ, ḫ/ẖ and ḥ/h as
+  one letter. The other pool-dependent signals are `support` (distinct rows per reading) and
+  `lemma_density`, and in loose mode `translit_overlap` reads retrieval's `idf_overlap_score`
+  (`carry_forward_idf`); every term also depends on which candidates the pool contains. **F-a
+  adds the retrieval side:** lossy-only matches stop counting in retrieval, which changes which
+  rows enter the pool and all of these signals.
 
 **What is baseline now, and what remains to test.**
 
@@ -2784,6 +2797,22 @@ suggestion re-rank, decided on `query_raw`), A16 (the lossless letter-variant fo
 - Remaining candidate: **F-a** (faithful key in retrieval and re-rank), for queries whose
   notation is `unicode`. Plain-ASCII queries and hieroglyph queries stay on today's path and
   every result column must be identical.
+- **F-a, frozen definition (revision).** The unit of decision is the **query**, as the
+  pre-registration says ("every token"): a query with `parse_query(query, vocabulary=<corpus
+  vocabulary>).notation == "unicode"` runs F-a on **every** token, ASCII-only words included (in
+  Unicode notation `hrw` means h, not ḥ or ḫ). Faithful key of a token = its
+  `unfolded_reading_form` piece (lossless letters, `fold_strict_aliases` applied, editorial text
+  and markers removed), on the query side and on the corpus side. (i) Retrieval: a query token
+  matches a corpus token only when the faithful keys are equal; TF-IDF and IDF-overlap are
+  computed on faithful keys, so the pool, `relative_score`, `mean_score`, `support`,
+  `lemma_density` change through it. (ii) Re-rank: `QueryForms` in `strict` mode for the whole
+  query (no per-word A54 decision), so `translit_overlap`, `char_similarity`, the exact/near
+  bonus and the shared-word evidence compare every word by its faithful form; the
+  `carry_forward_idf` path is not taken. Nothing else changes (weights, surplus penalty, display,
+  `strict_reading_key`, stage routing code). The re-rank change for ASCII-only words in a Unicode
+  query is part of F-a and is not attributed separately; the report lists, per query, whether it
+  has such words. Queries with notation `ascii`, `mdc` or hieroglyphs: today's path, every result
+  column identical. This definition is frozen with this revision, before any rank is measured.
 - F-b for MdC input (decide strictness on `parse_query(...).notation in {unicode, mdc}`
   instead of on the typed letters) is **not** tested here: which ASCII strings count as MdC is
   the plain-ASCII policy, which stays out of scope (below). It becomes a candidate only after
@@ -2796,16 +2825,23 @@ mode (97 mixed, 3 strict), while the stored folded-ASCII queries run in loose mo
 faithful-set baseline must be measured on today's code before F-a is compared with it.** The
 stored-query numbers it starts from (top-3 useful / MRR, `--stage auto --query-path app`,
 attempt 2, `docs/remeasure-results-2026-10-26-attempt2.md`; run files in
-`~/egyptology-runs/remeasure-2026-10-25`), **both pools reported every time**:
+`~/egyptology-runs/remeasure-2026-10-25`), **both pools reported every time**. Top-3 useful /
+MRR / rank-1 count. The two Experiment 3 pools are **C** (legacy pool: `--exclude-twins 0
+--expected-tokens current`) and **T** (twin-controlled: `--exclude-twins 0.7 --expected-tokens
+current`), so pool is the only difference between them. Attempt 2's **L** (`--exclude-twins 0
+--expected-tokens frozen`) is shown only as history; it differs from T in scoring as well as pool
+and is not used here.
 
-| Set | Legacy pool (L-auto, twins in) | Twin-controlled (T-auto, `--exclude-twins 0.7`) |
-| --- | --- | --- |
-| v4 (20) | 0.90 / 0.80 | 0.85 / 0.75 |
-| held-out 1 (20) | 0.75 / 0.675 | 0.75 / 0.6667 |
-| LE-v1 (30) | 0.8667 / 0.80 | 0.8667 / 0.80 |
-| NAME-v1 (30) | 0.9667 / 0.8833 (committed, pre-audit `27c1a7b`; not in attempt 2) | not measured |
+| Set | C-auto (legacy pool, current tokens) | T-auto (twin-controlled, current) | L-auto (history: frozen tokens) |
+| --- | --- | --- | --- |
+| v4 (20) | 0.90 / 0.80 / 14 | 0.85 / 0.75 / 13 | 0.90 / 0.80 / 14 |
+| held-out 1 (20) | 0.75 / 0.6667 / 12 | 0.75 / 0.6667 / 12 | 0.75 / 0.675 / 12 |
+| LE-v1 (30) | 0.8667 / 0.80 / 22 | 0.8667 / 0.80 / 22 | 0.8667 / 0.80 / 22 |
+| NAME-v1 (30) | not measured | not measured | 0.9667 / 0.8833 / 24 (committed, pre-audit `27c1a7b`) |
 
 NAME-v1 has no post-audit number: it is re-measured in both pools as part of the baseline run.
+These stored-query numbers are context only; every comparison below is made inside one run
+night, on one commit pair, with identical flags.
 
 **Held-out 2 and 3.** Construction unchanged from step 1 above (Experiment 2's step 1 recipe:
 20 each, fixed twin guard, disjoint by row and by `source_text_id`, BBAW ±20 window, build log
@@ -2814,19 +2850,56 @@ with rows removed per rule; held-out 3 sealed until step 4). Each gets a folded 
 aligned derivation; the fold-back check must hold on every row before the set is used.
 
 **Selection (amends step 2).** On held-out 2 faithful, F-a against today's code on the same
-faithful queries, in **both pools**: top-3 useful and MRR ≥ baseline, rank-1 count not lower,
-at least one strictly higher, in both pools. Otherwise null, nothing ships. Step 4 (held-out 3
-once) unchanged, same both-pools condition.
+faithful queries, in **both pools** (C and T): top-3 useful and MRR ≥ baseline, rank-1 count not
+lower, at least one strictly higher, in both pools. Otherwise null, nothing ships.
+**Step 4 (held-out 3, opened once):** the original non-regression rule, required in both pools:
+top-3 useful and MRR ≥ baseline and rank-1 count not lower in C **and** in T; no strict
+improvement is required. Frozen with this revision, before held-out 3 exists. Held-out 3 informs
+no tuning; a fail spends it.
+
+**Residue and repaired queries (secondary analysis).** Queries whose faithful variant keeps an
+ASCII residue token or a token repaired by character alignment (step 0 log; today v4 COMP_001,
+002, 011, 012, 013, 014, 017, 018, 019, 021, 022 and held-out 1 HOLD_008, 026) are reported
+separately, and every metric is also given with them excluded. Selection and step 4 use all
+queries.
+
+**Pinned commands (both arms, same flags; the arms differ only in the commit).**
+
+```bash
+PY=~/venvs/egyptology/bin/python; B=data/benchmarks; R=~/egyptology-runs/exp3-<date>
+CE="$PY scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule v4 --stage auto --expected-tokens current"
+# on each commit: provenance and step 0 (writes the faithful benchmark files)
+git rev-parse HEAD > $R/<arm>/commit.txt; shasum -a 256 data/processed/examples.csv > $R/<arm>/corpus_sha256.txt
+$PY scripts/exp3_step0_faithful_queries.py --out-csv $R/<arm>/step0.csv --log $R/<arm>/step0_log.txt \
+    --faithful-benchmarks-dir $R/<arm>/faithful
+# for every set F in {v4, held-out 1, LE-v1, NAME-v1, held-out 2} and Q in {stored F, $R/<arm>/faithful/faithful_<F>}:
+$CE --benchmark $Q --exclude-twins 0   --results $R/<arm>/<set>_<q>_C.csv --failures $R/<arm>/<set>_<q>_C_fail.csv
+$CE --benchmark $Q --exclude-twins 0.7 --results $R/<arm>/<set>_<q>_T.csv --failures $R/<arm>/<set>_<q>_T_fail.csv
+for M in auto declared; do $PY scripts/run_expert_paste_eval.py --queries $B/expert_paste_queries.csv --stage $M --results $R/<arm>/paste_$M.csv; done
+$PY scripts/run_segmentation_eval.py > $R/<arm>/segmentation.txt
+$PY scripts/verify_release.py --skip-tests > $R/<arm>/verify_release.txt   # F-a arm only
+shasum -a 256 $R/<arm>/*.csv $R/<arm>/*.txt > $R/<arm>/sha256.txt
+```
+
+`<arm>` = `base` (the exact parent commit of the F-a change, after any KRI merge) and `fa` (the
+F-a commit). Held-out 3 runs later, once, with the same `$CE` lines. The step-0 output of both
+arms must be identical (it reads no ranker code).
 
 **Hard gates (amend step 3).**
 
-- The stored folded-ASCII queries of v4, held-out 1 and LE-v1 produce per-query results
-  identical in every outcome column to the attempt-2 outputs (`*_L_auto.csv`, `*_T_auto.csv` in
-  `~/egyptology-runs/remeasure-2026-10-25`); NAME-v1's stored queries identical between the
-  baseline run and the F-a run.
-- `run_expert_paste_eval.py` 8/8 in `--stage auto` **and** `--stage declared`.
+- Reference (revision): not the attempt-2 files (they predate the KRI merge, which changes the
+  normaliser, segmentation, stage routing and the reading model). The reference is the `base`
+  arm above: the exact parent commit of the F-a change, run in the same night, same corpus
+  sha256. The sha256 of every reference file is recorded in the results section of this
+  addendum when the run is made.
+- The stored folded-ASCII queries of all five sets (notation `ascii`, 100 of 100 today) produce
+  per-query results identical in every column between `base` and `fa`, in C and in T.
+- `run_expert_paste_eval.py` 8/8 in `--stage auto` **and** `--stage declared`, both arms.
 - Release floors hold: `verify_release.py` READY on the twin-controlled v4 floors 0.80 / 0.70.
-- Segmentation byte-identical.
+- Segmentation output byte-identical between the arms.
+- Routing: the harness's `stage_used` column is kept for every faithful query in both arms;
+  every query whose routing differs between `base` and `fa` is listed, since a routing change
+  would mix a stage effect into the F-a effect.
 
 **Runtime.** On this Mac a full competitive pass over the sets took about 15 h of wall clock in
 attempt 2 (15 competitive runs 11 h 40 min; whole attempt 15 h 33 min). Step 3 here needs the
@@ -2840,9 +2913,14 @@ open decision routed to the expert; current behaviour (plain ASCII as a lossy fa
 chosen by vocabulary evidence) is kept until then.
 
 **Order, disclosed.** The queue (below) says this addendum is reviewed by Opus and Astra before
-step 0 runs. Step 0 ran in the same session, before that review. It is read-only string work
-on the committed benchmark files and one corpus column, with no ranker code and the stop rule
-exactly as pre-registered, so only the order differs. The review still comes before step 1.
+step 0 runs. Step 0 ran in the same session, before that review, and the first version of this
+addendum was committed together with the step-0 results (`efa7615`), so the amendments have no
+hash older than step 0. It is read-only string work on the committed benchmark files and one
+corpus column, with no ranker code, no ranking number seen and the stop rule exactly as
+pre-registered, so only the order differs. The reviewed revision is committed on its own
+("Experiment 3 re-scope: apply Opus+Astra review"); **that commit is the frozen pre-registration
+for step 1 onward**, before any held-out 2/3 build and any ranker run, and the run notes cite its
+hash.
 
 **Step 0 — result (2026-10-26, `scripts/exp3_step0_faithful_queries.py`; output
 `data/benchmarks/exp3_step0_faithful_queries.csv` and `exp3_step0_log.txt`; corpus 130,472 rows,
@@ -2854,22 +2932,40 @@ sha256 `44543932…`).**
   NAME-v1 0/30. Cause: the stored v4/held-out queries were built by an older fold (the plural marker
   kept as a `pl` token; today's fold rewrites it) or from the corpus' import-time
   `normalized_reading_order` column (which deleted the yod). Ids in the log.
-- *Repair* (allowed by step 0): each stored token is replaced by a faithful spelling from the
-  expected reading that folds to exactly that token; a token with none stays ASCII. Fold-back
-  then holds on **100/100**; the retrieval key from `parse_query` with the corpus vocabulary is
-  identical to the stored query's on **100/100**. ASCII tokens left: v4 11 queries (mostly
-  `pl`), held-out 1 4 (HOLD_008, 024, 026, 027), LE-v1 0, NAME-v1 0.
-- *Movers* (faithful query has ≥1 token whose folded key is a merging key): **v4 20/20,
-  held-out 1 18/20, LE-v1 30/30, NAME-v1 29/30**; requiring the token itself to carry a letter
-  of the pair: 18, 16, 27, 28. Merging keys recounted with the recorded method: ꜣ/ꜥ 611,
-  ḫ/ẖ 263, ḥ/h 402 (recorded 681 / 242 / 638 on 35,808 keys; today 35,942 keys after the audit
-  fixes; not reproduced exactly). A stricter variant (an actual x-spelling must meet an actual
-  y-spelling) gives 578 / 240 / 338 keys and movers 18 / 16 / 27 / 28.
-- **Stop rule not triggered** (movers > 0 on every set). The sets can show the effect.
+- *Repair* (allowed by step 0), only where the recipe fails: each stored token is replaced by a
+  faithful spelling from the expected reading that folds to exactly that token (repeated words
+  usable once per occurrence, suffix pronouns keep `=`); a token with none is aligned character
+  by character against the expected words (fewest skipped characters); only a token with
+  neither stays ASCII. Recipe outputs that fold back are kept unchanged (revision: the first
+  run replaced them too, which lost distinctions in HOLD_024 and HOLD_027 and left `irt-hr-rr`,
+  `f-khpr`, a second `iir-hr`). Fold-back holds on **100/100**; the retrieval key from
+  `parse_query` with the corpus vocabulary is identical to the stored query's on **100/100**;
+  the faithful queries read as `unicode` 100/100, A54 mode mixed 97, strict 3.
+- *Residue* (revised): repaired by character alignment v4 COMP_012 (`rit`→`rꞽt`), COMP_018
+  (`maa-hr-b`→`mꜣꜥ-ḥr-b`, `mntt`), held-out 1 HOLD_008 (`i`→`ꞽ`), HOLD_026 (`kh`→`ḫ`). Left ASCII:
+  v4 10 queries, all the stale plural marker (`pl`, `kawtpl`, `twpl`): today's notation
+  normaliser rewrites `.pl`/`.PL` to `.w`, so no faithful spelling folds to `pl`. Such a token
+  matches no corpus key in either arm (corpus keys carry `w`), so it does not bias F-a against
+  the baseline; the queries are still reported separately (above). Held-out 1, LE-v1, NAME-v1:
+  no residue.
+- *Movers* (faithful query has ≥1 token whose folded key is a merging key). Pre-registered
+  method (raw tokens): **v4 20/20, held-out 1 18/20, LE-v1 30/30, NAME-v1 29/30**; token carries
+  a letter of the pair: 18, 16, 27, 28. Raw-token merging keys: ꜣ/ꜥ 611, ḫ/ẖ 263, ḥ/h 402.
+  **Cleaned method (the meaningful number):** keys from `unfolded_reading_form` pieces (editorial
+  text removed; the raw method counts `n{ꜣ}`, `{ꜥ}〈n〉`, `{h}〈p〉n` as merges of `n`, `m`, `nb`,
+  `pn`): ꜣ/ꜥ 328, ḫ/ẖ 147, ḥ/h 245 keys; movers 18, 16, 27, 29, the same with the
+  pair-letter requirement. The recorded 2026-09-07 counts (681 / 242 / 638 on 35,808 keys) were
+  probably inflated the same way; their method was never tracked (reconstructed here), and the
+  cause of the mismatch is unknown. They are not to be quoted to Nederhof without that caveat.
+  Step-0 numbers changed in the revision only where stated: v4/held-out 1 residue lists (repair),
+  the cleaned counts (new); the pre-registered mover counts are unchanged.
+- **Stop rule not triggered** (movers > 0 on every set, by either method). The sets can show the
+  effect.
 
-**Next:** Opus and Astra review this addendum; then step 1 (held-out 2 and 3, with faithful
-columns); then one overnight run of today's code on the faithful variants of all five sets
-(the new baseline, both pools, NAME-v1 re-measured), and only then F-a.
+**Next:** the reviewed revision is committed (done, see Order); then step 1 (held-out 2 and 3,
+with faithful columns); then one overnight run of both arms with the pinned commands (`base`:
+the new baseline on stored and faithful variants of all five sets, both pools, NAME-v1
+re-measured; `fa`: the F-a commit).
 
 ### What to do next, in order (written 2026-09-07 after the sixth mail)
 
