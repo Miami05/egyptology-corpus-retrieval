@@ -2776,3 +2776,16 @@ Not built yet; measure before switching on, on queries written in a reader's not
 - Use "top-level group", never "quadrat", in new user-facing text.
 - Waiting on his answer: were the St Andrews groupings taken from the facsimile without
   reference to word division? Goes into the C1c and sign-function write-ups.
+
+## Queue, 2026-10-26 (after the KRI self-test)
+
+1. **KRI fixes** (branch `kri-fixes-2026-10-26`): pre-registered measurement running overnight
+   (`docs/kri-fixes-preregistration-2026-10-26.md`); merge and deploy only if every gated rule passes.
+2. **Experiment 3 — notation-faithful search key** (pre-registered 2026-09-07 above, NOT RUN), next.
+   Before step 0, re-scope it against what shipped since: audit fix A54 (in `3465478`) already
+   matches Unicode queries strictly per token in the suggestion re-rank, which overlaps
+   configuration F-b. The re-scope is written as a dated addendum to the Experiment 3 section,
+   never an edit of it, and is reviewed by Opus and Astra before step 0 runs. On a confirmed pass, the
+   result goes to Nederhof together with the invitation to test the live tool (his own St Andrews
+   texts through the reviewer key).
+3. Then the data-cleanup project (`docs/plan-data-cleanup-2026-10-26.md`).
