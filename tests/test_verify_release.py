@@ -9,6 +9,7 @@ is exercised directly here.
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -401,12 +402,18 @@ def test_the_committed_baseline_catches_a_shortened_benchmark():
     reported queries must fail, and the full 20 must not fail on the query count."""
     baseline = __import__("json").loads(vr.DEFAULT_BASELINE.read_text(encoding="utf-8"))
     assert baseline["expected_queries"] == 20
-    assert "expected_corpus_sha256" not in baseline  # set by the measurement step
+    # The baseline now pins the corpus hash (round 3, Astra): use the pinned value,
+    # so only the query count can make these checks differ.
+    pinned = baseline["expected_corpus_sha256"]
+    assert re.fullmatch(r"[0-9a-f]{64}", pinned)
     run = {"legacy pool": {"corpus_rows": "130472", "queries": "18"}}
-    failures = vr.check_input_identity(baseline, run, "0" * 64, 18)
+    failures = vr.check_input_identity(baseline, run, pinned, 18)
     assert "benchmark has 18 queries, baseline expects 20" in failures
     full = {"legacy pool": {"corpus_rows": "130472", "queries": "20"}}
-    assert vr.check_input_identity(baseline, full, "0" * 64, 20) == []
+    assert vr.check_input_identity(baseline, full, pinned, 20) == []
+    # A different corpus is still caught against the committed pin.
+    other = vr.check_input_identity(baseline, full, "0" * 64, 20)
+    assert other == [f"corpus sha256 {'0' * 64} != expected {pinned}"]
 
 
 def test_the_committed_benchmark_matches_the_committed_baseline():

@@ -559,3 +559,21 @@ run, so edited in place again.
   (`KRI_RUNS_BASE` set to a scratch directory, `KRI_STOP_AFTER=1`) were run outside the
   sandbox before the registered run. The release aggregate check stays step 8 of the
   registered run itself.
+
+**2026-10-26, round 3, before any full run** (Astra re-check of `c5ee5b4`). Still not
+run, so edited in place again.
+
+* **Step 9 would have failed** (should_fix). `tests/test_verify_release.py` asserted
+  that the committed `data/benchmarks/release_baseline.json` has no
+  `expected_corpus_sha256`, but the baseline now pins it (the same corpus sha as §2), so
+  the registered pytest step would have stopped the run. The test now reads the pinned
+  hash from the baseline, checks it is 64 hex characters, and still requires that a
+  shortened benchmark (18 rows, 18 queries) fails and the full 20 passes. It also
+  checks that a different corpus hash is rejected against the pin.
+* **Verification gap** (Astra's sandbox could not create temporary directories). The
+  fixture tests of `tests/test_verify_release.py` and `tests/test_check_kri_fixes_gates.py`
+  ran outside that sandbox, and steps 0–1 of the runner ran on the committed revision
+  into a scratch `KRI_RUNS_BASE` with `KRI_STOP_AFTER=1`. The release aggregate check
+  needs the full competitive and paste evaluations, so it is still verified only by
+  step 8 of the registered run. Its parsing and floor logic are covered by the fixture
+  tests.
