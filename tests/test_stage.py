@@ -737,10 +737,22 @@ def test_build_stage_resources_pooled_model_is_its_own_evidence():
     assert build_stage_resources(df, None).reading_model.pooled is None
 
 
-def test_a_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
+def test_a_stage_model_does_not_read_pooled_by_default():
+    """Rule (b)(2), KRI-fixes attempt 1 (DISABLE): the production stage model keeps the
+    pooled model attached, but a default decode does not use it."""
     df = _stage_emptied_corpus()
     resources = build_stage_resources(df, "Earlier Egyptian")
     prediction = resources.reading_model.predict_sequence(["H"])[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.is_singleton_tie is True
+
+
+def test_a_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    prediction = resources.reading_model.predict_sequence(
+        ["H"], use_pooled_fallback=True
+    )[0]
     assert prediction.used_pooled_evidence is True
     assert prediction.predicted == "haw"
     assert prediction.stage_attested_count == 3

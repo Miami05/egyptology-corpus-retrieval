@@ -296,7 +296,7 @@ def test_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
     assert before.used_pooled_evidence is False
 
     stage.attach_pooled(pooled)
-    after = stage.predict_sequence(["H"])[0]
+    after = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
     assert after.used_pooled_evidence is True
     assert after.predicted == "haw"
     assert after.stage_attested_count == 3
@@ -305,6 +305,23 @@ def test_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
     assert after.is_singleton_tie is False
     # It is still attested here — the pooled corpus IS this corpus, unrestricted.
     assert after.was_seen is True
+
+
+def test_pooled_fallback_is_off_by_default():
+    """Rule (b)(2) of the KRI-fixes pre-registration: attempt 1 decided DISABLE, so a
+    decode that does not ask for the fallback must not use it, even with a pooled
+    model attached and every POOLED_FALLBACK_* condition met."""
+    from app.services.reading_model import USE_POOLED_FALLBACK_BY_DEFAULT
+
+    assert USE_POOLED_FALLBACK_BY_DEFAULT is False
+    pooled, stage = _stage_emptied_models()
+    stage.attach_pooled(pooled)
+    assert stage.uses_pooled_evidence("H") is True
+    prediction = stage.predict_sequence(["H"])[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.is_singleton_tie is True
+    scored, _ = stage.predict_sequence_scored(["H"])
+    assert scored[0].used_pooled_evidence is False
 
 
 def test_pooled_fallback_can_be_switched_off_per_call():
@@ -322,7 +339,7 @@ def test_pooled_fallback_leaves_a_group_the_stage_attests_well_alone():
     pooled = train_reading_model(corpus([("H", "haw")] * 100 + [("H", "hy")] * 8))
     stage = train_reading_model(corpus([("H", "hy")] * 8))
     stage.attach_pooled(pooled)
-    prediction = stage.predict_sequence(["H"])[0]
+    prediction = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
     assert prediction.used_pooled_evidence is False
     assert prediction.predicted == "hy"
 
@@ -351,7 +368,7 @@ def test_pooled_fallback_does_not_touch_a_group_the_stage_never_saw():
     stage = train_reading_model(corpus([("A", "x")]))
     stage.attach_pooled(pooled)
     assert stage.uses_pooled_evidence("H") is False
-    prediction = stage.predict_sequence(["H"])[0]
+    prediction = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
     assert prediction.was_seen is False
     assert prediction.used_pooled_evidence is False
 

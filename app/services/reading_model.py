@@ -180,6 +180,21 @@ POOLED_FALLBACK_MAX_STAGE_COUNT = 3
 POOLED_FALLBACK_MIN_POOLED_COUNT = 20
 POOLED_FALLBACK_MIN_RATIO = 10.0
 
+# Whether a decode uses the pooled fallback when the caller does not say.
+#
+# OFF, by rule (b)(2) of `docs/kri-fixes-preregistration-2026-10-26.md`. Attempt 1 of
+# that measurement (`docs/kri-fixes-results-2026-10-26.md`) found the fallback firing
+# at 37 positions of the held-out split, on-better 4 and off-better 7. Outcome 2 of
+# rule (b) is a harm criterion that low n does not suspend: "use_pooled_fallback must
+# default to off before this branch merges". Four of the seven losses are one numeral
+# group in one line (BBAW:2621, `2` read `1/2` because the pooled counts are dominated
+# by the fraction reading, 82 of 118, against the stage's own 3 of 3).
+#
+# The code, the POOLED_FALLBACK_* constants and `attach_pooled` stay: the harness still
+# measures the fallback by passing `use_pooled_fallback=True` explicitly in its pooled
+# arms, and switching it back on needs a new pre-registration, not an edit here.
+USE_POOLED_FALLBACK_BY_DEFAULT = False
+
 
 def glyph_similarity(left: str, right: str, order_weight: float | None = None) -> float:
     """Order-aware glyph overlap in [0, 1]: (1-w)·Jaccard(glyphs) + w·Jaccard(bigrams).
@@ -615,7 +630,7 @@ class ReadingModel:
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
         use_composed: bool | None = None,
-        use_pooled_fallback: bool = True,
+        use_pooled_fallback: bool | None = None,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -648,8 +663,10 @@ class ReadingModel:
         counts instead — see `uses_pooled_evidence` and the POOLED_FALLBACK_*
         constants. It does nothing on a model with no pooled model attached, which
         is every pooled model and every model built outside
-        `app.services.stage.build_stage_resources`. `False` is passed by the stage
-        router, whose decision rule must not change.
+        `app.services.stage.build_stage_resources`. `None` means the shipped default,
+        `USE_POOLED_FALLBACK_BY_DEFAULT`, which is OFF after attempt 1 of the KRI-fixes
+        measurement (rule (b)(2)). `False` is passed by the stage router, whose
+        decision rule must not change, so the router is unaffected either way.
         """
         predictions, _path_score = self.predict_sequence_scored(
             signs,
@@ -676,7 +693,7 @@ class ReadingModel:
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
         use_composed: bool | None = None,
-        use_pooled_fallback: bool = True,
+        use_pooled_fallback: bool | None = None,
     ) -> tuple[list[ReadingPrediction], float]:
         """`predict_sequence`, plus the chosen path's total Viterbi log-probability.
 
@@ -695,6 +712,8 @@ class ReadingModel:
             fallback_threshold = FALLBACK_THRESHOLD
         if use_composed is None:
             use_composed = USE_COMPOSED_BY_DEFAULT
+        if use_pooled_fallback is None:
+            use_pooled_fallback = USE_POOLED_FALLBACK_BY_DEFAULT
 
         # Resolve which group's statistics each position will use, in order of how
         # much the evidence is worth: attested in this corpus → attested in the

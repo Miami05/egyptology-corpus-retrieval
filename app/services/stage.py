@@ -407,7 +407,10 @@ def build_stage_resources(
         pooled_model = train_reading_model(df, lexicon)
     # Evidence of last resort for a group this stage's filter emptied (see
     # `ReadingModel.uses_pooled_evidence`). A no-op at `target=None`, where the
-    # pooled model IS this model.
+    # pooled model IS this model. Attaching it only makes the fallback *available*:
+    # it is used only when a decode passes `use_pooled_fallback=True`, because the
+    # shipped default (`USE_POOLED_FALLBACK_BY_DEFAULT`) is OFF after attempt 1 of
+    # the KRI-fixes measurement (rule (b)(2), outcome DISABLE).
     reading_model.attach_pooled(pooled_model)
     segmenter = Segmenter(pooled_model, weights, use_lexicon=use_lexicon)
 
