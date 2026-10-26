@@ -60,13 +60,22 @@ Identity, recorded at step 0 and reproduced here so a reader can check it:
 | test-split manifest (`--split-manifest`) | sha256 `ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba` |
 
 The manifest is the identity of every test row written to a file, so the split is pinned by
-**content** and not only by the sha of the code that derives it. Step 0 regenerates it and a
+**content** and not only by the sha of the code that derives it. Step 1 regenerates it and a
 mismatch stops the run.
 
 **Training/test hygiene.** Every model the harness builds — the pooled one and each
 stage-restricted one — is fitted on the training partition only, and each stage subset is
 taken from the *training* frame. No test row is in either side of the pooled/stage
 comparison. `tests/test_kri_fixes_eval.py` checks this.
+
+**What that does not establish.** Training-frame separation is not full independence of
+the evidence. The harness runs with the Helsinki lexicon on, as the app does, and the
+inherited evaluator already marks BBAW's lexicon-assisted numbers as **not held-out**
+(`LEXICON_TAINTED_SOURCES` in `run_reading_model_eval.py`); BBAW contributes 1,013 of the
+3,473 test rows. The split stays frozen as it is (changing it now would be a new
+registration), the harness writes every aggregate also per source (`scope =
+source:BBAW` / `source:TLA` in `kri_summary.csv`), and **no aggregate from this run may be
+described as an independently held-out validation**.
 
 ## 3. Why a new harness, and what it cannot do
 
@@ -84,175 +93,324 @@ Nothing already in the repository can see these changes.
 `discount_only`, `cartouche_only`, `all_on` — over the same split, stage-aware, writing one
 row per position and one per line.
 
-**Expected scale, stated in advance.** A 500-row dry run found **3** firing positions, **9**
-split cartouches and **38** singleton ties. Extrapolated to 3,473 rows that is of the order
-of **20 firing positions**. That is a very small denominator and rule (b2) below is written
-for it: the point is recorded now, before the numbers, so that a result based on a handful of
-positions cannot later be presented as a measured gain.
+**Cohorts are per position.** A position is `firing` if the pooled fallback fires there in
+any pooled arm (`pooled_only` or `all_on`; the union, because the two route with different
+cartouche settings), `neighbour` if it is next to a firing position and does not fire
+itself, and `other` otherwise. A position keeps that class in **every** arm, `all_off`
+included, so every comparison below is paired over the same positions, joined on
+`(row_id, position)`. An empty cohort's rate is blank, never 0.
+
+**Three confidence numbers per position.** `confidence_legacy` is what shipped before this
+branch: the leading candidate's score over the displayed top five. `confidence_undiscounted`
+is the corrected number from `be24b96` #1, the chosen reading's share of the full
+distribution. `confidence_discounted` is that number with the `/k` discount. `all_off`
+reproduces the pre-branch **predictions**, but not the pre-branch **confidence**. That is why
+the legacy number is recorded separately.
+
+**Expected scale, and what was seen before these rules were fixed.** This is a
+**pilot-informed** registration, not an untouched confirmatory one. Before the rules were
+written, the harness was dry-run on the **first 25 and the first 500 rows of this same test
+split** (and the reviewers ran 50 rows, on the same split, during the review of this
+document). Those console summaries printed, per arm, `acc_all`, the firing count and its
+accuracy, neighbour and other accuracy, the better/worse counts against `all_off`,
+segmentation F1, the split-cartouche count and the stage-move count. Under the old
+per-arm cohorts, the firing accuracy of `all_off` printed 0 by construction. The numbers
+the registration used were: 3 firing positions, 9 split cartouches (0 with the constraint
+on), segmentation F1 0.9092 → 0.9103 and 38 singleton ties, all on 500 rows; the 50-row
+review run changed 0 positions outside the firing cohort. The round-1 fixes re-ran the same
+first 50 rows with the shared cohorts, and that run printed every gate line of step 3. It
+had 0 firing positions, 0 changed positions and 0 stage moves, and the Brier lines of (g)
+showed the discount lowering the score by about 0.0017. **Every other printed number
+must be treated as seen.** The first 500 rows are part of the evaluation split, and the
+results note says so beside every number.
+
+Extrapolated to 3,473 rows, 3 firing positions in 500 rows is of the order of **20 firing
+positions**. Rule (b) is written for that denominator.
 
 ## 4. Pass rules
 
-Fixed before the run. Every rule is evaluated on `$R/kri_summary.csv` unless stated.
+Fixed before the run. Every rule is evaluated by `scripts/check_kri_fixes_gates.py` on the
+files in `$R`, and the step that evaluates it exits non-zero on a gated failure. Gates are
+decided on **integer counts**, never on a rounded rate. The budgets are constants in that
+script and must match the numbers here.
 
-**(a) Non-firing positions must not lose accuracy beyond the tolerance.**
-`acc_other(all_on) ≥ acc_other(all_off) − 0.002`, where `other` is every position that
-neither fires nor neighbours a firing one. The tolerance is absolute accuracy and is about
-40 positions in roughly 20,000 — chosen before the run as the scale at which a stage-routing
-move on a few lines could plausibly land. It is a tolerance, not a target. The paired
-`better_than_baseline` / `worse_than_baseline` counts at those positions are reported beside
-it. **FAIL stops the run.**
+**(a) Collateral harm: engineering loss budgets.** This applies to `all_on` and to
+`cartouche_only`, each paired with `all_off`. `cartouche_only` is included because it is
+the configuration that ships if (b) disables the pooled fallback; the discount moves no
+prediction. All three budgets must hold:
 
-**(b) Firing positions, paired.** `acc_firing(all_on) ≥ acc_firing(all_off)`, reported with
-the paired counts (on-better / off-better / unchanged) and with every firing position listed
-individually from `$R/kri_positions.csv`. The pooled fallback ships only if this holds.
+* `other` positions: `other_worse − other_better ≤ 5`
+* `neighbour` positions: `neighbour_worse − neighbour_better ≤ 2`
+* whole lines: `lines_exact_lost − lines_exact_gained ≤ 3`
 
-**(b2) Low-n guard, pre-registered because the dry run says it will bite.** If the number of
-firing positions is **< 30**, rule (b) is **reported, not gated**: no claim of improvement
-may be made from it, in the results note or to an expert, whichever direction it points. The
-branch may still merge on (a), (c) and (e) — those are "nothing else broke" rules — but item
-§5.1 of the fixes doc stays open and the feature remains an unvalidated heuristic. This rule
-is strictly tighter than (b); it cannot be used to rescue a failing (b).
+These are **engineering loss budgets, not statistical non-inferiority margins**. They are
+set against the size of what the change can gain. The pooled fallback is expected to act
+on about 20 positions in about 20 lines (§3). Outside the firing cohort and its
+neighbours, only a routing move or a Viterbi effect two or more positions away can change
+an outcome, and the 50-row review run changed none. A configuration that loses, net, more
+than a quarter of its own target scale in positions it does not target (5), more than about
+5 % of the about 40 neighbours (2), or more than 3 whole lines, is not worth carrying as an
+unvalidated heuristic, whatever it gains. The earlier accuracy tolerance (−0.002, about
+45 positions) is withdrawn. It was looser than the whole expected effect.
 
-**(c) Cartouche: no new boundary errors outside cartouches.**
-`boundary_errors_outside_cartouche(all_on) ≤ boundary_errors_outside_cartouche(all_off)`,
-that being false boundaries plus missed boundaries at positions outside any cartouche span.
-Also reported, not gated: boundary precision / recall / F1, exact-segmentation count, and
-`cartouches_split` (expected to fall to 0 in the constraint-on arms). **FAIL stops the run.**
+The exact sign-test p-value of the discordant pairs is reported beside each count, as
+uncertainty. **A pass shows that the harm stayed within the budget. It is not evidence of
+an improvement.** **FAIL stops the run.**
 
-**(d) Stage routing: counted and listed.** `stage_changed_vs_baseline` for every arm, and
-every changed line listed individually — row id, stage off, stage on, and the per-stage
-attested coverage from both — from `$R/kri_lines.csv`. No threshold: this is a rule about
-disclosure, not about a number. A run that reports a count without the list fails it.
+**(b) Firing positions: one decision rule, paired.** On the firing cohort, `all_on` against
+`all_off`: the on-better, off-better and unchanged counts, the number of distinct lines,
+and the exact two-sided sign test. Every firing position is listed individually. The
+decision, applied in this order:
 
-**(e) Expert paste gate: 8/8 in `auto` and 8/8 in `declared`.** The hard constraint every
-segmentation and reading change in this project has had to clear. **FAIL stops the run.**
+1. **No firing position:** the feature was not exercised. It ships as an unvalidated
+   heuristic, and the note says its effect is **unmeasured**.
+2. **off-better > on-better, at any n:** the pooled fallback is **disabled.**
+   `use_pooled_fallback` must default to off before this branch merges, in a follow-up
+   commit the results note names. This is the harm criterion. Low n does not suspend it.
+3. **on-better ≥ off-better, with at least 30 firing positions in at least 20 distinct
+   lines, on-better > off-better, and sign-test p < 0.05:** it ships, and the improvement
+   may be stated, with the paired counts and p.
+4. **Otherwise:** it ships as an **unvalidated heuristic**. No harm was measured, but no
+   improvement may be claimed, in the results note or to an expert, in either direction.
+   §5.1 of the fixes doc stays open.
 
-**(f) Competitive sets, sanity check only.** v4, held-out and LE-v1, legacy (`L`) and
-twin-controlled (`T`), at or above the release floors `top3_useful_floor` 0.80 and
-`mrr_floor` 0.70 from `data/benchmarks/release_baseline.json`, with **0** top-3 answers lost
-against the attempt-2 numbers in `docs/remeasure-results-2026-10-26-attempt2.md`. Stated in
-the results note as *not exercising the decoder or the segmenter*: it can only detect
-collateral damage, and passing it is not evidence for any of the three features. **FAIL stops
-the run.**
+The 20-line condition exists because 30 positions are not 30 independent observations
+when several sit in one line. (b) is a **decision**, not a stop: its outcome is recorded
+and the run continues. That is why (a) and (c) are also gated on `cartouche_only`.
 
-**(g) Calibration: reported, never gated.** Reliability bins and the Brier score for the
-chosen reading's confidence, for `all_off` (undiscounted share) and `all_on` (with the `/k`
-discount), from `$R/kri_summary_calibration.csv`. No pass rule: there is no pre-registered
-target for what a confidence *should* read, and inventing one after seeing the bins would be
-the thing this document exists to prevent. What the note must say is whether the discount
-moved the Brier score and in which direction.
+**(c) Cartouche: no new boundary errors outside cartouches.** For `all_on` and for
+`cartouche_only`: `boundary_errors_outside_cartouche(arm) ≤
+boundary_errors_outside_cartouche(all_off)`. These are false boundaries plus missed
+boundaries at positions outside any cartouche span. Also reported, not gated: boundary
+precision / recall / F1, the exact-segmentation count, `cartouches_split` (cartouches with at
+least one predicted boundary inside, expected to fall to 0 with the constraint on) and
+`boundaries_inside_cartouches`. **FAIL stops the run.**
 
-**(h) Stop on any failure.** Stop, record it in `$R/run_log.txt`, fix on a new commit, write
-a dated addendum to this document, and re-run **all** of §5 on the new pinned commit. Every
-attempt's `$R` is kept, renamed `…-attemptN`, and listed in the results note. **No subset
-re-runs and no reuse of a number from a failed attempt** (the A2.9 rule of
-`docs/remeasure-preregistration-2026-10-25.md`).
+**(d) Stage routing in the harness: counted and listed.** For every arm,
+`stage_changed_vs_baseline` and every changed line, listed individually: row id, stage
+off, stage on, and the per-stage attested coverage from both. Stages are compared as
+strings, so a line the router left unset in both arms is not a move. No threshold: this
+is a rule about disclosure, not about a number. A listing whose length differs from the
+summary's count stops the run.
+
+**(e) Expert paste gate: 8/8 in `auto` and 8/8 in `declared`.** Every segmentation and
+reading change in this project has had to clear this constraint. **FAIL stops the run.**
+
+**(e2) Urk. IV / St Andrews gate, both modes.** This is
+`check_standrews_urkiv_gate.py --private-dir "$PRIV"` in `auto` and in `declared`,
+exactly as A2.2′ of the 2026-10-25 pre-registration (A7) defines it. It has rejected a
+segmentation-adjacent change before (lexicon weight 0.39), and the cartouche constraint
+changes segmentation and routing. Its own exit code decides: `GATE: PASS` or the run
+stops. Its logs stay in `$R`.
+
+**(e3) Held-out stage routing.** This is `run_stage_routing_eval.py --seed 20261025
+--per-stage 200`, the A2.3 sample. A2.3's own rule (Earlier → Demotic and Late → Demotic
+both 0/200) is gated by the script's exit code. Against attempt 2's
+`routing.csv`, the sample must be the same pastes; a different sample stops the run.
+Every paste whose chosen stage changed is listed, but changes are not gated.
+
+**(f) Competitive sets, sanity check only.** v4, held-out and LE-v1, legacy (`L`, frozen
+tokens, no twin control) and twin-controlled (`T`, `--exclude-twins 0.7`, current tokens),
+`--stage auto`.
+
+* **Zero top-3 answers lost, by query identity.** Each run's per-query
+  `top3_useful_family_hit` is joined on `benchmark_id` with the attempt-2 file of the same
+  name in `~/egyptology-runs/remeasure-2026-10-25/` (`{v4,holdout,le_v1}_{T,L}_auto.csv`).
+  A query true there and false here is a loss. Gains and every `useful_family_rank` change
+  are listed. An unchanged aggregate does not count, because a loss and a gain can cancel.
+* **Release floors on their designated configuration only:** v4 T-auto, `top3_useful_floor`
+  0.80 and `mrr_floor` 0.70 (`release_baseline.json`, `twin_controlled`). Held-out and
+  LE-v1 have no floors. Their attempt-2 numbers (held-out L 0.75 / 0.6750, T 0.75 /
+  0.6667; LE-v1 L 0.8667 / 0.80, T 0.8667 / 0.80) are reported beside this run's.
+* **Determinism.** `verify_release.py --skip-tests` must print the same top-3, MRR and
+  failure count as this run's v4 L-auto and v4 T-auto, and the same paste count as
+  paste-auto. Its own per-query CSVs are temporary files it deletes, so the comparison is
+  on the printed aggregates, kept in `verify_release.txt`. Its exit code (READY) is also
+  gated.
+
+The results note states that (f) does **not exercise the decoder or the segmenter**. It
+can only detect collateral damage, and passing it is not evidence for any of the three
+features. **FAIL stops the run.**
+
+**(g) Calibration: reported, never gated.** The reliability bins and Brier score for each arm
+and each confidence number, over all positions and over positions with a reading
+(`subset = with_reading`). A no-reading position at confidence 0 is "perfectly calibrated",
+so including it flatters the score. Three comparisons are reported separately:
+
+* the **discount** effect: `discount_only` discounted against `all_off` undiscounted. The
+  predictions are the same, so only the discount differs.
+* the **correction** effect: `all_off` undiscounted against `all_off` legacy.
+* the **combined** effect: `all_on` discounted against `all_off` legacy. This includes the
+  pooled fallback's and the routing's prediction changes, so it attributes nothing to
+  `/k`.
+
+There is no pass rule. No target for what a confidence *should* read was registered, and
+inventing one after seeing the bins would be the thing this document exists to prevent.
+The note must say whether the discount moved the Brier score and in which direction.
+
+**(h) Stop on any failure, mechanically.** Every step runs through `run` in the runner
+below. Any non-zero exit (a failed gate, a pinned sha that does not match, a dirty tree, a
+missing input) is logged in `$R/run_log.txt` and **ends the run**. After a stop: fix it on a
+new commit, write a dated addendum to this document, and re-run **all** of §5 on the new
+pinned commit. Each attempt gets its own `…-attemptN` directory, allocated fresh by the
+runner (an existing directory is never reused, so no evidence is overwritten), and every
+attempt is listed in the results note. **No subset re-runs, and no reuse of a number from a
+failed attempt** (the A2.9 rule of `docs/remeasure-preregistration-2026-10-25.md`).
 
 ## 5. Exact commands
 
-One heavy process at a time, nothing else running. Every step appends `START`, `END` and
-`exit` lines to `$R/run_log.txt`.
+The commands are `scripts/run_kri_fixes_prereg.sh`, reproduced verbatim below.
+`tests/test_check_kri_fixes_gates.py` fails if the two differ. Run it with **bash**, from
+anywhere: `bash scripts/run_kri_fixes_prereg.sh`. It enters the worktree itself and asserts
+the toplevel, the branch and a clean tree. Use bash because zsh does not word-split, and
+the command arrays need bash. Run one heavy process at a time, with nothing else running.
+The registered run sets neither `KRI_RUNS_BASE` nor `KRI_STOP_AFTER`.
 
 ```bash
-PY=~/venvs/egyptology/bin/python
+#!/usr/bin/env bash
+# The exact command list of docs/kri-fixes-preregistration-2026-10-26.md §5.
+# Run it as:   bash scripts/run_kri_fixes_prereg.sh
+# (bash, not zsh: zsh does not word-split, and this file is the registered commands).
+# tests/test_check_kri_fixes_gates.py checks that §5 reproduces this file verbatim.
+#
+# Two environment variables exist ONLY to prove steps 0-1 run before the registered run
+# (a dry check into a scratch directory). The registered run sets neither:
+#   KRI_RUNS_BASE   parent directory of the attempt directory (default ~/egyptology-runs)
+#   KRI_STOP_AFTER  stop cleanly after this step number (default: run every step)
+set -euo pipefail
+
+WT=/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/kri-fixes-2026-10-26
+BRANCH=kri-fixes-2026-10-26
+PY=/Users/lediodurmishaj/venvs/egyptology/bin/python
+PRIV=/Users/lediodurmishaj/projects/Egyptology-APP/data/private
+BASE=$HOME/egyptology-runs/remeasure-2026-10-25     # attempt 2 of the 2026-10-25 run
 B=data/benchmarks
-R=~/egyptology-runs/kri-fixes-2026-10-26          # outside the repo and outside iCloud
-mkdir -p "$R"
+MANIFEST_SHA=ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba
+RUNS=${KRI_RUNS_BASE:-$HOME/egyptology-runs}
+STOP_AFTER=${KRI_STOP_AFTER:-}
+
+# A fresh attempt directory, never an existing one: evidence is never overwritten.
+N=1
+while [ -e "$RUNS/kri-fixes-2026-10-26-attempt$N" ]; do N=$((N + 1)); done
+R=$RUNS/kri-fixes-2026-10-26-attempt$N
+mkdir -p "$RUNS"
+mkdir "$R"
+echo "attempt directory: $R"
+
 log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run_log.txt"; }
-run() { log "START $1"; shift; "$@" ; c=$?; log "exit $c"; log "END"; return $c; }
-```
+# Every step goes through run: a non-zero exit is logged and STOPS the run (rule h).
+run() {
+  local label=$1
+  shift
+  log "START $label"
+  local code=0
+  "$@" || code=$?
+  log "END $label exit=$code"
+  if [ "$code" -ne 0 ]; then
+    log "STOP at $label (rule h): fix on a new commit, addendum, re-run everything"
+    echo "STOP at $label (exit $code); see $R/run_log.txt" >&2
+    exit "$code"
+  fi
+}
+done_after() {
+  if [ "$STOP_AFTER" = "$1" ]; then
+    log "stopped after step $1 (KRI_STOP_AFTER; not a registered run)"
+    echo "stopped after step $1 (KRI_STOP_AFTER)"
+    exit 0
+  fi
+}
 
-**Step 0 — pin everything.**
-
-```bash
-run step0-commit git rev-parse HEAD > "$R/commit.txt"
-git status --porcelain >> "$R/commit.txt"          # must be empty
+# Step 0 - the right worktree, branch and a clean tree; pin everything.
+cd "$WT"
+run step0-toplevel test "$(git rev-parse --show-toplevel)" = "$WT"
+run step0-branch test "$(git rev-parse --abbrev-ref HEAD)" = "$BRANCH"
+run step0-clean test -z "$(git status --porcelain)"
+run step0-private-dir test -d "$PRIV"
+run step0-attempt2-dir test -d "$BASE"
+git rev-parse HEAD > "$R/commit.txt"
 shasum -a 256 data/processed/examples.csv scripts/eval_guards.py \
-    scripts/run_reading_model_eval.py scripts/run_kri_fixes_eval.py > "$R/shas.txt"
-$PY --version > "$R/env.txt"; $PY -m pip freeze >> "$R/env.txt"
-```
+  scripts/run_reading_model_eval.py scripts/run_kri_fixes_eval.py \
+  scripts/check_kri_fixes_gates.py scripts/run_kri_fixes_prereg.sh > "$R/shas.txt"
+printf '%s\n' \
+  "44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2  data/processed/examples.csv" \
+  "17977c1e4f9a10f8a5067bb4bb5d3f2ffe4b280048ed2e8b465877cde45c0950  scripts/eval_guards.py" \
+  "373f2efb001cb2431ea54c9666159bc2cdcc96d0d7f9673d8cb88c8f70d312b5  scripts/run_reading_model_eval.py" \
+  > "$R/pinned_shas.txt"
+run step0-pinned-shas shasum -a 256 -c "$R/pinned_shas.txt"
+"$PY" --version > "$R/env.txt"
+"$PY" -m pip freeze >> "$R/env.txt"
+done_after 0
 
-**Step 1 — the split manifest, checked against §2.**
+# Step 1 - the split manifest, checked against section 2 by content.
+mkdir "$R/_step1"
+run step1-manifest "$PY" scripts/run_kri_fixes_eval.py \
+  --split-manifest "$R/split_manifest.csv" --max-test-rows 1 \
+  --positions "$R/_step1/positions.csv" --lines "$R/_step1/lines.csv" \
+  --summary "$R/_step1/summary.csv" > "$R/step1.txt" 2>&1
+echo "$MANIFEST_SHA  $R/split_manifest.csv" > "$R/manifest_sha.txt"
+run step1-manifest-sha shasum -a 256 -c "$R/manifest_sha.txt"
+done_after 1
 
-```bash
-run step1-manifest $PY scripts/run_kri_fixes_eval.py \
-    --split-manifest "$R/split_manifest.csv" --max-test-rows 1 \
-    --positions "$R/_discard_positions.csv" --lines "$R/_discard_lines.csv" \
-    --summary "$R/_discard_summary.csv" > "$R/step1.txt" 2>&1
-shasum -a 256 "$R/split_manifest.csv" >> "$R/shas.txt"
-# must be ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba; a
-# mismatch means the split moved and STOPS the run.
-```
+# Step 2 - the paired harness, all five arms, full test split (~11-12 min).
+run step2-harness "$PY" scripts/run_kri_fixes_eval.py \
+  --positions "$R/kri_positions.csv" --lines "$R/kri_lines.csv" \
+  --summary "$R/kri_summary.csv" \
+  --calibration "$R/kri_summary_calibration.csv" > "$R/step2.txt" 2>&1
 
-**Step 2 — the paired harness, all five arms, full test split (~11–12 min).**
+# Step 3 - rules (a), (b), (c), (d), (g): gates, decision, listings, calibration.
+run step3-gates "$PY" scripts/check_kri_fixes_gates.py harness --run-dir "$R" \
+  > "$R/step3_gates.txt" 2>&1
 
-```bash
-run step2-harness $PY scripts/run_kri_fixes_eval.py \
-    --positions "$R/kri_positions.csv" --lines "$R/kri_lines.csv" \
-    --summary "$R/kri_summary.csv" \
-    --calibration "$R/kri_summary_calibration.csv" > "$R/step2.txt" 2>&1
-```
-
-**Step 3 — rules (b) and (d): the individual listings, not just the counts.**
-
-```bash
-run step3-listings $PY - <<'PYEOF' > "$R/step3.txt" 2>&1
-import pandas as pd, os
-R = os.path.expanduser("~/egyptology-runs/kri-fixes-2026-10-26")
-positions = pd.read_csv(f"{R}/kri_positions.csv")
-lines = pd.read_csv(f"{R}/kri_lines.csv")
-firing = positions[(positions["arm"] == "all_on") & (positions["class"] == "firing")]
-base = positions[positions["arm"] == "all_off"].set_index(["row_id", "position"])
-print(f"(b) firing positions: {len(firing)}")
-for _, row in firing.iterrows():
-    off = base.loc[(row["row_id"], row["position"])]
-    print(f"  {row['row_id']}#{row['position']} stage={row['stage']} gold={row['gold_reading']!r} "
-          f"off={off['predicted']!r}({off['correct']}) on={row['predicted']!r}({row['correct']}) "
-          f"stage_count={row['stage_attested_count']} pooled_count={row['attested_count']}")
-off_lines = lines[lines["arm"] == "all_off"].set_index("row_id")
-on_lines = lines[lines["arm"] == "all_on"].set_index("row_id")
-moved = [i for i in on_lines.index if off_lines.loc[i, "stage"] != on_lines.loc[i, "stage"]]
-print(f"(d) lines whose stage moved: {len(moved)}")
-for row_id in moved:
-    print(f"  {row_id}: {off_lines.loc[row_id, 'stage']!r} -> {on_lines.loc[row_id, 'stage']!r} "
-          f"| coverage off {off_lines.loc[row_id, 'coverage']} | on {on_lines.loc[row_id, 'coverage']}")
-PYEOF
-```
-
-**Step 4 — rule (e), the expert paste gate.**
-
-```bash
+# Step 4 - rule (e), the expert paste gate.
 for M in auto declared; do
-  run step4-paste-$M $PY scripts/run_expert_paste_eval.py \
-      --queries $B/expert_paste_queries.csv --stage $M \
-      --results "$R/paste_$M.csv" > "$R/paste_$M.txt" 2>&1
+  run "step4-paste-$M" "$PY" scripts/run_expert_paste_eval.py \
+    --queries "$B/expert_paste_queries.csv" --stage "$M" \
+    --results "$R/paste_$M.csv" > "$R/paste_$M.txt" 2>&1
 done
-```
+run step4-paste-check "$PY" scripts/check_kri_fixes_gates.py paste --run-dir "$R" \
+  > "$R/step4_gates.txt" 2>&1
 
-**Step 5 — rule (f), the competitive sanity check.**
+# Step 5 - rule (e2), the Urk. IV / St Andrews gate, both modes.
+for M in auto declared; do
+  run "step5-urkiv-$M" "$PY" scripts/check_standrews_urkiv_gate.py \
+    --private-dir "$PRIV" --stage "$M" > "$R/urkiv_standrews_$M.txt" 2>&1
+done
 
-```bash
-CE="$PY scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule v4"
+# Step 6 - rule (e3), held-out stage routing, against attempt 2's sample.
+run step6-routing "$PY" scripts/run_stage_routing_eval.py --seed 20261025 \
+  --per-stage 200 --results "$R/routing.csv" > "$R/routing_summary.txt" 2>&1
+run step6-routing-check "$PY" scripts/check_kri_fixes_gates.py routing --run-dir "$R" \
+  --baseline-dir "$BASE" > "$R/step6_gates.txt" 2>&1
+
+# Step 7 - rule (f), the competitive sanity check, per query against attempt 2.
+CE=("$PY" scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule v4)
 for S in v4 holdout le_v1; do
   case $S in
     v4)      F=$B/competitive_ambiguity_eval_queries_v4.csv ;;
     holdout) F=$B/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv ;;
     le_v1)   F=$B/competitive_ambiguity_eval_queries_le_v1.csv ;;
   esac
-  run step5-$S-T $CE --benchmark $F --stage auto --exclude-twins 0.7 \
-      --expected-tokens current --results "$R/${S}_T_auto.csv" \
-      --failures "$R/${S}_T_auto_fail.csv" > "$R/${S}_T_auto.txt" 2>&1
-  run step5-$S-L $CE --benchmark $F --stage auto --exclude-twins 0 \
-      --expected-tokens frozen --results "$R/${S}_L_auto.csv" \
-      --failures "$R/${S}_L_auto_fail.csv" > "$R/${S}_L_auto.txt" 2>&1
+  run "step7-$S-T" "${CE[@]}" --benchmark "$F" --stage auto --exclude-twins 0.7 \
+    --expected-tokens current --results "$R/${S}_T_auto.csv" \
+    --failures "$R/${S}_T_auto_fail.csv" > "$R/${S}_T_auto.txt" 2>&1
+  run "step7-$S-L" "${CE[@]}" --benchmark "$F" --stage auto --exclude-twins 0 \
+    --expected-tokens frozen --results "$R/${S}_L_auto.csv" \
+    --failures "$R/${S}_L_auto_fail.csv" > "$R/${S}_L_auto.txt" 2>&1
 done
-run step5-verify $PY scripts/verify_release.py > "$R/verify_release.txt" 2>&1
-```
+run step7-competitive-check "$PY" scripts/check_kri_fixes_gates.py competitive \
+  --run-dir "$R" --baseline-dir "$BASE" > "$R/step7_gates.txt" 2>&1
 
-**Step 6 — the full test suite, once, output kept.**
+# Step 8 - the release check (no pytest here: step 9 runs it once), then determinism:
+# its own v4 L, v4 T and paste runs must reproduce steps 7 and 4 exactly.
+run step8-verify "$PY" scripts/verify_release.py --skip-tests > "$R/verify_release.txt" 2>&1
+run step8-verify-check "$PY" scripts/check_kri_fixes_gates.py verify --run-dir "$R" \
+  > "$R/step8_gates.txt" 2>&1
 
-```bash
-run step6-pytest $PY -m pytest -q > "$R/pytest.txt" 2>&1
+# Step 9 - the full test suite, once, output kept.
+run step9-pytest "$PY" -m pytest -q > "$R/pytest.txt" 2>&1
+
+log "ALL STEPS PASSED"
+echo "all steps passed; results in $R"
 ```
 
 `--benchmark` is always explicit: the competitive harness's own default is the contaminated
@@ -260,23 +418,91 @@ v1 set.
 
 ## 6. What the results note must contain
 
-A dated note, `docs/kri-fixes-results-2026-10-26.md`, with: the pinned commit and every sha
-from step 0; each rule (a)–(h) with PASS / FAIL / REPORTED and the number it was decided on;
-the firing-position listing and the stage-change listing in full; the calibration table for
-both arms; and a verdict in one line. If (b2) bit, the note says in plain words that the
-pooled fallback's own benefit is **unmeasured** and must not be quoted.
+The note is a dated file, `docs/kri-fixes-results-2026-10-26.md`. It must contain:
+
+* the attempt directory, the pinned commit and every sha from step 0;
+* each rule (a)–(h) marked PASS, FAIL, DECISION or REPORTED, with the integer counts it was
+  decided on, the source-stratified counts beside the aggregates, and the step-3, -6, -7
+  and -8 gate files quoted;
+* the firing-position listing, the harness stage-change listing and the routing-change
+  listing, in full;
+* the calibration table for the three comparisons of (g);
+* a verdict in one line.
+
+If (b) did not reach outcome 3, the note says in plain words that the pooled fallback's
+own benefit is **unmeasured** and must not be quoted. The note also says that this was a
+pilot-informed registration (§3) and that no number from it is independently held-out
+(§2).
 
 ## 7. Known limits of this measurement, stated before it runs
 
-1. **The firing sample is tiny** (§3) and the split has no Ramses or AES rows left in it, so
-   the stage mix the pooled fallback depends on is narrower than production's.
-2. **The reading track uses gold groupings.** It measures reading, not reading-after-
-   segmentation; the cartouche constraint reaches it only through the stage router. A
-   combined end-to-end number would need the §4e-style strict rule and is not attempted here.
-3. **Nothing here measures the KRI material**, which is private and excluded. The
-   pre-registered KRI test of `docs/plan-data-cleanup-2026-10-26.md` §4d/§4e is separate and
-   unaffected by this document.
-4. **The decode still prefers the singleton on the traced positions** (`docs/kri-selftest-
-   fixes-2026-10-26.md` §1, the transition-smoothing defect). This measurement cannot fix
-   that and is not designed to detect it; if (b) comes out flat, that is the most likely
-   reason.
+1. **The firing sample is tiny** (§3), and the split has no Ramses or AES rows left in it.
+   The stage mix the pooled fallback depends on is therefore narrower than production's.
+2. **The reading track uses gold groupings.** It measures reading, not
+   reading-after-segmentation. The cartouche constraint reaches it only through the stage
+   router. A combined end-to-end number would need the §4e-style strict rule and is not
+   attempted here.
+3. **The harness router gets the gold-spaced paste**, and its spaces act as hints. The
+   cartouche constraint therefore rarely gets to change the routing segmentation there,
+   and `stage_changed_vs_baseline` understates the routing effect on real pastes that are
+   unspaced or spaced by quadrat. (e2) and (e3) route real pastes and partly cover this;
+   an unspaced-routing arm is not attempted.
+4. **Nothing here measures the KRI material**, which is private and excluded. The
+   pre-registered KRI test of `docs/plan-data-cleanup-2026-10-26.md` §4d/§4e is separate
+   and unaffected by this document. That file is on `main` since `ac9158a`, after this
+   branch's base `3465478`, so it is not in this worktree.
+5. **The decode still prefers the singleton on the traced positions**
+   (`docs/kri-selftest-fixes-2026-10-26.md` §1, the transition-smoothing defect). This
+   measurement cannot fix that and is not designed to detect it. If (b) comes out flat,
+   that is the most likely reason.
+6. **Pilot-informed, and not independently held-out** (§2, §3). The first 500 test rows
+   were decoded before the rules were fixed, and BBAW's lexicon-assisted numbers are not
+   held-out.
+7. **Branch base.** `main` has moved on since `3465478` (`ac9158a` adds docs). The branch
+   deletes nothing. A `diff main..HEAD` shows those docs as deletions only because of the
+   older base. Merge, do not overwrite.
+
+## Revision log
+
+**2026-10-26, round 1, before any full run** (Opus + Astra review of `5d8fe73`). This
+document had not been run, so it was edited in place, not amended.
+
+* **Cohorts** (both reviews, blocker). These were per arm, so `acc_firing(all_off)` was
+  0/0 and read as 0.0, (b) could never fail, and (a) compared different populations. They
+  are now per position and shared by all arms (§3), every comparison is paired on
+  `(row_id, position)`, an empty cohort is blank, and gates read integer counts.
+* **Confidence baseline** (both, blocker / should_fix). `all_off` did not reproduce the
+  pre-branch confidence. `confidence_legacy` was added, and (g) now separates the
+  discount, the correction and the combined effect. The Brier score is also reported
+  without no-reading positions.
+* **(b)/(b2)** (both, blocker / should_fix). The two rules contradicted each other. They
+  are replaced by one ordered decision rule, with a harm criterion that low n does not
+  suspend and a separate, stricter condition for claiming an improvement (≥ 30 positions,
+  ≥ 20 lines, p < 0.05).
+* **(a)** (both, should_fix). The −0.002 accuracy tolerance (about 45 positions) was
+  looser than the whole expected effect. It is replaced by paired net-loss budgets on
+  `other`, `neighbour` and whole lines, justified as engineering budgets, with sign-test
+  p reported.
+* **(f)** (Astra, blocker; Opus, should_fix). The v4 floors were applied to held-out and
+  LE-v1, which fail them unchanged. Floors now apply to v4 T-auto only. "Zero answers
+  lost" is checked per query against the named attempt-2 files, and verify_release's
+  determinism check is restored.
+* **(h) and §5** (both, blocker / should_fix). Stopping was a comment, `$CE` failed under
+  zsh, there was no worktree assertion, step 3 hard-coded `$R`, and blank stages read as
+  NaN. §5 is now an executable bash runner that asserts the worktree, branch, clean tree
+  and pinned shas, stops on any non-zero exit, and allocates a fresh attempt directory.
+  `scripts/check_kri_fixes_gates.py` evaluates every gate (reading CSVs with
+  `keep_default_na=False`, reconciling listings against the summary), and a test pins the
+  doc block to the runner.
+* **Missing gates** (Opus, should_fix). (e2) is the Urk. IV / St Andrews gate in both modes,
+  and (e3) is the held-out stage routing compared with attempt 2.
+* **verify_release** (both). It now runs with `--skip-tests`, so pytest runs once (step 9).
+* **Disclosure** (Astra, should_fix; Opus, nit). The pilot rows and the printed numbers are
+  stated (§3). The BBAW lexicon limitation is stated, with source-stratified output (§2).
+  The gold-spaced routing limit is §7.3.
+* **Nits.** `cartouches_split` now counts cartouches, and the old quantity is
+  `boundaries_inside_cartouches`. The `plan-data-cleanup` pointer now names where that file
+  lives. The branch-base note is §7.7.
+* **Test** (Astra, should_fix). The router-isolation test in `tests/test_stage.py` was
+  vacuous: an ASCII paste normalises to nothing. It now uses a real sign and asserts both
+  stages are scored. It fails if the router decodes with the pooled fallback on.

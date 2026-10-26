@@ -754,7 +754,10 @@ def test_the_stage_router_does_not_see_the_pooled_fallback():
     Earlier Egyptian model still scores this paste on its own three singletons. The
     per-stage likelihoods are the same with and without a pooled model attached.
     """
-    df = _stage_emptied_corpus()
+    # Real hieroglyphs (review fix, 2026-10-26): the router normalises its paste, and
+    # an ASCII "H" normalises to nothing, so the earlier version of this test compared
+    # two empty score dicts and passed whatever the router did.
+    df = _stage_emptied_corpus().replace({"hieroglyphs_norm": {"H": ROUTER_SIGN}})
     cache: dict[str | None, object] = {}
 
     def resources_by_stage(stage):
@@ -762,15 +765,24 @@ def test_the_stage_router_does_not_see_the_pooled_fallback():
             cache[stage] = build_stage_resources(df, stage, use_lexicon=False)
         return cache[stage]
 
-    _stage, with_pooled = choose_stage_by_likelihood("H", resources_by_stage)
+    assert resources_by_stage("Earlier Egyptian").reading_model.uses_pooled_evidence(
+        ROUTER_SIGN
+    )
+    _stage, with_pooled = choose_stage_by_likelihood(ROUTER_SIGN, resources_by_stage)
+    # Both stages that attest the sign were actually scored.
+    assert set(with_pooled) == {"Earlier Egyptian", "Late Egyptian"}
 
     for stage, resources in cache.items():
         resources.reading_model.pooled = None
     cache_without = dict(cache)
     _stage2, without_pooled = choose_stage_by_likelihood(
-        "H", lambda stage: cache_without[stage]
+        ROUTER_SIGN, lambda stage: cache_without[stage]
     )
     assert with_pooled == without_pooled
+
+
+# A real sign for the router test above: normalisation keeps it.
+ROUTER_SIGN = "𓆓"
 
 
 # ---------- the cartouche constraint can change routing, through segmentation ----------

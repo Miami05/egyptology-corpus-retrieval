@@ -47,7 +47,14 @@ fires on, paired on/off; what happens at the positions *beside* a firing one and
 positions that never fire, because Viterbi couples them; whole-line outcomes; boundary
 F1 and how often a cartouche is split; how often the chosen stage moves and the
 attested coverage that moved it; and calibration of the chosen reading's confidence
-(reliability bins and a Brier score) with and without the /k discount.
+(reliability bins and a Brier score) for three confidence numbers — the pre-branch one,
+the corrected undiscounted one, and the /k-discounted one — over all positions and over
+positions with a reading.
+
+**Cohorts are per position, not per arm.** A position's class (firing / neighbour /
+other) is decided once per row from the pooled arms and carried unchanged into every arm,
+`all_off` included, so every paired comparison is over the same positions. Every rate
+is written beside the integer counts it comes from; an empty cohort's rate is blank.
 
 Nothing here decides anything. The decision rules are in
 `docs/kri-fixes-preregistration-2026-10-26.md`; this script only produces the numbers
@@ -57,6 +64,7 @@ they are applied to.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import time
 from contextlib import contextmanager
@@ -258,6 +266,12 @@ def route_and_segment(
     track is of the same signs with the spaces removed, the protocol
     `run_segmentation_eval.py` uses, so the boundary score is not inflated by handing
     the segmenter the answer.
+
+    Known limit (review, Opus, 2026-10-26): because the router gets the gold-spaced
+    paste, its spaces act as hints and the cartouche constraint rarely gets to change
+    the routing segmentation. `stage_changed_vs_baseline` therefore understates the
+    routing effect on real pastes that arrive unspaced or spaced by quadrat. The
+    pre-registration states this in §7; it is not measured here.
     """
     with cartouche_constraint(with_cartouche):
         coverage: dict[str, int] = {}
@@ -280,6 +294,34 @@ def confidence_of(prediction, discount: bool) -> float:
     if discount:
         return float(prediction.confidence)
     return float(prediction.reading_probability)
+
+
+def legacy_confidence(prediction) -> float:
+    """The confidence this app shipped *before* this branch (pre-`be24b96`).
+
+    It was the **leading candidate's** score divided by the summed scores of the
+    displayed top-five `candidates` — not the chosen reading's share of the full
+    distribution, which is what `reading_probability` is since be24b96 #1. Review fix
+    (Opus + Astra, 2026-10-26): without this column the `all_off` arm reproduces the
+    pre-branch *predictions* but not the pre-branch *confidence*, so a calibration
+    comparison against it would have mixed the correction with the /k discount.
+    """
+    candidates = list(prediction.candidates or [])
+    if not candidates:
+        return 0.0
+    total = sum(score for _, score in candidates)
+    if total <= 0:
+        return 0.0
+    return float(candidates[0][1] / total)
+
+
+# The three confidence numbers recorded for every position, so the calibration can
+# separate the confidence *correction* (legacy -> undiscounted) from the /k *discount*
+# (undiscounted -> discounted) instead of comparing two arms that differ in both.
+CONFIDENCE_KINDS = ("legacy", "undiscounted", "discounted")
+# Position cohorts. A position's cohort is a property of the *position*, fixed once per
+# row from the pooled arms, and the same in every arm (see `evaluate`).
+COHORTS = ("firing", "neighbour", "other")
 
 
 # ---------------------------------------------------------------------------
@@ -328,11 +370,32 @@ def calibration_rows(records: list[tuple[float, bool]], bins: int) -> list[dict]
         )
     for row in out:
         row["brier"] = round(brier, 5)
+        row["n_total"] = len(records)
     return out
 
 
-def ratio(numerator: int, denominator: int) -> float:
-    return round(numerator / denominator, 4) if denominator else 0.0
+def ratio(numerator: int, denominator: int) -> "float | None":
+    """An unrounded rate, or None (a blank cell) when there is nothing to divide by.
+
+    Review fix (Opus + Astra, 2026-10-26): this used to return 0.0 for 0/0, which made
+    an empty cohort read as "0% accurate" and let a comparison against it pass. Gates
+    are decided on the integer counts written beside every rate, never on a rate.
+    """
+    return numerator / denominator if denominator else None
+
+
+def sign_test_p(better: int, worse: int) -> "float | None":
+    """Two-sided exact sign test on the discordant pairs (better vs worse).
+
+    Reported for uncertainty only; no gate reads it except the improvement-claim
+    condition of rule (b). None when there are no discordant pairs.
+    """
+    n = better + worse
+    if n == 0:
+        return None
+    k = min(better, worse)
+    tail = sum(math.comb(n, i) for i in range(k + 1)) / 2**n
+    return min(1.0, 2 * tail)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +413,16 @@ def evaluate(
     pooled fallback off by design), the reading decode depends on the routed stage and
     the pooled setting, and the discount is applied afterwards to the same prediction.
     So a five-arm run costs two routings and four decodes per row, not fifteen.
+
+    **Cohorts are fixed per position, not per arm** (review fix, Opus + Astra,
+    2026-10-26). A position is `firing` if the pooled fallback fires there in *any*
+    pooled arm run (the union, because `pooled_only` and `all_on` route with different
+    cartouche settings and so can fire on different positions), `neighbour` if it is
+    beside a firing position and does not fire itself, and `other` otherwise — and it
+    carries that same class in **every** arm, `all_off` included. The earlier version
+    classified each arm by its own predictions, so in `all_off` nothing could fire,
+    `acc_firing(all_off)` was 0/0, and rules (a) and (b) compared different
+    populations. `used_pooled_evidence` still records whether *this* arm fired there.
     """
     position_rows: list[dict] = []
     line_rows: list[dict] = []
@@ -359,7 +432,8 @@ def evaluate(
         gold_readings = str(row.transliteration_gold).split()
         if not gold_groups or len(gold_groups) != len(gold_readings):
             continue
-        row_id = f"{getattr(row, 'source', '')}:{row_index}"
+        source = str(getattr(row, "source", ""))
+        row_id = f"{source}:{row_index}"
         gold_boundaries = boundaries(gold_groups)
 
         routings: dict[bool, Routing] = {}
@@ -377,11 +451,36 @@ def evaluate(
                     gold_groups, use_pooled_fallback=arm.pooled
                 )
 
+        cohort_firing: set[int] = set()
+        for (_cartouche, pooled), predictions in decodes.items():
+            if pooled:
+                cohort_firing |= {
+                    i for i, p in enumerate(predictions) if p.used_pooled_evidence
+                }
+        cohort_neighbour = {
+            i + d
+            for i in cohort_firing
+            for d in (-1, 1)
+            if 0 <= i + d < len(gold_groups)
+        } - cohort_firing
+
+        def cohort_of(index: int) -> str:
+            if index in cohort_firing:
+                return "firing"
+            if index in cohort_neighbour:
+                return "neighbour"
+            return "other"
+
+        # Always the real function, never the one the "off" arm disables: the point of
+        # that arm is to count the cartouches it splits, which it cannot do if it has
+        # also forgotten where they are.
+        spans = cartouche_spans("".join(gold_groups))
+        inside = {b for start, end in spans for b in range(start + 1, end)}
+
         for arm in arms:
             routing = routings[arm.cartouche]
             predictions = decodes[(arm.cartouche, arm.pooled)]
-            fired = [index for index, p in enumerate(predictions) if p.used_pooled_evidence]
-            neighbours = {i + d for i in fired for d in (-1, 1)} - set(fired)
+            fired_here = sum(1 for p in predictions if p.used_pooled_evidence)
             correct_count = 0
             for index, (prediction, truth) in enumerate(zip(predictions, gold_readings)):
                 is_correct = prediction.predicted == truth
@@ -390,6 +489,7 @@ def evaluate(
                     {
                         "arm": arm.name,
                         "row_id": row_id,
+                        "source": source,
                         "position": index,
                         "group": prediction.sign,
                         "gold_reading": truth,
@@ -408,25 +508,22 @@ def evaluate(
                             float(prediction.reading_probability), 6
                         ),
                         "confidence": round(confidence_of(prediction, arm.discount), 6),
-                        "class": (
-                            "firing"
-                            if index in fired
-                            else "neighbour"
-                            if index in neighbours
-                            else "other"
+                        "confidence_legacy": round(legacy_confidence(prediction), 6),
+                        "confidence_undiscounted": round(
+                            confidence_of(prediction, False), 6
                         ),
+                        "confidence_discounted": round(
+                            confidence_of(prediction, True), 6
+                        ),
+                        "class": cohort_of(index),
                     }
                 )
             predicted_boundaries = boundaries(routing.resegmented)
-            # Always the real function, never the one the "off" arm disables: the
-            # point of that arm is to count the cartouches it splits, which it cannot
-            # do if it has also forgotten where they are.
-            spans = cartouche_spans("".join(gold_groups))
-            inside = {b for start, end in spans for b in range(start + 1, end)}
             line_rows.append(
                 {
                     "arm": arm.name,
                     "row_id": row_id,
+                    "source": source,
                     "stage": routing.stage or "",
                     "coverage": ";".join(
                         f"{s}={n}" for s, n in sorted(routing.coverage.items())
@@ -434,7 +531,8 @@ def evaluate(
                     "n_positions": len(gold_groups),
                     "n_correct": correct_count,
                     "line_exact": int(correct_count == len(gold_groups)),
-                    "n_firing": len(fired),
+                    "n_firing": fired_here,
+                    "n_cohort_firing": len(cohort_firing),
                     "seg_exact": int(routing.resegmented == gold_groups),
                     "boundary_tp": len(predicted_boundaries & gold_boundaries),
                     "boundary_fp": len(predicted_boundaries - gold_boundaries),
@@ -446,14 +544,122 @@ def evaluate(
                         (gold_boundaries - predicted_boundaries) - inside
                     ),
                     "cartouches": len(spans),
-                    "cartouches_split": len(predicted_boundaries & inside),
+                    # Review nit (Opus + Astra): the old `cartouches_split` counted
+                    # predicted boundaries inside cartouches, not cartouches. Both are
+                    # now written, under names that say which is which.
+                    "cartouches_split": sum(
+                        1
+                        for start, end in spans
+                        if any(start < b < end for b in predicted_boundaries)
+                    ),
+                    "boundaries_inside_cartouches": len(predicted_boundaries & inside),
                 }
             )
     return position_rows, line_rows
 
 
+def _paired(
+    arm_positions: pd.DataFrame, baseline_by_key: dict
+) -> tuple[int, int, int]:
+    """(better, worse, changed) of these positions against the baseline arm."""
+    better = worse = changed = 0
+    for key, correct, predicted in zip(
+        zip(arm_positions["row_id"], arm_positions["position"]),
+        arm_positions["correct"],
+        arm_positions["predicted"],
+    ):
+        base = baseline_by_key.get(key)
+        if base is None:
+            continue
+        base_correct, base_predicted = base
+        if predicted != base_predicted:
+            changed += 1
+        better += int(correct == 1 and base_correct == 0)
+        worse += int(correct == 0 and base_correct == 1)
+    return better, worse, changed
+
+
+def _summary_row(
+    arm_name: str,
+    scope: str,
+    arm_positions: pd.DataFrame,
+    arm_lines: pd.DataFrame,
+    baseline_by_key: dict,
+    baseline_lines: pd.DataFrame,
+) -> dict:
+    record: dict = {"arm": arm_name, "scope": scope, "positions": len(arm_positions)}
+    record["correct"] = int(arm_positions["correct"].sum())
+    record["acc_all"] = ratio(record["correct"], len(arm_positions))
+    better, worse, changed = _paired(arm_positions, baseline_by_key)
+    record["better_than_baseline"] = better
+    record["worse_than_baseline"] = worse
+    record["positions_changed_vs_baseline"] = changed
+    for cohort in COHORTS:
+        part = arm_positions[arm_positions["class"] == cohort]
+        c_better, c_worse, c_changed = _paired(part, baseline_by_key)
+        record[f"{cohort}_positions"] = len(part)
+        record[f"{cohort}_lines"] = int(part["row_id"].nunique()) if len(part) else 0
+        record[f"{cohort}_correct"] = int(part["correct"].sum())
+        record[f"acc_{cohort}"] = ratio(int(part["correct"].sum()), len(part))
+        record[f"{cohort}_better"] = c_better
+        record[f"{cohort}_worse"] = c_worse
+        record[f"{cohort}_unchanged_outcome"] = len(part) - c_better - c_worse
+        record[f"{cohort}_changed"] = c_changed
+        record[f"{cohort}_sign_test_p"] = sign_test_p(c_better, c_worse)
+
+    base_exact = dict(zip(baseline_lines["row_id"], baseline_lines["line_exact"]))
+    base_stage = dict(zip(baseline_lines["row_id"], baseline_lines["stage"].astype(str)))
+    record["lines"] = len(arm_lines)
+    record["lines_exact"] = int(arm_lines["line_exact"].sum())
+    record["lines_exact_gained"] = sum(
+        1
+        for row_id, exact in zip(arm_lines["row_id"], arm_lines["line_exact"])
+        if row_id in base_exact and exact == 1 and base_exact[row_id] == 0
+    )
+    record["lines_exact_lost"] = sum(
+        1
+        for row_id, exact in zip(arm_lines["row_id"], arm_lines["line_exact"])
+        if row_id in base_exact and exact == 0 and base_exact[row_id] == 1
+    )
+    record["seg_exact"] = int(arm_lines["seg_exact"].sum())
+    tp = int(arm_lines["boundary_tp"].sum())
+    fp = int(arm_lines["boundary_fp"].sum())
+    fn = int(arm_lines["boundary_fn"].sum())
+    record["boundary_tp"], record["boundary_fp"], record["boundary_fn"] = tp, fp, fn
+    record["boundary_precision"] = ratio(tp, tp + fp)
+    record["boundary_recall"] = ratio(tp, tp + fn)
+    record["boundary_f1"] = ratio(2 * tp, 2 * tp + fp + fn)
+    fp_out = int(arm_lines["boundary_fp_outside_cartouche"].sum())
+    fn_out = int(arm_lines["boundary_fn_outside_cartouche"].sum())
+    record["boundary_fp_outside_cartouche"] = fp_out
+    record["boundary_fn_outside_cartouche"] = fn_out
+    record["boundary_errors_outside_cartouche"] = fp_out + fn_out
+    record["cartouches"] = int(arm_lines["cartouches"].sum())
+    record["cartouches_split"] = int(arm_lines["cartouches_split"].sum())
+    record["boundaries_inside_cartouches"] = int(
+        arm_lines["boundaries_inside_cartouches"].sum()
+    )
+    # Compared as strings: a stage the router left unset is "" in both arms and must
+    # not read as a move (review fix: NaN != NaN once a CSV round trip is involved).
+    record["stage_changed_vs_baseline"] = sum(
+        1
+        for row_id, stage in zip(arm_lines["row_id"], arm_lines["stage"].astype(str))
+        if row_id in base_stage and base_stage[row_id] != stage
+    )
+    return record
+
+
 def summarise(positions: pd.DataFrame, lines: pd.DataFrame) -> tuple[list[dict], list[dict]]:
-    """Per-arm aggregates and, against the baseline arm, paired counts."""
+    """Per-arm aggregates and, against the baseline arm, paired counts.
+
+    One row per arm with `scope == "all"`, then one per arm and test source
+    (`scope == "source:<name>"`) — source-stratified because the BBAW rows' lexicon-
+    assisted numbers are not held-out (`LEXICON_TAINTED_SOURCES` in
+    `run_reading_model_eval.py`). The calibration has one block per arm, per confidence
+    kind (`CONFIDENCE_KINDS`) and per subset (`all` positions, and `with_reading`: only
+    those where a reading was predicted, since a no-reading position at confidence 0 is
+    "perfectly calibrated" and would flatter the Brier score).
+    """
     summary: list[dict] = []
     calibration: list[dict] = []
     baseline_positions = positions[positions["arm"] == BASELINE_ARM]
@@ -464,82 +670,52 @@ def summarise(positions: pd.DataFrame, lines: pd.DataFrame) -> tuple[list[dict],
             zip(baseline_positions["correct"], baseline_positions["predicted"]),
         )
     )
-    baseline_stage = dict(zip(baseline_lines["row_id"], baseline_lines["stage"]))
+    sources = sorted(set(positions["source"].astype(str))) if "source" in positions else []
 
     for arm_name, arm_positions in positions.groupby("arm", sort=False):
         arm_lines = lines[lines["arm"] == arm_name]
-        firing = arm_positions[arm_positions["class"] == "firing"]
-        neighbour = arm_positions[arm_positions["class"] == "neighbour"]
-        other = arm_positions[arm_positions["class"] == "other"]
-        better = worse = changed = 0
-        for key, correct, predicted in zip(
-            zip(arm_positions["row_id"], arm_positions["position"]),
-            arm_positions["correct"],
-            arm_positions["predicted"],
-        ):
-            base = baseline_by_key.get(key)
-            if base is None:
-                continue
-            base_correct, base_predicted = base
-            if predicted != base_predicted:
-                changed += 1
-            better += int(correct == 1 and base_correct == 0)
-            worse += int(correct == 0 and base_correct == 1)
-        stage_moved = sum(
-            1
-            for row_id, stage in zip(arm_lines["row_id"], arm_lines["stage"])
-            if baseline_stage.get(row_id, stage) != stage
-        )
-        tp = int(arm_lines["boundary_tp"].sum())
-        fp = int(arm_lines["boundary_fp"].sum())
-        fn = int(arm_lines["boundary_fn"].sum())
-        precision = ratio(tp, tp + fp)
-        recall = ratio(tp, tp + fn)
         summary.append(
-            {
-                "arm": arm_name,
-                "positions": len(arm_positions),
-                "acc_all": ratio(int(arm_positions["correct"].sum()), len(arm_positions)),
-                "firing_positions": len(firing),
-                "acc_firing": ratio(int(firing["correct"].sum()), len(firing)),
-                "neighbour_positions": len(neighbour),
-                "acc_neighbour": ratio(int(neighbour["correct"].sum()), len(neighbour)),
-                "other_positions": len(other),
-                "acc_other": ratio(int(other["correct"].sum()), len(other)),
-                "positions_changed_vs_baseline": changed,
-                "better_than_baseline": better,
-                "worse_than_baseline": worse,
-                "lines": len(arm_lines),
-                "lines_exact": int(arm_lines["line_exact"].sum()),
-                "seg_exact": int(arm_lines["seg_exact"].sum()),
-                "boundary_precision": precision,
-                "boundary_recall": recall,
-                "boundary_f1": ratio(2 * tp, 2 * tp + fp + fn),
-                "boundary_fp_outside_cartouche": int(
-                    arm_lines["boundary_fp_outside_cartouche"].sum()
-                ),
-                "boundary_fn_outside_cartouche": int(
-                    arm_lines["boundary_fn_outside_cartouche"].sum()
-                ),
-                "boundary_errors_outside_cartouche": int(
-                    arm_lines["boundary_fp_outside_cartouche"].sum()
-                    + arm_lines["boundary_fn_outside_cartouche"].sum()
-                ),
-                "cartouches": int(arm_lines["cartouches"].sum()),
-                "cartouches_split": int(arm_lines["cartouches_split"].sum()),
-                "stage_changed_vs_baseline": stage_moved,
-            }
-        )
-        records = [
-            (float(confidence), bool(correct))
-            for confidence, correct in zip(
-                arm_positions["confidence"], arm_positions["correct"]
+            _summary_row(
+                arm_name, "all", arm_positions, arm_lines, baseline_by_key, baseline_lines
             )
-        ]
-        for calibration_row in calibration_rows(records, CALIBRATION_BINS):
-            calibration_row["arm"] = arm_name
-            calibration.append(calibration_row)
+        )
+        for kind in CONFIDENCE_KINDS:
+            column = f"confidence_{kind}"
+            if column not in arm_positions:
+                continue
+            for subset, part in (
+                ("all", arm_positions),
+                ("with_reading", arm_positions[arm_positions["predicted"].astype(str) != ""]),
+            ):
+                records = [
+                    (float(confidence), bool(correct))
+                    for confidence, correct in zip(part[column], part["correct"])
+                ]
+                for calibration_row in calibration_rows(records, CALIBRATION_BINS):
+                    calibration_row["arm"] = arm_name
+                    calibration_row["confidence_kind"] = kind
+                    calibration_row["subset"] = subset
+                    calibration.append(calibration_row)
+
+    for source in sources:
+        for arm_name, arm_positions in positions.groupby("arm", sort=False):
+            arm_positions = arm_positions[arm_positions["source"].astype(str) == source]
+            arm_lines = lines[(lines["arm"] == arm_name) & (lines["source"].astype(str) == source)]
+            summary.append(
+                _summary_row(
+                    arm_name,
+                    f"source:{source}",
+                    arm_positions,
+                    arm_lines,
+                    baseline_by_key,
+                    baseline_lines,
+                )
+            )
     return summary, calibration
+
+
+def _fmt(value) -> str:
+    return "  n/a " if value is None else f"{value:.4f}"
 
 
 def _parse_args(argv: "list[str] | None" = None) -> argparse.Namespace:
@@ -662,12 +838,18 @@ def main(argv: "list[str] | None" = None) -> None:
 
     print()
     for record in summary:
+        if record["scope"] != "all":
+            continue
         print(
-            f"{record['arm']:>14}  acc_all {record['acc_all']:.4f}  "
-            f"firing {record['firing_positions']:>5} acc {record['acc_firing']:.4f}  "
-            f"neighbour acc {record['acc_neighbour']:.4f}  other acc {record['acc_other']:.4f}  "
-            f"better/worse {record['better_than_baseline']}/{record['worse_than_baseline']}  "
-            f"seg F1 {record['boundary_f1']:.4f}  split cartouches "
+            f"{record['arm']:>14}  acc_all {_fmt(record['acc_all'])}  "
+            f"firing {record['firing_positions']:>5} acc {_fmt(record['acc_firing'])} "
+            f"(+{record['firing_better']}/-{record['firing_worse']})  "
+            f"neighbour acc {_fmt(record['acc_neighbour'])} "
+            f"(+{record['neighbour_better']}/-{record['neighbour_worse']})  "
+            f"other acc {_fmt(record['acc_other'])} "
+            f"(+{record['other_better']}/-{record['other_worse']})  "
+            f"lines +{record['lines_exact_gained']}/-{record['lines_exact_lost']}  "
+            f"seg F1 {_fmt(record['boundary_f1'])}  split cartouches "
             f"{record['cartouches_split']}  stage moved {record['stage_changed_vs_baseline']}"
         )
     print()
