@@ -98,6 +98,37 @@ TIE_BREAK_RULE = (
     "code point (Python string order on the NFC key)"
 )
 
+#: What B-freq actually *offers* for a selected reading identity.
+#:
+#: The identity key is how candidates are grouped and ranked; it is not a spelling.
+#: Offering the key itself broke the secondary folded scorer, because the strict key
+#: has already lost the editorial apparatus the ASCII fold treats differently: a
+#: corpus, app and gold reading that are all `n(.ꞽ).t` give strict key `nꞽt`, and
+#: `search_fold("nꞽt") = "nit"` while `search_fold("n(.ꞽ).t") = "nt"`. The app offers
+#: surface spellings, so under the folded key the app scored a hit and B-freq a miss
+#: on identical material — an artefact of representation, not of reading Egyptian.
+#: B-freq therefore offers an attested surface spelling, like the app does, and both
+#: sides are folded from the same kind of string.
+#:
+#: Under the primary strict key this changes nothing: the surface form is chosen from
+#: the words that carry that key, so `strict_reading_key(surface)` is the key again.
+SURFACE_RULE = (
+    "the most frequent attested surface spelling carrying that reading identity in "
+    "the same corpus, ties broken by the spelling ascending in Unicode code-point "
+    "order"
+)
+
+#: Declared in advance, before any KRI line is scored (§4e, and the review of
+#: 2026-10-26): how a gold group that B-freq cannot key is handled.
+PLACEHOLDER_GOLD_TREATMENT = (
+    "A gold group whose signs are all internal <g> markup placeholders, or which "
+    "carries no signs at all, has no sign key: B-freq cannot answer it and the app "
+    "can. Such groups STAY in the denominator and are scored as misses for the "
+    "baseline. They are counted and reported by inspect_gold_groups() BEFORE any "
+    "prediction is scored, and no group is ever dropped from a line after its "
+    "predictions have been seen."
+)
+
 #: Columns `build_table` needs from the corpus CSV. Reading only these keeps the
 #: pass light: the file is ~69 MB, these three columns are a fraction of it.
 CORPUS_COLUMNS = ("hieroglyphs", "transliteration_gold", "language_stage")
@@ -191,11 +222,14 @@ class BFreqEntry:
     """One ranked reading of one sign group."""
 
     rank: int
+    #: The reading identity: how candidates are grouped and ranked.
     reading_key: str
     count: int
-    #: The commonest surface spelling carrying that key, for the report only. Ties
-    #: broken the same way (count, then code point). Never used for scoring.
-    example_reading: str
+    #: What B-freq offers for that identity — see `SURFACE_RULE`. This is
+    #: load-bearing, not decoration: the app offers surface spellings, so the
+    #: baseline must too, or the secondary folded scorer compares a stripped key
+    #: against an unstripped spelling and the two sides are not scored alike.
+    surface_reading: str
 
 
 @dataclass
@@ -220,19 +254,33 @@ class BFreqTable:
     def groups(self) -> int:
         return len(self.entries)
 
-    def top(self, group: object, *, top_k: int = DEFAULT_TOP_K) -> list[str]:
-        """The ranked reading keys for `group`, or `[]` if the corpus never attests it.
-
-        The empty list is the explicit "no reading" of §4e. There is deliberately no
-        fallback to the app's glyph-similarity borrowing, its lexicon or its
-        composition: an unattested sign string is a miss for the baseline.
-        """
+    def _entries_for(self, group: object, top_k: int) -> tuple[BFreqEntry, ...]:
         if top_k < 0:
             raise ValueError("top_k must not be negative")
         key = sign_key(group)
         if not key:
-            return []
-        return [entry.reading_key for entry in self.entries.get(key, ())[:top_k]]
+            return ()
+        return self.entries.get(key, ())[:top_k]
+
+    def top(self, group: object, *, top_k: int = DEFAULT_TOP_K) -> list[str]:
+        """What B-freq offers for `group`: ranked surface spellings (`SURFACE_RULE`).
+
+        Surface spellings, not identity keys, because the app offers spellings and
+        both sides have to be the same kind of string for the secondary folded
+        scorer to mean anything. Under the primary strict key the two are
+        interchangeable — `strict_reading_key(surface)` is the identity it was
+        chosen for — so this changes no strict-key result; use `top_keys` when the
+        identity itself is wanted.
+
+        `[]` is the explicit "no reading" of §4e. There is deliberately no fallback
+        to the app's glyph-similarity borrowing, its lexicon or its composition: an
+        unattested sign string is a miss for the baseline.
+        """
+        return [entry.surface_reading for entry in self._entries_for(group, top_k)]
+
+    def top_keys(self, group: object, *, top_k: int = DEFAULT_TOP_K) -> list[str]:
+        """The ranked reading *identities* for `group` — inspection and reports."""
+        return [entry.reading_key for entry in self._entries_for(group, top_k)]
 
     def predict_line(
         self, groups: list[object], *, top_k: int = DEFAULT_TOP_K
@@ -331,11 +379,13 @@ def build_table(df: pd.DataFrame, *, stage: str | None = None) -> BFreqTable:
         ranked = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
         entries = []
         for rank, (rkey, count) in enumerate(ranked, start=1):
+            # SURFACE_RULE: most frequent attested spelling for this identity, ties
+            # by code point. Deterministic, so the offered string is reproducible.
             surface = sorted(
                 surfaces[(key, rkey)].items(), key=lambda item: (-item[1], item[0])
             )[0][0]
             entries.append(
-                BFreqEntry(rank=rank, reading_key=rkey, count=count, example_reading=surface)
+                BFreqEntry(rank=rank, reading_key=rkey, count=count, surface_reading=surface)
             )
         table.entries[key] = tuple(entries)
     return table
@@ -369,13 +419,13 @@ def table_rows(table: BFreqTable, *, top_k: int = DEFAULT_TOP_K) -> list[dict]:
                     "rank": entry.rank,
                     "reading_key": entry.reading_key,
                     "count": entry.count,
-                    "example_reading": entry.example_reading,
+                    "surface_reading": entry.surface_reading,
                 }
             )
     return rows
 
 
-TABLE_COLUMNS = ("sign_key", "rank", "reading_key", "count", "example_reading")
+TABLE_COLUMNS = ("sign_key", "rank", "reading_key", "count", "surface_reading")
 
 
 # ---------------------------------------------------------------------------
@@ -459,3 +509,109 @@ def score_pair(
         score_line(gold_readings, app_candidates, **kwargs),
         score_line(gold_readings, baseline_candidates, **kwargs),
     )
+
+
+# ---------------------------------------------------------------------------
+# gold groups: counted and declared before anything is scored
+# ---------------------------------------------------------------------------
+
+GROUP_SCORABLE = "scorable"
+#: Signs present, but every one of them is an internal `<g>` markup placeholder, so
+#: the §4a `signs` definition leaves no key. B-freq cannot answer it; the app can.
+GROUP_PLACEHOLDER_ONLY = "placeholder_only"
+#: No signs at all (empty, or only layout controls).
+GROUP_NO_SIGNS = "no_signs"
+
+
+@dataclass(frozen=True)
+class GoldGroupReport:
+    """What a line's gold groups look like *before* any prediction is scored.
+
+    The review of 2026-10-26 asked for this: the claim "placeholder-only groups
+    cannot bias the comparison" holds only while the input policy holds (gold groups
+    supplied as Unicode hieroglyphs). Rather than rely on the policy, every line's
+    groups are classified and counted first, under the treatment declared in
+    `PLACEHOLDER_GOLD_TREATMENT`, so a group B-freq cannot key is on the record
+    before anyone has seen who won it — and can never be dropped afterwards.
+    """
+
+    groups: int
+    scorable: int
+    placeholder_only: int
+    no_signs: int
+    kinds: tuple[str, ...]
+    placeholder_indices: tuple[int, ...]
+    no_signs_indices: tuple[int, ...]
+
+    @property
+    def unkeyable(self) -> int:
+        """Groups B-freq structurally cannot answer. All stay in the denominator."""
+        return self.placeholder_only + self.no_signs
+
+    def summary(self) -> str:
+        return (
+            f"{self.groups} gold groups: {self.scorable} scorable, "
+            f"{self.placeholder_only} placeholder-only, {self.no_signs} without "
+            f"signs; {self.unkeyable} unkeyable by B-freq and kept in the "
+            f"denominator as misses"
+        )
+
+
+def classify_gold_group(group: object) -> str:
+    """One gold group's kind — see the `GROUP_*` constants."""
+    if sign_key(group):
+        return GROUP_SCORABLE
+    # No key. Distinguish "there were signs, but only ours" from "there were none":
+    # `normalize_hieroglyphs` turns `<g>ID</g>` into a Private Use placeholder, which
+    # `glyph_key` then deletes.
+    return GROUP_PLACEHOLDER_ONLY if normalize_hieroglyphs(group) else GROUP_NO_SIGNS
+
+
+def inspect_gold_groups(gold_groups: list[object]) -> GoldGroupReport:
+    """Classify and count a line's gold groups. Call this before scoring."""
+    kinds = tuple(classify_gold_group(group) for group in gold_groups)
+    return GoldGroupReport(
+        groups=len(kinds),
+        scorable=sum(1 for kind in kinds if kind == GROUP_SCORABLE),
+        placeholder_only=sum(1 for kind in kinds if kind == GROUP_PLACEHOLDER_ONLY),
+        no_signs=sum(1 for kind in kinds if kind == GROUP_NO_SIGNS),
+        kinds=kinds,
+        placeholder_indices=tuple(
+            i for i, kind in enumerate(kinds) if kind == GROUP_PLACEHOLDER_ONLY
+        ),
+        no_signs_indices=tuple(i for i, kind in enumerate(kinds) if kind == GROUP_NO_SIGNS),
+    )
+
+
+def score_endpoint_g(
+    table: BFreqTable,
+    gold_groups: list[object],
+    gold_readings: list[object],
+    app_candidates: list[list[str] | None],
+    **kwargs,
+) -> tuple[GoldGroupReport, LineScore, LineScore]:
+    """The endpoint-G entry point for one line: report first, then score both sides.
+
+    Returns `(gold-group report, app score, baseline score)`. The report is computed
+    *before* either side is scored and covers every gold group, so the record of
+    which groups B-freq structurally cannot answer exists independently of who won
+    them. Both sides go through `score_pair`, hence through the single scorer.
+
+    Not yet wired to anything: the app's own predictions still have to be mapped onto
+    the gold spans (merges, splits and repeated groups), which is not built — see
+    `docs/kri-bfreq-baseline-2026-10-26.md`. `app_candidates` is that mapping's
+    output and is supplied by the caller.
+    """
+    if len(gold_groups) != len(gold_readings):
+        raise ValueError(
+            f"one gold reading per gold group: {len(gold_groups)} groups, "
+            f"{len(gold_readings)} readings"
+        )
+    report = inspect_gold_groups(gold_groups)
+    baseline_candidates = table.predict_line(
+        gold_groups, top_k=kwargs.get("top_k", DEFAULT_TOP_K)
+    )
+    app_score, baseline_score = score_pair(
+        gold_readings, app_candidates, baseline_candidates, **kwargs
+    )
+    return report, app_score, baseline_score

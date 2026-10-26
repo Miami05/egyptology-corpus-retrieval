@@ -179,8 +179,13 @@ def test_reading_identity_is_the_app_suggestion_key_so_notation_variants_merge()
         ]
     )
     table = bf.build_table(df)
-    assert table.top(A) == ["ḏꞽ", "nb"]
+    # One identity, count 2 — the two notations do not compete as separate readings.
+    assert table.top_keys(A) == ["ḏꞽ", "nb"]
     assert table.entries[bf.sign_key(A)][0].count == 2
+    # What is *offered* is an attested spelling of that identity (SURFACE_RULE):
+    # both spellings occur once, so the code-point tie-break picks `ḏi̯` (i < ꞽ).
+    assert table.top(A) == ["ḏi̯", "nb"]
+    assert bf.reading_key(table.top(A)[0]) == table.top_keys(A)[0]
 
 
 def test_the_strict_key_still_keeps_different_consonants_apart():
@@ -388,6 +393,117 @@ def test_the_baseline_is_scored_from_the_table_through_the_same_scorer():
     assert baseline_score.score == pytest.approx(2 / 3)
 
 
+def test_the_folded_scorer_does_not_punish_the_baseline_for_offering_a_key():
+    """Regression, review of 2026-10-26: the secondary folded scorer was asymmetric.
+
+    Corpus, app and gold all read the same word `n(.ꞽ).t`. B-freq used to offer its
+    *identity key* `nꞽt`, from which the editorial apparatus has already been
+    removed, while the app offers the spelling. The ASCII search fold treats the two
+    differently — `search_fold("nꞽt") == "nit"` but `search_fold("n(.ꞽ).t") == "nt"`
+    — so under the folded key the app scored 1 and B-freq 0 on identical material.
+    That is an artefact of representation, not of reading Egyptian.
+
+    B-freq now offers an attested spelling (`SURFACE_RULE`), so both sides fold the
+    same kind of string.
+    """
+    from app.data.normalizer import search_fold
+    from app.services.suggestions import strict_reading_key
+
+    spelling = "n(.ꞽ).t"
+    # The asymmetry in the underlying functions is real and is not what changed.
+    assert search_fold(strict_reading_key(spelling)) != search_fold(spelling)
+
+    df = frame([{"hieroglyphs": A, "transliteration_gold": spelling}] * 3)
+    table = bf.build_table(df)
+    assert table.top_keys(A) == [strict_reading_key(spelling)]
+    assert table.top(A) == [spelling]
+
+    gold = [spelling]
+    app_candidates = [[spelling]]
+    baseline_candidates = table.predict_line([A])
+
+    for key in (bf.reading_key, bf.folded_reading_key):
+        app_score, baseline_score = bf.score_pair(
+            gold, app_candidates, baseline_candidates, key=key
+        )
+        assert app_score.hits == 1, key
+        assert baseline_score.hits == 1, key  # used to be 0 under the folded key
+        assert app_score == baseline_score, key
+
+
+def test_the_strict_scorer_is_unchanged_by_offering_spellings():
+    """The fix must not move the primary number: the spelling carries the identity."""
+    df = frame(
+        [
+            {"hieroglyphs": A, "transliteration_gold": "n(.ꞽ).t"},
+            {"hieroglyphs": A, "transliteration_gold": "n(.ꞽ).t"},
+            {"hieroglyphs": B, "transliteration_gold": "[pr]"},
+        ]
+    )
+    table = bf.build_table(df)
+    for group in (A, B):
+        offered, keys = table.top(group), table.top_keys(group)
+        assert [bf.reading_key(item) for item in offered] == keys
+    assert bf.score_line(["nꞽt", "pr"], table.predict_line([A, B])).hits == 2
+
+
+# ---------------------------------------------------------------------------
+# gold groups are counted and declared before anything is scored
+# ---------------------------------------------------------------------------
+
+
+def test_gold_groups_are_classified_before_scoring():
+    report = bf.inspect_gold_groups([A, "<g>US9No2</g>", "", f"{B}{C}"])
+    assert report.groups == 4
+    assert report.scorable == 2
+    assert report.placeholder_only == 1
+    assert report.no_signs == 1
+    assert report.unkeyable == 2
+    assert report.placeholder_indices == (1,)
+    assert report.no_signs_indices == (2,)
+    assert report.kinds == (
+        bf.GROUP_SCORABLE,
+        bf.GROUP_PLACEHOLDER_ONLY,
+        bf.GROUP_NO_SIGNS,
+        bf.GROUP_SCORABLE,
+    )
+    assert "placeholder-only" in report.summary()
+
+
+def test_an_unkeyable_gold_group_stays_in_the_denominator_as_a_baseline_miss():
+    """The declared treatment: counted up front, never dropped after the fact."""
+    assert "STAY in the denominator" in bf.PLACEHOLDER_GOLD_TREATMENT
+
+    df = frame([{"hieroglyphs": f"{A} {B}", "transliteration_gold": "pr nb"}])
+    table = bf.build_table(df)
+    gold_groups = [A, "<g>US9No2</g>", B]
+    gold_readings = ["pr", "ḥm", "nb"]
+    app = [["pr"], ["ḥm"], ["nb"]]  # the app can read a placeholder group
+
+    report, app_score, baseline_score = bf.score_endpoint_g(
+        table, gold_groups, gold_readings, app
+    )
+    assert report.placeholder_only == 1 and report.placeholder_indices == (1,)
+    assert app_score.groups == baseline_score.groups == 3  # denominator unchanged
+    assert app_score.score == 1.0
+    assert baseline_score.group_hits == (True, False, True)
+    assert baseline_score.score == pytest.approx(2 / 3)
+
+
+def test_score_endpoint_g_reports_before_it_scores_and_refuses_a_mismatch():
+    df = frame([{"hieroglyphs": A, "transliteration_gold": "pr"}])
+    table = bf.build_table(df)
+    with pytest.raises(ValueError):
+        bf.score_endpoint_g(table, [A, B], ["pr"], [["pr"], ["nb"]])
+
+    report, app_score, baseline_score = bf.score_endpoint_g(
+        table, [A], ["pr"], [None]
+    )
+    assert report.scorable == 1
+    assert app_score.hits == 0  # the app did not produce the group
+    assert baseline_score.hits == 1  # B-freq always gets the gold segmentation
+
+
 # ---------------------------------------------------------------------------
 # custody: the baseline never reads anything from a KRI path
 # ---------------------------------------------------------------------------
@@ -515,7 +631,7 @@ def test_the_build_script_writes_both_tables_and_a_header(tmp_path):
     assert [r["sign_key"] for r in rows] == sorted(r["sign_key"] for r in rows)
     pr = [r for r in rows if r["sign_key"] == A]
     assert pr == [
-        {"sign_key": A, "rank": "1", "reading_key": "pr", "count": "2", "example_reading": "pr"}
+        {"sign_key": A, "rank": "1", "reading_key": "pr", "count": "2", "surface_reading": "pr"}
     ]
 
     late = list(csv.DictReader((out_dir / "bfreq_table_late_egyptian.csv").read_text(encoding="utf-8").splitlines()))

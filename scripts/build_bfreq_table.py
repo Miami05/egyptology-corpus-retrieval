@@ -46,7 +46,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from scripts.bfreq_baseline import (
     DEFAULT_TOP_K,
     LATE_EGYPTIAN,
+    PLACEHOLDER_GOLD_TREATMENT,
     SUCCESS_THRESHOLD,
+    SURFACE_RULE,
     TABLE_COLUMNS,
     TIE_BREAK_RULE,
     BFreqTable,
@@ -171,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
         "top_k": args.top_k,
         "success_threshold": SUCCESS_THRESHOLD,
         "tie_break_rule": TIE_BREAK_RULE,
+        "surface_rule": SURFACE_RULE,
+        "placeholder_gold_treatment": PLACEHOLDER_GOLD_TREATMENT,
+        "offered_candidate": "surface_reading (a spelling), not reading_key — the "
+        "app offers spellings and the secondary folded scorer must fold the same "
+        "kind of string on both sides",
         "reading_identity": "app.services.suggestions.strict_reading_key (primary); "
         "app.data.normalizer.search_fold reported secondary",
         "sign_group_key": "app.data.normalizer.normalize_hieroglyphs then "
@@ -198,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
         f"corpus rows      {len(frame)}",
         f"top-k            {args.top_k}",
         f"tie-break        {TIE_BREAK_RULE}",
+        f"offered          {SURFACE_RULE}",
         "",
     ]
     for name, info in header["tables"].items():
