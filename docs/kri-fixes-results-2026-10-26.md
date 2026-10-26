@@ -2,7 +2,8 @@
 
 This is the run of `docs/kri-fixes-preregistration-2026-10-26.md` §5 on branch
 `kri-fixes-2026-10-26`. Nothing in the code, the rules or the inputs was changed during the
-run or after it.
+run. The fixes made after it are on later commits, recorded in the 2026-10-27 addendum to
+the pre-registration; they do not alter anything this attempt measured.
 
 **Verdict: FAILED at step 3. Gated rule (c) failed for both `all_on` and
 `cartouche_only` (3,300 boundary errors outside cartouches, against 3,299 for `all_off`).
@@ -26,6 +27,12 @@ BBAW's lexicon-assisted numbers are not held-out (§2), and BBAW supplies 1,013 
 3,473 test lines. Even if every rule had passed, the three heuristics would ship **as
 heuristics**. The pooled fallback's own benefit is **unmeasured** and must not be quoted:
 (b) did not reach outcome 3.
+
+**Corrections after review (2026-10-27).** Five reporting corrections were applied to
+this note after Astra's review of `6b66d34`; they are listed in "Corrections after
+review" at the end. None changes a count, a gate or the verdict. Attempt 1 stays
+**FAILED**. The step-3 gate output is now quoted complete and verbatim, in its own
+section, apart from the corrections.
 
 ## Run approval (lead's decision, recorded as given)
 
@@ -63,8 +70,8 @@ The lead therefore approved the run at commit `1733c165e23c017d0c121e7c9b9809f67
 
 | Rule | Status | Decided on (integer counts) | Source file |
 | --- | --- | --- | --- |
-| (a) collateral, `all_on` | **PASS** | other: better 0, worse 0, net 0 ≤ 5 (n = 25,711). Neighbour: better 0, worse 0, net 0 ≤ 2 (n = 60). Lines exact: gained 0, lost 1, net 1 ≤ 3. Sign-test p n/a (no discordant pairs, except one line) | `step3_gates.txt`, `kri_summary.csv` |
-| (a) collateral, `cartouche_only` | **PASS** | other net 0 ≤ 5. Neighbour net 0 ≤ 2. Lines gained 0, lost 0, net 0 ≤ 3 | same |
+| (a) collateral, `all_on` | **PASS** | other: better 0, worse 0, net 0 ≤ 5 (n = 25,711). Neighbour: better 0, worse 0, net 0 ≤ 2 (n = 60). Lines exact: gained 0, lost 1, net 1 ≤ 3; whole-line sign-test p = 1 (one discordant line, TLA:1132, lost; exact two-sided test on gained 0 / lost 1, computed from these counts with the harness's `sign_test_p`; the checker prints no p for lines). Position sign-test p n/a (no discordant positions) | `step3_gates.txt`, `kri_summary.csv` |
+| (a) collateral, `cartouche_only` | **PASS** | other net 0 ≤ 5. Neighbour net 0 ≤ 2. Lines gained 0, lost 0, net 0 ≤ 3; whole-line sign-test p n/a (no discordant lines) | same |
 | (b) firing positions | **DECISION: DISABLE** | n = 37 positions in 31 lines. Positions: on-better 4, off-better 7, unchanged 26 (sign-test p = 0.5488, reported only). Lines: on-better 4, off-better 4, tied 23 (line sign-test p = 1). Outcome 2 applies because off-better > on-better | `step3_gates.txt` |
 | (c) boundary errors outside cartouches, `all_on` | **FAIL** | 3,300 vs `all_off` 3,299 | `step3_gates.txt`, `kri_summary.csv` |
 | (c) boundary errors outside cartouches, `cartouche_only` | **FAIL** | 3,300 vs `all_off` 3,299 | same |
@@ -73,7 +80,7 @@ The lead therefore approved the run at commit `1733c165e23c017d0c121e7c9b9809f67
 | (e2) Urk. IV / St Andrews gate | **NOT RUN** | none | none |
 | (e3) held-out stage routing | **NOT RUN** | none | none |
 | (f) competitive sanity check + determinism | **NOT RUN** | none | none |
-| (g) calibration | **REPORTED** | Brier (all positions): the discount changes it by +0.00012 (worse), the correction by +0.00360 (worse), the combined change by +0.00388 (worse) | `step3_gates.txt`, `kri_summary_calibration.csv` |
+| (g) calibration | **REPORTED** | Brier, all positions: discount +0.000117323 (worse), correction +0.003600955 (worse), combined +0.003878482 (worse). With_reading: discount +0.000118036, correction +0.003622854, combined +0.003902069. Deltas computed before rounding (see (g) below) | `step3_gates.txt`, `kri_summary_calibration.csv` |
 | (h) stop on failure | **APPLIED** | `END step3-gates exit=1` and `STOP at step3-gates (rule h)` | `run_log.txt` |
 
 ### Source-stratified counts
@@ -102,9 +109,12 @@ Other reported (c) figures, for all lines:
 
 ## (b) Firing-position listing, in full
 
-This is quoted from `step3_gates.txt`. `off` is `all_off` and `on` is `all_on`;
-`(1)`/`(0)` marks a correct/incorrect prediction. All rows come from the public
-TLA/BBAW corpus.
+This is quoted from `step3_gates.txt`, byte for byte (the listing lines, without the
+checker's four-space indent; the complete file is quoted in "Step 3 gate output" below).
+`off` is `all_off` and `on` is `all_on`; `(1)`/`(0)` marks a correct/incorrect
+prediction. All rows come from the public TLA/BBAW corpus. The gold of BBAW:3313#2 is
+`6.〈nw.t〉` with U+2329 and U+232A, exactly as in the corpus and the gate file (an earlier
+version of this note had silently replaced them with U+3008 and U+3009).
 
 ```
 TLA:154#4 stage='Late Egyptian' gold='sšm-nfr' off='Sšm-nfr'(0) on='sšm-nfr'(1) fired_here=1 stage_count=3 pooled_count=71
@@ -141,7 +151,7 @@ BBAW:2910#0 stage='Earlier Egyptian' gold='400' off='400'(1) on='400'(1) fired_h
 BBAW:2938#0 stage='Earlier Egyptian' gold='db.t' off='db.t'(1) on='db.t'(1) fired_here=1 stage_count=2 pooled_count=34
 BBAW:3165#8 stage='Earlier Egyptian' gold='qn' off='qn'(1) on='qn'(1) fired_here=1 stage_count=2 pooled_count=34
 BBAW:3300#10 stage='Earlier Egyptian' gold='ḥqꜣ' off='ḥqꜣ'(1) on='ḥqꜣ'(1) fired_here=1 stage_count=3 pooled_count=45
-BBAW:3313#2 stage='Earlier Egyptian' gold='6.〈nw.t〉' off='6'(0) on='6'(0) fired_here=1 stage_count=3 pooled_count=562
+BBAW:3313#2 stage='Earlier Egyptian' gold='6.〈nw.t〉' off='6'(0) on='6'(0) fired_here=1 stage_count=3 pooled_count=562
 BBAW:3362#3 stage='Earlier Egyptian' gold='dwꜣ.w' off='d(w)ꜣ.w'(0) on='dwꜣw'(0) fired_here=1 stage_count=1 pooled_count=36
 BBAW:3457#5 stage='Earlier Egyptian' gold='⸢⸮mdw?⸣' off='mdw'(0) on='mdw'(0) fired_here=1 stage_count=3 pooled_count=69
 source:BBAW: firing n=21 +0/-6; other +0/-0 (reported only)
@@ -169,7 +179,13 @@ the same reason.
 
 ## (g) Calibration, reported only
 
-Brier score, lower is better. Source: `kri_summary_calibration.csv`.
+Brier score, lower is better. The scores are from `kri_summary_calibration.csv`, which
+rounds them to 5 decimal places. **The deltas are computed before rounding**: each Brier
+score was recomputed from `kri_positions.csv` (the confidences as the harness wrote them,
+6 decimal places; every recomputed score rounds to the CSV's value) and then subtracted.
+The step-3 checker prints differences of the already-rounded scores, which is why its
+with_reading lines read +0.00363 and +0.00391; those lines are quoted verbatim below and
+are superseded by the figures here.
 
 | Confidence | Brier, all positions (n = 25,808) | Brier, with_reading (n = 25,652) |
 | --- | --- | --- |
@@ -180,11 +196,16 @@ Brier score, lower is better. Source: `kri_summary_calibration.csv`.
 
 | Comparison | All positions | with_reading |
 | --- | --- | --- |
-| Discount effect: `discount_only` discounted − `all_off` undiscounted | **+0.00012** | **+0.00012** |
-| Correction effect: `all_off` undiscounted − `all_off` legacy | +0.00360 | +0.00363 |
-| Combined effect: `all_on` discounted − `all_off` legacy (includes prediction changes; attributes nothing to /k) | +0.00388 | +0.00391 |
+| Discount effect: `discount_only` discounted − `all_off` undiscounted | **+0.000117323** | **+0.000118036** |
+| Correction effect: `all_off` undiscounted − `all_off` legacy | +0.003600955 | +0.003622854 |
+| Combined effect: `all_on` discounted − `all_off` legacy (includes prediction changes; attributes nothing to /k) | +0.003878482 | +0.003902069 |
 
-**The discount moved the Brier score up by 0.00012, which is worse, in both subsets.**
+Unrounded scores (from `kri_positions.csv`): all positions — legacy 0.188468582,
+undiscounted 0.192069538, `discount_only` discounted 0.192186860, `all_on` discounted
+0.192347065; with_reading — 0.189614735, 0.193237589, 0.193355625, 0.193516804.
+
+**The discount moved the Brier score up by about 0.00012 (+0.000117323 over all
+positions, +0.000118036 with a reading), which is worse, in both subsets.**
 The full-split result runs the other way from the 50-row pilot, where the discount
 lowered the score by about 0.0017. The correction of `be24b96` #1 also raised the Brier
 score. There is no pass rule here, and none is inferred after the fact.
@@ -207,7 +228,7 @@ This is a post-run diagnostic, not a registered step. It was read-only, using
 The constraint changed the boundary counts on 16 lines, all of them TLA. On 14 of the 16,
 it removed only false boundaries inside the cartouche. Two lines carry the rest:
 
-* **TLA:1980** (Late Egyptian) causes the gated +1:
+* **TLA:1980** (harness row id; TLA sentence S885, 28 glyphs) causes the gated +1:
 
   | Count | Change |
   | --- | --- |
@@ -217,9 +238,34 @@ it removed only false boundaries inside the cartouche. Two lines carry the rest:
 
   The line's net false positives fell, but one error appeared outside the span. On all
   3,472 other lines, the outside-cartouche error count is unchanged.
-* **TLA:121** (Late Egyptian) lost a **correct** boundary: TP −1, FN +1, FP −1, inside
-  −2. The FN outside the span did not change, so the gold boundary it lost lies inside a
-  cartouche span. (c) does not gate this, but it is a real loss.
+
+  The two post-run diagnoses (2026-10-27, not a registered step) located it. The
+  cartouche is [12, 24) (12 glyphs). Gold boundaries {3, 9, 10}. `all_off` predicts
+  {3, 9, 10, 12, 13, 23, 25} (false positives 12, 13, 23, 25; 13 and 23 inside);
+  `cartouche_only` predicts {3, 9, 10, 12, 24, 25} (false positives 12, 24, 25, all
+  outside). The constraint removed 13 and 23 and **introduced 24**, the closing edge. The
+  cause is the candidate window: it counted raw glyphs (10), every start from 15 to 23 is
+  forbidden, and the only extra candidate was the span that is exactly the cartouche, so
+  the 13-glyph group [12, 25) (cartouche plus the following sign) was never offered and
+  every path had to cut at 24. The objective's own scorer ranks the legal grouping
+  without that cut, {3, 9, 10, 12, 25}, at −122.0077 against the −126.3658 the decoder
+  returned. This is an implementation defect; the addendum of 2026-10-27 to the
+  pre-registration records the fix.
+* **TLA:121** (harness row id; TLA sentence S821) lost a **correct** boundary. Positions
+  are zero-based glyph offsets, boundary `b` sits immediately before glyph `b`, and
+  spans are half-open. The line's one matched cartouche is [4, 11). The gold groups are
+  `nswt-bꞽ.t | 𓍹𓅭𓇳 zꜣ-rꜥw | 𓏏𓏏𓇋𓍺 ttꞽ | ꜥnḫ | ḏ.t`, boundaries {4, 7, 11, 12}: the
+  gold **cuts inside the matched pair at 7**, separating the title `zꜣ-rꜥw` (with the
+  opening sign) from the name (with the closing sign). `all_off` predicts {4, 5, 7, 12};
+  `cartouche_only` predicts {4, 12}. The constraint therefore removed the false boundary
+  at 5 and the **correct** boundary at 7, both inside the span (TP −1, FN +1, FP −1,
+  inside −2). The missed boundary at 11, on the span's closing edge, is missed in both
+  arms and predates the constraint. Because the gold boundary lies inside a matched
+  cartouche, the constrained decoder cannot produce it by design; no legal grouping
+  scores better than the one chosen. (c) does not gate this, but it is a real loss, and
+  it is a consequence of the rule itself, not of an implementation defect.
+  (Source: the two post-run diagnoses of 2026-10-27, which re-decoded this line from the
+  run commit's code; not a registered step.)
 
 `all_on` and `cartouche_only` have identical per-line segmentation counts (0 lines differ).
 
@@ -253,23 +299,100 @@ it removed only false boundaries inside the cartouche. Two lines carry the rest:
 
 **Plausible** (consistent with the files, but not shown by them):
 
-* On TLA:1980, forbidding a boundary inside the cartouche moved a boundary to a position
-  just outside the span. `kri_lines.csv` records counts, not boundary positions, so where
-  the new boundary sits is not confirmed.
-* TLA:121 is one of the minority groups (13 of 1,854 in the corpus count of §1) whose gold
-  annotation does not hold a matched cartouche pair whole.
+* (Moved to the (c) section above, now confirmed by a post-run re-decode, not by the
+  run's files: on TLA:1980 the new false boundary is at 24, the cartouche's closing edge;
+  on TLA:121 the gold cuts the matched pair at 7.) TLA:121's two gold groups each hold
+  one half of the pair, which is the shape of the minority (13 of 1,854) in the corpus
+  count of §1.
 * The `2` → `1/2` change at BBAW:2621 happens because the numeral group's pooled
   distribution is dominated by a fraction reading from other stages or contexts. The
   pooled model then overrides a stage reading that was correct on a near-singleton count.
 
 **Unresolved:**
 
-* Whether the TLA:1980 error is a real segmentation harm or an artefact of where the gold
-  places a boundary next to a cartouche. Settling it needs a per-boundary listing, and the
-  harness does not write one.
+* (Resolved after the run by the 2026-10-27 diagnoses: the TLA:1980 error is a decoder
+  defect, the candidate window, not an artefact of the gold. See the (c) section.)
 * Whether the pooled fallback would come out differently once the transition-smoothing
   defect of §7.5 is fixed.
 * Every effect that (e), (e2), (e3) and (f) were meant to detect. Those rules did not run.
+
+## Step 3 gate output (complete, verbatim)
+
+`step3_gates.txt`, all 68 lines, unedited. The last line is the runner's own stop
+message, which the step's redirect also captured. The with_reading Brier deltas printed
+here are differences of rounded scores; the (g) section above gives the deltas before
+rounding.
+
+```
+(a) collateral losses against all_off (net = worse - better)
+          all_on     other: n=25711 better=0 worse=0 net=0 budget=5 sign-test p=n/a  PASS
+          all_on neighbour: n=60 better=0 worse=0 net=0 budget=2 sign-test p=n/a  PASS
+          all_on     lines: exact gained=0 lost=1 net=1 budget=3  PASS
+  cartouche_only     other: n=25711 better=0 worse=0 net=0 budget=5 sign-test p=n/a  PASS
+  cartouche_only neighbour: n=60 better=0 worse=0 net=0 budget=2 sign-test p=n/a  PASS
+  cartouche_only     lines: exact gained=0 lost=0 net=0 budget=3  PASS
+(b) firing positions (all_on vs all_off): n=37 in 31 lines, on-better=4 off-better=7 unchanged=26 position sign-test p=0.5488 (reported only)
+    firing lines: on-better=4 off-better=4 tied=23 line sign-test p=1 (decides the claim)
+    DECISION: DISABLE - off-better exceeds on-better; use_pooled_fallback must default to off before merge
+    TLA:154#4 stage='Late Egyptian' gold='sšm-nfr' off='Sšm-nfr'(0) on='sšm-nfr'(1) fired_here=1 stage_count=3 pooled_count=71
+    TLA:298#0 stage='Late Egyptian' gold='hꜣ' off='hꜣ'(1) on='hꜣ'(1) fired_here=1 stage_count=3 pooled_count=153
+    TLA:331#7 stage='Earlier Egyptian' gold='šms.PL' off='⸢šms.pl⸣'(0) on='šmsw'(0) fired_here=1 stage_count=2 pooled_count=22
+    TLA:581#5 stage='Late Egyptian' gold='mꜣꜥ.t' off='mꜣꜥ.t'(1) on='mꜣꜥ.t'(1) fired_here=1 stage_count=1 pooled_count=20
+    TLA:588#1 stage='Late Egyptian' gold='ḥm(.t)-nṯr-ḥw.t-ḥr.w' off='ḥm.t-nṯr-Ḥw.t-Ḥr.w'(0) on='ḥm(.t)-nṯr-ḥw.t-ḥr.w'(1) fired_here=1 stage_count=2 pooled_count=24
+    TLA:646#0 stage='Earlier Egyptian' gold='mꞽ.t.t' off='mꞽ.tt'(0) on='m-mꞽtt'(0) fired_here=1 stage_count=2 pooled_count=33
+    TLA:662#12 stage='Earlier Egyptian' gold='ꞽy.t' off='ꞽy.t'(1) on='ꞽy.t'(1) fired_here=1 stage_count=2 pooled_count=30
+    TLA:1123#1 stage='Late Egyptian' gold='ḥm(.t)-nṯr-ḥw.t-ḥr.w' off='ḥm.t-nṯr-Ḥw.t-Ḥr.w'(0) on='ḥm(.t)-nṯr-ḥw.t-ḥr.w'(1) fired_here=1 stage_count=2 pooled_count=24
+    TLA:1132#3 stage='Earlier Egyptian' gold='mri̯.y' off='mri̯.y'(1) on='mry'(0) fired_here=1 stage_count=1 pooled_count=27
+    TLA:1279#6 stage='Late Egyptian' gold='mꜣꜥ.t' off='mꜣꜥ.t'(1) on='mꜣꜥ.t'(1) fired_here=1 stage_count=1 pooled_count=20
+    TLA:1500#0 stage='Earlier Egyptian' gold='ḫr' off='ḫr'(1) on='ḫr'(1) fired_here=1 stage_count=1 pooled_count=28
+    TLA:1802#1 stage='Late Egyptian' gold='ꞽwꜣ' off='ꞽwꜣ'(1) on='ꞽwꜣ'(1) fired_here=1 stage_count=2 pooled_count=62
+    TLA:2119#1 stage='Earlier Egyptian' gold='=k' off='=kw'(0) on='=k'(1) fired_here=1 stage_count=1 pooled_count=53
+    TLA:2370#11 stage='Earlier Egyptian' gold='r-n.tꞽ' off='r-n.tꞽ'(1) on='r-n.tꞽ'(1) fired_here=1 stage_count=1 pooled_count=162
+    TLA:2370#18 stage='Earlier Egyptian' gold='tꜣ.DU' off='tꜣ.du'(0) on='tꜣ.wy'(0) fired_here=1 stage_count=2 pooled_count=58
+    TLA:2370#22 stage='Earlier Egyptian' gold='mn' off='mn'(1) on='mn'(1) fired_here=1 stage_count=1 pooled_count=26
+    BBAW:2496#0 stage='Earlier Egyptian' gold='mki̯' off='mk'(0) on='mk'(0) fired_here=1 stage_count=2 pooled_count=26
+    BBAW:2587#1 stage='Earlier Egyptian' gold='⸢ꞽr.t⸣' off='ꞽr.t(ꞽ)'(0) on='ꞽr.t'(0) fired_here=1 stage_count=1 pooled_count=30
+    BBAW:2621#3 stage='Earlier Egyptian' gold='2' off='2'(1) on='1/2'(0) fired_here=1 stage_count=3 pooled_count=118
+    BBAW:2621#7 stage='Earlier Egyptian' gold='2' off='2'(1) on='1/2'(0) fired_here=1 stage_count=3 pooled_count=118
+    BBAW:2621#9 stage='Earlier Egyptian' gold='1' off='1'(1) on='1'(1) fired_here=1 stage_count=2 pooled_count=41
+    BBAW:2621#14 stage='Earlier Egyptian' gold='2' off='2'(1) on='1/2'(0) fired_here=1 stage_count=3 pooled_count=118
+    BBAW:2621#16 stage='Earlier Egyptian' gold='2' off='2'(1) on='1/2'(0) fired_here=1 stage_count=3 pooled_count=118
+    BBAW:2678#2 stage='Earlier Egyptian' gold='nḥḥ' off='nḥḥ'(1) on='nḥḥ'(1) fired_here=1 stage_count=1 pooled_count=22
+    BBAW:2762#9 stage='Earlier Egyptian' gold='rnp.t.pl' off='rnp.t.pl'(1) on='rnp.wt'(0) fired_here=1 stage_count=2 pooled_count=30
+    BBAW:2800#1 stage='Earlier Egyptian' gold='{k}wꞽ' off='=kw'(0) on='=kwꞽ'(0) fired_here=1 stage_count=1 pooled_count=53
+    BBAW:2830#14 stage='Earlier Egyptian' gold='mki̯' off='mki̯'(1) on='mk'(0) fired_here=1 stage_count=1 pooled_count=33
+    BBAW:2871#5 stage='Earlier Egyptian' gold='1' off='2'(0) on='1/2'(0) fired_here=1 stage_count=3 pooled_count=118
+    BBAW:2893#10 stage='Earlier Egyptian' gold='wsḫ.t' off='h(y)'(0) on='hꜣw'(0) fired_here=1 stage_count=1 pooled_count=35
+    BBAW:2896#1 stage='Late Egyptian' gold='Sšm-nfr' off='sšm-nfr'(0) on='sšm-nfr'(0) fired_here=1 stage_count=3 pooled_count=71
+    BBAW:2910#0 stage='Earlier Egyptian' gold='400' off='400'(1) on='400'(1) fired_here=1 stage_count=1 pooled_count=110
+    BBAW:2938#0 stage='Earlier Egyptian' gold='db.t' off='db.t'(1) on='db.t'(1) fired_here=1 stage_count=2 pooled_count=34
+    BBAW:3165#8 stage='Earlier Egyptian' gold='qn' off='qn'(1) on='qn'(1) fired_here=1 stage_count=2 pooled_count=34
+    BBAW:3300#10 stage='Earlier Egyptian' gold='ḥqꜣ' off='ḥqꜣ'(1) on='ḥqꜣ'(1) fired_here=1 stage_count=3 pooled_count=45
+    BBAW:3313#2 stage='Earlier Egyptian' gold='6.〈nw.t〉' off='6'(0) on='6'(0) fired_here=1 stage_count=3 pooled_count=562
+    BBAW:3362#3 stage='Earlier Egyptian' gold='dwꜣ.w' off='d(w)ꜣ.w'(0) on='dwꜣw'(0) fired_here=1 stage_count=1 pooled_count=36
+    BBAW:3457#5 stage='Earlier Egyptian' gold='⸢⸮mdw?⸣' off='mdw'(0) on='mdw'(0) fired_here=1 stage_count=3 pooled_count=69
+    source:BBAW: firing n=21 +0/-6; other +0/-0 (reported only)
+    source:TLA: firing n=16 +4/-1; other +0/-0 (reported only)
+(c) all_on: boundary errors outside cartouches 3300 vs all_off 3299  FAIL  (reported: F1 0.9262527646835415, seg_exact 1818, cartouches split 0 of 336, boundaries inside cartouches 0)
+(c) cartouche_only: boundary errors outside cartouches 3300 vs all_off 3299  FAIL  (reported: F1 0.9262527646835415, seg_exact 1818, cartouches split 0 of 336, boundaries inside cartouches 0)
+(d) pooled_only: lines whose stage moved: 0
+(d) discount_only: lines whose stage moved: 0
+(d) cartouche_only: lines whose stage moved: 0
+(d) all_on: lines whose stage moved: 0
+(g) calibration, reported only (Brier; lower is better)
+  subset=all: pre-branch confidence 0.18847; corrected, undiscounted 0.19207; corrected + /k (discount_only) 0.19219; all_on, shipped confidence 0.19235
+    discount effect (discount_only discounted - all_off undiscounted): +0.00012
+    correction effect (all_off undiscounted - all_off legacy): +0.00360
+    combined (all_on shipped - all_off legacy): +0.00388
+  subset=with_reading: pre-branch confidence 0.18961; corrected, undiscounted 0.19324; corrected + /k (discount_only) 0.19336; all_on, shipped confidence 0.19352
+    discount effect (discount_only discounted - all_off undiscounted): +0.00012
+    correction effect (all_off undiscounted - all_off legacy): +0.00363
+    combined (all_on shipped - all_off legacy): +0.00391
+FAIL (c) all_on: 3300 > 3299
+FAIL (c) cartouche_only: 3300 > 3299
+harness: FAIL
+STOP at step3-gates (exit 1); see /Users/lediodurmishaj/egyptology-runs/kri-fixes-2026-10-26-attempt1/run_log.txt
+```
 
 ## Durations
 
@@ -304,6 +427,29 @@ it removed only false boundaries inside the cartouche. Two lines carry the rest:
    read-only. It changes no verdict.
 6. **The §6 listings are incomplete.** §6 asks for the routing-change listing and for the
    step-6/7/8 gate files. Those steps did not run, so they cannot be included.
+
+## Corrections after review (2026-10-27)
+
+Applied after Astra's review of `6b66d34`. None changes a count, a gate decision or the
+verdict.
+
+1. **Brier deltas before rounding.** (g) gave with_reading deltas of +0.00363 and
+   +0.00391, differences of 5-decimal scores. Computed before rounding they are
+   +0.003622854 and +0.003902069 (all positions: +0.003600955 and +0.003878482, which
+   rounded as printed). The discount deltas are +0.000117323 / +0.000118036.
+2. **BBAW:3313#2 gold, verbatim.** The note had `〈`/`〉` (U+3008/U+3009); the corpus
+   and the gate file have U+2329/U+232A. The (b) listing is now generated from the gate
+   file.
+3. **Whole-line p beside rule (a).** `all_on`: gained 0, lost 1, p = 1;
+   `cartouche_only`: no discordant line.
+4. **Complete step-3 gate output** is quoted in its own section, unedited, apart from
+   these corrections.
+5. **TLA:121 described precisely**: cartouche [4, 11), gold boundary at 7 inside the
+   matched pair, constraint removes FP 5 and TP 7, FN 11 missed in both arms. TLA:1980 is
+   located likewise (new FP at 24, the window defect).
+
+What changed in the code afterwards, and why, is in the 2026-10-27 addendum to
+`docs/kri-fixes-preregistration-2026-10-26.md`. No attempt-1 number carries into attempt 2.
 
 ## What follows under the pre-registration
 
