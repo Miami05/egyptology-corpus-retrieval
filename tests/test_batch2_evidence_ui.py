@@ -280,3 +280,74 @@ def test_applied_grouping_reruns_the_search_with_those_groups(monkeypatch):
     assert app.session_state["whyptology_last_reading_order"] == "ḏd =f"
     assert _grouping_input(app).value == " ".join(edited)
     assert not [b for b in app.button if b.label == "Apply grouping"]
+
+
+# ---------- KRI self-test: provenance first, the tie appended ----------
+#
+# A first draft of the tie note returned before the fallback/lexicon branches, so a
+# borrowed or lexicon reading whose candidates happened to tie was described only as
+# a tie — the reader lost the one thing they most need to know, which is where the
+# reading came from. Each provenance is checked with a tie on it.
+
+TIE = ["x", "y"]
+
+
+def test_tie_is_appended_to_a_corpus_reading_not_substituted_for_it():
+    p = prediction(
+        predicted="x", reading_count=1, attested_count=2, tied_singleton_readings=TIE
+    )
+    evidence = app_module.prediction_evidence(p, None)
+    assert evidence.startswith("this reading 1×; this group 2×")
+    assert "tied in attestation counts with y" in evidence
+
+
+def test_tie_is_appended_to_a_borrowed_reading_which_still_says_it_is_borrowed():
+    p = prediction(
+        predicted="x",
+        was_seen=False,
+        fallback_from="AB",
+        fallback_similarity=0.6,
+        tied_singleton_readings=TIE,
+    )
+    evidence = app_module.prediction_evidence(p, None)
+    assert evidence.startswith("inferred from")
+    assert "60% glyph match" in evidence
+    assert "tied in attestation counts with y" in evidence
+
+
+def test_tie_is_appended_to_a_lexicon_reading_which_still_says_it_is_lexicon():
+    p = prediction(
+        predicted="x",
+        was_seen=False,
+        lexicon_count=2,
+        reading_count=1,
+        lexicon_source="AES",
+        tied_singleton_readings=TIE,
+    )
+    evidence = app_module.prediction_evidence(p, None)
+    assert evidence.startswith("lexicon: this reading 1×; this group 2× (AES)")
+    assert "tied in attestation counts with y" in evidence
+
+
+def test_tie_wording_does_not_call_the_choice_arbitrary():
+    # The attestation counts rank none of them, but the context scores did choose.
+    p = prediction(
+        predicted="x", reading_count=1, attested_count=2, tied_singleton_readings=TIE
+    )
+    evidence = app_module.prediction_evidence(p, None)
+    assert "arbitrary" not in evidence
+    assert "the context scores chose between them" in evidence
+
+
+def test_pooled_evidence_names_both_the_pooled_and_the_stage_count():
+    p = prediction(
+        predicted="x",
+        reading_count=34,
+        attested_count=37,
+        used_pooled_evidence=True,
+        stage_attested_count=3,
+    )
+    assert app_module.prediction_evidence(p, None) == (
+        "all stages: this reading 34×; this group 37× — the chosen stage attests "
+        "it only 3×"
+    )

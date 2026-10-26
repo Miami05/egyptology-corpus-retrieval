@@ -771,3 +771,68 @@ def test_the_stage_router_does_not_see_the_pooled_fallback():
         "H", lambda stage: cache_without[stage]
     )
     assert with_pooled == without_pooled
+
+
+# ---------- the cartouche constraint can change routing, through segmentation ----------
+#
+# `choose_stage_by_likelihood` segments once, with the pooled segmenter, and scores
+# that one segmentation under each stage. The cartouche constraint lives in the
+# segmenter, so it can change the groups, and therefore each stage's attested
+# coverage, and therefore the stage. The *rule* is untouched; its input is not.
+
+CARTOUCHE_OPEN = "\U00013379"
+CARTOUCHE_CLOSE = "\U0001337A"
+CARTOUCHE_NAME = CARTOUCHE_OPEN + "𓃹𓈖" + CARTOUCHE_CLOSE
+
+
+def _cartouche_routing_corpus() -> pd.DataFrame:
+    """Earlier Egyptian knows the pieces of the name; Late Egyptian knows the name.
+
+    So which stage has attested this paste depends entirely on whether the
+    segmenter is allowed to cut the cartouche open.
+    """
+    rows = [
+        {
+            "hieroglyphs_norm": f"{CARTOUCHE_OPEN} 𓃹 𓈖 {CARTOUCHE_CLOSE}",
+            "transliteration_gold": "o w n c",
+            "language_stage": "Earlier Egyptian",
+            "source_text_id": f"EE_{i}",
+            "source_sentence_id": "S0",
+            "mdc_norm": "o w n c",
+        }
+        for i in range(30)
+    ]
+    rows.append(
+        {
+            "hieroglyphs_norm": CARTOUCHE_NAME,
+            "transliteration_gold": "wnjs",
+            "language_stage": "Late Egyptian",
+            "source_text_id": "LE_0",
+            "source_sentence_id": "S0",
+            "mdc_norm": "wnjs",
+        }
+    )
+    return pd.DataFrame(rows)
+
+
+def test_cartouche_constraint_routes_the_paste_to_the_stage_that_attests_the_name():
+    df = _cartouche_routing_corpus()
+    resources_by_stage = _likelihood_resources_by_stage(df)
+    stage, _scores = choose_stage_by_likelihood(CARTOUCHE_NAME, resources_by_stage)
+    assert stage == "Late Egyptian"
+
+
+def test_without_the_constraint_the_same_paste_routes_to_the_other_stage(monkeypatch):
+    """The claim "routing is unchanged" holds only for an unchanged segmentation.
+
+    With `cartouche_spans` reporting nothing the segmenter splits the name into its
+    four attested pieces, Earlier Egyptian attests all four and Late Egyptian none,
+    and the router returns the other stage for the same paste.
+    """
+    import app.services.segmentation as segmentation_module
+
+    monkeypatch.setattr(segmentation_module, "cartouche_spans", lambda stream: [])
+    df = _cartouche_routing_corpus()
+    resources_by_stage = _likelihood_resources_by_stage(df)
+    stage, _scores = choose_stage_by_likelihood(CARTOUCHE_NAME, resources_by_stage)
+    assert stage == "Earlier Egyptian"

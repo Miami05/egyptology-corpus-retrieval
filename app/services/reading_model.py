@@ -245,12 +245,19 @@ class ReadingPrediction:
     used_pooled_evidence: bool = False
     stage_attested_count: int = 0
     # The readings that tie for best-attested when that attestation is a single
-    # occurrence each — i.e. the corpus has seen every one of them exactly once and
-    # therefore cannot rank them. Empty whenever the top reading has more than one
-    # attestation, or when nothing ties it. The decode still has to pick one (context
-    # breaks the tie), but the pick is not evidence: `is_singleton_tie` says so and
-    # `confidence` is discounted accordingly (KRI self-test, 2026-10-26).
+    # occurrence each — i.e. the corpus has seen every one of them exactly once, so the
+    # *attestation counts* rank none of them. Empty whenever the top reading has more
+    # than one attestation, or when nothing ties it. The context scores still choose
+    # between them, and that is a real choice, not a coin flip — what this field marks
+    # is that the counts contributed nothing to it, which is why `confidence` is
+    # discounted (KRI self-test, 2026-10-26).
     tied_singleton_readings: list[str] = field(default_factory=list)
+    # P(chosen reading | this group) over the group's WHOLE reading distribution.
+    # `candidates` is truncated to five for display, so it cannot carry this: a
+    # reading context selected from the sixth place onwards is absent from it
+    # entirely, and the shares of the readings that remain are inflated by the mass
+    # the truncation dropped. `confidence` is this number, discounted for a tie.
+    reading_probability: float = 0.0
 
     @property
     def is_fallback(self) -> bool:
@@ -302,23 +309,26 @@ class ReadingPrediction:
         That is the same mismatch Astra #5 corrected in the evidence text and left in
         this number, and the KRI self-test made it visible: once the group's pooled
         evidence arrived (`used_pooled_evidence`) a reading attested once in a group
-        attested 37 times was reported at 0.92. 0.0 when the chosen reading is not
-        among the candidates listed at all.
+        attested 37 times was reported at 0.92.
+
+        It reads `reading_probability`, which is computed over the group's *whole*
+        reading distribution, not over `candidates` — that list is truncated to the
+        five best-attested readings for display, so deriving the number from it gave
+        0.0 to any reading context selected from outside the five, and made every
+        share too large by the mass the truncation dropped (six singleton readings
+        reported 1/5 of the displayed mass instead of 1/6 of the real one).
 
         Discounted for a singleton tie: with k readings attested once each the share
         is 1/k by construction, but that number looks like a measured preference when
-        in fact the corpus ranks none of them — so it is divided by k again. A
-        three-way singleton tie reports 0.11 instead of 0.33, and no singleton tie can
-        report more than 0.25. The tie itself is in `tied_singleton_readings`, so a
-        caller can show it rather than infer it from the number.
+        in fact the attestation counts rank none of them — so it is divided by k
+        again. A three-way singleton tie reports 0.11 instead of 0.33, and no
+        singleton tie can report more than 0.25. The tie itself is in
+        `tied_singleton_readings`, so a caller can show it rather than infer it from
+        the number.
         """
-        if not self.candidates:
+        share = self.reading_probability
+        if share <= 0.0:
             return 0.0
-        total = sum(score for _, score in self.candidates)
-        if total <= 0:
-            return 0.0
-        chosen = next((s for r, s in self.candidates if r == self.predicted), 0.0)
-        share = chosen / total
         if self.is_singleton_tie:
             return share / len(self.tied_singleton_readings)
         return share
@@ -869,6 +879,11 @@ class ReadingModel:
                         else 0
                     ),
                     tied_singleton_readings=tied,
+                    # Over the full distribution: `total` above is the sum of ALL of
+                    # this group's counts, while `candidates` holds only five.
+                    reading_probability=(
+                        float(counts.get(reading, 0)) / total if counts else 0.0
+                    ),
                 )
             )
         return predictions, lattice[-1][best_final][0]

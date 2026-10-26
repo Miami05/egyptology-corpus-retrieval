@@ -16,6 +16,7 @@ from app.data.normalizer import normalize_hieroglyphs
 from app.services.reading_model import glyph_similarity, train_reading_model
 from app.services.segmentation import (
     DEFAULT_SEGMENTATION_WEIGHTS,
+    MAX_GROUP_GLYPHS,
     Segmenter,
     glyph_stream,
 )
@@ -369,4 +370,45 @@ def test_the_constraint_is_what_keeps_the_cartouche_whole(monkeypatch):
         "A",
         "B",
         CARTOUCHE_CLOSE,
+    ]
+
+
+def test_score_segmentation_refuses_a_grouping_that_cuts_a_cartouche():
+    """The scorer and the optimiser must agree on what is a legal segmentation.
+
+    `score_segmentation` ranks a grouping `segment` never proposed — the user's own
+    spacing, for the runner-up line. Without the same constraint, a split through a
+    cartouche scored *higher* than the constrained optimum and would be offered as a
+    better reading the app had declined to give.
+    """
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    chosen = seg.segment([name])
+    _stream, hints = glyph_stream([name])
+    split = [CARTOUCHE_OPEN, "A", "B", CARTOUCHE_CLOSE]
+    assert seg.score_segmentation(split, hints) == float("-inf")
+    # And the grouping it did choose is still scored by the ordinary objective.
+    assert seg.score_segmentation(chosen.groups, hints) == pytest.approx(chosen.score)
+
+
+def test_score_segmentation_still_scores_a_cut_outside_the_cartouche():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    groups = ["A", name, "B"]
+    _stream, hints = glyph_stream(["A" + name + "B"])
+    assert seg.score_segmentation(groups, hints) > float("-inf")
+
+
+def test_a_cartouche_longer_than_the_window_is_still_kept_whole():
+    """`MAX_GROUP_GLYPHS` is 10; this name is 14 signs including its brackets.
+
+    The sliding window never offers a span that long, so `segment` has to offer the
+    cartouche explicitly — otherwise the constraint would leave no path at all.
+    """
+    long_name = CARTOUCHE_OPEN + "AB" * 6 + CARTOUCHE_CLOSE
+    assert len(long_name) > MAX_GROUP_GLYPHS
+    seg = segmenter(cartouche_corpus())
+    assert seg.segment([long_name]).groups == [long_name]
+    assert seg.segment([CARTOUCHE_OPEN + "AB", "AB" * 5 + CARTOUCHE_CLOSE]).groups == [
+        long_name
     ]

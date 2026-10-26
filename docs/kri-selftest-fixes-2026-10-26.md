@@ -73,9 +73,16 @@ The prediction is marked: `ReadingPrediction.used_pooled_evidence` and `stage_at
 and the UI says "all stages: this reading N×; this group M× — the chosen stage attests it only
 K×", plus a panel note and a count in the support line.
 
-**The stage router is unaffected by construction**: `choose_stage_by_likelihood` decodes with
-`use_pooled_fallback=False`, so its per-stage likelihoods and its decision are bit-for-bit what
-they were. `tests/test_stage.py` pins that too.
+**The stage router's decision rule is unchanged, but not every decision it makes.**
+`choose_stage_by_likelihood` decodes with `use_pooled_fallback=False`, so the pooled fallback
+cannot enter the comparison and the rule itself is bit-for-bit what it was; `tests/test_stage.py`
+pins that. What the rule is applied *to* can change: it segments once, with the pooled segmenter,
+and the cartouche constraint of §3 lives in that segmenter. On a paste containing a cartouche the
+groups can change, hence each stage's attested coverage, hence the chosen stage.
+`tests/test_stage.py` shows the same paste routed to two different stages with the constraint on
+and off. **Routing is unchanged only for an unchanged segmentation.** On the self-test lines the
+stage came out identical on all ten (§4) and on the eight expert pastes nothing moved, but that
+is two small observations, not the measurement — §5 lists it.
 
 **(b) A tie on singleton evidence is not a confident reading.**
 `ReadingPrediction.tied_singleton_readings` lists the readings that tie for best-attested when
@@ -83,15 +90,31 @@ that attestation is a single occurrence each; `is_singleton_tie` is the predicat
 divides the share by the number of tied readings, so a three-way singleton tie reports 0.11
 instead of 0.33 and no singleton tie can report more than 0.25. The UI shows the tie explicitly
 (a `≟` badge, a warning, and the tied readings listed under the sign-by-sign table) rather than
-printing one of them as though the corpus had chosen it.
+printing one of them as though the attestation counts had chosen it.
 
-**(b′) `confidence` is now about the reading that was *chosen*.**
+The wording everywhere is "**tied in attestation counts**", never "arbitrary". The counts rank
+none of them, but the decoder's context scores did choose, and on a real corpus that choice is
+often right; telling a reader it was a coin flip would understate what the model did. In the
+sign-by-sign table the tie is **appended to the provenance**, never substituted for it — a first
+draft returned the tie note before the fallback/lexicon branches, so a borrowed reading that
+happened to tie was described only as a tie, and the reader lost the one thing they most need to
+know. `tests/test_batch2_evidence_ui.py` checks each provenance (corpus, lexicon, borrowed)
+separately with a tie on it.
+
+**(b′) `confidence` is now about the reading that was *chosen*, over the whole distribution.**
 It previously reported the best candidate's share whatever the decoder picked — the same
 mismatch Astra #5 corrected in the evidence *text* and left in the *number*. Fixing (a) made it
 actively misleading: once the pooled counts arrived, a reading attested once in a group attested
-37 times was reported at 0.92. It is now the chosen reading's own share (0.0 when the chosen
-reading is not among the candidates listed). Nothing in `app/` or `scripts/` read this property
-before, so this changes no benchmark.
+37 times was reported at 0.92.
+
+It now reads `ReadingPrediction.reading_probability`, P(chosen reading | group) over the group's
+**full** reading distribution. Deriving it from `candidates` was wrong twice over, because that
+list is truncated to the five best-attested readings for display: a reading context selected
+from sixth place onwards was absent from it and scored 0.0 — the app reported the reading it had
+just printed as having no evidence at all — and every share that remained was inflated by the
+mass the truncation dropped, so six singleton readings gave 1/5 of the displayed mass instead of
+1/6 of the real one (and 1/30 instead of 1/36 after the tie discount). Nothing in `app/` or
+`scripts/` read this property before, so this changes no benchmark.
 
 ### What is still wrong, and is not fixed here
 
@@ -164,8 +187,13 @@ contain either sign. The rule follows the data rather than an a-priori typograph
 
 ### What changed
 
-`app/data/normalizer.py` gains `cartouche_spans(stream)`, which returns the outermost matched
-`(start, end)` spans in a glyph stream. An unmatched half contributes nothing — the same rule
+`app/data/normalizer.py` gains `cartouche_spans(stream)`, which matches the signs **with a
+stack** and returns the completed pairs that no other completed pair encloses. Counting nesting
+*depth* instead looked equivalent and was not: it reported a span only where the depth returned
+to zero, so a stray opening sign earlier in the line suppressed every complete cartouche after
+it (`OPEN A OPEN B CLOSE` found nothing), and in `OPEN OPEN X CLOSE` the one pair that genuinely
+closes was lost. Both shapes are real — the corpus holds 13 groups carrying one half of a pair.
+An unmatched half contributes nothing — the same rule
 `quadrat_hints` already applies to the Unicode enclosure *controls* (U+1343C/U+1343D), which
 continue to work exactly as before through the measured `quadrat_crossed` penalty. This addition
 is about the cartouche written as **signs**, which survive normalisation and reach the segmenter.
@@ -182,17 +210,39 @@ survives the arithmetic. Two guards keep the lattice feasible:
   a paste routinely spaces a royal name by quadrat and the name is routinely unattested. It
   still pays `hint_crossed` per crossed space and κ per glyph.
 
-`tests/test_segmentation.py` pins both the new behaviour and, with `cartouche_spans`
-monkeypatched to report nothing, that it is this constraint and nothing else in the objective
-that keeps the name together.
+**The scorer obeys the same constraint as the optimiser.** `Segmenter.score_segmentation` ranks
+a grouping `segment` never proposed — the user's own spacing, for the UI's "Runner-up" line. Both
+now go through one `cartouche_constraint(stream)` helper, and a grouping that cuts a cartouche
+open scores `float("-inf")`: it is outside the feasible set, not a worse point inside it.
+Without that, the unconstrained pasted grouping could score *higher* than the constrained
+optimum and be announced as a better reading the app had declined to give, with a negative "nats
+behind". The UI's runner-up condition is now `0.0 <= gap < 8.0` for the same reason, which also
+covers the pre-existing case of a pasted span longer than `MAX_GROUP_GLYPHS`.
 
-**An unseen group is never dropped silently.** `ReadingPrediction.has_reading` and
-`.display_reading` put the placeholder (`NO_READING_MARK`, `∅`) in the prediction itself rather
-than leaving each renderer to decide. `app/ui/whyptology_app.py`'s `assembled_reading` now takes
-it from there, so a group nothing could read keeps its place in the line and the reader sees
-where knowledge ends. `scripts/run_expert_paste_eval.py` deliberately keeps its own join: its
-reading string is compared against the benchmark's `expected_reading` column, and changing it
-would change what that gate measures.
+`tests/test_segmentation.py` pins the new behaviour, the scorer's refusal, a cartouche longer
+than the segmenter's window (which is why `segment` offers the span explicitly), and — with
+`cartouche_spans` monkeypatched to report nothing — that it is this constraint and nothing else
+in the objective that keeps the name together.
+
+**The unreadable placeholder: centralised, not introduced.** The app's reading line already
+rendered an unreadable group as `∅` on `main` — `assembled_reading` did `p.predicted or
+UNREADABLE_MARK`, and `tests/test_batch2_evidence_ui.py:152` already pinned it (Astra #8,
+2026-10-25). What changed here is only *where* the decision lives. Three layers, which this
+branch keeps distinct:
+
+* **decoder** — `ReadingPrediction.predicted` is still `""` when nothing could read the group;
+  the model does not invent a mark. New: `has_reading` and `display_reading`
+  (`NO_READING_MARK`, `∅`) make "there is no reading" an explicit property of the prediction
+  instead of a convention each caller re-derives from a falsy string.
+* **UI** — `assembled_reading` now takes the placeholder from `display_reading`, so the rendered
+  line is unchanged but there is one definition of the mark rather than one per renderer.
+* **evaluator** — `scripts/run_expert_paste_eval.py` keeps its own `if p.predicted` join on
+  purpose: its reading string is compared against the benchmark's `expected_reading` column, so
+  inserting placeholders there would change what the gate measures, not what the app shows.
+
+What the self-test actually hit was the segmenter, not the renderer: the royal name was cut into
+four, and the two pieces carrying a cartouche sign were unreadable. The §3 constraint is the fix;
+the centralisation above is tidying that makes the same failure easier to see next time.
 
 ---
 
@@ -204,10 +254,14 @@ by running the eval with `cartouche_spans` returning `[]` and `uses_pooled_evide
 `False`). Neither rule can fire on those eight pastes: none contains a cartouche sign, and none
 of their groups meets the pooled-fallback conditions.
 
-*Noted in passing, unrelated to this branch:* the committed
-`data/benchmarks/expert_paste_eval_results.csv` is stale relative to `main` — re-running the
-gate on unmodified `main` already changes its `stage_likelihoods`, `top_suggestion` and
-`top_confidence` columns. Not regenerated here, and not committed.
+**Separate follow-up, not caused by this branch: the committed
+`data/benchmarks/expert_paste_eval_results.csv` is stale on `main`.** Re-running the gate on
+unmodified `main` already changes `stage_likelihoods` (Demotic no longer scored), `top_suggestion`
+and `top_confidence` — and `stage_used`, where PASTE_008 moves **Demotic → Earlier Egyptian**.
+That last one is a behaviour difference recorded in a committed results file, so the file is
+currently misleading about what the gate does. It is left alone here on purpose: regenerating it
+on this branch would mix a pre-existing drift into this branch's diff. Someone should regenerate
+it on `main`, work out which commit moved PASTE_008, and say whether that was intended.
 
 **Self-test lines, re-run locally on the same corpus, counts only** (the material stays private;
 the before run reproduces the self-test report's table exactly):
@@ -262,15 +316,22 @@ a measurement, and ten non-expert lines are not one either.
    13 half-pair groups and 5 split-cartouche rows are the only places where the constraint can
    hurt, so the expected result is "no change outside them"; that has to be shown, not assumed.
    The St Andrews run needs `PRIVATE_DATA_DIR` and so belongs to a keyed session.
-3. **The whole v4 / held-out / LE-v1 set**, under `docs/remeasure-preregistration-2026-10-25.md`
-   rules, before the release floors are quoted again. Expected to be unchanged — no benchmark
-   query carries a cartouche sign or meets the pooled-fallback conditions — but "expected
-   unchanged" is a prediction to be checked, not a result.
-4. **Endpoint G reported folded *and* strict** (§2), with the convention stated in the run.
-5. **The transition smoothing** described at the end of §1. A once-seen reading-bigram scoring
+3. **Stage routing, because the segmentation it is computed from can move.** Count and list
+   every paste whose chosen stage changes with the cartouche constraint on vs off, and the
+   coverage change that caused each one. This is not covered by item 2: a segmentation change
+   that leaves boundary F1 flat can still move a stage.
+4. **The whole v4 / held-out / LE-v1 set**, under `docs/remeasure-preregistration-2026-10-25.md`
+   rules, before the release floors are quoted again — **as a sanity check only.** Those
+   benchmarks are retrieval/suggestion evaluations: they never decode through
+   `ReadingModel.predict_sequence` or `Segmenter.segment`, so re-running them cannot validate
+   anything on this branch. They can only show that nothing *else* broke. The measurement that
+   can see these changes is the paired on/off reading harness, which is why it exists (§6 of the
+   pre-registration, `docs/kri-fixes-preregistration-2026-10-26.md`).
+5. **Endpoint G reported folded *and* strict** (§2), with the convention stated in the run.
+6. **The transition smoothing** described at the end of §1. A once-seen reading-bigram scoring
    its single successor at ≈ 1.0 is what keeps the wrong reading on top even after the evidence
    is corrected. This is a decoder change affecting every query; it needs its own experiment,
    its own pre-registration, and the expert paste gate as a hard constraint.
-6. **The stage router itself** (`choose_stage_by_likelihood`): margins of 0.02–0.09 on this
+7. **The stage router's own decision rule** (`choose_stage_by_likelihood`): margins of 0.02–0.09 on this
    material are not a decision, and the A3 abstention margin is still unset. Untouched here on
    purpose.

@@ -522,9 +522,18 @@ def choose_stage_by_likelihood(
     added for the KRI self-test) is switched OFF here, with
     `use_pooled_fallback=False`: it exists so that a group this stage barely
     attests is *read* from the pooled counts, and letting it also score the stage
-    would mean comparing stages partly on evidence that is not theirs. The
-    decision rule here is therefore bit-for-bit what it was; changing it needs its
-    own pre-registration (see the TODO below).
+    would mean comparing stages partly on evidence that is not theirs. Changing
+    that needs its own pre-registration (see the TODO below).
+
+    That makes the decision *rule* unchanged, not the decision. The rule's input is
+    `segment_paste`'s groups, and the cartouche constraint added at the same time
+    (`app.services.segmentation.cartouche_constraint`) lives in the segmenter: on a
+    paste containing a cartouche it can change the groups, hence each stage's
+    attested coverage, hence the stage this function returns. Routing is unchanged
+    for an unchanged segmentation and for nothing wider than that —
+    tests/test_stage.py shows the same paste routed to two different stages with the
+    constraint on and off. Which way it moves on real material is a measurement
+    nobody has made yet; it is listed in the pre-registration.
 
     Pass a dict as `coverage` to receive each scored stage's attested-group count,
     the number the choice is ranked on first; the returned scores alone no longer

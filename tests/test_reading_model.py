@@ -377,3 +377,43 @@ def test_confidence_is_about_the_reading_that_was_chosen():
     prediction = model.predict_sequence(["Q", "A"])[1]
     assert prediction.predicted == "y"
     assert prediction.confidence == pytest.approx(1 / 4)
+
+
+def test_confidence_counts_the_whole_distribution_not_the_displayed_five():
+    """Six readings attested once each: the share is 1/6, not 1/5.
+
+    `candidates` is truncated to five for display. Deriving the confidence from
+    that list made every share too large by the mass the truncation dropped, and
+    the discounted six-way tie came out 1/30 instead of 1/36.
+    """
+    readings = ["r1", "r2", "r3", "r4", "r5", "r6"]
+    model = train_reading_model(corpus([("A", r) for r in readings]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert len(prediction.candidates) == 5
+    assert prediction.tied_singleton_readings == readings
+    assert prediction.reading_probability == pytest.approx(1 / 6)
+    assert prediction.confidence == pytest.approx(1 / 36)
+
+
+def test_confidence_of_a_reading_context_selected_from_outside_the_top_five():
+    """The chosen reading need not be among the five shown; its share is still real.
+
+    'A' has six readings; the rarest is the one the corpus always uses after 'Q', so
+    context selects it. Read off `candidates` its confidence was 0.0 — the reading
+    the app printed was reported as having no evidence at all.
+    """
+    rows = (
+        [("P A", "p x1")] * 5
+        + [("P A", "p x2")] * 4
+        + [("P A", "p x3")] * 3
+        + [("P A", "p x4")] * 2
+        + [("P A", "p x5")] * 2
+        + [("Q A", "q y")]
+    )
+    model = train_reading_model(corpus(rows))
+    prediction = model.predict_sequence(["Q", "A"])[1]
+    assert prediction.predicted == "y"
+    assert "y" not in [r for r, _ in prediction.candidates]
+    assert prediction.is_singleton_tie is False
+    # One attestation of 'y' out of the group's seventeen.
+    assert prediction.confidence == pytest.approx(1 / 17)

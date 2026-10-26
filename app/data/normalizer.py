@@ -420,24 +420,38 @@ def cartouche_spans(stream: str) -> list[tuple[int, int]]:
 
     `start` indexes the opening V011A and `end` is one past the closing V011B, so
     the boundary positions *inside* the cartouche are `range(start + 1, end)` in the
-    indexing `app.services.segmentation.glyph_stream` uses. An opening sign that is
-    never closed contributes nothing, and a closing sign with no opener is ignored:
-    an unmatched half is not structure anybody can trust (the same rule
-    `quadrat_hints` applies to the enclosure controls).
+    indexing `app.services.segmentation.glyph_stream` uses. A closing sign with no
+    opener is ignored: an unmatched half is not structure anybody can trust (the same
+    rule `quadrat_hints` applies to the enclosure controls).
+
+    Matching is by stack, and an unclosed opener is simply left on it. Counting
+    nesting *depth* instead looked equivalent and was not: it reported a span only
+    where the depth returned to zero, so a stray opener earlier in the line
+    suppressed every complete cartouche after it — `OPEN A OPEN B CLOSE` found
+    nothing at all, and in `OPEN OPEN X CLOSE` the one pair that genuinely closes was
+    lost. Both shapes occur: the corpus holds 13 groups carrying one half of a pair.
+
+    Of the pairs that do close, one enclosed by another is dropped, so the result is
+    the outermost completed pairs and the spans never overlap. The returned spans are
+    in order of their opening sign.
     """
-    spans: list[tuple[int, int]] = []
-    depth = 0
-    start = 0
+    completed: list[tuple[int, int]] = []
+    stack: list[int] = []
     for position, char in enumerate(stream):
         code = ord(char)
         if code == CARTOUCHE_OPEN_SIGN:
-            if depth == 0:
-                start = position
-            depth += 1
-        elif code == CARTOUCHE_CLOSE_SIGN and depth:
-            depth -= 1
-            if depth == 0:
-                spans.append((start, position + 1))
+            stack.append(position)
+        elif code == CARTOUCHE_CLOSE_SIGN and stack:
+            completed.append((stack.pop(), position + 1))
+    spans = [
+        (start, end)
+        for start, end in completed
+        if not any(
+            other_start <= start and end <= other_end and (other_start, other_end) != (start, end)
+            for other_start, other_end in completed
+        )
+    ]
+    spans.sort()
     return spans
 FORMAT_CONTROL_RE = re.compile(f"[{FORMAT_CONTROL_CLASS}]")
 # The same three rules as `normalize_hieroglyphs`, but with the format controls

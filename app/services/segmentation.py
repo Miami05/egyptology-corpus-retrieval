@@ -215,6 +215,35 @@ class Segmentation:
         return bool(self.crossed_hints or self.inserted_boundaries)
 
 
+def cartouche_constraint(stream: str) -> tuple[set[int], dict[int, int], set[tuple[int, int]]]:
+    """The cartouche rule over one glyph stream, in the form the DP and the scorer use.
+
+    Returns `(forbidden, opening_at, whole)`:
+
+      forbidden    boundary positions strictly inside a cartouche. No group may start
+                   at one, which — the groups being contiguous — also means none may
+                   end at one, so no segmentation may cut a cartouche open.
+      opening_at   span end -> the position of its opening sign, so a cartouche longer
+                   than `max_group_glyphs` can still be offered as a candidate span.
+      whole        the spans themselves, so a span that *is* a cartouche can be exempted
+                   from the unattested-span veto.
+
+    One function because `Segmenter.segment` and `Segmenter.score_segmentation` have to
+    agree about what is a legal segmentation: the second scores a grouping the first
+    never proposed (the user's own spacing, for the runner-up line), and when only the
+    optimiser knew the rule, a grouping that cuts a cartouche could outscore the
+    constrained optimum and be shown as a *better* reading the app had declined.
+    """
+    forbidden: set[int] = set()
+    opening_at: dict[int, int] = {}
+    whole: set[tuple[int, int]] = set()
+    for start, end in cartouche_spans(stream):
+        forbidden.update(range(start + 1, end))
+        opening_at[end] = start
+        whole.add((start, end))
+    return forbidden, opening_at, whole
+
+
 def glyph_stream(groups_as_pasted: list[str]) -> tuple[str, set[int]]:
     """Flatten user groups into one glyph string plus the set of hinted boundaries.
 
@@ -362,13 +391,7 @@ class Segmenter:
         # `cartouche_opening` keeps each span reachable: a cartouche longer than
         # `max_group_glyphs` is not offered by the sliding window, and if it were
         # unattested as a whole group no path through it would exist at all.
-        inside_cartouche: set[int] = set()
-        cartouche_opening: dict[int, int] = {}
-        whole_cartouches: set[tuple[int, int]] = set()
-        for start, end in cartouche_spans(stream):
-            inside_cartouche.update(range(start + 1, end))
-            cartouche_opening[end] = start
-            whole_cartouches.add((start, end))
+        inside_cartouche, cartouche_opening, whole_cartouches = cartouche_constraint(stream)
 
         # best[j] = (score, start_of_last_group) for the best segmentation of
         # stream[:j]. best[0] is the empty prefix.
@@ -485,11 +508,28 @@ class Segmenter:
         no_cut: frozenset[int] | set[int] = frozenset(),
     ) -> float:
         """Score an arbitrary segmentation with the same objective, for comparison
-        (e.g. the user's own spacing against the suggested one)."""
+        (e.g. the user's own spacing against the suggested one).
+
+        `float("-inf")` when the grouping cuts a cartouche open, because that is not a
+        segmentation this objective ranks at all — it is outside the feasible set
+        `segment` optimises over (`cartouche_constraint`). Scoring it as if it were
+        feasible let the user's own spacing come out *ahead* of the constrained
+        optimum, which the UI would then offer as a better reading the app had
+        declined to give. A caller that wants such a grouping anyway is overruling the
+        model by hand, and must say so rather than present a number.
+        """
         w = self.weights
+        stream = "".join(groups)
+        forbidden, _opening, _whole = cartouche_constraint(stream)
+        if forbidden:
+            position = 0
+            for group in groups[:-1]:
+                position += len(group)
+                if position in forbidden:
+                    return float("-inf")
         total = 0.0
         position = 0
-        log_boundary, no_boundary_prefix = self._boundary_terms("".join(groups))
+        log_boundary, no_boundary_prefix = self._boundary_terms(stream)
         for index, group in enumerate(groups):
             start = position
             end = position + len(group)
