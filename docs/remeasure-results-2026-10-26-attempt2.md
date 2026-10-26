@@ -34,7 +34,8 @@ pytest transcript, the gate in declared mode, a per-step run log, and step 11.
 
 The session hosting the run shut down at about **08:11** and killed the process at step
 `le_v1_T_auto` (START logged 08:11:18, no END, 0-byte `.txt`, no CSV written). Every
-earlier step had finished with exit 0.
+earlier step had completed with its expected exit code (0, except paste `--stage none`,
+whose exit 1 is by design and non-gating).
 
 Before resuming: the worktree was re-checked (HEAD still `3e29304`, tree clean) and the
 corpus sha256 re-verified against `corpus_sha256.txt`. The partial `le_v1_T_auto.txt` was
@@ -46,7 +47,12 @@ no rule failed. Same commit, same inputs, same commands; the killed step produce
 output that was kept. It is recorded here because a run that stops and restarts should say
 so.
 
-## Step 0 — pinned state (recorded before step 1)
+## Step 0 — pinned state
+
+The commit and corpus sha256 were checked before step 1 (contemporaneous). The record
+count was verified later: the original step-0 file recorded `wc -l` physical lines, and the
+130,472-record figure was added afterwards (see below). The corpus itself has the correct
+count and hash; only the timing of the record-count check differs from A0.
 
 | Item | Value | File in `$R` |
 | --- | --- | --- |
@@ -57,7 +63,7 @@ so.
 | Flags | `--help` of all seven scripts captured in full | `step0_preconditions.txt` |
 
 The 130,472 figure is the CSV **record** count (verified with `pandas.read_csv` and with
-`load_examples_csv`). `wc -l` reports 131,091 physical lines because some fields contain
+`load_examples_csv`). `wc -l` reports 131,092 physical lines (131,091 data lines, excluding the header) because some fields contain
 newlines; a note to that effect was appended to `step0_preconditions.txt`. The gate's
 `corpus 138,131 rows` = 130,472 public + 7,659 private, which agrees.
 
@@ -390,8 +396,8 @@ so the whole attempt spans about **15 h 33 min** of wall clock.
 Attempt 1 ran all 15 competitive runs in about 2 hours; attempt 2 took about 11 h 40 min
 for the same 15 runs, with individual steps varying by more than an order of magnitude
 (`holdout_T_none` 11,742 s here against roughly 5 minutes in attempt 1; `le_v1_L_auto`
-11,782 s). The outputs are byte-identical, so this is machine contention and thermal
-behaviour on the laptop, not a code or data difference. It is recorded because the
+11,782 s). The outputs are byte-identical, so the slowdown is not a code or data difference. Machine
+contention or thermal throttling is suspected; the cause was not measured. It is recorded because the
 pre-registration's "expected" column (~6–7 min per run) no longer describes what a run
 costs on this machine.
 
