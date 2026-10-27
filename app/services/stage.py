@@ -408,6 +408,13 @@ def build_stage_resources(
         pooled_model = pooled_reading_model
     else:
         pooled_model = train_reading_model(df, lexicon)
+    # Evidence of last resort for a group this stage's filter emptied (see
+    # `ReadingModel.uses_pooled_evidence`). A no-op at `target=None`, where the
+    # pooled model IS this model. Attaching it only makes the fallback *available*:
+    # it is used only when a decode passes `use_pooled_fallback=True`, because the
+    # shipped default (`USE_POOLED_FALLBACK_BY_DEFAULT`) is OFF after attempt 1 of
+    # the KRI-fixes measurement (rule (b)(2), outcome DISABLE).
+    reading_model.attach_pooled(pooled_model)
     segmenter = Segmenter(pooled_model, weights, use_lexicon=use_lexicon)
 
     if target is not None and pooled_index is not None:
@@ -530,6 +537,23 @@ def choose_stage_by_likelihood(
     (Opus review, round 2). Not yet measured: the held-out stage-routing re-measure
     below must cover this rule too.
 
+    The per-group pooled-evidence fallback (`ReadingModel.uses_pooled_evidence`,
+    added for the KRI self-test) is switched OFF here, with
+    `use_pooled_fallback=False`: it exists so that a group this stage barely
+    attests is *read* from the pooled counts, and letting it also score the stage
+    would mean comparing stages partly on evidence that is not theirs. Changing
+    that needs its own pre-registration (see the TODO below).
+
+    That makes the decision *rule* unchanged, not the decision. The rule's input is
+    `segment_paste`'s groups, and the cartouche constraint added at the same time
+    (`app.services.segmentation.cartouche_constraint`) lives in the segmenter: on a
+    paste containing a cartouche it can change the groups, hence each stage's
+    attested coverage, hence the stage this function returns. Routing is unchanged
+    for an unchanged segmentation and for nothing wider than that —
+    tests/test_stage.py shows the same paste routed to two different stages with the
+    constraint on and off. Which way it moves on real material is a measurement
+    nobody has made yet; it is listed in the pre-registration.
+
     Pass a dict as `coverage` to receive each scored stage's attested-group count,
     the number the choice is ranked on first; the returned scores alone no longer
     explain the decision (the winner need not have the highest score).
@@ -577,7 +601,7 @@ def choose_stage_by_likelihood(
             # (Demotic here). Its model is then a pooled one, not this stage's.
             continue
         predictions, reading_score = resources.reading_model.predict_sequence_scored(
-            groups, use_lexicon=False
+            groups, use_lexicon=False, use_pooled_fallback=False
         )
         scores[candidate] = reading_score / n_groups
         readable[candidate] = sum(

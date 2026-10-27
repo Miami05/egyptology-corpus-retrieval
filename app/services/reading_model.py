@@ -126,6 +126,75 @@ FALLBACK_ORDER_WEIGHT = 0.5
 # The source kind stays in the code, off, as rule C2.4 prescribes.
 USE_COMPOSED_BY_DEFAULT = False
 
+# What a group with no reading at all is shown as, so it keeps its place in a line
+# instead of vanishing. Defined here, beside the predictions, because "this group has
+# no reading" is a property of the result and every renderer must say the same thing
+# (see `ReadingPrediction.display_reading`); `app/ui/whyptology_app.py` imports it.
+NO_READING_MARK = "∅"
+
+# ---------------------------------------------------------------------------
+# Pooled-evidence fallback for a stage-emptied group (KRI self-test, 2026-10-26).
+#
+# A stage's reading model is trained on `compatible_frame(df, stage)` — reading is
+# right to filter, a cross-stage spelling must not be offered as this stage's
+# reading (app.services.stage). But the filter can also *empty* a group's evidence
+# while leaving the group formally "attested": on the self-test material one single
+# sign is attested 37× in the public corpus, 34× of them under one reading whose
+# every row is Late Egyptian. Restricted to Earlier Egyptian the model keeps three
+# readings attested once each, ties them at 0.3333, and the tie-break presents an
+# editorial fragment as a confident top-1 with `was_seen=True`. The evidence the
+# reading actually rests on was thrown away by the stage filter, not weighed by it.
+#
+# So: when the stage-restricted evidence for a group is *much* weaker than the
+# pooled evidence, read that one group from the pooled counts and mark it
+# (`ReadingPrediction.used_pooled_evidence`). This is a per-group evidence rule; it
+# does not touch which stage was chosen — `choose_stage_by_likelihood` passes
+# `use_pooled_fallback=False` so the router's decision rule is bit-for-bit what it
+# was (changing that needs its own pre-registration).
+#
+# All three conditions must hold, so the rule only fires where the filter has
+# plainly removed the evidence rather than merely thinned it:
+#
+#   stage count  <= POOLED_FALLBACK_MAX_STAGE_COUNT   at most a handful, so every
+#                                                     surviving reading is a near-
+#                                                     singleton and cannot rank the
+#                                                     others
+#   pooled count >= POOLED_FALLBACK_MIN_POOLED_COUNT  the pooled evidence is not
+#                                                     itself thin
+#   pooled count >= POOLED_FALLBACK_MIN_RATIO x stage count
+#                                                     an order of magnitude: a group
+#                                                     merely rarer in this stage is
+#                                                     left alone
+#
+# The traced case clears all three with little room to spare (3 / 37 / 12.3x), which
+# is intended — these are deliberately conservative constants, not a tuned fit. They
+# are NOT measured: `docs/kri-selftest-fixes-2026-10-26.md` records what has to be
+# pre-registered and run before release.
+#
+# A group the stage does not attest at all (stage count 0) is deliberately NOT
+# covered. It already has a documented chain of its own — lexicon, then composed,
+# then the glyph-similarity borrow — and every step of it is flagged as not seen
+# here. Widening that to "read it pooled instead" would change what `was_seen`
+# means, which is a bigger change than the traced failure asks for.
+POOLED_FALLBACK_MAX_STAGE_COUNT = 3
+POOLED_FALLBACK_MIN_POOLED_COUNT = 20
+POOLED_FALLBACK_MIN_RATIO = 10.0
+
+# Whether a decode uses the pooled fallback when the caller does not say.
+#
+# OFF, by rule (b)(2) of `docs/kri-fixes-preregistration-2026-10-26.md`. Attempt 1 of
+# that measurement (`docs/kri-fixes-results-2026-10-26.md`) found the fallback firing
+# at 37 positions of the held-out split, on-better 4 and off-better 7. Outcome 2 of
+# rule (b) is a harm criterion that low n does not suspend: "use_pooled_fallback must
+# default to off before this branch merges". Four of the seven losses are one numeral
+# group in one line (BBAW:2621, `2` read `1/2` because the pooled counts are dominated
+# by the fraction reading, 82 of 118, against the stage's own 3 of 3).
+#
+# The code, the POOLED_FALLBACK_* constants and `attach_pooled` stay: the harness still
+# measures the fallback by passing `use_pooled_fallback=True` explicitly in its pooled
+# arms, and switching it back on needs a new pre-registration, not an edit here.
+USE_POOLED_FALLBACK_BY_DEFAULT = False
+
 
 def glyph_similarity(left: str, right: str, order_weight: float | None = None) -> float:
     """Order-aware glyph overlap in [0, 1]: (1-w)·Jaccard(glyphs) + w·Jaccard(bigrams).
@@ -183,6 +252,27 @@ class ReadingPrediction:
     # the total overstates the evidence for it — `y` chosen twice-attested from a
     # group seen five times is "this reading 2×; this group 5×", not "5×" (Astra #5).
     reading_count: int = 0
+    # Set when this model is a stage-restricted one whose own evidence for the group
+    # was so much weaker than the pooled corpus's that the pooled counts were used
+    # for this one group instead (see the POOLED_FALLBACK_* constants). The counts
+    # reported above are then the pooled ones, and `stage_attested_count` keeps the
+    # stage's own number so the UI can say which is which.
+    used_pooled_evidence: bool = False
+    stage_attested_count: int = 0
+    # The readings that tie for best-attested when that attestation is a single
+    # occurrence each — i.e. the corpus has seen every one of them exactly once, so the
+    # *attestation counts* rank none of them. Empty whenever the top reading has more
+    # than one attestation, or when nothing ties it. The context scores still choose
+    # between them, and that is a real choice, not a coin flip — what this field marks
+    # is that the counts contributed nothing to it, which is why `confidence` is
+    # discounted (KRI self-test, 2026-10-26).
+    tied_singleton_readings: list[str] = field(default_factory=list)
+    # P(chosen reading | this group) over the group's WHOLE reading distribution.
+    # `candidates` is truncated to five for display, so it cannot carry this: a
+    # reading context selected from the sixth place onwards is absent from it
+    # entirely, and the shares of the readings that remain are inflated by the mass
+    # the truncation dropped. `confidence` is this number, discounted for a tie.
+    reading_probability: float = 0.0
 
     @property
     def is_fallback(self) -> bool:
@@ -203,13 +293,60 @@ class ReadingPrediction:
         return self.lexicon_count > 0 and not self.was_seen
 
     @property
+    def is_singleton_tie(self) -> bool:
+        """Two or more readings attested once each and nothing to choose between them."""
+        return len(self.tied_singleton_readings) > 1
+
+    @property
+    def has_reading(self) -> bool:
+        """False when no source could read this group at all."""
+        return bool(self.predicted)
+
+    @property
+    def display_reading(self) -> str:
+        """The reading, or `NO_READING_MARK` when there is none.
+
+        Every renderer takes the placeholder from here rather than deciding for
+        itself whether to print an empty string: a group with no reading that is
+        joined away leaves the two groups either side touching, which reads as a
+        continuous phrase the evidence does not support, and the reader loses the
+        place where knowledge ends (Astra #8; the cartouche halves of the KRI
+        self-test disappeared from a line reading exactly this way).
+        """
+        return self.predicted or NO_READING_MARK
+
+    @property
     def confidence(self) -> float:
-        if not self.candidates:
+        """Share of the group's evidence behind the reading that was *chosen*, in [0, 1].
+
+        It used to report the best candidate's share whatever the decoder picked, so
+        a minority reading chosen by context inherited the majority reading's number.
+        That is the same mismatch Astra #5 corrected in the evidence text and left in
+        this number, and the KRI self-test made it visible: once the group's pooled
+        evidence arrived (`used_pooled_evidence`) a reading attested once in a group
+        attested 37 times was reported at 0.92.
+
+        It reads `reading_probability`, which is computed over the group's *whole*
+        reading distribution, not over `candidates` — that list is truncated to the
+        five best-attested readings for display, so deriving the number from it gave
+        0.0 to any reading context selected from outside the five, and made every
+        share too large by the mass the truncation dropped (six singleton readings
+        reported 1/5 of the displayed mass instead of 1/6 of the real one).
+
+        Discounted for a singleton tie: with k readings attested once each the share
+        is 1/k by construction, but that number looks like a measured preference when
+        in fact the attestation counts rank none of them — so it is divided by k
+        again. A three-way singleton tie reports 0.11 instead of 0.33, and no
+        singleton tie can report more than 0.25. The tie itself is in
+        `tied_singleton_readings`, so a caller can show it rather than infer it from
+        the number.
+        """
+        share = self.reading_probability
+        if share <= 0.0:
             return 0.0
-        total = sum(score for _, score in self.candidates)
-        if total <= 0:
-            return 0.0
-        return self.candidates[0][1] / total
+        if self.is_singleton_tie:
+            return share / len(self.tied_singleton_readings)
+        return share
 
 
 @dataclass
@@ -236,6 +373,12 @@ class ReadingModel:
     # lexicon must never make an unattested group look attested.
     lexicon: dict[str, Counter] = field(default_factory=dict)
     lexicon_sources: dict[str, str] = field(default_factory=dict)
+    # The same model fitted on the *pooled* corpus, attached by
+    # `app.services.stage.build_stage_resources` when this one is stage-restricted.
+    # Consulted for one thing only: a group whose stage evidence the filter emptied
+    # (see the POOLED_FALLBACK_* constants). None on a pooled model, which is its
+    # own pooled evidence.
+    pooled: "ReadingModel | None" = field(default=None, repr=False)
     # Sign functions (Nederhof's table plus this project's supplement), used by
     # `compose_group` to read a group neither the corpus nor the lexicon attests.
     # Loaded lazily on first use so a model that never meets an unattested group
@@ -286,6 +429,33 @@ class ReadingModel:
         self.lexicon = dict(readings)
         self.lexicon_sources = dict(sources or {})
         return self
+
+    def attach_pooled(self, pooled: "ReadingModel") -> ReadingModel:
+        """Make the pooled model available as evidence of last resort for a group.
+
+        Only meaningful on a stage-restricted model; attaching a model to itself is
+        ignored, so a caller need not special-case `target=None`.
+        """
+        if pooled is not self:
+            self.pooled = pooled
+        return self
+
+    def uses_pooled_evidence(self, sign: str) -> bool:
+        """Whether this group's stage evidence is thin enough to read pooled instead.
+
+        True only when a pooled model is attached and all three POOLED_FALLBACK_*
+        conditions hold; see those constants for the reasoning and the numbers.
+        """
+        if self.pooled is None:
+            return False
+        stage_total = sum(self.sign_reading.get(sign, Counter()).values())
+        if stage_total < 1 or stage_total > POOLED_FALLBACK_MAX_STAGE_COUNT:
+            return False
+        pooled_total = sum(self.pooled.sign_reading.get(sign, Counter()).values())
+        return (
+            pooled_total >= POOLED_FALLBACK_MIN_POOLED_COUNT
+            and pooled_total >= POOLED_FALLBACK_MIN_RATIO * stage_total
+        )
 
     # ---------- inspection ----------
 
@@ -460,6 +630,7 @@ class ReadingModel:
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
         use_composed: bool | None = None,
+        use_pooled_fallback: bool | None = None,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -486,6 +657,16 @@ class ReadingModel:
         fallback. `None` means "the shipped default", `USE_COMPOSED_BY_DEFAULT` —
         which the C2.4 decision rule sets, and which is what every caller that does
         not pass the argument gets.
+
+        `use_pooled_fallback` (KRI self-test, 2026-10-26) lets a stage-restricted
+        model read a group whose stage evidence the filter emptied from the pooled
+        counts instead — see `uses_pooled_evidence` and the POOLED_FALLBACK_*
+        constants. It does nothing on a model with no pooled model attached, which
+        is every pooled model and every model built outside
+        `app.services.stage.build_stage_resources`. `None` means the shipped default,
+        `USE_POOLED_FALLBACK_BY_DEFAULT`, which is OFF after attempt 1 of the KRI-fixes
+        measurement (rule (b)(2)). `False` is passed by the stage router, whose
+        decision rule must not change, so the router is unaffected either way.
         """
         predictions, _path_score = self.predict_sequence_scored(
             signs,
@@ -497,6 +678,7 @@ class ReadingModel:
             fallback_threshold=fallback_threshold,
             use_lexicon=use_lexicon,
             use_composed=use_composed,
+            use_pooled_fallback=use_pooled_fallback,
         )
         return predictions
 
@@ -511,6 +693,7 @@ class ReadingModel:
         fallback_threshold: float | None = None,
         use_lexicon: bool = True,
         use_composed: bool | None = None,
+        use_pooled_fallback: bool | None = None,
     ) -> tuple[list[ReadingPrediction], float]:
         """`predict_sequence`, plus the chosen path's total Viterbi log-probability.
 
@@ -529,6 +712,8 @@ class ReadingModel:
             fallback_threshold = FALLBACK_THRESHOLD
         if use_composed is None:
             use_composed = USE_COMPOSED_BY_DEFAULT
+        if use_pooled_fallback is None:
+            use_pooled_fallback = USE_POOLED_FALLBACK_BY_DEFAULT
 
         # Resolve which group's statistics each position will use, in order of how
         # much the evidence is worth: attested in this corpus → attested in the
@@ -540,7 +725,10 @@ class ReadingModel:
         composed: dict[int, Counter] = {}
         for position, sign in enumerate(signs):
             if sign in self.sign_reading:
-                sources.append((sign, "", 1.0, "corpus"))
+                if use_pooled_fallback and self.uses_pooled_evidence(sign):
+                    sources.append((sign, "", 1.0, "pooled"))
+                else:
+                    sources.append((sign, "", 1.0, "corpus"))
                 continue
             if use_lexicon and sign in self.lexicon:
                 sources.append((sign, "", 1.0, "lexicon"))
@@ -568,6 +756,8 @@ class ReadingModel:
                 return composed[position]
             if kind == "lexicon":
                 return self.lexicon.get(group, Counter())
+            if kind == "pooled" and self.pooled is not None:
+                return self.pooled.sign_reading.get(group, Counter())
             return self.sign_reading.get(group, Counter())
 
         # (score, previous_state_index) per candidate at each position.
@@ -579,6 +769,19 @@ class ReadingModel:
                 options = [""]
             next_sign = signs[position + 1] if position + 1 < len(signs) else BOUNDARY
             column: list[tuple[float, int, str]] = []
+            # Which model's statistics score this position. For a "pooled" position
+            # it is the pooled model throughout — emission *and* the three context
+            # terms. Borrowing only the emission does not work: the stage's context
+            # tables were emptied by the same filter, so they charge every pooled
+            # reading the unseen-reading rate and the stage's own singletons win the
+            # position back (measured on the tests below). The pooled counts are a
+            # superset of this model's, so every term is defined for every reading
+            # either model knows.
+            scorer = (
+                self.pooled
+                if sources[position][3] == "pooled" and self.pooled is not None
+                else self
+            )
             for reading in options:
                 # Terms depending only on this position, not on the previous state.
                 # A lexicon group has no corpus context statistics, so only its
@@ -591,6 +794,8 @@ class ReadingModel:
                     emission = log(max(composed[position].get(reading, 0.0), 1e-12))
                 elif kind == "lexicon":
                     emission = self._lexicon_emission(source_group, reading)
+                elif kind == "pooled":
+                    emission = scorer._emission(source_group, reading)
                 elif kind == "none":
                     # One option (''), so this constant cannot change the Viterbi
                     # path or any prediction, only the returned score (A53).
@@ -600,14 +805,14 @@ class ReadingModel:
                 local = (
                     emission_weight * emission
                     + next_sign_weight
-                    * self._next_sign_context(source_group, next_sign, reading)
+                    * scorer._next_sign_context(source_group, next_sign, reading)
                 )
                 if position == 0:
                     score = (
                         local
-                        + transition_weight * self._transition(BOUNDARY, reading)
+                        + transition_weight * scorer._transition(BOUNDARY, reading)
                         + sign_context_weight
-                        * self._sign_context(BOUNDARY, source_group, reading)
+                        * scorer._sign_context(BOUNDARY, source_group, reading)
                     )
                     column.append((score, -1, reading))
                 else:
@@ -621,9 +826,9 @@ class ReadingModel:
                             previous_score
                             + local
                             + transition_weight
-                            * self._transition(previous_reading, reading)
+                            * scorer._transition(previous_reading, reading)
                             + sign_context_weight
-                            * self._sign_context(previous_sign, source_group, reading)
+                            * scorer._sign_context(previous_sign, source_group, reading)
                         )
                         if candidate_score > best_score:
                             best_score = candidate_score
@@ -647,6 +852,17 @@ class ReadingModel:
             counts = counts_for(position)
             total = sum(counts.values()) or 1
             candidates = [(r, n / total) for r, n in counts.most_common(5)]
+            # A tie between readings the corpus has seen once each. `most_common`
+            # orders equal counts arbitrarily, so the list is sorted: which of the
+            # tied readings happens to be printed first must not depend on insertion
+            # order.
+            tied: list[str] = []
+            if counts:
+                top_count = counts.most_common(1)[0][1]
+                if top_count == 1:
+                    tied = sorted(r for r, n in counts.items() if n == top_count)
+                    if len(tied) < 2:
+                        tied = []
             predictions.append(
                 ReadingPrediction(
                     sign=sign,
@@ -672,6 +888,20 @@ class ReadingModel:
                     is_composed=kind == "composed",
                     reading_count=(
                         int(counts.get(reading, 0)) if kind != "composed" else 0
+                    ),
+                    used_pooled_evidence=kind == "pooled",
+                    # The stage's own count, kept beside the pooled one the fields
+                    # above now report, so the UI can say what the filter removed.
+                    stage_attested_count=(
+                        sum(self.sign_reading.get(sign, Counter()).values())
+                        if kind == "pooled"
+                        else 0
+                    ),
+                    tied_singleton_readings=tied,
+                    # Over the full distribution: `total` above is the sum of ALL of
+                    # this group's counts, while `candidates` holds only five.
+                    reading_probability=(
+                        float(counts.get(reading, 0)) / total if counts else 0.0
                     ),
                 )
             )

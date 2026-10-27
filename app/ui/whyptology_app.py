@@ -57,7 +57,7 @@ from app.services.retrieval import (
     retrieve_with_stage,
 )
 from app.services.lexicon import LEXICON_CREDIT, LEXICON_LABEL, load_lexicon
-from app.services.reading_model import train_reading_model
+from app.services.reading_model import NO_READING_MARK, train_reading_model
 from app.services.segmentation import Segmenter, glyph_stream, segment_paste
 from app.services.signs import (
     SEARCH_FOLD_LABEL,
@@ -1399,7 +1399,7 @@ def token_analysis(row: pd.Series) -> pd.DataFrame:
     return table
 
 
-UNREADABLE_MARK = "∅"
+UNREADABLE_MARK = NO_READING_MARK
 
 
 def assembled_reading(predictions) -> str:
@@ -1409,8 +1409,12 @@ def assembled_reading(predictions) -> str:
     already uses — instead of vanishing. Dropping it joined `ḏd`, ``, `=f` into
     `ḏd =f`, a continuous phrase the evidence does not support, and a copied
     reading lost where knowledge ends (Astra #8).
+
+    The placeholder comes from `ReadingPrediction.display_reading` rather than
+    being re-decided here, so every renderer of a prediction marks the same gap the
+    same way.
     """
-    return " ".join(p.predicted or UNREADABLE_MARK for p in predictions)
+    return " ".join(p.display_reading for p in predictions)
 
 
 def prediction_evidence(prediction, model) -> str:
@@ -1420,25 +1424,53 @@ def prediction_evidence(prediction, model) -> str:
     group M×": the group total alone, shown beside the chosen reading, credited a
     minority reading chosen by context with every competing reading's attestations
     (Astra #5).
+
+    Provenance comes first and is never replaced (KRI self-test, 2026-10-26): where
+    a reading came from — this corpus, the external lexicon, a borrowed group, the
+    sign-function list — is the first thing a reader has to know, and a first draft
+    of the tie note below returned before any of it, so a borrowed reading could be
+    presented as though the corpus had attested it. Two qualifications are *appended*
+    to that provenance: that the chosen stage attests this group too thinly to read
+    it so the pooled corpus was used instead, and that the readings are level on
+    attestation counts.
+
+    The tie wording says "tied in attestation counts", not "arbitrary": the counts
+    rank none of them, but the decoder's context scores did choose between them, and
+    telling a reader the choice was a coin flip would understate what the model
+    actually did.
     """
     p = prediction
+    tie = ""
+    if p.is_singleton_tie:
+        others = ", ".join(r for r in p.tied_singleton_readings if r != p.predicted)
+        tie = (
+            f" — tied in attestation counts with {others} "
+            f"({len(p.tied_singleton_readings)} readings, one attestation each); "
+            "the context scores chose between them"
+        )
     if p.is_fallback:
         return (
             f"inferred from {display_sign_group(p.fallback_from)} "
-            f"({p.fallback_similarity:.0%} glyph match)"
+            f"({p.fallback_similarity:.0%} glyph match)" + tie
         )
     # Item C2: composed from the sign-function list, not seen anywhere. Said plainly,
     # because it is the weakest kind of evidence this app ever shows.
     if p.is_composed:
-        return "read sign by sign from the sign-function list — not attested"
+        return "read sign by sign from the sign-function list — not attested" + tie
+    if p.used_pooled_evidence:
+        return (
+            f"all stages: this reading {p.reading_count}×; this group "
+            f"{p.attested_count}× — the chosen stage attests it only "
+            f"{p.stage_attested_count}×" + tie
+        )
     if p.was_seen:
-        return f"this reading {p.reading_count}×; this group {p.attested_count}×"
+        return f"this reading {p.reading_count}×; this group {p.attested_count}×" + tie
     # An attested count from another corpus: real evidence, but not a sentence we can
     # show, and it says so.
     if p.is_lexicon:
         return (
             f"lexicon: this reading {p.reading_count}×; this group "
-            f"{p.lexicon_count}× ({p.lexicon_source}) — no sentence in this corpus"
+            f"{p.lexicon_count}× ({p.lexicon_source}) — no sentence in this corpus" + tie
         )
     # Not attested and too different to borrow from: say what the corpus does hold
     # rather than leaving a dead end.
@@ -2762,10 +2794,16 @@ def render_workspace(df: pd.DataFrame) -> None:
                 )
                 # Runner-up: the reading under the user's own spacing, when its score
                 # is close enough that a specialist might reasonably prefer it.
+                # `0.0 <= gap` is part of the condition, not an assumption: the pasted
+                # grouping is scored by the same objective but is not always inside the
+                # set `segment` optimises over (a cartouche it cuts open scores
+                # `-inf`, and a span past `MAX_GROUP_GLYPHS` was never a candidate), so
+                # a "runner-up" could otherwise be announced as ahead of the reading
+                # actually shown, or at an infinite distance from it.
                 _, hints = glyph_stream(as_pasted)
                 pasted_score = segmenter.score_segmentation(as_pasted, hints)
                 gap = segmentation.score - pasted_score
-                if gap < 8.0:
+                if 0.0 <= gap < 8.0:
                     pasted_reading = assembled_reading(model.predict_sequence(as_pasted))
                     st.caption(
                         f"Runner-up — your spacing as pasted ({gap:.1f} nats behind): "
@@ -2789,6 +2827,14 @@ def render_workspace(df: pd.DataFrame) -> None:
             from_lexicon = [p for p in predictions if p.is_lexicon]
             unreadable = [p for p in unseen if not p.is_borrowed and not p.is_lexicon]
             ambiguous = [p for p in predictions if p.is_ambiguous]
+            # Readings the corpus attests once each and therefore does not rank. The
+            # decode still had to pick one, but the pick is the tie-break's, not the
+            # evidence's, and it must not sit in the line looking as settled as a
+            # group attested hundreds of times (KRI self-test, 2026-10-26).
+            tied = [p for p in predictions if p.is_singleton_tie]
+            # Groups the chosen stage attests too thinly to read, taken from the
+            # pooled corpus instead (ReadingModel.uses_pooled_evidence).
+            pooled_evidence = [p for p in predictions if p.used_pooled_evidence]
 
             # The badge must reflect what the reading is worth: a tick claims every
             # group was attested in THIS corpus, which is false the moment anything
@@ -2797,6 +2843,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                 badge, badge_title = "!", "some sign groups could not be read"
             elif fallbacks:
                 badge, badge_title = "~", "some readings were inferred from similar groups"
+            elif tied:
+                badge, badge_title = (
+                    "≟",
+                    "some groups have several readings attested once each, so the "
+                    "attestation counts do not rank them",
+                )
             elif from_lexicon:
                 badge, badge_title = (
                     "◇",
@@ -2815,6 +2867,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                 f"{len(ambiguous)} multivalent · {len(from_lexicon)} from the lexicon · "
                 f"{len(fallbacks)} inferred from a similar sign · "
                 + (f"{len(composed)} read sign by sign · " if composed else "")
+                + (f"{len(tied)} tied on one attestation · " if tied else "")
+                + (
+                    f"{len(pooled_evidence)} read across all stages · "
+                    if pooled_evidence
+                    else ""
+                )
                 + f"{len(unreadable)} unreadable</div>"
                 "</div>",
                 unsafe_allow_html=True,
@@ -2853,6 +2911,32 @@ def render_workspace(df: pd.DataFrame) -> None:
                     "readings are right roughly a quarter of the time, against about "
                     "89% for attested groups — treat them as leads, not evidence."
                 )
+            if pooled_evidence:
+                st.info(
+                    f"{len(pooled_evidence)} sign group(s) are attested only a handful "
+                    "of times under the chosen language stage but many times in the "
+                    "corpus as a whole, so their reading was taken from the whole "
+                    "corpus rather than from the stage alone. The stage's own count "
+                    "is shown beside each of them."
+                )
+            if tied:
+                st.warning(
+                    f"{len(tied)} sign group(s) have several readings attested exactly "
+                    "once each, so the attestation counts do not rank them. The "
+                    "reading shown was chosen by the context scores alone — read the "
+                    "readings it was level with beside it."
+                )
+                for p in tied:
+                    st.markdown(
+                        f"- **{md_escape(display_sign_group(p.sign))}** — "
+                        f"{md_code(p.display_reading)}, tied in attestation counts "
+                        "with "
+                        + ", ".join(
+                            f"*{md_escape(r)}*"
+                            for r in p.tied_singleton_readings
+                            if r != p.predicted
+                        )
+                    )
             if unreadable:
                 st.warning(
                     f"{len(unreadable)} sign group(s) share too little with anything in "
