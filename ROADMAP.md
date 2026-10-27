@@ -2987,6 +2987,38 @@ sha256 `44543932…`).**
 - **Stop rule not triggered** (movers > 0 on every set, by either method). The sets can show the
   effect.
 
+**Notes before step 1 (2026-10-27, after the Opus+Astra review of the F-a commit `f630869`; no
+rule above is changed, no ranker run has been made, held-out 2/3 not yet built).**
+
+- *The same-text rule is satisfied but has no effect outside BBAW.* In the corpus (130,472
+  rows) `source_text_id` is unique per row for TLA (28,369 ids / 28,369 rows), AES (9,823 /
+  9,823) and Ramses (40,064 / 40,064); BBAW has one id for 52,216 rows. So "disjoint by
+  `source_text_id`" removes only the target row itself for TLA/AES/Ramses, and only the BBAW
+  ±20 window removes neighbours. Decision: the frozen rule is kept as written (option (a) of
+  the review; tightening it would be an amendment). The build log reports, as diagnostics that
+  are not rules, how many held-out 2/3 rows share an AES text (`#text=` in `source_ref`) or lie
+  within ±20 lines of the same Ramses passage as a row of another set. The report states this
+  as a limitation: held-out 2/3 are row-, twin- and BBAW-window-disjoint, not text-disjoint for
+  AES and Ramses.
+- *F-a and the fuzzy signal (interpretation, recorded before measurement).* Rule (i) makes a
+  token *match* only on equal faithful keys; it is implemented that way (token overlap,
+  IDF overlap, TF-IDF and exact match on faithful keys). The character-level fuzzy score is not
+  a token match; under F-a it is computed on the faithful strings, so `ḥtp` against `htp` is a
+  one-letter difference (0.667), treated exactly as today's code treats any other one-letter
+  neighbour (`htp` / `htw`), including the `fuzzy_score >= 0.6` evidence floor. Excluding such
+  rows would add a rule the definition does not contain ("Nothing else changes"), so it is not
+  done. The report lists, for the movers, rows admitted to F-a's pool by fuzzy or TF-IDF alone
+  with zero faithful token overlap.
+- *F-a also re-splits tokens.* The faithful key is the `unfolded_reading_form` piece on both
+  sides, so `ꜥḥꜥ.n sḏm=f` is keyed `ꜥḥꜥ n sḏm f` where today's search key is `ahan sdjm f`. Part
+  of any F-a effect can come from re-segmentation (`.n`, `=f`, hyphens), not from the ꜣ/ꜥ, ḫ/ẖ,
+  ḥ/h distinction; the report says so and does not attribute a gain to notation alone.
+- *Runtime.* With the switch on, every per-query pooled build also tokenises the ~130k faithful
+  keys and builds a second n-gram index, so the `fa` arm is slower than `base`; the ~15 h
+  estimate above is a floor. Start early, nothing else on the Mac.
+- *Switch override.* `WHYPTOLOGY_EXP3_FA` is read in production code; the run script refuses to
+  start while it is set. It is removed (or made test-only) when the experiment closes.
+
 **Next:** the reviewed revision is committed (done, see Order); then step 1 (held-out 2 and 3,
 with faithful columns); then one overnight run of both arms with the pinned commands (`base`:
 the new baseline on stored and faithful variants of all five sets, both pools, NAME-v1
