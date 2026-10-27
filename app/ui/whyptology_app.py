@@ -2602,6 +2602,8 @@ def render_workspace(df: pd.DataFrame) -> None:
                     query_reading_order=reading_order,
                     top_n=settings.top_k,
                     query_hieroglyphs=regrouped or "",
+                    # Read only under Experiment 3's F-a switch (off by default).
+                    query_notation=searched.notation,
                 )
             # No st.rerun(): rerunning doubled the cost of every search. But the
             # tabs below read `results`/`suggestions`, which were captured from

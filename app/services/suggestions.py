@@ -11,6 +11,7 @@ from math import sqrt
 import pandas as pd
 
 from app.data.query import parse_query
+from app.services.faithful import applies_to, faithful_search_enabled
 from app.data.normalizer import (
     PARENTHESISED_YOD_RE,
     drop_superfluous_text,
@@ -788,6 +789,7 @@ def suggest_top_readings(
     query_hieroglyphs: str = "",
     debug_signals: list[dict] | None = None,
     query_raw: str | None = None,
+    query_notation: str | None = None,
 ) -> list[ReadingSuggestion]:
     """Group the retrieved rows by reading and rank the readings.
 
@@ -826,6 +828,13 @@ def suggest_top_readings(
     is a read-only observation hook for Experiment 2's pre-check: nothing is read
     back from it, no branch depends on it, and with the default `None` not a single
     statement of the ranking path changes.
+
+    `query_notation` is `parse_query(query_raw, vocabulary=<corpus vocabulary>)
+    .notation`, as the caller's retrieval decided it. It is read only by Experiment
+    3's configuration F-a (`app.services.faithful`, off by default): with the switch
+    on, a `unicode` query is compared in `strict` mode as a whole, every word by its
+    faithful form, instead of A54's per-word decision. Without it the notation is
+    parsed here from the typed query with no vocabulary.
     """
     # The lossy ASCII fold may only stand in for letters the user did not type: it
     # is decided on the query as typed (`query_raw`, or `query_mdc` itself when the
@@ -840,11 +849,16 @@ def suggest_top_readings(
     # Unicode query comes back unchanged.
     query_mdc = parse_query(query_mdc).reading or query_mdc
     # For a hieroglyph query the text signals are not live, so it keeps the old path.
-    forms = (
-        QueryForms("loose", loose_reading_form(query_mdc))
-        if query_hieroglyphs
-        else QueryForms.build(query_mdc, typed)
-    )
+    if query_hieroglyphs:
+        forms = QueryForms("loose", loose_reading_form(query_mdc))
+    elif faithful_search_enabled() and applies_to(
+        query_notation if query_notation is not None else parse_query(typed).notation
+    ):
+        # Experiment 3, F-a: the whole query compared as written (frozen definition,
+        # ROADMAP addendum 2026-10-26); `carry_forward_idf` is then never taken.
+        forms = QueryForms("strict", unfolded_reading_form(query_mdc))
+    else:
+        forms = QueryForms.build(query_mdc, typed)
 
     if retrieval_results.empty:
         return []
