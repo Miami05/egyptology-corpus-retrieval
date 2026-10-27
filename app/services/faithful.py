@@ -33,7 +33,7 @@ import os
 import pandas as pd
 
 # Flipped to True only by the F-a arm commit of the Experiment 3 run (see above).
-EXP3_FA_DEFAULT = False
+EXP3_FA_DEFAULT = True
 EXP3_FA_ENV = "WHYPTOLOGY_EXP3_FA"
 
 # The corpus-side faithful key per row. Computed only when F-a is on; a caller that
