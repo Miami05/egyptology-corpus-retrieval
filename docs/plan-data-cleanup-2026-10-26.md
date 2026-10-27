@@ -582,7 +582,15 @@ The twin inventory may only shrink, and only by ids in R.
 `verify_release.py --skip-tests` is run. A code change during the run ends the run (as (A)
 A2.9/A3).
 
-Effort: ~1 h to write, ~4 h compute overnight (three corpora), ~½ day results note.
+Effort: ~1 h to write, ~½ day results note. **Compute: budget a full night and plan for a
+second one** (the earlier "~4 h overnight" was wrong). Measured 2026-10-26: the
+pre-registered regression run's 15 competitive runs — one corpus, the same T×3/C/L shape
+this part runs three times — took about **11 h 40 min** in attempt 2 against about **2 h**
+in attempt 1 for byte-identical outputs (contention or throttling suspected, not measured;
+see the "Runtime observed 2026-10-26" addendum in `docs/remeasure-preregistration-2026-10-25.md`).
+Three corpora at the fast rate is ~6 h; at the slow rate it does not fit in one night. Start
+the session early, do not schedule the review for the next morning, and accept that a
+restart costs another full run — the 1.7 step 4 rule allows no partial re-run.
 
 ---
 
@@ -719,7 +727,9 @@ applies. Hard gates are unchanged: paste 8/8, Urk. IV gate, Demotic 0/200. The t
 inventory diff lists any UD row that twins a benchmark target (expected 0 after rule 6).
 
 Effort: script + tests ½ day; conversion check + review ½ day; docs/credits 2 h; re-measure
-overnight + ½ day.
+overnight + ½ day — with the same caveat as part 2: measured on 2026-10-26, one corpus's
+15 competitive runs took between ~2 h and ~11 h 40 min for identical work, so "overnight"
+is a floor, not a plan.
 
 ---
 
@@ -956,7 +966,7 @@ baseline named.
 | 1 | `--donor-output` + inventory 1.1a (stop rules) → merge script → candidates N, M → report | 1.0b | ~1½ days | — |
 | 4a | Predicate spec + seeds now; checker on a dev fixture in parallel; holdout drawn before the part 3 filter; gate fixture drawn, adjudicated and frozen on G (part 3 commit), then gates | spec: 0; holdout: before 3's filter; gate: 3 committed | 1½ days | Opus + Astra adjudicate |
 | 1r | Report review, BBAW `_` strata, exceptions frozen | 1 | ½ day | Opus + Astra; **Ledio** approves |
-| 2 | Pre-reg + regression O / M / N on candidates | 1r | 1 h + overnight + ½ day | — |
+| 2 | Pre-reg + regression O / M / N on candidates | 1r | 1 h + 1–2 nights compute (observed 2026-10-26: ~2 h to ~11 h 40 min per corpus run set) + ½ day | — |
 | 1s | Pause saving, snapshot2 re-check, commit, deploy, refresh, live check, restore key | 2 passes | ½ day | **Ledio**: server env, sudo |
 | 3 | UD exporter columns, PT admission (rules 1–7) + its re-measure (before its deploy) | 1s, 4a holdout | ~2 days | **Nederhof**: only if conversion check fails |
 | 4c | Email to Camilla | any time | 15 min | **Ledio** sends; **Camilla** supplies passages |
@@ -971,3 +981,19 @@ Expert answers that can change this plan:
 * Nederhof: Old Egyptian as its own stage.
 
 None blocks parts 1–3. Each would be its own later item.
+
+---
+
+## Addendum 2026-10-26: §4a `signs` as implemented (appended; nothing above is edited)
+
+*From the Opus + Astra review of the KRI tooling branch, before any gate fixture or
+KRI run.* §4a defines `signs` as "the same definition as `glyph_key` in
+`import_ud_egyptian_pc.py`, imported, not re-written". The checker and the frozen
+B-freq baseline both use **`scripts.bfreq_baseline.sign_key`**, which is that
+imported `glyph_key` applied after the app's `normalize_hieroglyphs` (so a variant
+codepoint such as TLA's Z15B matches the corpus's Z2). Both reviewers accepted this as
+an explicit protocol amendment: it errs toward finding overlap, and any C2/P3 hit
+that needed the normalisation is marked `normalised-only` in the report. **The gate
+fixture's independent adjudicators must use `sign_key` too**, or their C2/P3 tables
+will disagree with the checker on variant codepoints and rows will be dropped for
+that reason alone. Details: `docs/kri-official-test-tooling-2026-10-26.md`.

@@ -7,6 +7,12 @@
 # /home/ledio/egyptology.env. Without it the request goes to https://ntfy.sh/ and fails,
 # which shows up in `journalctl --user -u 'egyptology-notify@*'`.
 #
+# NOT INSTALLED. Checked read-only on the box on 2026-10-26: ~/.config/systemd/user holds
+# only egyptology.service and egyptology-backup.{service,timer} (plus two .bak-2026-09-05*
+# copies). Neither installed unit has an OnFailure= line, so nothing would call this unit
+# even if it were copied over. The A46 reconciliation of the other three files therefore
+# left this one alone: there is no installed version to copy, and it is still a design.
+#
 # GUESSED: the whole command line (ntfy.sh is the planned channel, not a decision), and
 # that curl lives at /usr/bin/curl.
 # Test: systemctl --user start egyptology-notify@test.service

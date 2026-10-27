@@ -1,0 +1,11 @@
+stratum,line_id,transliteration,hieroglyphs,expected_label,expected_predicates,witness_key,max_jaccard,corpus_sha,private_sha
+exact copy,DEV_01,ꞽri̯.n=f m mn.w=f n ꞽt=f,𓀀𓁐𓂀𓃀,contained,C1 C2 C3 C4 P2 P3,G/TLA:TLA_1,1.0000,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+same signs,DEV_02,zḫꜣ.w nḫt wr,𓄿𓅐𓆑𓇋𓈖,contained,C2 P3,G/Ramses:RAM_2,,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+edited sentence,DEV_03,nfr ḥtp nswt nṯr pr sn mn wꜣḥ ḫpr bꜣk,,contained,C3 P2,G/TLA:TLA_6,0.8182,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+line inside a row,DEV_04,snb ḥr nswt,,contained,C4 P2,G/BBAW:BBAW_4,0.2308,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+shared tokens,DEV_05,nfr nswt pr mn ḫpr ḏd bꜣk,,partial,P1,G/TLA:TLA_6,0.5455,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+shared word run,DEV_06,snb ḥr nswt bꜣk ꞽm bnr ḥw sḫt ḏw ꞽwn,,partial,P2,G/BBAW:BBAW_4,0.1500,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+shared trigrams,DEV_07,bnr ḥw sḫt,𓄿𓅐𓆑𓇋,partial,P3,G/Ramses:RAM_2,0.0000,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+negative,DEV_08,bꜣk ꞽm bnr,,new,,,0.0000,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+edge J = 0.50,DEV_09,nfr nṯr pr mn ḫpr,,partial,P1,G/TLA:TLA_6,0.5000,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
+edge J = 0.70,DEV_10,nfr ḥtp nṯr pr mn wꜣḥ ḏd,,contained,C3,G/TLA:TLA_6,0.7000,454a04cb3bbf73abf9693f9dfa410f9df7e72b2bc6a12773db8a2e3c85008560,
