@@ -399,6 +399,60 @@ QUADRAT_BRACKETS: dict[int, int] = {
     0x1343E: 0x1343F,  # begin/end walled enclosure
 }
 _QUADRAT_CLOSERS = {close: open_ for open_, close in QUADRAT_BRACKETS.items()}
+
+# The cartouche written with *signs* instead of the enclosure controls above:
+# V011A (U+13379) opens it, V011B (U+1337A) closes it. These survive
+# `normalize_hieroglyphs` — they are ordinary signs to every character class here —
+# so they reach the segmenter, which until now was free to cut between them.
+#
+# What the corpus does (data/processed/examples.csv, 130,472 rows, checked
+# 2026-10-26): 1,305 rows carry one of the two signs; 1,841 sign groups contain a
+# matched V011A…V011B pair, against 13 groups holding only one half of a pair, and
+# only 5 rows split a cartouche across two groups. 0 groups have them out of order.
+# So "a cartouche is one sign group" is what the data says, at 99.3% of the groups
+# that contain either sign, and `app.services.segmentation` enforces it.
+CARTOUCHE_OPEN_SIGN = 0x13379
+CARTOUCHE_CLOSE_SIGN = 0x1337A
+
+
+def cartouche_spans(stream: str) -> list[tuple[int, int]]:
+    """Outermost matched cartouche spans in a glyph stream, as half-open `(start, end)`.
+
+    `start` indexes the opening V011A and `end` is one past the closing V011B, so
+    the boundary positions *inside* the cartouche are `range(start + 1, end)` in the
+    indexing `app.services.segmentation.glyph_stream` uses. A closing sign with no
+    opener is ignored: an unmatched half is not structure anybody can trust (the same
+    rule `quadrat_hints` applies to the enclosure controls).
+
+    Matching is by stack, and an unclosed opener is simply left on it. Counting
+    nesting *depth* instead looked equivalent and was not: it reported a span only
+    where the depth returned to zero, so a stray opener earlier in the line
+    suppressed every complete cartouche after it — `OPEN A OPEN B CLOSE` found
+    nothing at all, and in `OPEN OPEN X CLOSE` the one pair that genuinely closes was
+    lost. Both shapes occur: the corpus holds 13 groups carrying one half of a pair.
+
+    Of the pairs that do close, one enclosed by another is dropped, so the result is
+    the outermost completed pairs and the spans never overlap. The returned spans are
+    in order of their opening sign.
+    """
+    completed: list[tuple[int, int]] = []
+    stack: list[int] = []
+    for position, char in enumerate(stream):
+        code = ord(char)
+        if code == CARTOUCHE_OPEN_SIGN:
+            stack.append(position)
+        elif code == CARTOUCHE_CLOSE_SIGN and stack:
+            completed.append((stack.pop(), position + 1))
+    spans = [
+        (start, end)
+        for start, end in completed
+        if not any(
+            other_start <= start and end <= other_end and (other_start, other_end) != (start, end)
+            for other_start, other_end in completed
+        )
+    ]
+    spans.sort()
+    return spans
 FORMAT_CONTROL_RE = re.compile(f"[{FORMAT_CONTROL_CLASS}]")
 # The same three rules as `normalize_hieroglyphs`, but with the format controls
 # treated as part of a sign group instead of deleted, so their position survives.

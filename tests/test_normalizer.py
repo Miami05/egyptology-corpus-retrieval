@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.data.normalizer import (
+    cartouche_spans,
     contains_hieroglyphs,
     fold_plural_marker,
     normalize_hieroglyphs,
@@ -83,3 +84,58 @@ def test_plural_marker_not_folded_when_followed_by_a_letter():
 def test_normalize_transliteration_folds_plural_marker():
     assert normalize_transliteration("nṯr.PL") == "ntjr.w"
     assert normalize_transliteration("sr.w.PL") == "sr.w"
+
+
+# ---------- cartouche spans (KRI self-test, 2026-10-26) ----------
+
+# V011A and V011B, the cartouche written as signs rather than as the Unicode
+# enclosure controls. Public-corpus spelling: 𓍹𓃹𓈖𓇋𓋴𓍺, the name Wnjs.
+CARTOUCHE_OPEN = "\U00013379"
+CARTOUCHE_CLOSE = "\U0001337A"
+WNIS = CARTOUCHE_OPEN + "𓃹𓈖𓇋𓋴" + CARTOUCHE_CLOSE
+
+
+def test_cartouche_spans_finds_a_matched_pair():
+    assert cartouche_spans(WNIS) == [(0, 6)]
+
+
+def test_cartouche_spans_reports_position_within_a_longer_stream():
+    assert cartouche_spans("𓋹𓍑" + WNIS + "𓊹") == [(2, 8)]
+
+
+def test_cartouche_spans_finds_each_of_two_cartouches():
+    assert cartouche_spans(WNIS + WNIS) == [(0, 6), (6, 12)]
+
+
+def test_cartouche_spans_ignores_an_unmatched_half():
+    assert cartouche_spans(CARTOUCHE_OPEN + "𓃹𓈖") == []
+    assert cartouche_spans("𓃹𓈖" + CARTOUCHE_CLOSE) == []
+
+
+def test_cartouche_spans_reports_the_outermost_pair_when_both_close():
+    nested = CARTOUCHE_OPEN + CARTOUCHE_OPEN + "𓃹" + CARTOUCHE_CLOSE + CARTOUCHE_CLOSE
+    assert cartouche_spans(nested) == [(0, 5)]
+
+
+def test_cartouche_spans_takes_the_pair_that_closes_when_an_opener_is_stray():
+    # OPEN OPEN X CLOSE: only the inner pair is complete, and it is the structure.
+    # Counting nesting depth lost it, because the depth never returned to zero.
+    stray = CARTOUCHE_OPEN + CARTOUCHE_OPEN + "𓃹" + CARTOUCHE_CLOSE
+    assert cartouche_spans(stray) == [(1, 4)]
+
+
+def test_a_stray_opener_does_not_suppress_a_later_complete_cartouche():
+    stream = CARTOUCHE_OPEN + "𓋹" + WNIS
+    assert cartouche_spans(stream) == [(2, 8)]
+
+
+def test_cartouche_spans_of_a_cartouche_longer_than_the_segmenter_window():
+    # 12 signs inside: longer than segmentation.MAX_GROUP_GLYPHS, which is why
+    # `Segmenter.segment` offers the span explicitly rather than relying on its
+    # sliding window.
+    long_name = CARTOUCHE_OPEN + "𓃹𓈖𓇋𓋴" * 3 + CARTOUCHE_CLOSE
+    assert cartouche_spans(long_name) == [(0, 14)]
+
+
+def test_cartouche_spans_empty_stream():
+    assert cartouche_spans("") == []

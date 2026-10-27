@@ -16,6 +16,7 @@ from app.data.normalizer import normalize_hieroglyphs
 from app.services.reading_model import glyph_similarity, train_reading_model
 from app.services.segmentation import (
     DEFAULT_SEGMENTATION_WEIGHTS,
+    MAX_GROUP_GLYPHS,
     Segmenter,
     glyph_stream,
 )
@@ -290,3 +291,177 @@ def test_attested_group_reports_no_neighbours():
 def test_group_sharing_nothing_reports_nothing():
     model = train_reading_model(corpus([("AB", "x")] * 3))
     assert model.related_attested_groups("ZZ") == []
+
+
+# ---------- a cartouche is one sign group (KRI self-test, 2026-10-26) ----------
+
+# V011A / V011B, the cartouche written as signs. In data/processed/examples.csv
+# 1,841 sign groups contain a matched pair and only 13 hold one half on its own, so
+# "the cartouche is the group" is the rule the corpus supports; see
+# `app.data.normalizer.cartouche_spans`.
+CARTOUCHE_OPEN = "\U00013379"
+CARTOUCHE_CLOSE = "\U0001337A"
+
+
+def cartouche_corpus() -> pd.DataFrame:
+    """A corpus that attests the pieces of a royal name but never the name itself.
+
+    Exactly the trap the self-test fell into: every fragment is a common attested
+    group, the corpus has seen boundaries between all four of them, and the name as
+    a whole it has never seen — so a lattice free to cut inside the cartouche
+    prefers four cheap known groups to one expensive unknown one. The two fragments
+    carrying a cartouche sign are then unreadable as a name, and it leaves the
+    reading entirely.
+    """
+    return pd.concat(
+        [
+            corpus(
+                [(f"{CARTOUCHE_OPEN} A B {CARTOUCHE_CLOSE}", "open a b close")],
+                repeat=200,
+            ),
+            corpus([("A B", "a b")], repeat=200),
+            filler(),
+        ],
+        ignore_index=True,
+    )
+
+
+def test_cartouche_is_kept_whole_even_when_its_pieces_are_attested():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment([name]).groups == [name]
+
+
+def test_cartouche_is_kept_whole_across_the_pastes_own_spaces():
+    """The self-test's shape: the paste spaces the name by quadrat, not by word."""
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    result = seg.segment([CARTOUCHE_OPEN + "A", "B" + CARTOUCHE_CLOSE])
+    assert result.groups == [name]
+
+
+def test_signs_outside_a_cartouche_are_still_segmented_normally():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment(["AB" + name + "AB"]).groups == ["A", "B", name, "A", "B"]
+
+
+def test_an_unmatched_cartouche_sign_constrains_nothing():
+    # One half of a pair is not structure: the lattice segments as it always did,
+    # which here means splitting into the attested groups.
+    seg = segmenter(cartouche_corpus())
+    assert seg.segment([CARTOUCHE_OPEN + "AB"]).groups == [CARTOUCHE_OPEN, "A", "B"]
+
+
+def test_the_constraint_is_what_keeps_the_cartouche_whole(monkeypatch):
+    """The same lattice, with the constraint removed, cuts the name into four.
+
+    Pins what the fix is doing rather than only that the result is now right: with
+    `cartouche_spans` reporting nothing, nothing else in the objective keeps this
+    name together.
+    """
+    import app.services.segmentation as segmentation_module
+
+    monkeypatch.setattr(segmentation_module, "cartouche_spans", lambda stream: [])
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    assert seg.segment([name]).groups == [
+        CARTOUCHE_OPEN,
+        "A",
+        "B",
+        CARTOUCHE_CLOSE,
+    ]
+
+
+def test_score_segmentation_refuses_a_grouping_that_cuts_a_cartouche():
+    """The scorer and the optimiser must agree on what is a legal segmentation.
+
+    `score_segmentation` ranks a grouping `segment` never proposed — the user's own
+    spacing, for the runner-up line. Without the same constraint, a split through a
+    cartouche scored *higher* than the constrained optimum and would be offered as a
+    better reading the app had declined to give.
+    """
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    chosen = seg.segment([name])
+    _stream, hints = glyph_stream([name])
+    split = [CARTOUCHE_OPEN, "A", "B", CARTOUCHE_CLOSE]
+    assert seg.score_segmentation(split, hints) == float("-inf")
+    # And the grouping it did choose is still scored by the ordinary objective.
+    assert seg.score_segmentation(chosen.groups, hints) == pytest.approx(chosen.score)
+
+
+def test_score_segmentation_still_scores_a_cut_outside_the_cartouche():
+    seg = segmenter(cartouche_corpus())
+    name = CARTOUCHE_OPEN + "AB" + CARTOUCHE_CLOSE
+    groups = ["A", name, "B"]
+    _stream, hints = glyph_stream(["A" + name + "B"])
+    assert seg.score_segmentation(groups, hints) > float("-inf")
+
+
+def test_a_cartouche_longer_than_the_window_is_still_kept_whole():
+    """`MAX_GROUP_GLYPHS` is 10; this name is 14 signs including its brackets.
+
+    The sliding window never offers a span that long, so `segment` has to offer the
+    cartouche explicitly — otherwise the constraint would leave no path at all.
+    """
+    long_name = CARTOUCHE_OPEN + "AB" * 6 + CARTOUCHE_CLOSE
+    assert len(long_name) > MAX_GROUP_GLYPHS
+    seg = segmenter(cartouche_corpus())
+    assert seg.segment([long_name]).groups == [long_name]
+    assert seg.segment([CARTOUCHE_OPEN + "AB", "AB" * 5 + CARTOUCHE_CLOSE]).groups == [
+        long_name
+    ]
+
+
+# ---------- a long cartouche counts as one unit of the window (KRI fixes, 2026-10-27) ----
+#
+# Attempt 1 of the KRI-fixes measurement failed rule (c) by one boundary error, and both
+# independent diagnoses traced it to the candidate window, not to the rule. The window
+# measured `max_group_glyphs` in raw glyphs, the constraint forbids every start inside a
+# cartouche, and the only escape offered the span that is *exactly* the cartouche. So a
+# group holding a long cartouche plus one sign on either side was never a candidate,
+# and every path had to cut at the cartouche's edge even where the objective prefers no
+# cut: `segment` returned a grouping that `score_segmentation`, the same objective,
+# ranks below another legal grouping. These tests are synthetic on purpose — the rule is
+# general, not tuned to the line that exposed it.
+
+
+@pytest.mark.parametrize("payload_length", [9, 10, 13])
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_long_cartouche_does_not_force_an_edge_cut(payload_length, side):
+    """Every span is unattested, so the per-glyph cost of any grouping is the same and
+    an extra cut only pays log P(cut) = log 0.25 against log P(no cut) = log 0.75. The
+    whole line as one group is therefore the optimum, and `segment` must find it."""
+    from app.services.boundary_model import BoundaryModel
+    from app.services.reading_model import ReadingModel
+
+    seg = Segmenter(
+        ReadingModel(),
+        use_lexicon=False,
+        boundary_model=BoundaryModel(prior=0.25, use_class_backoff=False),
+    )
+    name = CARTOUCHE_OPEN + "A" * payload_length + CARTOUCHE_CLOSE
+    stream = "Z" + name if side == "left" else name + "Z"
+    result = seg.segment([stream])
+    assert result.groups == [stream]
+    assert result.score == pytest.approx(seg.score_segmentation([stream], set()))
+
+
+def test_a_long_cartouche_does_not_force_a_cut_at_its_closing_edge():
+    """On an attested corpus: the optimiser must never return less than the objective's
+    own score of a legal grouping it could have proposed."""
+    df = pd.concat([cartouche_corpus(), corpus([("Q", "q")])], ignore_index=True)
+    seg = segmenter(df, boundary_model=NO_BOUNDARY_TERM)
+    line = CARTOUCHE_OPEN + "AB" * 6 + CARTOUCHE_CLOSE + "Q"  # 15 glyphs > window
+    result = seg.segment([line])
+    assert result.score >= seg.score_segmentation([line], set()) - 1e-9
+    assert result.groups == [line]
+
+
+def test_the_cartouche_window_changes_nothing_without_a_cartouche():
+    """With no matched pair in the stream the window is the raw-glyph window it always
+    was, so every line without a cartouche segments exactly as before."""
+    seg = segmenter(cartouche_corpus())
+    stream = "AB" * 12
+    assert seg.segment([stream]).groups == ["A", "B"] * 12

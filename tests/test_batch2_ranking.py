@@ -169,7 +169,7 @@ class _RecordingModel:
     def __init__(self) -> None:
         self.seen: list[list[str]] = []
 
-    def predict_sequence_scored(self, groups, use_lexicon=False):
+    def predict_sequence_scored(self, groups, use_lexicon=False, use_pooled_fallback=None):
         self.seen.append(list(groups))
         return [], -float(len(groups))
 
@@ -232,9 +232,15 @@ def test_pastes_without_controls_choose_exactly_as_before(paste: str, monkeypatc
         class Wrapped:
             sentences_seen = model.sentences_seen
 
-            def predict_sequence_scored(self, groups, use_lexicon=False):
+            def predict_sequence_scored(
+                self, groups, use_lexicon=False, use_pooled_fallback=None
+            ):
                 recorded.append(list(groups))
-                return model.predict_sequence_scored(groups, use_lexicon=use_lexicon)
+                return model.predict_sequence_scored(
+                    groups,
+                    use_lexicon=use_lexicon,
+                    use_pooled_fallback=use_pooled_fallback,
+                )
 
         return SimpleNamespace(
             segmenter=resources.segmenter,

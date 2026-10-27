@@ -688,3 +688,175 @@ def test_choose_stage_by_likelihood_empty_paste_returns_none_and_no_scores():
     df = _likelihood_corpus()
     resources_by_stage = _likelihood_resources_by_stage(df)
     assert choose_stage_by_likelihood("", resources_by_stage) == (None, {})
+
+
+# ---------- pooled evidence for a stage-emptied group (KRI self-test, 2026-10-26) ----------
+
+
+def _stage_emptied_corpus() -> pd.DataFrame:
+    """'H' read 'haw' in 34 Late Egyptian rows, and once each in three others.
+
+    The shape traced on the self-test material: restricted to Earlier Egyptian the
+    group keeps three readings attested once apiece, ties them, and the tie-break
+    decides. Restricted to Earlier Egyptian the commonest reading is simply gone.
+    """
+    rows = [
+        {
+            "hieroglyphs_norm": "H",
+            "transliteration_gold": "haw",
+            "language_stage": "Late Egyptian",
+            "source_text_id": f"T{i}",
+            "source_sentence_id": f"S{i}",
+            "mdc_norm": "haw",
+        }
+        for i in range(34)
+    ]
+    rows += [
+        {
+            "hieroglyphs_norm": "H",
+            "transliteration_gold": reading,
+            "language_stage": "Earlier Egyptian",
+            "source_text_id": f"E{i}",
+            "source_sentence_id": f"F{i}",
+            "mdc_norm": reading,
+        }
+        for i, reading in enumerate(("hy", "wsht", "thr"))
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_build_stage_resources_attaches_the_pooled_model_to_a_stage_model():
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    assert resources.reading_model.pooled is not None
+    assert resources.reading_model.uses_pooled_evidence("H") is True
+
+
+def test_build_stage_resources_pooled_model_is_its_own_evidence():
+    df = _stage_emptied_corpus()
+    assert build_stage_resources(df, None).reading_model.pooled is None
+
+
+def test_a_stage_model_does_not_read_pooled_by_default():
+    """Rule (b)(2), KRI-fixes attempt 1 (DISABLE): the production stage model keeps the
+    pooled model attached, but a default decode does not use it."""
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    prediction = resources.reading_model.predict_sequence(["H"])[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.is_singleton_tie is True
+
+
+def test_a_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
+    df = _stage_emptied_corpus()
+    resources = build_stage_resources(df, "Earlier Egyptian")
+    prediction = resources.reading_model.predict_sequence(
+        ["H"], use_pooled_fallback=True
+    )[0]
+    assert prediction.used_pooled_evidence is True
+    assert prediction.predicted == "haw"
+    assert prediction.stage_attested_count == 3
+    assert prediction.is_singleton_tie is False
+
+
+def test_the_stage_router_does_not_see_the_pooled_fallback():
+    """The per-group evidence rule must not move the stage decision itself.
+
+    `choose_stage_by_likelihood` decodes with `use_pooled_fallback=False`, so the
+    Earlier Egyptian model still scores this paste on its own three singletons. The
+    per-stage likelihoods are the same with and without a pooled model attached.
+    """
+    # Real hieroglyphs (review fix, 2026-10-26): the router normalises its paste, and
+    # an ASCII "H" normalises to nothing, so the earlier version of this test compared
+    # two empty score dicts and passed whatever the router did.
+    df = _stage_emptied_corpus().replace({"hieroglyphs_norm": {"H": ROUTER_SIGN}})
+    cache: dict[str | None, object] = {}
+
+    def resources_by_stage(stage):
+        if stage not in cache:
+            cache[stage] = build_stage_resources(df, stage, use_lexicon=False)
+        return cache[stage]
+
+    assert resources_by_stage("Earlier Egyptian").reading_model.uses_pooled_evidence(
+        ROUTER_SIGN
+    )
+    _stage, with_pooled = choose_stage_by_likelihood(ROUTER_SIGN, resources_by_stage)
+    # Both stages that attest the sign were actually scored.
+    assert set(with_pooled) == {"Earlier Egyptian", "Late Egyptian"}
+
+    for stage, resources in cache.items():
+        resources.reading_model.pooled = None
+    cache_without = dict(cache)
+    _stage2, without_pooled = choose_stage_by_likelihood(
+        ROUTER_SIGN, lambda stage: cache_without[stage]
+    )
+    assert with_pooled == without_pooled
+
+
+# A real sign for the router test above: normalisation keeps it.
+ROUTER_SIGN = "𓆓"
+
+
+# ---------- the cartouche constraint can change routing, through segmentation ----------
+#
+# `choose_stage_by_likelihood` segments once, with the pooled segmenter, and scores
+# that one segmentation under each stage. The cartouche constraint lives in the
+# segmenter, so it can change the groups, and therefore each stage's attested
+# coverage, and therefore the stage. The *rule* is untouched; its input is not.
+
+CARTOUCHE_OPEN = "\U00013379"
+CARTOUCHE_CLOSE = "\U0001337A"
+CARTOUCHE_NAME = CARTOUCHE_OPEN + "𓃹𓈖" + CARTOUCHE_CLOSE
+
+
+def _cartouche_routing_corpus() -> pd.DataFrame:
+    """Earlier Egyptian knows the pieces of the name; Late Egyptian knows the name.
+
+    So which stage has attested this paste depends entirely on whether the
+    segmenter is allowed to cut the cartouche open.
+    """
+    rows = [
+        {
+            "hieroglyphs_norm": f"{CARTOUCHE_OPEN} 𓃹 𓈖 {CARTOUCHE_CLOSE}",
+            "transliteration_gold": "o w n c",
+            "language_stage": "Earlier Egyptian",
+            "source_text_id": f"EE_{i}",
+            "source_sentence_id": "S0",
+            "mdc_norm": "o w n c",
+        }
+        for i in range(30)
+    ]
+    rows.append(
+        {
+            "hieroglyphs_norm": CARTOUCHE_NAME,
+            "transliteration_gold": "wnjs",
+            "language_stage": "Late Egyptian",
+            "source_text_id": "LE_0",
+            "source_sentence_id": "S0",
+            "mdc_norm": "wnjs",
+        }
+    )
+    return pd.DataFrame(rows)
+
+
+def test_cartouche_constraint_routes_the_paste_to_the_stage_that_attests_the_name():
+    df = _cartouche_routing_corpus()
+    resources_by_stage = _likelihood_resources_by_stage(df)
+    stage, _scores = choose_stage_by_likelihood(CARTOUCHE_NAME, resources_by_stage)
+    assert stage == "Late Egyptian"
+
+
+def test_without_the_constraint_the_same_paste_routes_to_the_other_stage(monkeypatch):
+    """The claim "routing is unchanged" holds only for an unchanged segmentation.
+
+    With `cartouche_spans` reporting nothing the segmenter splits the name into its
+    four attested pieces, Earlier Egyptian attests all four and Late Egyptian none,
+    and the router returns the other stage for the same paste.
+    """
+    import app.services.segmentation as segmentation_module
+
+    monkeypatch.setattr(segmentation_module, "cartouche_spans", lambda stream: [])
+    df = _cartouche_routing_corpus()
+    resources_by_stage = _likelihood_resources_by_stage(df)
+    stage, _scores = choose_stage_by_likelihood(CARTOUCHE_NAME, resources_by_stage)
+    assert stage == "Earlier Egyptian"

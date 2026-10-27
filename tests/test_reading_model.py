@@ -8,8 +8,14 @@ check that context — not just frequency — decides.
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
-from app.services.reading_model import BOUNDARY, train_reading_model
+from app.services.reading_model import (
+    BOUNDARY,
+    NO_READING_MARK,
+    ReadingModel,
+    train_reading_model,
+)
 
 
 def corpus(pairs: list[tuple[str, str]]) -> pd.DataFrame:
@@ -204,3 +210,227 @@ def test_attested_group_is_never_treated_as_fallback():
     prediction = model.predict_sequence(["AB"])[0]
     assert prediction.was_seen is True
     assert prediction.is_fallback is False
+
+
+# ---------- a group with no reading keeps its place (KRI self-test, 2026-10-26) ----------
+
+
+def test_group_with_no_reading_is_an_explicit_placeholder_not_an_empty_string():
+    """An unreadable group must be visible in the result, not joined away.
+
+    The self-test's royal name came back as two groups nothing could read, and a
+    caller joining `p.predicted` dropped them — so the name left the line reading
+    with nothing marking the loss. The placeholder belongs to the prediction, so
+    every renderer marks the same gap the same way.
+    """
+    model = train_reading_model(corpus([("A B", "x y")]))
+    predictions = model.predict_sequence(["A", "Q", "B"])
+    middle = predictions[1]
+    assert middle.predicted == ""
+    assert middle.has_reading is False
+    assert middle.display_reading == NO_READING_MARK
+    assert [p.display_reading for p in predictions] == ["x", NO_READING_MARK, "y"]
+
+
+def test_a_read_group_displays_its_reading_unchanged():
+    model = train_reading_model(corpus([("A", "x")]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert prediction.has_reading is True
+    assert prediction.display_reading == "x"
+
+
+# ---------- a tie on singleton evidence is not a confident reading ----------
+
+
+def test_readings_attested_once_each_are_reported_as_a_tie():
+    """Three readings, one attestation each: the corpus ranks none of them.
+
+    The decode still prints one of them, but `is_singleton_tie` says the choice is
+    the tie-break's rather than the evidence's, and the confidence is discounted so
+    it cannot be read as a measured preference.
+    """
+    model = train_reading_model(corpus([("A", "x"), ("A", "y"), ("A", "z")]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert prediction.was_seen is True
+    assert prediction.is_singleton_tie is True
+    assert prediction.tied_singleton_readings == ["x", "y", "z"]
+    # share 1/3, divided by the three tied readings.
+    assert prediction.confidence == pytest.approx(1 / 9)
+
+
+def test_a_reading_with_real_evidence_is_not_a_tie():
+    model = train_reading_model(corpus([("A", "x"), ("A", "x"), ("A", "y")]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert prediction.is_singleton_tie is False
+    assert prediction.tied_singleton_readings == []
+    assert prediction.confidence == pytest.approx(2 / 3)
+
+
+def test_one_reading_attested_once_is_not_a_tie():
+    model = train_reading_model(corpus([("A", "x")]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert prediction.is_singleton_tie is False
+    assert prediction.confidence == pytest.approx(1.0)
+
+
+# ---------- pooled evidence for a group the stage filter emptied ----------
+
+
+def _stage_emptied_models() -> tuple[ReadingModel, ReadingModel]:
+    """(pooled, stage) models for a group the stage restriction all but empties.
+
+    The shape traced in the KRI self-test: one sign read one way 34 times, every one
+    of those rows belonging to a stage the router did not choose, plus three readings
+    attested once each that survive the restriction.
+    """
+    singletons = [("H", "hy"), ("H", "wsht"), ("H", "thr")]
+    pooled = train_reading_model(corpus([("H", "haw")] * 34 + singletons))
+    stage = train_reading_model(corpus(singletons))
+    return pooled, stage
+
+
+def test_stage_emptied_group_is_read_from_the_pooled_corpus_and_marked():
+    pooled, stage = _stage_emptied_models()
+    before = stage.predict_sequence(["H"])[0]
+    assert before.is_singleton_tie is True
+    assert before.used_pooled_evidence is False
+
+    stage.attach_pooled(pooled)
+    after = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
+    assert after.used_pooled_evidence is True
+    assert after.predicted == "haw"
+    assert after.stage_attested_count == 3
+    assert after.attested_count == 37
+    assert after.reading_count == 34
+    assert after.is_singleton_tie is False
+    # It is still attested here — the pooled corpus IS this corpus, unrestricted.
+    assert after.was_seen is True
+
+
+def test_pooled_fallback_is_off_by_default():
+    """Rule (b)(2) of the KRI-fixes pre-registration: attempt 1 decided DISABLE, so a
+    decode that does not ask for the fallback must not use it, even with a pooled
+    model attached and every POOLED_FALLBACK_* condition met."""
+    from app.services.reading_model import USE_POOLED_FALLBACK_BY_DEFAULT
+
+    assert USE_POOLED_FALLBACK_BY_DEFAULT is False
+    pooled, stage = _stage_emptied_models()
+    stage.attach_pooled(pooled)
+    assert stage.uses_pooled_evidence("H") is True
+    prediction = stage.predict_sequence(["H"])[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.is_singleton_tie is True
+    scored, _ = stage.predict_sequence_scored(["H"])
+    assert scored[0].used_pooled_evidence is False
+
+
+def test_pooled_fallback_can_be_switched_off_per_call():
+    """The stage router decodes with it off, so its decision rule cannot move."""
+    pooled, stage = _stage_emptied_models()
+    stage.attach_pooled(pooled)
+    prediction = stage.predict_sequence(["H"], use_pooled_fallback=False)[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.is_singleton_tie is True
+
+
+def test_pooled_fallback_leaves_a_group_the_stage_attests_well_alone():
+    # 8 attestations in the stage is above POOLED_FALLBACK_MAX_STAGE_COUNT, so the
+    # filter has thinned this group's evidence, not emptied it.
+    pooled = train_reading_model(corpus([("H", "haw")] * 100 + [("H", "hy")] * 8))
+    stage = train_reading_model(corpus([("H", "hy")] * 8))
+    stage.attach_pooled(pooled)
+    prediction = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
+    assert prediction.used_pooled_evidence is False
+    assert prediction.predicted == "hy"
+
+
+def test_pooled_fallback_needs_the_pooled_evidence_to_be_substantial():
+    # Stage 1, pooled 12: clears the ratio but not POOLED_FALLBACK_MIN_POOLED_COUNT.
+    pooled = train_reading_model(corpus([("H", "haw")] * 11 + [("H", "hy")]))
+    stage = train_reading_model(corpus([("H", "hy")]))
+    stage.attach_pooled(pooled)
+    assert stage.uses_pooled_evidence("H") is False
+
+
+def test_pooled_fallback_needs_an_order_of_magnitude_more_pooled_evidence():
+    # Stage 3, pooled 24: clears the minimum count but 24 < 10 x 3.
+    pooled = train_reading_model(
+        corpus([("H", "haw")] * 21 + [("H", "hy"), ("H", "wsht"), ("H", "thr")])
+    )
+    stage = train_reading_model(corpus([("H", "hy"), ("H", "wsht"), ("H", "thr")]))
+    stage.attach_pooled(pooled)
+    assert stage.uses_pooled_evidence("H") is False
+
+
+def test_pooled_fallback_does_not_touch_a_group_the_stage_never_saw():
+    """Stage count 0 keeps its own documented chain (lexicon/compose/borrow)."""
+    pooled = train_reading_model(corpus([("H", "haw")] * 40))
+    stage = train_reading_model(corpus([("A", "x")]))
+    stage.attach_pooled(pooled)
+    assert stage.uses_pooled_evidence("H") is False
+    prediction = stage.predict_sequence(["H"], use_pooled_fallback=True)[0]
+    assert prediction.was_seen is False
+    assert prediction.used_pooled_evidence is False
+
+
+def test_attaching_a_model_to_itself_is_a_no_op():
+    model = train_reading_model(corpus([("A", "x")]))
+    model.attach_pooled(model)
+    assert model.pooled is None
+
+
+def test_confidence_is_about_the_reading_that_was_chosen():
+    """A minority reading chosen by context must not inherit the majority's number.
+
+    'A' is read 'x' three times and 'y' once, but after 'q' the corpus only ever
+    reads it 'y' — so the decoder chooses 'y', whose own share of the group's
+    evidence is 1/4, not 'x''s 3/4.
+    """
+    model = train_reading_model(
+        corpus(
+            [("P A", "p x"), ("P A", "p x"), ("P A", "p x"), ("Q A", "q y")]
+        )
+    )
+    prediction = model.predict_sequence(["Q", "A"])[1]
+    assert prediction.predicted == "y"
+    assert prediction.confidence == pytest.approx(1 / 4)
+
+
+def test_confidence_counts_the_whole_distribution_not_the_displayed_five():
+    """Six readings attested once each: the share is 1/6, not 1/5.
+
+    `candidates` is truncated to five for display. Deriving the confidence from
+    that list made every share too large by the mass the truncation dropped, and
+    the discounted six-way tie came out 1/30 instead of 1/36.
+    """
+    readings = ["r1", "r2", "r3", "r4", "r5", "r6"]
+    model = train_reading_model(corpus([("A", r) for r in readings]))
+    prediction = model.predict_sequence(["A"])[0]
+    assert len(prediction.candidates) == 5
+    assert prediction.tied_singleton_readings == readings
+    assert prediction.reading_probability == pytest.approx(1 / 6)
+    assert prediction.confidence == pytest.approx(1 / 36)
+
+
+def test_confidence_of_a_reading_context_selected_from_outside_the_top_five():
+    """The chosen reading need not be among the five shown; its share is still real.
+
+    'A' has six readings; the rarest is the one the corpus always uses after 'Q', so
+    context selects it. Read off `candidates` its confidence was 0.0 — the reading
+    the app printed was reported as having no evidence at all.
+    """
+    rows = (
+        [("P A", "p x1")] * 5
+        + [("P A", "p x2")] * 4
+        + [("P A", "p x3")] * 3
+        + [("P A", "p x4")] * 2
+        + [("P A", "p x5")] * 2
+        + [("Q A", "q y")]
+    )
+    model = train_reading_model(corpus(rows))
+    prediction = model.predict_sequence(["Q", "A"])[1]
+    assert prediction.predicted == "y"
+    assert "y" not in [r for r, _ in prediction.candidates]
+    assert prediction.is_singleton_tie is False
+    # One attestation of 'y' out of the group's seventeen.
+    assert prediction.confidence == pytest.approx(1 / 17)

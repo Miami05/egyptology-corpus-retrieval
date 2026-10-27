@@ -32,6 +32,13 @@ orders of magnitude, which is exactly what keeps the classifier 𓀀 attached to
 on held-out corpus sentences whose spacing was removed or scrambled; the numbers in
 `DEFAULT_SEGMENTATION_WEIGHTS` are the ones that measured best.
 
+One structure overrides the lattice rather than competing with it: a cartouche is
+one sign group, so no boundary may fall between a matched pair of cartouche signs
+(`Segmenter.segment`; the corpus count behind the rule is on
+`app.data.normalizer.cartouche_spans`). It is a constraint, not a weight, because the
+pieces of a royal name are usually common attested groups while the name as a whole
+is not, so no penalty short of a veto survives the arithmetic.
+
 The segmenter does not read the groups. It hands the chosen groups to
 ReadingModel.predict_sequence, which is unchanged, so the two stages stay inspectable
 on their own.
@@ -44,7 +51,7 @@ from copy import copy
 from dataclasses import dataclass, field
 from math import log
 
-from app.data.normalizer import normalize_hieroglyphs, quadrat_hints
+from app.data.normalizer import cartouche_spans, normalize_hieroglyphs, quadrat_hints
 from app.services.boundary_model import BoundaryModel, fit_boundary_model
 from app.services.reading_model import ReadingModel
 
@@ -208,6 +215,35 @@ class Segmentation:
         return bool(self.crossed_hints or self.inserted_boundaries)
 
 
+def cartouche_constraint(stream: str) -> tuple[set[int], dict[int, int], set[tuple[int, int]]]:
+    """The cartouche rule over one glyph stream, in the form the DP and the scorer use.
+
+    Returns `(forbidden, opening_at, whole)`:
+
+      forbidden    boundary positions strictly inside a cartouche. No group may start
+                   at one, which — the groups being contiguous — also means none may
+                   end at one, so no segmentation may cut a cartouche open.
+      opening_at   span end -> the position of its opening sign, so a cartouche longer
+                   than `max_group_glyphs` can still be offered as a candidate span.
+      whole        the spans themselves, so a span that *is* a cartouche can be exempted
+                   from the unattested-span veto.
+
+    One function because `Segmenter.segment` and `Segmenter.score_segmentation` have to
+    agree about what is a legal segmentation: the second scores a grouping the first
+    never proposed (the user's own spacing, for the runner-up line), and when only the
+    optimiser knew the rule, a grouping that cuts a cartouche could outscore the
+    constrained optimum and be shown as a *better* reading the app had declined.
+    """
+    forbidden: set[int] = set()
+    opening_at: dict[int, int] = {}
+    whole: set[tuple[int, int]] = set()
+    for start, end in cartouche_spans(stream):
+        forbidden.update(range(start + 1, end))
+        opening_at[end] = start
+        whole.add((start, end))
+    return forbidden, opening_at, whole
+
+
 def glyph_stream(groups_as_pasted: list[str]) -> tuple[str, set[int]]:
     """Flatten user groups into one glyph string plus the set of hinted boundaries.
 
@@ -343,6 +379,21 @@ class Segmenter:
         if n == 0:
             return Segmentation(groups=[], score=0.0)
 
+        # A cartouche is one sign group (`normalizer.cartouche_spans`, and the corpus
+        # count quoted there). `inside_cartouche` holds the boundary positions that
+        # would cut inside one; no group may start at one, which — the groups being
+        # contiguous — also means none may end at one. This is a hard constraint, not
+        # a penalty: the corpus writes 1,841 of 1,854 such groups whole, so a cut
+        # inside a cartouche is not a hypothesis worth scoring. Without it the royal
+        # name in the KRI self-test came apart into four groups, two of them unseen
+        # and unreadable, and the king's name left the line reading.
+        #
+        # `cartouche_opening` keeps each span reachable: the candidate window below
+        # counts a whole cartouche as ONE unit, so a cartouche longer than
+        # `max_group_glyphs` — and a group holding it plus signs on either side — is
+        # still offered, and an unattested royal name always has a path through it.
+        inside_cartouche, cartouche_opening, whole_cartouches = cartouche_constraint(stream)
+
         # best[j] = (score, start_of_last_group) for the best segmentation of
         # stream[:j]. best[0] is the empty prefix.
         best: list[tuple[float, int]] = [(float("-inf"), -1)] * (n + 1)
@@ -356,17 +407,37 @@ class Segmenter:
         for j in range(1, n + 1):
             top = float("-inf")
             arg = -1
-            starts = range(max(0, j - self.max_group_glyphs), j)
+            # The window is `max_group_glyphs` units long, where a complete cartouche
+            # is one unit and every other glyph is one unit. Counting raw glyphs (as
+            # before 2026-10-27) made the constraint shrink the set of starts without
+            # giving back the ones it removed: for a group ending just after a long
+            # cartouche the only legal start left was the closing edge, so every path
+            # was forced to cut there even where the objective prefers no cut, and
+            # `segment` returned a grouping `score_segmentation` ranks below a legal
+            # one it never proposed (KRI-fixes attempt 1, rule (c); addendum
+            # 2026-10-27). With no cartouche in the stream this is exactly
+            # `max(0, j - max_group_glyphs)`, so nothing else moves. Starts inside a
+            # cartouche are still skipped below; the weights, the known-long-group
+            # candidates and the hint veto are unchanged.
+            window_start = j
+            for _ in range(self.max_group_glyphs):
+                if window_start <= 0:
+                    break
+                window_start = cartouche_opening.get(window_start, window_start - 1)
+            starts: range | list[int] = range(window_start, j)
+            extra: list[int] = []
             if self._long_lengths:
                 # Known groups longer than the window: one set lookup per length.
-                long_starts = [
+                extra.extend(
                     j - length
                     for length in self._long_lengths
                     if j - length >= 0 and self.is_known(stream[j - length : j])
-                ]
-                if long_starts:
-                    starts = [*long_starts, *starts]
+                )
+            if extra:
+                starts = [*extra, *starts]
             for i in starts:
+                if i in inside_cartouche:
+                    continue
                 prefix_score = best[i][0]
                 if prefix_score == float("-inf"):
                     continue
@@ -379,10 +450,19 @@ class Segmenter:
                     # `unattested_may_cross_hints` (item C1b) the veto is lifted and
                     # the span is merely charged the usual `hint_crossed` per crossed
                     # hint below, plus κ per glyph here.
+                    # One exception: a span that is exactly a cartouche. The veto's
+                    # reasoning is that a made-up span across a user boundary is not
+                    # worth paying for, but the corpus says a cartouche is one group,
+                    # and the paste routinely spaces a royal name by quadrat — so
+                    # here the hypothesis *is* supported, and without this the
+                    # cartouche constraint above could leave the lattice no path at
+                    # all through an unattested royal name. It still pays
+                    # `hint_crossed` per crossed space and κ per glyph below.
                     if (
                         not w.unattested_may_cross_hints
                         and len(span) > 1
                         and any(i < b < j for b in hints)
+                        and (i, j) not in whole_cartouches
                     ):
                         continue
                     group_score = -self.unattested_cost(span)
@@ -442,11 +522,28 @@ class Segmenter:
         no_cut: frozenset[int] | set[int] = frozenset(),
     ) -> float:
         """Score an arbitrary segmentation with the same objective, for comparison
-        (e.g. the user's own spacing against the suggested one)."""
+        (e.g. the user's own spacing against the suggested one).
+
+        `float("-inf")` when the grouping cuts a cartouche open, because that is not a
+        segmentation this objective ranks at all — it is outside the feasible set
+        `segment` optimises over (`cartouche_constraint`). Scoring it as if it were
+        feasible let the user's own spacing come out *ahead* of the constrained
+        optimum, which the UI would then offer as a better reading the app had
+        declined to give. A caller that wants such a grouping anyway is overruling the
+        model by hand, and must say so rather than present a number.
+        """
         w = self.weights
+        stream = "".join(groups)
+        forbidden, _opening, _whole = cartouche_constraint(stream)
+        if forbidden:
+            position = 0
+            for group in groups[:-1]:
+                position += len(group)
+                if position in forbidden:
+                    return float("-inf")
         total = 0.0
         position = 0
-        log_boundary, no_boundary_prefix = self._boundary_terms("".join(groups))
+        log_boundary, no_boundary_prefix = self._boundary_terms(stream)
         for index, group in enumerate(groups):
             start = position
             end = position + len(group)
