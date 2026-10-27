@@ -144,8 +144,9 @@ python scripts/run_expert_paste_eval.py          # real hieroglyph pastes, exits
 python scripts/run_competitive_ambiguity_eval.py \
   --benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv
 python scripts/verify_release.py   # tests + both evaluations, one summary, non-zero on failure
-# NOT READY until release_baseline.json has a twin_controlled block (audit A4); until the
-# pre-registered re-measure sets it, --allow-legacy-gate gates on the legacy pool, labelled
+# Gates on the twin-controlled pool: release_baseline.json carries a twin_controlled
+# block since 638b9cf (audit A4), with floors 0.80 top-3 useful / 0.70 MRR set from the
+# 2026-10-26 attempt-2 re-measure. --allow-legacy-gate is only for a baseline without one.
 ```
 
 The competitive benchmark is the reportable one, but its targets are *not* free of
@@ -156,7 +157,9 @@ Excluding only the target can therefore hand the answer back through such an edi
 twin. `--exclude-twins 0.7` also removes every such row from each query's pool and gives
 the twin-controlled number; the default (`0`) keeps the legacy pool, and every run's
 summary says which pool it measured (`pool: legacy` or `pool: twin-controlled`). The
-v4 figures below are legacy-pool numbers. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
+v4 figures below are legacy-pool numbers; the twin-controlled pool was measured on
+2026-10-26 (pre-registered re-measure, attempt 2) at 0.85 top-3 useful / MRR 0.75, and
+those are the numbers the release gate's floors were set from. **v2 and v3 were retired on 2026-09-01** — the search fold changed (yod now
 folds to `i`) and the searchable corpus changed twice the same day — so their numbers
 no longer describe this tool; see `data/benchmarks/CORPUS_SCALING_REPORT.md` §17. v4 was
 cut on the 78,412-row corpus, where it scores 0.95 top-3 useful. Since Ramses and Demotic

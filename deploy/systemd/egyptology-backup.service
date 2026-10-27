@@ -1,18 +1,34 @@
 # The nightly database backup (scripts/backup_db.sh), started by egyptology-backup.timer.
 #
-# Reconstructed from DEPLOYMENT.md, not copied from the box (audit A46); lines that had
-# to be guessed are marked `# GUESSED:`. The script finds the database through
-# DATABASE_URL in egyptology.env (the same place the app reads it) or falls back to
-# /home/ledio/egyptology/egyptology.db.
+# COPIED FROM THE BOX ON 2026-10-26 (read-only ssh). Equals the installed unit directive
+# for directive: only comments differ (this header and the commented-out block at the end). The audit A46 guess markers are gone.
+#
+# NOT INSTALLED YET, kept below rather than dropped: OnFailure=egyptology-notify@%n.service
+# (A42) and EnvironmentFile=-/home/ledio/egyptology.env. The second one matters more than
+# it looks — without it the backup job never sees DATABASE_URL, HEALTHCHECK_URL or
+# OFFSITE_PRUNE from egyptology.env, so on the box today the script falls back to
+# /home/ledio/egyptology/egyptology.db and sends no healthchecks.io heartbeat.
 
 [Unit]
-Description=Whyptology nightly database backup
-OnFailure=egyptology-notify@%n.service
+Description=Snapshot egyptology.db into egyptology-backups (30-day retention)
+Documentation=file:///home/ledio/egyptology/DEPLOYMENT.md
 
 [Service]
 Type=oneshot
-# Per-host settings: DATABASE_URL, HEALTHCHECK_URL, OFFSITE_PRUNE, ... (optional file).
-EnvironmentFile=-/home/ledio/egyptology.env
-Environment=OFFSITE_TARGET=b2:egyptology-backups-ledio
+# The repo is the canonical copy; /home/ledio/bin is refreshed from it by
+# egyptology-deploy.sh, so the job keeps working during a failed deploy.
 ExecStart=/home/ledio/bin/backup_db.sh
-# GUESSED: no TimeoutStartSec (the default for a oneshot is infinity; a nightly run takes seconds).
+# Empty = on-box only. Fill in an rsync destination to get the snapshot off
+# this disk; the script reports which of the two it did.
+Environment=OFFSITE_TARGET=b2:egyptology-backups-ledio
+Environment=RETENTION_DAYS=30
+
+# ---------------------------------------------------------------------------
+# NOT INSTALLED — deliberate future change, not a dropped line
+# ---------------------------------------------------------------------------
+# [Unit]
+# OnFailure=egyptology-notify@%n.service
+#
+# [Service]
+# Per-host settings: DATABASE_URL, HEALTHCHECK_URL, OFFSITE_PRUNE (optional file).
+# EnvironmentFile=-/home/ledio/egyptology.env

@@ -1,15 +1,18 @@
 # Fires egyptology-backup.service every night at 03:30, with up to 5 minutes of jitter.
-# Reconstructed from DEPLOYMENT.md (audit A46); the `# GUESSED:` line is the spelling.
+#
+# COPIED FROM THE BOX ON 2026-10-26 (read-only ssh). Equals the installed unit; the
+# audit A46 guess marker on RandomizedDelaySec is gone — the spelling was right.
+# Nothing in this file is pending installation.
 
 [Unit]
-Description=Whyptology nightly database backup, 03:30
+Description=Nightly egyptology.db backup at 03:30
 
 [Timer]
 OnCalendar=*-*-* 03:30:00
-# GUESSED: RandomizedDelaySec=300 is how "up to 5 min of jitter" was written down.
-RandomizedDelaySec=300
-# A night the box spent asleep is caught up at the next boot instead of skipped.
+# The box is not always awake at 03:30; catch up on the next boot instead of
+# silently skipping a night.
 Persistent=true
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
