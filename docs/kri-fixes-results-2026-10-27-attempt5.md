@@ -219,7 +219,7 @@ precise ones.
 | `all_off` legacy (pre-branch) | 0.18847 | 0.18961 |
 | `all_off` undiscounted (corrected) | 0.19207 | 0.19324 |
 | `discount_only` discounted (corrected + /k) | 0.19219 | 0.19336 |
-| `all_on` discounted (shipped confidence) | 0.19235 | 0.19352 |
+| `all_on` discounted (combined experimental arm, not what ships) | 0.19235 | 0.19352 |
 
 | Comparison | All positions | with_reading |
 | --- | --- | --- |
