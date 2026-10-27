@@ -354,6 +354,9 @@ run step0-approved-commit test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 run step0-clean test -z "$(git status --porcelain)"
 run step0-private-dir test -d "$PRIV"
 run step0-attempt2-dir test -d "$BASE"
+# The deploy tests trap HUP/INT/TERM; a signal ignored at launch (nohup, `cmd &`) cannot be
+# trapped again, so those tests would fail for the launcher, not the code (attempt 3).
+run step0-signals "$PY" -c "import signal, sys; sys.exit(any(signal.getsignal(s) == signal.SIG_IGN for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)))"
 git rev-parse HEAD > "$R/commit.txt"
 shasum -a 256 data/processed/examples.csv scripts/eval_guards.py \
   scripts/run_reading_model_eval.py scripts/run_kri_fixes_eval.py \
@@ -714,3 +717,19 @@ Claude session ending cannot hang it up), under `caffeinate -dims`.
 * **Run directory:** the next fresh `~/egyptology-runs/kri-fixes-2026-10-26-attemptN`
   (attempt 4); attempts 1–3 are not touched.
 * **Scope:** all of §5, steps 0–9. No subset re-run, no reuse of an attempt-2 or attempt-3 number.
+
+## Addendum 2026-10-27 (3) — attempt 4 FAILED at step 9; attempt 5
+
+Attempt 4 ran on `eae95cd` into `…-attempt4`. Steps 0–8 logged `exit=0`, and the deploy
+signal tests that failed attempt 3 passed. Step 9 failed with 1 of 1,575 tests:
+`tests/test_check_kri_fixes_gates.py::test_the_preregistration_reproduces_the_runner_verbatim`.
+§5 of this document is the runner, verbatim, and addendum (2) added `step0-signals` to
+`scripts/run_kri_fixes_prereg.sh` without adding it to the §5 copy. Attempt 4 stays **FAILED**
+under rule (h).
+
+**What changed:** the same three lines (two comment lines and `run step0-signals …`) are now in
+§5's copy, so §5 and the runner are identical again. Nothing else changed. Before attempt 5 the
+full test suite was run once on the run commit and passed.
+
+**Attempt 5:** run commit = the commit that adds this addendum, passed as `APPROVED_SHA`; the
+next fresh attempt directory; all of §5, steps 0–9; no number from attempts 2–4 is reused.
