@@ -677,3 +677,40 @@ switched back on after attempt 2 is the lead's decision, not this addendum's.
 * **Before the run:** the test files touched by these commits were run one file at a
   time, and steps 0–1 of the runner ran on the run commit into a scratch
   `KRI_RUNS_BASE` with `KRI_STOP_AFTER=1`.
+
+## Addendum 2026-10-27 (2) — attempts 2 and 3 did not finish; attempt 4
+
+### Attempt 2: interrupted, not decided
+
+Attempt 2 ran on `6b616c4` into `~/egyptology-runs/kri-fixes-2026-10-26-attempt2`. Steps 0–8
+logged `exit=0`; step 9 (`pytest`) was cut off at about 55% when the Mac went to sleep, and
+`run_log.txt` ends at `START step9-pytest` with no `END`. A run with no verdict for every step
+is not a registered result: attempt 2 is recorded as **interrupted**, neither passed nor failed,
+and none of its numbers is reused.
+
+### Attempt 3: FAILED at step 9, caused by how it was launched
+
+Attempt 3 ran on the same commit into `…-attempt3`. Steps 0–8 logged `exit=0` again; step 9
+failed with 2 of 1,582 tests:
+`tests/test_audit_ops.py::test_an_interrupted_deploy_rolls_back_and_leaves_no_marker[HUP]` and
+`[INT]` (`[TERM]` passed). Attempt 3 stays **FAILED** under rule (h).
+
+Cause, reproduced: attempt 3 was started as `nohup caffeinate -dims bash … &`. `nohup` sets
+SIGHUP to ignored and a non-interactive `&` sets SIGINT to ignored; a signal ignored when bash
+starts cannot be trapped again, so the deploy script's HUP/INT traps never ran in those tests.
+The same three tests run the same way (`nohup … &`) fail in the same two cases; run normally,
+they passed 25 times out of 25, also under CPU load. No product code or test changed.
+
+### What changed
+
+Only the runner: a new step-0 check, `step0-signals`, stops the run before anything is measured
+if SIGHUP, SIGINT or SIGTERM is ignored. Rules, gates, arms, harness and every other step are
+unchanged. Attempt 4 is launched with default signal dispositions in its own session (so the
+Claude session ending cannot hang it up), under `caffeinate -dims`.
+
+### Attempt 4
+
+* **Run commit:** the commit that adds this addendum, passed as `APPROVED_SHA`.
+* **Run directory:** the next fresh `~/egyptology-runs/kri-fixes-2026-10-26-attemptN`
+  (attempt 4); attempts 1–3 are not touched.
+* **Scope:** all of §5, steps 0–9. No subset re-run, no reuse of an attempt-2 or attempt-3 number.

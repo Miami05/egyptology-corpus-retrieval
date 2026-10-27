@@ -69,6 +69,9 @@ run step0-approved-commit test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 run step0-clean test -z "$(git status --porcelain)"
 run step0-private-dir test -d "$PRIV"
 run step0-attempt2-dir test -d "$BASE"
+# The deploy tests trap HUP/INT/TERM; a signal ignored at launch (nohup, `cmd &`) cannot be
+# trapped again, so those tests would fail for the launcher, not the code (attempt 3).
+run step0-signals "$PY" -c "import signal, sys; sys.exit(any(signal.getsignal(s) == signal.SIG_IGN for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)))"
 git rev-parse HEAD > "$R/commit.txt"
 shasum -a 256 data/processed/examples.csv scripts/eval_guards.py \
   scripts/run_reading_model_eval.py scripts/run_kri_fixes_eval.py \
