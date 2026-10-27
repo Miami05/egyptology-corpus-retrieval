@@ -68,6 +68,9 @@ run() {
 cd "$REPO"
 printf 'base %s\nfa %s\n' "$BASE_SHA" "$FA_SHA" > "$R/approved_commits.txt"
 run step0-no-switch-env test -z "${WHYPTOLOGY_EXP3_FA:-}"
+# A signal ignored at launch (nohup, `cmd &`) cannot be trapped again; the KRI fixes run
+# failed its deploy signal tests that way (attempt 3), so refuse such a launch here too.
+run step0-signals "$PY" -c "import signal, sys; sys.exit(any(signal.getsignal(s) == signal.SIG_IGN for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)))"
 # NC data never enters a run directory: nothing private is configured for these runs.
 unset PRIVATE_DATA_DIR REVIEWER_KEY || true
 run step0-base-exists git cat-file -e "$BASE_SHA^{commit}"
