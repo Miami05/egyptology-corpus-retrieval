@@ -168,6 +168,14 @@ cd "$R"
   done
   echo "== segmentation byte-identical"
   if cmp -s base/segmentation.txt fa/segmentation.txt; then echo IDENTICAL; else echo DIFFERS; fi
+  echo "== paste eval (hard gate: 8/8 in auto and declared, both arms; recorded, not a stop)"
+  for ARM in base fa; do
+    for M in auto declared; do
+      echo "$ARM $M: $(grep -E '^passed [0-9]+/[0-9]+' "$ARM/paste_$M.txt" | tail -1 || echo 'no pass line')"
+    done
+  done
+  echo "== verify_release verdict, fa arm (hard gate: READY; recorded, not a stop)"
+  grep -E 'verdict +(READY|NOT READY)|^NOT READY' fa/verify_release.txt | tail -1 || echo "no verdict line"
 } > "$R/gates_mechanical.txt" 2>&1
 "$PY" - "$R" > "$R/routing_diff.txt" 2>&1 <<'PYEOF' || log "routing_diff failed (see routing_diff.txt)"
 import sys
@@ -186,7 +194,7 @@ for s in ("v4", "holdout1", "le_v1", "name_v1", "holdout2"):
         ids = " ".join(f"{r.benchmark_id}({r.stage_used_base or '-'}->{r.stage_used_fa or '-'})" for r in d.itertuples())
         print(f"{s} {p}: {len(d)}/{len(m)} {ids}")
 PYEOF
-shasum -a 256 gates_mechanical.txt routing_diff.txt run_log.txt > sha256_top.txt
-
+# The final log line goes in before the checksum, so sha256_top.txt matches the files.
 log "ALL STEPS RAN"
+shasum -a 256 gates_mechanical.txt routing_diff.txt run_log.txt > sha256_top.txt
 echo "all steps ran; results in $R (worktrees kept: see */worktree.txt)"
