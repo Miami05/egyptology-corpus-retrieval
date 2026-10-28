@@ -1,0 +1,76 @@
+{
+  "approved_commit": "2ea833aadf1e9e591721fa4c0cead29f0345c0c2",
+  "arms": {
+    "c2": {
+      "acc": 0.7519058187783461,
+      "correct": 7792,
+      "delta_acc_vs_off": -0.00028949146000192995,
+      "delta_correct_vs_off": -3,
+      "eligible": false
+    },
+    "c2_transition_only": {
+      "acc": 0.7546077390716974,
+      "correct": 7820,
+      "delta_acc_vs_off": 0.0024124288333494163,
+      "delta_correct_vs_off": 25,
+      "eligible": true
+    },
+    "c3": {
+      "acc": 0.7515198301650101,
+      "correct": 7788,
+      "delta_acc_vs_off": -0.0006754800733378366,
+      "delta_correct_vs_off": -7,
+      "eligible": false
+    },
+    "off": {
+      "acc": 0.752195310238348,
+      "correct": 7795,
+      "delta_acc_vs_off": 0.0,
+      "delta_correct_vs_off": 0,
+      "eligible": false
+    }
+  },
+  "best": "c2_transition_only",
+  "bootstrap": {
+    "percentiles": [
+      2.5,
+      97.5
+    ],
+    "resamples": 10000,
+    "seed": 20261026
+  },
+  "dev_counts": {
+    "dev_members": 376,
+    "dev_positions": 10363,
+    "dev_rows": 1390,
+    "dev_sources": "BBAW 409, TLA 981",
+    "drawn_rows": 5072,
+    "dropped_exact": 291,
+    "dropped_leaky": 3332,
+    "dropped_near": 59,
+    "fit_rows": 50470,
+    "ok": true,
+    "rate": 0.1
+  },
+  "dev_manifest_sha256": "52415842fbb209d955b5d28d48011f462cb5a0d756400c1f8e2d76f191263344",
+  "dev_rate": 0.1,
+  "eligible": [
+    "c2_transition_only"
+  ],
+  "experiment": "transition-smoothing-2026-10-28",
+  "groups": 1390,
+  "positions": 10363,
+  "primary": "c2_transition_only",
+  "walk": [
+    {
+      "arm": "c2_transition_only",
+      "best_minus_arm": {
+        "ci_high": 0.0,
+        "ci_low": 0.0,
+        "correct_diff": 0,
+        "point": 0.0
+      },
+      "qualifies": true
+    }
+  ]
+}

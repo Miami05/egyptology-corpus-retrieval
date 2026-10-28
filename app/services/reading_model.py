@@ -38,6 +38,7 @@ evidence supports:
 
 from __future__ import annotations
 
+import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from math import log
@@ -194,6 +195,77 @@ POOLED_FALLBACK_MIN_RATIO = 10.0
 # measures the fallback by passing `use_pooled_fallback=True` explicitly in its pooled
 # arms, and switching it back on needs a new pre-registration, not an edit here.
 USE_POOLED_FALLBACK_BY_DEFAULT = False
+
+# ---------------------------------------------------------------------------
+# Transition smoothing (candidate schemes; pre-registered, NOT shipped).
+#
+# `_transition`, `_sign_context` and `_next_sign_context` estimate a conditional
+# probability with add-k over the *observed* successor set: the denominator is
+# `total + SMOOTHING * len(counts)`. For a context with exactly one distinct successor
+# (V_obs = 1), whatever its count N, the observed successor scores
+# (N + 0.1) / (N + 0.1 * 1) = 1.0 exactly, i.e. 0.0 nats: a free transition, however
+# little evidence there is. `docs/transition-smoothing-preregistration-2026-10-28.md`
+# defines the candidates and the experiment that decides whether any of them ships:
+#
+#   off                  the add-k above, byte for byte (the shipped behaviour)
+#   c2                   Witten-Bell interpolation, all three functions
+#   c3                   interpolated absolute discounting (Ney d), all three functions
+#   c2_transition_only   Witten-Bell on `_transition` only
+#
+# The scheme is chosen per decode (`predict_sequence(..., smoothing=...)`); `None`
+# means `TRANSITION_SMOOTHING_BY_DEFAULT`, which is "off" unless the environment
+# variable below names another scheme. The variable exists so the pre-registered gates
+# (expert paste eval, Urk. IV gate, competitive sets) can be run under a candidate
+# without a code change; it is never set in production. Stage routing is NOT affected
+# by it: `app.services.stage.choose_stage_by_likelihood` passes "off" explicitly (R2).
+#
+# The sentence-edge contexts are not changed by any scheme: a transition out of the
+# BOUNDARY marker, a sign context whose previous sign is BOUNDARY and a next-sign context
+# whose next sign is BOUNDARY keep the add-k value in every scheme (pre-registration R3,
+# R8: "BOUNDARY keeps the current value"), so sentence starts and ends decode as before.
+#
+# Not tuned here, and kept as they are: SMOOTHING, UNREADABLE_EMISSION and every decode
+# weight.
+SMOOTHING_SCHEMES = ("off", "c2", "c3", "c2_transition_only")
+TRANSITION_SMOOTHING_ENV = "EGYPTOLOGY_TRANSITION_SMOOTHING"
+
+
+def _default_smoothing_scheme() -> str:
+    value = os.environ.get(TRANSITION_SMOOTHING_ENV, "").strip() or "off"
+    if value not in SMOOTHING_SCHEMES:
+        raise ValueError(
+            f"{TRANSITION_SMOOTHING_ENV}={value!r}; expected one of {SMOOTHING_SCHEMES}"
+        )
+    return value
+
+
+TRANSITION_SMOOTHING_BY_DEFAULT = _default_smoothing_scheme()
+
+# scheme -> (mode for `_transition`, mode for the two sign-context functions);
+# a mode is "off" (add-k), "wb" (Witten-Bell) or "ad" (absolute discounting).
+_SCHEME_MODES = {
+    "off": ("off", "off"),
+    "c2": ("wb", "wb"),
+    "c3": ("ad", "ad"),
+    "c2_transition_only": ("wb", "off"),
+}
+# Discount fallback when Ney's d is undefined or outside (0, 1).
+FALLBACK_DISCOUNT = 0.5
+# The three scored tables: name -> (ReadingModel attribute, index in the key of the sign
+# whose reading distribution is the lower order; None = the unigram distribution).
+_SMOOTHED_TABLES = {
+    "transition": ("reading_bigram", None),
+    "sign_context": ("sign_context", 1),
+    "next_sign_context": ("next_sign_context", 0),
+}
+
+
+def smoothing_modes(scheme: str) -> tuple[str, str]:
+    """(transition mode, sign-context mode) of a scheme name; ValueError if unknown."""
+    try:
+        return _SCHEME_MODES[scheme]
+    except KeyError:
+        raise ValueError(f"unknown smoothing scheme {scheme!r}; expected one of {SMOOTHING_SCHEMES}") from None
 
 
 def glyph_similarity(left: str, right: str, order_weight: float | None = None) -> float:
@@ -385,6 +457,9 @@ class ReadingModel:
     # never touches the file (item C2).
     sign_functions: SignFunctions | None = None
     _composed_cache: dict[str, Counter] = field(default_factory=dict, repr=False)
+    # Derived tables for the candidate smoothing schemes (unigram, per-context totals,
+    # discounts). Cleared by `fit`; never consulted by the "off" scoring path.
+    _smooth_cache: dict = field(default_factory=dict, repr=False)
     sentences_seen: int = 0
     # Rows skipped because sign groups and readings did not align. Reported, not
     # hidden: on a clean load this must be 0 (see app.data.loader.alignment_report).
@@ -397,6 +472,7 @@ class ReadingModel:
     # ---------- training ----------
 
     def fit(self, df: pd.DataFrame) -> ReadingModel:
+        self._smooth_cache.clear()
         for _, row in df.iterrows():
             signs = str(row.get("hieroglyphs_norm") or "").split()
             readings = str(row.get("transliteration_gold") or "").split()
@@ -511,7 +587,9 @@ class ReadingModel:
         numerator = counts.get(reading, 0) + SMOOTHING
         return log(numerator / (total + SMOOTHING * vocabulary))
 
-    def _transition(self, previous_reading: str, reading: str) -> float:
+    def _transition(self, previous_reading: str, reading: str, mode: str = "off") -> float:
+        if mode != "off" and reading != "" and previous_reading != BOUNDARY:
+            return self._smoothed("transition", previous_reading, reading, mode)
         counts = self.reading_bigram.get(previous_reading, Counter())
         total = sum(counts.values())
         if total == 0:
@@ -519,7 +597,11 @@ class ReadingModel:
         vocabulary = max(len(counts), 1)
         return log((counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * vocabulary))
 
-    def _sign_context(self, previous_sign: str, sign: str, reading: str) -> float:
+    def _sign_context(
+        self, previous_sign: str, sign: str, reading: str, mode: str = "off"
+    ) -> float:
+        if mode != "off" and reading != "" and previous_sign != BOUNDARY:
+            return self._smoothed("sign_context", (previous_sign, sign), reading, mode)
         counts = self.sign_context.get((previous_sign, sign), Counter())
         total = sum(counts.values())
         if total == 0:
@@ -527,13 +609,142 @@ class ReadingModel:
         vocabulary = max(len(counts), 1)
         return log((counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * vocabulary))
 
-    def _next_sign_context(self, sign: str, next_sign: str, reading: str) -> float:
+    def _next_sign_context(
+        self, sign: str, next_sign: str, reading: str, mode: str = "off"
+    ) -> float:
+        if mode != "off" and reading != "" and next_sign != BOUNDARY:
+            return self._smoothed("next_sign_context", (sign, next_sign), reading, mode)
         counts = self.next_sign_context.get((sign, next_sign), Counter())
         total = sum(counts.values())
         if total == 0:
             return log(SMOOTHING)
         vocabulary = max(len(counts), 1)
         return log((counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * vocabulary))
+
+    # ---------- candidate smoothing schemes (see SMOOTHING_SCHEMES) ----------
+    #
+    # Every scheme works on the model's own counts and nothing else. The shared pieces:
+    # the support R (distinct non-empty readings anywhere in the counts), the unigram
+    # P_uni over R plus one out-of-vocabulary bucket, and, for the two sign-context
+    # tables, the sign's own reading distribution P_sign(r | s) as lower order. A
+    # context nobody has seen (N(h) = 0) and a transition into the unreadable sentinel
+    # `''` keep the add-k value, so only contexts with evidence change.
+
+    def _unigram(self) -> tuple[Counter, int, int]:
+        """(reading counts, their total, |R|) of the fitted corpus."""
+        cached = self._smooth_cache.get("unigram")
+        if cached is None:
+            counts: Counter = Counter()
+            for readings in self.sign_reading.values():
+                counts.update(readings)
+            support = set(counts)
+            for previous, readings in self.reading_bigram.items():
+                support.add(previous)
+                support.update(readings)
+            for table in (self.sign_context, self.next_sign_context):
+                for readings in table.values():
+                    support.update(readings)
+            support.discard("")
+            support.discard(BOUNDARY)
+            cached = (counts, sum(counts.values()), len(support))
+            self._smooth_cache["unigram"] = cached
+        return cached
+
+    def reading_vocabulary_size(self) -> int:
+        """|R|: the number of distinct non-empty readings in this model's counts."""
+        return self._unigram()[2]
+
+    def _p_unigram(self, reading: str) -> float:
+        counts, total, vocabulary = self._unigram()
+        return (counts.get(reading, 0) + SMOOTHING) / (total + SMOOTHING * (vocabulary + 1))
+
+    def _p_sign(self, sign: str, reading: str) -> float:
+        """P(reading | sign): Witten-Bell over the sign's counts, backed off to P_uni."""
+        counts = self.sign_reading.get(sign)
+        if not counts:
+            return self._p_unigram(reading)
+        total = sum(counts.values())
+        weight = total / (total + len(counts))
+        return weight * counts.get(reading, 0) / total + (1.0 - weight) * self._p_unigram(
+            reading
+        )
+
+    def _lower_probability(self, table: str, key, reading: str) -> float:
+        index = _SMOOTHED_TABLES[table][1]
+        if index is None:
+            return self._p_unigram(reading)
+        return self._p_sign(key[index], reading)
+
+    def _context(self, table: str, key) -> tuple["Counter | None", int, int]:
+        """(counts, N(h), V_obs(h)) of one context; N = 0 when it is unseen."""
+        cache_key = ("context", table, key)
+        cached = self._smooth_cache.get(cache_key)
+        if cached is None:
+            counts = getattr(self, _SMOOTHED_TABLES[table][0]).get(key)
+            cached = (counts, sum(counts.values()), len(counts)) if counts else (None, 0, 0)
+            self._smooth_cache[cache_key] = cached
+        return cached
+
+    def discount(self, table: str) -> dict:
+        """Ney's d for one table, from its bigram *types*: n1 / (n1 + 2 * n2).
+
+        n1 and n2 count (context, reading) pairs seen exactly once and exactly twice.
+        When n1 + 2 * n2 = 0, or d is not in the open interval (0, 1), d is
+        `FALLBACK_DISCOUNT` and `fallback` says so.
+        """
+        cache_key = ("discount", table)
+        cached = self._smooth_cache.get(cache_key)
+        if cached is None:
+            n1 = n2 = 0
+            for readings in getattr(self, _SMOOTHED_TABLES[table][0]).values():
+                for count in readings.values():
+                    n1 += count == 1
+                    n2 += count == 2
+            d = n1 / (n1 + 2 * n2) if n1 + 2 * n2 else 0.0
+            fallback = not 0.0 < d < 1.0
+            cached = {"n1": n1, "n2": n2, "d": FALLBACK_DISCOUNT if fallback else d, "fallback": fallback}
+            self._smooth_cache[cache_key] = cached
+        return cached
+
+    def smoothing_report(self) -> dict:
+        """Everything the candidate schemes derived from this model's counts, for the run log."""
+        _counts, total, vocabulary = self._unigram()
+        report = {"vocabulary": vocabulary, "unigram_total": total}
+        for table in _SMOOTHED_TABLES:
+            report[table] = dict(self.discount(table))
+        return report
+
+    def _witten_bell(self, table: str, key, reading: str) -> float:
+        """P(r | h) = lam * c/N + (1 - lam) * P_lower(r); the context must be seen."""
+        counts, total, observed = self._context(table, key)
+        weight = total / (total + observed)
+        return weight * counts.get(reading, 0) / total + (1.0 - weight) * self._lower_probability(
+            table, key, reading
+        )
+
+    def _discounted(self, table: str, key, reading: str, lower: float) -> float:
+        counts, total, observed = self._context(table, key)
+        d = self.discount(table)["d"]
+        return max(counts.get(reading, 0) - d, 0.0) / total + d * observed / total * lower
+
+    def _smoothed(self, table: str, key, reading: str, mode: str) -> float:
+        """Log-probability of `reading` in context `key` under a candidate scheme."""
+        _counts, total, _observed = self._context(table, key)
+        if total == 0:
+            return log(SMOOTHING)
+        if mode == "wb":
+            return log(self._witten_bell(table, key, reading))
+        if mode == "ad":
+            lower = self._lower_probability(table, key, reading)
+            pooled = self.pooled
+            if pooled is not None and pooled._context(table, key)[1] >= 1:
+                # Two levels, terminating: the pooled model's own estimate, with its own
+                # d and its own lower order, never another pooled level.
+                lower = pooled._discounted(
+                    table, key, reading, pooled._lower_probability(table, key, reading)
+                )
+            return log(self._discounted(table, key, reading, lower))
+        raise ValueError(f"unknown smoothing mode {mode!r}")
 
     def related_attested_groups(
         self, sign: str, limit: int = 4, min_similarity: float = 0.15
@@ -631,6 +842,7 @@ class ReadingModel:
         use_lexicon: bool = True,
         use_composed: bool | None = None,
         use_pooled_fallback: bool | None = None,
+        smoothing: str | None = None,
     ) -> list[ReadingPrediction]:
         """Viterbi over each sign's attested readings.
 
@@ -667,6 +879,11 @@ class ReadingModel:
         `USE_POOLED_FALLBACK_BY_DEFAULT`, which is OFF after attempt 1 of the KRI-fixes
         measurement (rule (b)(2)). `False` is passed by the stage router, whose
         decision rule must not change, so the router is unaffected either way.
+
+        `smoothing` picks the estimator behind the three transition-like terms (see
+        `SMOOTHING_SCHEMES`). `None` means `TRANSITION_SMOOTHING_BY_DEFAULT`, i.e. "off",
+        today's add-k, unless the environment names a candidate; the stage router always
+        passes "off" itself.
         """
         predictions, _path_score = self.predict_sequence_scored(
             signs,
@@ -679,6 +896,7 @@ class ReadingModel:
             use_lexicon=use_lexicon,
             use_composed=use_composed,
             use_pooled_fallback=use_pooled_fallback,
+            smoothing=smoothing,
         )
         return predictions
 
@@ -694,6 +912,7 @@ class ReadingModel:
         use_lexicon: bool = True,
         use_composed: bool | None = None,
         use_pooled_fallback: bool | None = None,
+        smoothing: str | None = None,
     ) -> tuple[list[ReadingPrediction], float]:
         """`predict_sequence`, plus the chosen path's total Viterbi log-probability.
 
@@ -714,6 +933,9 @@ class ReadingModel:
             use_composed = USE_COMPOSED_BY_DEFAULT
         if use_pooled_fallback is None:
             use_pooled_fallback = USE_POOLED_FALLBACK_BY_DEFAULT
+        if smoothing is None:
+            smoothing = TRANSITION_SMOOTHING_BY_DEFAULT
+        transition_mode, sign_mode = smoothing_modes(smoothing)
 
         # Resolve which group's statistics each position will use, in order of how
         # much the evidence is worth: attested in this corpus → attested in the
@@ -805,14 +1027,18 @@ class ReadingModel:
                 local = (
                     emission_weight * emission
                     + next_sign_weight
-                    * scorer._next_sign_context(source_group, next_sign, reading)
+                    * scorer._next_sign_context(
+                        source_group, next_sign, reading, sign_mode
+                    )
                 )
                 if position == 0:
                     score = (
                         local
-                        + transition_weight * scorer._transition(BOUNDARY, reading)
+                        + transition_weight * scorer._transition(BOUNDARY, reading, transition_mode)
                         + sign_context_weight
-                        * scorer._sign_context(BOUNDARY, source_group, reading)
+                        * scorer._sign_context(
+                            BOUNDARY, source_group, reading, sign_mode
+                        )
                     )
                     column.append((score, -1, reading))
                 else:
@@ -826,9 +1052,11 @@ class ReadingModel:
                             previous_score
                             + local
                             + transition_weight
-                            * scorer._transition(previous_reading, reading)
+                            * scorer._transition(previous_reading, reading, transition_mode)
                             + sign_context_weight
-                            * scorer._sign_context(previous_sign, source_group, reading)
+                            * scorer._sign_context(
+                                previous_sign, source_group, reading, sign_mode
+                            )
                         )
                         if candidate_score > best_score:
                             best_score = candidate_score

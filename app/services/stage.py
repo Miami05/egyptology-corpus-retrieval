@@ -465,6 +465,7 @@ def choose_stage_by_likelihood(
     resources_by_stage: Callable[[str | None], StageResources],
     coverage: dict[str, int] | None = None,
     use_format_hints: bool = True,
+    smoothing: str = "off",
 ) -> tuple[str | None, dict[str, float]]:
     """Language identification for a hieroglyph paste, by per-sign log-likelihood.
 
@@ -554,6 +555,15 @@ def choose_stage_by_likelihood(
     constraint on and off. Which way it moves on real material is a measurement
     nobody has made yet; it is listed in the pre-registration.
 
+    `smoothing` is the reading model's transition-smoothing scheme
+    (`app.services.reading_model.SMOOTHING_SCHEMES`). It is "off" — today's add-k — for
+    every caller that routes, and stays "off" whatever the decoder's default scheme is
+    (`TRANSITION_SMOOTHING_BY_DEFAULT`): the likelihood below is the Viterbi path score,
+    which contains exactly the terms the candidate schemes change, and a backoff to a
+    corpus-wide unigram would break the "does not grow with corpus size" property this
+    comparison relies on. Only the transition-smoothing experiment passes another value,
+    to report what a scheme *would* have scored; it never decides a routing.
+
     Pass a dict as `coverage` to receive each scored stage's attested-group count,
     the number the choice is ranked on first; the returned scores alone no longer
     explain the decision (the winner need not have the highest score).
@@ -601,7 +611,7 @@ def choose_stage_by_likelihood(
             # (Demotic here). Its model is then a pooled one, not this stage's.
             continue
         predictions, reading_score = resources.reading_model.predict_sequence_scored(
-            groups, use_lexicon=False, use_pooled_fallback=False
+            groups, use_lexicon=False, use_pooled_fallback=False, smoothing=smoothing
         )
         scores[candidate] = reading_score / n_groups
         readable[candidate] = sum(
