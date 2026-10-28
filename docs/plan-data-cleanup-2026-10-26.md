@@ -1,12 +1,13 @@
-# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 6)
+# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 7)
 
-**Status: DRAFT, rev. 6 (2026-10-28). Not approved, not a pre-registration.** Nothing in this
+**Status: DRAFT, rev. 7 (2026-10-28). Not approved, not a pre-registration.** Nothing in this
 file has been run, and no code or data was changed to write it. Rev. 3 was reviewed by Opus
 (`ready_after_small_fixes`) and by Codex gpt-6-astra (`not_ready`, 11 findings, 7 of them
 blockers). Rev. 4 answered every one of them. Rev. 4 (commit `5fcc4f8`) was then reviewed by
 Opus (`fix_first`, 2 blockers) and by Astra (`fix_first`, 4 blockers). Rev. 5 (commit `a40feaf`)
 answered those and was re-checked by Astra (`fix_first`, 3 blockers, 5 should-fix); rev. 6
-answers that re-check. The maps are in the **Revision log** below. Opus confirmed the rev. 3
+answered that re-check, and Astra's second re-check of rev. 6 (`da42841`; `fix_first`, 2
+blockers, 2 should-fix) is answered by rev. 7. The maps are in the **Revision log** below. Opus confirmed the rev. 3
 blockers as fixed; they are not reopened here.
 
 The start condition has changed since rev. 3. The `audit-fixes-2026-10-25` merge is done and
@@ -43,6 +44,10 @@ Read again for rev. 6 (read-only, rev. 5 text against code): `scripts/kri_declar
 argument), `scripts/check_overlap.py` (its CLI), `tests/test_kri_tooling_freeze.py`
 (`FROZEN_TOOLING`), `deploy/systemd/egyptology-backup.timer` (`Persistent=true`),
 `app/core/config.py` (`load_dotenv()` and the `database:` line).
+Read again for rev. 7 (read-only): `scripts/run_kri_endpoints.py` (`expected_private_sha256`
+and the sidecar's `private_sha256` check, which already ties G's report to `--private-dir`),
+`scripts/check_overlap.py` (the sidecar fields it writes, `private_sha256` empty without
+`--private-dir`).
 
 ## Rev. 2 changes (answering the Codex gpt-6-astra review, verdict `not_ready`)
 
@@ -284,6 +289,32 @@ numbered in the order of the re-check. The fixes prefer one rule over added bran
    `all_off`, `pooled_only` and `all_on` are reported; D4 and D0 keep their own scope (§2.3
    item 5 and the acceptance paragraph).
 
+## Rev. 7 changes (answering Astra's second re-check of rev. 6; 2026-10-28)
+
+Astra re-checked rev. 6 (`da42841`) read-only: `fix_first`, 2 blockers and 2 should-fix. Plan
+text only; nothing was run. "A" = Astra finding, in the order of the re-check. The fixes use one
+rule each, parameterised, with no new branches.
+
+1. **Restore can discard annotations (A1; blocker):** §1.9a no longer assumes a paused window
+   guarantees no newer annotation. Step 3 now preserves the failed DB and sidecars (hashes,
+   `cp -p` copy), reads `A_failed` on the stopped file, and gates: equal to `A` goes on, any
+   difference or unreadable file is a lossy restore needing Ledio's written loss decision
+   **inside the nominal pause too**, before any `mv`. Without it only the code rollback runs.
+   §1.9 step 5, §1.7 step 5 and §3.4 step 6 say the same.
+2. **Part 3 code-diff test (A2; blocker):** part 3 has its own baseline, `BASE_P3 =
+   MERGE_SHA_P1` (recorded when part 1 merges), and compares main against it, never against the
+   §1.0 sha that part 1's own `tests` and `data/benchmarks` changes would trip. §3.4 step 3 binds
+   the part 3 merge: `HEAD^2` is the measured admission commit, the corpus sha256 is P's
+   measured one, tests byte-identical, test run on main before the merge.
+3. **Timer restore (A3; should-fix):** step 7 restores the timer only if step 2 ran and
+   recorded it, requires `NEXT` only for a timer recorded active, leaves an inactive one
+   inactive, and skips the check on the code-only path (§1.9a trigger (6) note, step 7).
+4. **Amendment H and St Andrews (A4; should-fix):** common checks (lines, checker, manifest
+   hashes, per-set `examples_sha256`) apply to every report; `private_sha256` is separate.
+   Verified against `run_kri_endpoints.py`: G's report must carry what `--private-dir` implies
+   (empty with none, the `standrews.csv` hash when G includes it, §4a); only the historical
+   reports must have it empty (§4.0 (b)5).
+
 ## Revision log
 
 | Date | Rev. | Entry |
@@ -291,7 +322,8 @@ numbered in the order of the re-check. The fixes prefer one rule over added bran
 | 2026-10-26 | 1–3 | Outline, then two Codex gpt-6-astra reviews; change lists above. |
 | 2026-10-28 | 4 | Answers the Astra review (verdict `not_ready`, 11 findings) and the Opus review (`ready_after_small_fixes`, 13 findings) of rev. 3. Map below. Draft only: no code, no data. Committed as `5fcc4f8`. |
 | 2026-10-28 | 5 | Answers the Opus review (`fix_first`: 2 blockers, 2 should-fix, 3 nits) and the Astra review (`fix_first`: 4 blockers, 3 should-fix) of rev. 4. Map below the rev. 4 map. Draft only: no code, no data, no server. Committed as `a40feaf`. |
-| **2026-10-28** | **6** | Answers Astra's re-check of rev. 5 (`fix_first`: 3 blockers, 5 should-fix): one parameterised restore procedure used by parts 1 and 3, one mandated merge form (`--no-ff`), historical screening wired into the declaration and driver (tooling amendment H), fuller config backups and destination checks, a working journal check, backup-timer restore, a bounded Case 1 freeze, one decoder gating rule. Map below the rev. 5 map. Draft only: no code, no data, no server. |
+| 2026-10-28 | 6 | Answers Astra's re-check of rev. 5 (`fix_first`: 3 blockers, 5 should-fix): one parameterised restore procedure used by parts 1 and 3, one mandated merge form (`--no-ff`), historical screening wired into the declaration and driver (tooling amendment H), fuller config backups and destination checks, a working journal check, backup-timer restore, a bounded Case 1 freeze, one decoder gating rule. Map below the rev. 5 map. Draft only: no code, no data, no server. |
+| **2026-10-28** | **7** | Answers Astra's second re-check of rev. 6 (`da42841`; `fix_first`: 2 blockers, 2 should-fix): annotation-loss decision in the restore even inside the pause, a separate part 3 code baseline (`BASE_P3`) with the merge bound to the measured admission commit, conditional timer restore, G's private hash separated from the historical-only rule in amendment H. Map below the rev. 6 map. Draft only: no code, no data, no server. |
 
 **Rev. 4 blocker map (2026-10-28).** "A" = Astra finding (its order in the journal), "O" = Opus
 finding (its order). Severity as the reviewer gave it.
@@ -355,6 +387,15 @@ of rev. 4.
 | A6 | Backup timer stopped, never restored | should-fix | §1.9a steps 2 and 7 |
 | A7 | Case 1 freeze unbounded after the declaration | should-fix | §4.0 (c), order table 4d |
 | A8 | `all_off` gated in §2.3 item 5, reporting-only in the acceptance text | should-fix | §2.3 item 5, acceptance paragraph |
+
+**Rev. 7 map (2026-10-28).** "A" = Astra finding, numbered by the order of its re-check of rev. 6.
+
+| # | Finding | Severity | Fixed in |
+|---|---|---|---|
+| A1 | Automatic DB restore can discard annotations written inside the pause | blocker | §1.9a trigger (3), scope paragraph, step 3; §1.9 step 5; §1.7 step 5; §3.4 step 6 |
+| A2 | Part 3 reuses a code-diff test that part 1's own changes fail | blocker | §3 Dependencies (`BASE_P3`), §3.4 step 3, §1.9 step 0 |
+| A3 | Timer restore unconditional though the code-only path never recorded it | should-fix | §1.9a trigger (6) note, step 7 |
+| A4 | Amendment H demands an empty `private_sha256` of G's report too | should-fix | §4.0 (b)5 amendment H |
 
 ## Ground rules (all parts)
 
@@ -989,7 +1030,8 @@ With Ledio, on the server:
 5. Only then go on to the merge, push and 1.9, with saving still paused. The key is restored
    at the end of 1.9, after the live re-check, from the pre-pause copies of step 1a. Before the
    restore, the live annotation `COUNT(*), MAX(id)` must still equal `A_pause`; any difference
-   means a write got through and stops the run. If anything in 1.9 trips a trigger of §1.9a,
+   means a write got through and stops the run; **no automatic DB restore follows**, the
+   loss decision of §1.9a (scope) comes first. If anything in 1.9 trips a trigger of §1.9a,
    that section is followed instead, and the key stays out until it says otherwise.
 
 **1.8 Commit and local release gate (executed BEFORE 1.7; Ledio approves the commit).** One
@@ -1044,15 +1086,18 @@ paused (§1.7 has cleared with the final N):
    `git revert -m 1` in §1.9a had nothing to revert). Main may have gained docs-only commits
    during the multi-day run (this plan, the Experiment 3 notes); the merge commit is correct
    with or without them, and is allowed **only if** `git diff <the 1.0 sha> main -- app scripts
-   tests requirements*.txt deploy data/benchmarks` is empty (the same test as §1.0 item 1). If
-   it is not empty, main's code changed mid-run: the run ends under §1.0 and nothing is pushed.
+   tests requirements*.txt deploy data/benchmarks` is empty (the same test as §1.0 item 1,
+   run on **main before the merge**, so the branch's own changes do not count). If it is not
+   empty, main's code changed mid-run: the run ends under §1.0 and nothing is pushed.
    After the merge, and before the push: `git rev-parse HEAD` is the **merge sha** and is
    recorded in `$R/env.txt` as `MERGE_SHA_P1`; `git rev-parse HEAD^1` is the pre-merge main
    and `HEAD^2` is the gated branch commit (both recorded; the second must be the 1.8 commit);
    `shasum -a 256 data/processed/examples.csv` equals the gated N; and the committed test files
    are byte-identical to the 1.8 gate's. The 1.8 record is updated with the merge sha, and the
-   cheap checks of 1.8 are repeated; no heavy gate is. Part 3 uses the same form and records
-   `MERGE_SHA_P3` (§3.4).
+   cheap checks of 1.8 are repeated; no heavy gate is. **`MERGE_SHA_P1` is also part 3's
+   baseline** (`BASE_P3`, §3 Dependencies): part 3 uses the same merge form but **its own**
+   code-diff test against `BASE_P3`, never against this section's 1.0 sha, because part 1's own
+   changes to `tests` and `data/benchmarks` are in main by then (§3.4 step 3).
 1. **Deploy: `~/egyptology-deploy.sh`, run by Ledio, without `INSTALL_UNITS=1`** (the default
    is 0; the line is not typed). The installed unit files are not touched. The deploy log
    must show `inserted 0`, and may print "unit files differ … review" if the pause edited the
@@ -1111,7 +1156,8 @@ paused (§1.7 has cleared with the final N):
    not fire at all on a failed refresh or a failed live check after the deploy has succeeded.
 4. Re-run `check_annotation_keys.py` on the live DB (read-only URI, the deployed venv, in the
    clone): chains `ok`, 0 annotations on R, H unchanged, the printed path equal to `LIVE_DB`.
-5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5). Then Ledio
+5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5; a difference is
+   trigger (3) of §1.9a and needs its loss decision, not a restore). Then Ledio
    restores every file **from its pre-pause copy** (§1.7 step 1a), not from memory and not
    from the names-only inventory. For each place listed in `$R/pause_inventory.txt`:
    `cp -p /home/ledio/pause-backup-<date>/<label> <original path>`, then the owner, group and
@@ -1150,24 +1196,32 @@ It covers the DB, the backup timer and the code, and saving stays paused through
 a count other than `inserted = admitted, updated 0`, or the `database:` line was not the exact
 `LIVE_DB` line; (2) `check_annotation_keys.py` on the live DB is not all `ok`, reports an
 annotation on R, changes H, or prints a path other than `LIVE_DB` (part 1 only); (3) the live
-annotation `COUNT(*), MAX(id)` differs from `A`; (4) the live `COUNT(*) FROM examples` is not
+annotation `COUNT(*), MAX(id)` differs from `A` (this is a **loss question**, see the scope
+paragraph, not an ordinary restore trigger); (4) the live `COUNT(*) FROM examples` is not
 the expected count (part 1: equal to `X`, since the refresh updates fields and inserts and
 deletes nothing; part 3: `X` plus the admitted count); (5) the post-deploy pause checks or the
 live app check fail (no result card, `Read-only mode.` notice, a rolled-back deploy followed by
 a wrong corpus); (6) the deploy itself failed and its own rollback ran. In case (6) the DB was
 not written (the deploy inserts 0 in part 1; in part 3 the sync did not run), so only the code
-state is checked (step 6) and steps 2-5 are skipped unless a DB check also fails.
+state is checked (step 6) and steps 2-5 are skipped unless a DB check also fails. **A run that
+skips steps 2-5 never stops or records the timer, and step 7 then leaves it alone.**
 
-**Scope of the DB restore (rev. 6).** Steps 2-5 are for a trigger **inside the paused window**
-(from the pause until the key is restored, §1.9 step 5), because only then is no annotation
-newer than the restore file. The restore file's own annotations equal `A` by construction
-(B6 equality rule), so nothing is lost. Once saving has been reopened, a problem found
-later is **not** repaired by this procedure's DB steps: restoring would drop every annotation
-written since. A later restore is a **lossy restore** and needs, before any `mv`, a written
-decision by Ledio that states the count of annotations that would be lost (live `COUNT(*)`
-minus the restore file's) and how they are kept (the failed file is kept whole, step 3, and
-re-applying its newer annotations is its own reviewed step, not improvised here). Without that
-decision only the code rollback (step 6) runs.
+**Scope of the DB restore (rev. 7: one rule).** A paused window does not by itself prove that
+no newer annotation exists: trigger (3) and §1.7 step 5 both treat a difference from `A` as a
+write that got through. So the DB steps never assume it; **step 3 checks it on the stopped
+database.** The restore file's own annotations equal `A` by construction (B6 equality rule), so
+the file is restored without further ado **only if the failed database's annotation `COUNT(*),
+MAX(id)` is read and equals `A`** (nothing is lost). In every other case the restore is a
+**lossy restore**, inside the nominal pause as much as after it: the count differs from `A`,
+it cannot be read or established (integrity failure, no read-only open, a partial or missing
+file), or saving has been reopened since the pause. A lossy restore needs, **before any `mv`**
+of the live database, a written decision by Ledio that states the number of annotations that
+would be lost (the failed file's annotation count minus the restore file's, or "unknown" when
+it cannot be read, in which case nothing is restored until the preserved copy has been read) and
+how they are kept (the failed file is kept whole, step 3, and re-applying its newer annotations
+is its own reviewed step, not improvised here). Until that decision exists, only step 2 (writers
+stopped), the preservation of step 3 and the code rollback of step 6 run, and the database stays
+where it is. The code rollback is not lossy: it touches no annotation.
 
 *Steps:*
 
@@ -1180,10 +1234,19 @@ decision only the code rollback (step 6) runs.
    `egyptology-backup.service` is active (a backup is running), **wait until it is
    inactive**; never kill it, and never move the database while it runs. The timer is stopped
    so that nothing snapshots a half-restored file.
-3. **Move the failed database aside; never delete it.** For `LIVE_DB` and each of
-   `LIVE_DB-wal` and `LIVE_DB-shm` that exists: `mv <file> <file>.failed-<date>`. Record the
-   size and `sha256sum` of the failed file. A leftover `-wal` or `-shm` next to a restored file
-   would be replayed onto it, so none may remain under the old names.
+3. **Preserve the failed database, check its annotations, then (only if allowed) move it
+   aside; never delete it.** With the writers stopped (step 2) and the files still under their
+   old names: record the size and `sha256sum` of `LIVE_DB` and each of `LIVE_DB-wal` and
+   `LIVE_DB-shm` that exists; take `cp -p` copies of them into the pause directory under
+   `failed-<date>/` (after a `df` check that the space is there; if it is not, the files in
+   place stay untouched and that is the preservation, recorded as such). Then, `sqlite3
+   -readonly` on `LIVE_DB`, record the failed file's `PRAGMA integrity_check` and annotation
+   `COUNT(*), MAX(id)` as `A_failed`. **Gate:** if `A_failed` was read and equals `A`, go on. If
+   it differs, or could not be read, **stop here** and follow the scope paragraph: the
+   written loss decision comes first, and nothing below runs without it. With the gate
+   passed (or the decision in hand): for `LIVE_DB` and each of `LIVE_DB-wal` and `LIVE_DB-shm`
+   that exists, `mv <file> <file>.failed-<date>`. A leftover `-wal` or `-shm` next to a
+   restored file would be replayed onto it, so none may remain under the old names.
 4. **Restore the exact `RESTORE_FILE`.** The file name and sha256 are in the record named in
    the table, and the file is in `BACKUPS` and in the pause directory. First `sha256sum` it and
    require equality with the recorded value, and `gzip -t`. Then `gunzip -c <that .gz> >
@@ -1192,7 +1255,8 @@ decision only the code rollback (step 6) runs.
 5. **Check it before it serves anything**, `sqlite3 -readonly` on `LIVE_DB`: `PRAGMA
    integrity_check` = `ok`, `quick_check` = `ok`, `foreign_key_check` empty; `COUNT(*)` of
    `examples` equals the restore file's own count (`X`); annotation `COUNT(*), MAX(id)` equals
-   `A`. A failure leaves the `.failed` file and every backup untouched and ends the procedure
+   `A` (after a lossy-restore decision this is the restore file's own count, and the report
+   states the lost count that the decision named). A failure leaves the `.failed` file and every backup untouched and ends the procedure
    for Ledio to decide with the lead; it is never improvised.
 6. **Roll the code back to match, by revert, not rewrite.** The restored DB holds the
    pre-deploy rows, while a deployed clone holds the new `examples.csv`, so serving them
@@ -1209,10 +1273,14 @@ decision only the code rollback (step 6) runs.
 7. **Re-verify, restore the timer, and only then restore saving.** After the restart: B1 (all
    of (a) to (e), so the restored state is bound to `LIVE_DB` again), the §1.7 step 1.3 and
    1.4 checks (the pause is still in force and `NeedDaemonReload=no`), and the step 5 checks
-   again on the live file. **Then the backup timer is put back to the state recorded in step
-   2:** `systemctl --user start egyptology-backup.timer` if it was active, and Ledio reports
-   `is-enabled` and `is-active` equal to the record and a `NEXT` time in `systemctl --user
-   list-timers` (its `Persistent=true` makes a missed run fire after the start). Only when all
+   again on the live file. **Then the backup timer, only if step 2 ran, is put back to the
+   state recorded there:** `systemctl --user start egyptology-backup.timer` if the record says
+   it was active, and Ledio reports `is-enabled` and `is-active` equal to the record. A
+   `NEXT` time in `systemctl --user list-timers` is required **only for a timer that was
+   active** (its `Persistent=true` makes a missed run fire after the start); a timer that was
+   recorded inactive stays inactive and is not started, and no `NEXT` is expected for it. If
+   step 2 did not run (the code-only path), no record exists, the timer was never touched
+   here, and this check is skipped; Ledio only reports `list-timers` as he finds it. Only when all
    of that passes are the key and the settings restored from the pause directory exactly as
    §1.9 step 5 says, including the checksum, `daemon-reload` and the keyed-unlock check.
 8. **After.** The cleanup is a failed pass for the purposes of the plan. The `.failed` files
@@ -1630,7 +1698,14 @@ saving is open for days and annotators keep writing.
 ## Part 3 — Pyramid Texts (UD_Egyptian-PC) admission
 
 **Dependencies (rev. 4).** Part 3 starts only when (a) part 1 is committed, merged and deployed
-(order table row 1s); (b) the (B) exclusion manifest `docs/kri/exclusion-manifest.csv` is
+(order table row 1s), and **`BASE_P3` is recorded in `$R/env.txt` (rev. 7): it is
+`MERGE_SHA_P1`**, the post-part-1 main, with the §1.0 item 4 code hashes and the corpus N
+sha256 re-recorded at it. Part 3's code-change test is `git diff <BASE_P3> main -- app scripts
+tests requirements*.txt deploy data/benchmarks`, empty at the part 3 pre-registration, at the
+§3.3 measurement and at the §3.4 merge (docs-only commits on main do not count, as in §1.0).
+The §1.0 sha is **not** used for part 3: part 1 itself changed `tests` and `data/benchmarks`
+(§1.8), so that test would reject the normal sequence. A non-empty diff ends part 3 as it ends
+part 1 under §1.0; (b) the (B) exclusion manifest `docs/kri/exclusion-manifest.csv` is
 **complete** (§4.0: no pending hash, the self-test entry EX001 filled) and its sha256 is
 written into the part 3 pre-registration; (c) the 4a negative holdout is drawn (rule 7). If
 (b) is not true, rule 6 cannot be evaluated and part 3 waits; parts 1 and 2 do not depend on
@@ -1809,9 +1884,17 @@ written in between.
    with the B6 equality rule: the backup's annotation `COUNT, MAX(id)` equals `A_pause3`. Its
    name and sha256 go to `$R/db/snapshot_p3_source.txt`, and, as for snapshot 2, a second
    server-side copy of that exact `.gz` is kept in the pause directory.
-3. **Merge and deploy.** Merge by the one mandated form (§1.9 step 0: `git merge --no-ff`,
-   with the same code-diff test, and `MERGE_SHA_P3` recorded), push, then Ledio runs
-   `~/egyptology-deploy.sh` without `INSTALL_UNITS`. The log must show `inserted = admitted`
+3. **Merge and deploy.** The part 3 work is on its own branch `ud-admission-<date>`, cut from
+   `BASE_P3` or a docs-only descendant; its tip is the **admission commit**, the one the §3.3
+   re-measure ran on (the candidate P is its `examples.csv`; the old prefix is byte-identical
+   to N). Merge by the one mandated form (§1.9 step 0: `git merge --no-ff`), allowed only if
+   the part 3 code-diff test against **`BASE_P3`** (Dependencies) is empty on main before the
+   merge. After the merge and before the push, record `MERGE_SHA_P3` and check, in
+   `$R/env.txt`: `HEAD^2` **is the measured admission commit** (the sha the §3.3 results note
+   names); `HEAD^1` is main as tested; `shasum -a 256 data/processed/examples.csv` equals P's
+   measured sha256 (the corpus hash in the part 3 pre-registration and results note); the
+   committed tests are byte-identical to the measured commit's. Any mismatch: nothing is
+   pushed. Then push, and Ledio runs `~/egyptology-deploy.sh` without `INSTALL_UNITS`. The log must show `inserted = admitted`
    (the admission count in the part 3 report), updated 0 and the merged commit. After the
    restart the post-restart pause checks of §1.9 step 1 are repeated (1.3 and 1.4, with
    `A_pause3`).
@@ -1824,9 +1907,11 @@ written in between.
 6. **Rollback: §1.9a with the part 3 parameters.** One procedure, no special cases:
    * **Inside the window** (steps 1-4, before the key is back): §1.9a as written. A failed
      deploy whose own rollback ran is its trigger (6): only the code state is checked (the
-     server's `examples.csv` has N's sha256), because the DB gained nothing. Otherwise the
+     server's `examples.csv` has N's sha256), because the DB gained nothing. Otherwise, **if
+     the failed DB's annotations were read and equal `A_pause3`** (§1.9a step 3 gate), the
      backup is restored (the exact `snapshot_p3_source.txt` file), the failed file is kept,
-     the code is reverted by `git revert -m 1 <MERGE_SHA_P3>`, and the timer is put back.
+     the code is reverted by `git revert -m 1 <MERGE_SHA_P3>`, and the timer is put back as
+     recorded. If they differ or cannot be read, §1.9a's loss decision comes first, here too.
    * **After the window** (a bad admission found once saving is open): the DB steps are
      **not** run (§1.9a, scope of the DB restore: a lossy restore needs Ledio's written
      decision first). Only the code revert runs. The inserted UD rows stay in the DB,
@@ -1942,12 +2027,19 @@ Both have happened, so this block records what is true as of 2026-10-28 and fixe
    * `run_kri_endpoints.py` gains a repeatable `--historical-report NAME=PATH`. The names given
      must **equal** the file's `set_name` values (none missing, none extra), and the file's
      sha256 must equal the declared one;
-   * every report, G's and each historical one, is verified through its sidecar as G's is
-     today, **plus**: its `lines_sha256` equals the sha256 of the one lines file passed to the
-     run (so every report was made from **byte-identical line inputs**), its `examples_sha256`
-     equals that set's `csv_sha256`, its `checker_sha256` is the current checker's, its
-     manifest hashes equal G's report's, and its `private_sha256` is empty (the historical
-     sets are public-only and are screened without `--private-dir`);
+   * **Common checks (rev. 7), every report, G's and each historical one**, through its sidecar
+     as G's is verified today, **plus**: its `lines_sha256` equals the sha256 of the one lines
+     file passed to the run (so every report was made from **byte-identical line inputs**), its
+     `checker_sha256` is the current checker's, and its manifest hashes equal G's report's.
+     `examples_sha256` is checked against the corpus that report is *for*: G's against the
+     declared G sha256 (as today), each historical report's against that set's `csv_sha256`.
+   * **G's report only: `private_sha256`** must equal what the driver already requires
+     (`expected_private_sha256(--private-dir)`, verified against `run_kri_endpoints.py`): empty
+     when the run has no `--private-dir`, and otherwise the sha256 of `standrews.csv` in that
+     directory, which is the St Andrews input G includes (§4a) and is the one recorded with
+     the fixture. **Historical reports only: `private_sha256` must be empty**: the historical
+     sets are public-only and are screened without `--private-dir`. The two rules are separate
+     so that a G that includes St Andrews is not refused;
    * every declared line must be present in every report, and a line is runnable only if
      `label == new` and `runnable == yes` in **all** of them. A line that is `contained` or
      `partial` in **any** report refuses the run (`SystemExit`, as for G today), and a
