@@ -22,7 +22,6 @@ from app.data.loader import _normalize_corpus_frame
 from app.data.query import parse_query
 from app.services.faithful import (
     EXP3_FA_DEFAULT,
-    EXP3_FA_ENV,
     FAITHFUL_COLUMN,
     faithful_search_column,
     faithful_search_enabled,
@@ -79,13 +78,10 @@ def _corpus() -> pd.DataFrame:
 
 @pytest.fixture
 def switch(monkeypatch):
-    def set_to(value: str | None) -> None:
-        if value is None:
-            monkeypatch.delenv(EXP3_FA_ENV, raising=False)
-        else:
-            monkeypatch.setenv(EXP3_FA_ENV, value)
+    # "1" switches F-a on, "0" off: the module constant, the only switch.
+    def set_to(value: str) -> None:
+        monkeypatch.setattr(faithful, "EXP3_FA_DEFAULT", value == "1")
 
-    set_to(None)
     return set_to
 
 
@@ -108,23 +104,22 @@ def _run(corpus: pd.DataFrame, query: str, hieroglyphs: str | None = None):
 # --- the switch ---------------------------------------------------------------
 
 
-def test_switch_defaults_off(switch) -> None:
+def test_switch_defaults_off() -> None:
     assert EXP3_FA_DEFAULT is False
     assert faithful_search_enabled() is False
-    switch("")
+
+
+def test_environment_does_not_switch_it_on(monkeypatch) -> None:
+    # The experiment-time override is gone: production reads the code default only.
+    monkeypatch.setenv("WHYPTOLOGY_EXP3_FA", "1")
     assert faithful_search_enabled() is False
 
 
-@pytest.mark.parametrize("value,expected", [("1", True), ("on", True), ("0", False), ("off", False)])
-def test_env_overrides_the_default(switch, value: str, expected: bool) -> None:
-    switch(value)
-    assert faithful_search_enabled() is expected
-
-
-def test_env_rejects_an_unknown_value(switch) -> None:
-    switch("maybe")
-    with pytest.raises(ValueError):
-        faithful_search_enabled()
+def test_switch_follows_the_module_constant(switch) -> None:
+    switch("1")
+    assert faithful_search_enabled() is True
+    switch("0")
+    assert faithful_search_enabled() is False
 
 
 # --- switch off: today's path, nothing faithful computed -----------------------

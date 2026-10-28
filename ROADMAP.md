@@ -3135,4 +3135,5 @@ consequence the failed confirmation is reported, F-a is not promoted, `EXP3_FA_D
 LE-v1; NAME-v1 regression) the experiment is closed with F-a off; no gain or loss is attributed to
 notation alone because F-a also re-splits tokens. A future attempt needs a new pre-registration and
 new unseen sets; nothing here is re-tested on held-out 3. The `WHYPTOLOGY_EXP3_FA` override in
-`app/services/faithful.py` is to be removed when this branch is merged (not removed now).
+`app/services/faithful.py` is to be removed when this branch is merged (not removed now). *(Removed at
+merge, 2026-10-28: production reads `EXP3_FA_DEFAULT` only; tests flip the constant.)*

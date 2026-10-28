@@ -18,43 +18,29 @@ Queries in `ascii`, `mdc` or hieroglyph notation take today's path untouched, an
 the switch off nothing here is ever computed: no faithful column, no faithful index, no
 branch taken, so every output is byte-identical to the code before this module.
 
-The switch. `EXP3_FA_DEFAULT` is the code default (False). The environment variable
-`WHYPTOLOGY_EXP3_FA` overrides it either way (`1/on/true/yes`, `0/off/false/no`; unset
-or empty = the code default), for tests and manual probes. The pre-registered run does
-NOT use the variable: its two arms differ only in the commit ("the arms differ only in
-the commit"), so the F-a arm is a one-line child commit that sets `EXP3_FA_DEFAULT =
-True`, and `scripts/run_exp3_prereg.sh` refuses to start while the variable is set.
+The switch. `EXP3_FA_DEFAULT` is the only switch (False). The pre-registered run's two
+arms differed only in the commit, so the F-a arm was a one-line child commit setting it
+to True. Experiment 3 closed with F-a off (docs/exp3-results-2026-10-28-step4.md), and
+the `WHYPTOLOGY_EXP3_FA` environment override used during the experiment was removed at
+merge; tests flip the module constant instead.
 """
 
 from __future__ import annotations
 
-import os
-
 import pandas as pd
 
-# Flipped to True only by the F-a arm commit of the Experiment 3 run (see above).
+# True only in the F-a arm commit of the Experiment 3 run (see above).
 EXP3_FA_DEFAULT = False
-EXP3_FA_ENV = "WHYPTOLOGY_EXP3_FA"
 
 # The corpus-side faithful key per row. Computed only when F-a is on; a caller that
 # searches many sub-frames of one corpus (the competitive harness) adds it once to the
 # full frame so every sub-frame inherits it instead of recomputing it.
 FAITHFUL_COLUMN = "faithful_norm"
 
-_ON = {"1", "on", "true", "yes"}
-_OFF = {"0", "off", "false", "no"}
-
 
 def faithful_search_enabled() -> bool:
-    """Whether configuration F-a is switched on (code default, env override)."""
-    value = os.environ.get(EXP3_FA_ENV, "").strip().lower()
-    if not value:
-        return EXP3_FA_DEFAULT
-    if value in _ON:
-        return True
-    if value in _OFF:
-        return False
-    raise ValueError(f"{EXP3_FA_ENV}={value!r}: use one of {sorted(_ON | _OFF)}")
+    """Whether configuration F-a is switched on (the code default; off since Experiment 3)."""
+    return EXP3_FA_DEFAULT
 
 
 def applies_to(notation: str) -> bool:
