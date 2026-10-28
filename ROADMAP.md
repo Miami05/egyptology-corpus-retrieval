@@ -3024,6 +3024,48 @@ with faithful columns); then one overnight run of both arms with the pinned comm
 the new baseline on stored and faithful variants of all five sets, both pools, NAME-v1
 re-measured; `fa`: the F-a commit).
 
+**Note 2026-10-28 (step-4 runner and checker pinned; held-out 3 still sealed, not opened, not
+hashed by any run). Append-only; no rule above is changed.**
+
+- *Where we stand.* The registered run (attempt 1, `docs/exp3-results-2026-10-28-attempt1.md`)
+  selected F-a on held-out 2 faithful, in both pools. Step 4 is the one remaining use of held-out 3.
+- *The rule, restated mechanically, as frozen above.* On held-out 3 faithful, in pool C
+  (`--exclude-twins 0`) **and** pool T (`--exclude-twins 0.7`): F-a top-3 useful >= base, F-a MRR
+  >= base, F-a rank-1 count >= base. No strict improvement is required. Overall PASS only if both
+  pools pass. The stored-query rows of held-out 3 are run too but are informational, not part of
+  the rule.
+- *Pinned before held-out 3 is opened.* `scripts/run_exp3_step4.sh` (the runner) and
+  `scripts/check_exp3_step4.py` (the checker, stdlib only, with `tests/test_check_exp3_step4.py`
+  on synthetic CSVs) are pinned by the commit that carries this note; the runner records that
+  commit and the sha256 of both files in the attempt directory, and refuses to start unless both
+  are committed and unmodified. The runner is `run_exp3_prereg.sh`'s structure: the same step-0
+  checks (commit pair, one-line F-a diff, `main` contained in base, switch off/ON, corpus sha256,
+  no `WHYPTOLOGY_EXP3_FA`, signals not ignored), one detached worktree per arm at the SAME commits
+  as the registered run (base `e2a9596316ba9d0aa3457eb648a4892712bd1b0a`, fa
+  `b4844a1e1dd5875e93dde7c9173435a2bfd765b8`, both hard-pinned in the script), and the IDENTICAL
+  `$CE` line (`--query-path app --useful-rule v4 --stage auto --expected-tokens current`). Its
+  attempt directory is `~/egyptology-runs/exp3-step4-<date>-attempt<N>`, a fresh one each time;
+  worktree names carry the attempt number.
+- *Seal.* `EXP3_STOP_AFTER=0` stops after the step-0 checks, before held-out 3 is touched (step 0
+  only asks git whether the path exists in each commit). Past that point the runner first checks
+  held-out 3's sha256 against the build log's recorded value
+  (`c80100cf93e64a0649f0616eca795aac469dbef1a74b9ca51107bd6f16d2d838`, which must also equal the
+  value pinned in the script) and against the file in each arm's worktree, and only then builds
+  its faithful benchmark file with `scripts/exp3_faithful_benchmark_file.py` (the helper used
+  for held-out 2; the fold-back check must hold on every row or the run stops) and runs the
+  harness: stored and faithful queries, pools C and T, both arms.
+- *Gate.* `gate_step4.txt` is written by the checker from the four faithful result CSVs
+  (`holdout3_faithful_{C,T}.csv`, base and fa): per-pool PASS/FAIL, then `STEP4 OVERALL`. Metrics
+  are recomputed from `useful_family_rank` (top-3 useful = rank 1 to 3, MRR as an exact fraction
+  with a miss as 0, rank-1 = rank 1) and cross-checked against the harness's hit columns; arms
+  that rank different query sets, a missing column or an empty file are "unjudgeable" (exit 2),
+  never a pass. A FAIL ends the run normally; the failed confirmation is then reported and
+  held-out 3 is spent, as the rule says. Held-out 3 informs no tuning either way.
+- *Not part of the rule, kept visible.* The results note records, as it did for held-out 2, the
+  composition of held-out 3 (query types, sources, stages) and the per-query rank changes; the
+  NAME-v1 faithful movement against F-a (results note, section 3) stays a disclosed risk for the
+  promotion decision, not a step-4 criterion.
+
 ### What to do next, in order (written 2026-09-07 after the sixth mail)
 
 1. **Ledio decides the plain-ASCII question.** Recommendation: follow Nederhof — read every
