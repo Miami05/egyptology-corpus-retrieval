@@ -41,6 +41,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.data.loader import load_examples_csv
 from app.data.query import parse_query
+from app.services.faithful import faithful_search_enabled, with_faithful_column
 from app.services.retrieval import retrieve_top_k
 from app.services.stage import (
     build_stage_resources,
@@ -801,6 +802,15 @@ def main(argv: "list[str] | None" = None) -> None:
     results_path, failures_path = _resolve_output_paths(args)
     examples_df = load_examples_csv(args.examples)
     benchmark_df = _load_benchmark(args.benchmark)
+    # Experiment 3, F-a (off by default; app.services.faithful): the faithful key of
+    # every corpus row, computed once here so each query's candidate pool inherits it
+    # instead of recomputing it for every index build. Nothing is added when off.
+    if faithful_search_enabled():
+        with_faithful_column(examples_df)
+    print(
+        f"Experiment 3 F-a switch: {'ON' if faithful_search_enabled() else 'off'}",
+        file=sys.stderr,
+    )
 
     # Twin guard (audit A4) and baseline tables (audit A23): corpus-wide token sets,
     # token index and folded-reading groups, built once (about 5 s) and reused for
@@ -931,11 +941,13 @@ def main(argv: "list[str] | None" = None) -> None:
         # or plain-ASCII text (whyptology_app.py: `query_mdc=searched.reading or
         # query`). 'legacy' passes the raw string, as this harness always did.
         suggestion_query = query_input
+        # The notation retrieval decided on (same text, same vocabulary); read by the
+        # suggestion layer only under Experiment 3's F-a switch.
+        searched = parse_query(
+            query_input,
+            vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
+        )
         if args.query_path == "app":
-            searched = parse_query(
-                query_input,
-                vocabulary=retrieval_index.vocabulary if retrieval_index is not None else None,
-            )
             suggestion_query = searched.reading or query_input
         suggestions = suggest_top_readings(
             retrieval_results,
@@ -945,6 +957,7 @@ def main(argv: "list[str] | None" = None) -> None:
             query_raw=query_input,
             query_reading_order=query_reading_order,
             top_n=3,
+            query_notation=searched.notation,
         )
         candidates = [suggestion.candidate_transliteration for suggestion in suggestions]
         expected = str(bench_row["expected_transliteration"])

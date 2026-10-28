@@ -385,7 +385,10 @@ def build_stage_resources(
     # Imported here, not at module scope: app.services.retrieval imports this module
     # (for build_stage_resources' own use in retrieve_with_stage), so a top-level
     # import back into retrieval.py would be circular.
+    import dataclasses
+
     from app.retrieval.scorer import build_corpus_stats
+    from app.services.faithful import build_faithful_index, faithful_search_enabled
     from app.retrieval.tfidf import NgramIndex
     from app.retrieval.tokens import ScoringTables
     from app.services.reading_model import train_reading_model
@@ -431,6 +434,19 @@ def build_stage_resources(
         corpus_size=stats.n_rows,
     )
     index = SearchIndex(stats=stats, text_index=text_index, tables=tables)
+    # Experiment 3, F-a (off by default; app.services.faithful): the faithful twin of
+    # this index, with the same stage split (frequencies over the stage subset,
+    # n-gram index and token sets pooled and shared from the pooled twin).
+    if faithful_search_enabled():
+        index = dataclasses.replace(
+            index,
+            faithful=build_faithful_index(
+                df,
+                index,
+                stats_frame=stage_subset,
+                pooled_faithful=pooled_index.faithful if pooled_index is not None else None,
+            ),
+        )
 
     return StageResources(
         stage=target,

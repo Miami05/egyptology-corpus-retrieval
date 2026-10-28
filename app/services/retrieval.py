@@ -11,7 +11,7 @@ from app.data.normalizer import (
 )
 from app.data.query import QueryParse, parse_query
 from app.services.segmentation import segment_paste
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from rapidfuzz import fuzz, process
@@ -26,6 +26,13 @@ from app.retrieval.scorer import (
     combine_scores,
 )
 from app.retrieval.tfidf import NgramIndex
+from app.services.faithful import (
+    applies_to,
+    build_faithful_index,
+    faithful_key,
+    faithful_search_enabled,
+    faithful_view,
+)
 from app.services.stage import (
     StageResources,
     choose_stage_by_likelihood,
@@ -53,6 +60,9 @@ class SearchIndex:
     stats: CorpusStats
     text_index: NgramIndex
     tables: ScoringTables | None = None
+    # Experiment 3, F-a (app.services.faithful): the same index over the faithful
+    # key. Built only while the switch is on; None otherwise, and then never read.
+    faithful: "SearchIndex | None" = None
 
     @property
     def vocabulary(self) -> set[str]:
@@ -63,11 +73,14 @@ class SearchIndex:
 
 def build_search_index(df: pd.DataFrame) -> SearchIndex:
     stats = build_corpus_stats(df)
-    return SearchIndex(
+    index = SearchIndex(
         stats=stats,
         text_index=NgramIndex.build(df["mdc_norm"]),
         tables=ScoringTables.build(df, stats.mdc_frequencies, stats.glyph_frequencies),
     )
+    if faithful_search_enabled():
+        index = replace(index, faithful=build_faithful_index(df, index))
+    return index
 
 
 def retrieve_top_k(
@@ -97,6 +110,24 @@ def retrieve_top_k(
     # says so when it happens.
     query_hieroglyphs_norm = parse.hieroglyphs_norm
     query_mdc_norm = parse.search_key
+    # Experiment 3, F-a (off by default; app.services.faithful): a Unicode query is
+    # matched on the faithful key, in every retrieval signal. The notation was
+    # decided above on the folded vocabulary, as always. The scorers read the key
+    # from `mdc_norm`, so they are handed a view whose `mdc_norm` is the faithful
+    # column, and the faithful twin of the index; the rows returned carry their own
+    # `mdc_norm` again, so nothing downstream of the scores sees the swap.
+    folded_keys: pd.Series | None = None
+    if applies_to(parse.notation):
+        query_mdc_norm = faithful_key(parse.reading or parse.raw)
+        folded_keys = df["mdc_norm"]
+        df = faithful_view(df)
+        if index is not None:
+            if index.faithful is None:
+                raise ValueError(
+                    "Experiment 3 F-a is on but this SearchIndex was built without its "
+                    "faithful twin; build the index with the switch on"
+                )
+            index = index.faithful
     query_reading_order_norm = normalize_sign_sequence(query_reading_order)
     # One copy of the frame, not five. The old path built a separate sorted copy per
     # signal and merged them back on three key columns, discarding each sort; the
@@ -178,6 +209,8 @@ def retrieve_top_k(
         )
     scored = scored[has_evidence]
     top = scored.head(k).copy()
+    if folded_keys is not None:
+        top["mdc_norm"] = folded_keys.loc[top.index].to_numpy()
     if top.empty:
         top["evidence"] = pd.Series(dtype=str)
         return top

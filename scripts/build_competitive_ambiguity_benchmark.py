@@ -23,6 +23,11 @@ LE-v1, the Late Egyptian evaluation set (docs/late-egyptian-eval-set-2026-09-05.
 from v4 *and* from held-out 1 at once. `--require-propn-variant` was added on
 2026-09-06 for NAME-v1, item D's proper-noun set (docs/proper-nouns-2026-09-06.md).
 
+`--exclude-same-text` (with `--bbaw-window`) was added on 2026-10-27 for Experiment 3's
+held-out 2 and 3: it widens `--exclude-benchmark` from rows and their near-twins to
+rows sharing a source_text_id with a target and, for BBAW, a window of neighbouring
+sentence numbers. It narrows candidacy only and is off by default.
+
 `--substitute-name-spelling` is the one flag here that touches the *query* rather than
 candidacy: it rewrites the generated query so the name in it is spelled the way another
 corpus row spells the same lemma. It changes no selection rule, no threshold and no twin
@@ -33,6 +38,7 @@ have been without it.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections import Counter, defaultdict
 from fractions import Fraction
@@ -154,6 +160,25 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--exclude-same-text",
+        action="store_true",
+        help=(
+            "With --exclude-benchmark: also remove from candidacy every corpus row "
+            "that shares a source_text_id with a named benchmark target (TLA, AES, "
+            "Ramses) and, for BBAW (one source_text_id for all its rows), every BBAW "
+            "row whose sequential sentence number (B000123) lies within "
+            "--bbaw-window of a BBAW target. Experiment 2's step 1 rule, reused by "
+            "Experiment 3 (ROADMAP.md). Off by default, so earlier builds are "
+            "reproduced unchanged. Candidacy only: twin detection is untouched."
+        ),
+    )
+    parser.add_argument(
+        "--bbaw-window",
+        type=int,
+        default=20,
+        help="Half-width of the BBAW sentence-number window for --exclude-same-text.",
+    )
+    parser.add_argument(
         "--pool-size",
         type=int,
         default=0,
@@ -163,6 +188,53 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+BBAW_SOURCE = "BBAW"
+BBAW_SENTENCE_RE = re.compile(r"^B(\d+)$")
+
+
+def same_text_exclusions(
+    sources: list[str],
+    text_ids: list[str],
+    sentence_ids: list[str],
+    seed_positions: list[int],
+    window: int,
+) -> tuple[set[int], set[int]]:
+    """(rows sharing a non-BBAW source_text_id with a seed, BBAW rows within
+    `window` sentence numbers of a BBAW seed). Seeds themselves are included.
+
+    BBAW stores one source_text_id for all of its rows, so "same text" would mean
+    "all of BBAW"; its sentence ids are sequential (B000123), and a fixed window of
+    neighbouring numbers stands in for the text. Every other source's
+    source_text_id is used as it is.
+    """
+    by_text: dict[str, list[int]] = defaultdict(list)
+    bbaw_by_number: dict[int, list[int]] = defaultdict(list)
+    bbaw_text_ids: set[str] = set()
+    for position, (source, text_id, sentence_id) in enumerate(
+        zip(sources, text_ids, sentence_ids)
+    ):
+        if source == BBAW_SOURCE:
+            bbaw_text_ids.add(text_id)
+            match = BBAW_SENTENCE_RE.match(sentence_id)
+            if match is None:
+                raise SystemExit(f"BBAW sentence id {sentence_id!r} is not B<number>.")
+            bbaw_by_number[int(match.group(1))].append(position)
+        else:
+            by_text[text_id].append(position)
+    if len(bbaw_text_ids) > 1:
+        raise SystemExit(f"BBAW rows carry several source_text_ids: {sorted(bbaw_text_ids)}")
+    same_text: set[int] = set()
+    in_window: set[int] = set()
+    for position in seed_positions:
+        if sources[position] == BBAW_SOURCE:
+            number = int(BBAW_SENTENCE_RE.match(sentence_ids[position]).group(1))
+            for neighbour in range(number - window, number + window + 1):
+                in_window.update(bbaw_by_number.get(neighbour, ()))
+        else:
+            same_text.update(by_text[text_ids[position]])
+    return same_text, in_window
 
 
 def build_token_index(token_sets: list[set[str]]) -> dict[str, list[int]]:
@@ -556,6 +628,29 @@ def main() -> None:
             f"{len(excluded_positions) - len(seed_positions)} near-twins of them "
             f"(overlap >= {args.max_twin_overlap})."
         )
+        if args.exclude_same_text:
+            matched = {row_keys[position] for position in seed_positions}
+            same_text, in_window = same_text_exclusions(
+                [str(value).strip() for value in prepared["source"]],
+                [str(value) for value in prepared["source_text_id"]],
+                [str(value) for value in prepared["source_sentence_id"]],
+                seed_positions,
+                args.bbaw_window,
+            )
+            new_text = same_text - excluded_positions
+            excluded_positions.update(new_text)
+            new_window = in_window - excluded_positions
+            excluded_positions.update(new_window)
+            print(
+                f"Exclusion by rule (each row counted under the first rule that "
+                f"removes it): {len(seed_positions)} target rows; "
+                f"{len(excluded_positions) - len(seed_positions) - len(new_text) - len(new_window)} "
+                f"near-twins (overlap >= {args.max_twin_overlap}); {len(new_text)} more "
+                f"sharing a TLA/AES/Ramses source_text_id; {len(new_window)} more BBAW "
+                f"rows within +-{args.bbaw_window} sentence numbers; total "
+                f"{len(excluded_positions)}. Benchmark rows not found in the corpus: "
+                f"{len(keys - matched)}."
+            )
 
     # Candidate rows may also be restricted to one language stage (--stage). This is
     # a candidacy filter, nothing more: `corpus_token_sets` and `token_index` above

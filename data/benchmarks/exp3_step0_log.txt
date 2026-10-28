@@ -1,0 +1,72 @@
+Experiment 3, step 0 — faithful query variants (read-only, no ranker code)
+
+Corpus data/processed/examples.csv: 130472 rows, sha256 44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2
+Distinct whitespace tokens 72176; distinct folded keys 35942
+Distinct cleaned words (unfolded_reading_form pieces) 12260; distinct folded keys 9460
+  merging keys aleph/ayin: pre-registered (raw tokens) 611 (recorded 2026-09-07: 681); conservative variant 578; CLEANED 328
+  merging keys kh/khh: pre-registered (raw tokens) 263 (recorded 2026-09-07: 242); conservative variant 240; CLEANED 147
+  merging keys h-dot/h: pre-registered (raw tokens) 402 (recorded 2026-09-07: 638); conservative variant 338; CLEANED 245
+  (the recorded counts are not reproduced: 35,808 keys then; the 2026-09-07 counting code and write-up were never tracked, so the method here is a reconstruction and the cause of the difference is unknown. Raw tokens keep editorial text that search_fold deletes (n{ꜣ} -> n), which inflates the raw and conservative counts; the recorded numbers were probably inflated the same way. The cleaned count is the meaningful one.)
+
+== v4 (20 queries, data/benchmarks/competitive_ambiguity_eval_queries_v4.csv)
+  recipe fold-back differs: 12  COMP_001 COMP_002 COMP_003 COMP_011 COMP_012 COMP_013 COMP_014 COMP_017 COMP_018 COMP_019 COMP_021 COMP_022
+  faithful query (recipe where it folds back, else aligned) fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 20}
+  A54 re-rank mode of the faithful queries: {'mixed': 20}
+  queries with tokens repaired by character alignment: 2  COMP_012(rit->rꞽt) COMP_018(mntt->mntt maa-hr-b->mꜣꜥ-ḥr-b)
+  queries with ASCII residue tokens: 10  COMP_001(pl) COMP_002(pl) COMP_011(pl pl pl) COMP_012(kawtpl) COMP_013(pl pl) COMP_014(pl pl) COMP_017(pl) COMP_019(pl) COMP_021(twpl) COMP_022(pl)
+  can move (pre-registered rule): 20  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_018 COMP_019 COMP_020 COMP_021 COMP_022 COMP_023
+  can move (token carries a letter of the pair): 18  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_019 COMP_020 COMP_022 COMP_023
+  can move (conservative merging keys, sensitivity): 18
+  can move (CLEANED merging keys): 19; token carries a letter of the pair: 19  COMP_001 COMP_002 COMP_003 COMP_004 COMP_005 COMP_007 COMP_008 COMP_010 COMP_011 COMP_012 COMP_013 COMP_014 COMP_016 COMP_017 COMP_018 COMP_019 COMP_020 COMP_022 COMP_023
+== held-out 1 (20 queries, data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv)
+  recipe fold-back differs: 3  HOLD_001 HOLD_008 HOLD_026
+  faithful query (recipe where it folds back, else aligned) fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 20}
+  A54 re-rank mode of the faithful queries: {'mixed': 19, 'strict': 1}
+  queries with tokens repaired by character alignment: 2  HOLD_008(i->ꞽ) HOLD_026(kh->ḫ)
+  queries with ASCII residue tokens: 0  
+  can move (pre-registered rule): 18  HOLD_001 HOLD_002 HOLD_005 HOLD_007 HOLD_008 HOLD_010 HOLD_011 HOLD_014 HOLD_016 HOLD_017 HOLD_019 HOLD_020 HOLD_022 HOLD_023 HOLD_024 HOLD_025 HOLD_026 HOLD_027
+  can move (token carries a letter of the pair): 16  HOLD_002 HOLD_005 HOLD_007 HOLD_010 HOLD_011 HOLD_014 HOLD_016 HOLD_017 HOLD_019 HOLD_020 HOLD_022 HOLD_023 HOLD_024 HOLD_025 HOLD_026 HOLD_027
+  can move (conservative merging keys, sensitivity): 16
+  can move (CLEANED merging keys): 16; token carries a letter of the pair: 16  HOLD_002 HOLD_005 HOLD_007 HOLD_010 HOLD_011 HOLD_014 HOLD_016 HOLD_017 HOLD_019 HOLD_020 HOLD_022 HOLD_023 HOLD_024 HOLD_025 HOLD_026 HOLD_027
+== LE-v1 (30 queries, data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv)
+  recipe fold-back differs: 0  
+  faithful query (recipe where it folds back, else aligned) fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 30}
+  A54 re-rank mode of the faithful queries: {'mixed': 29, 'strict': 1}
+  queries with tokens repaired by character alignment: 0  
+  queries with ASCII residue tokens: 0  
+  can move (pre-registered rule): 30  LE_001 LE_002 LE_004 LE_005 LE_007 LE_008 LE_010 LE_011 LE_013 LE_014 LE_016 LE_017 LE_019 LE_020 LE_022 LE_023 LE_025 LE_026 LE_028 LE_029 LE_031 LE_032 LE_034 LE_035 LE_037 LE_038 LE_040 LE_041 LE_043 LE_044
+  can move (token carries a letter of the pair): 27  LE_002 LE_004 LE_005 LE_007 LE_008 LE_010 LE_011 LE_013 LE_014 LE_016 LE_017 LE_019 LE_022 LE_025 LE_026 LE_028 LE_029 LE_031 LE_032 LE_034 LE_035 LE_037 LE_038 LE_040 LE_041 LE_043 LE_044
+  can move (conservative merging keys, sensitivity): 27
+  can move (CLEANED merging keys): 27; token carries a letter of the pair: 27  LE_002 LE_004 LE_005 LE_007 LE_008 LE_010 LE_011 LE_013 LE_014 LE_016 LE_017 LE_019 LE_022 LE_025 LE_026 LE_028 LE_029 LE_031 LE_032 LE_034 LE_035 LE_037 LE_038 LE_040 LE_041 LE_043 LE_044
+== NAME-v1 (30 queries, data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv)
+  recipe fold-back differs: 0  
+  faithful query (recipe where it folds back, else aligned) fold-back differs: 0  
+  retrieval key (parse_query with the corpus vocabulary) differs from the stored query's: 0  
+  faithful queries read as: {'unicode': 30}
+  A54 re-rank mode of the faithful queries: {'mixed': 29, 'strict': 1}
+  queries with tokens repaired by character alignment: 0  
+  queries with ASCII residue tokens: 0  
+  can move (pre-registered rule): 29  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_027 NAME_028 NAME_029 NAME_030
+  can move (token carries a letter of the pair): 28  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_027 NAME_029 NAME_030
+  can move (conservative merging keys, sensitivity): 28
+  can move (CLEANED merging keys): 29; token carries a letter of the pair: 29  NAME_001 NAME_002 NAME_003 NAME_004 NAME_005 NAME_006 NAME_007 NAME_008 NAME_009 NAME_010 NAME_011 NAME_012 NAME_013 NAME_014 NAME_015 NAME_016 NAME_017 NAME_018 NAME_019 NAME_020 NAME_021 NAME_022 NAME_023 NAME_024 NAME_025 NAME_026 NAME_027 NAME_029 NAME_030
+
+Summary
+  v4: recipe fold-back fails 12/20, faithful fold-back fails 0/20, residue queries 10, char-aligned queries 2, movers 20/20 (strict 18/20; cleaned 19/20, cleaned strict 19/20), retrieval key differs 0/20
+  held-out 1: recipe fold-back fails 3/20, faithful fold-back fails 0/20, residue queries 0, char-aligned queries 2, movers 18/20 (strict 16/20; cleaned 16/20, cleaned strict 16/20), retrieval key differs 0/20
+  LE-v1: recipe fold-back fails 0/30, faithful fold-back fails 0/30, residue queries 0, char-aligned queries 0, movers 30/30 (strict 27/30; cleaned 27/30, cleaned strict 27/30), retrieval key differs 0/30
+  NAME-v1: recipe fold-back fails 0/30, faithful fold-back fails 0/30, residue queries 0, char-aligned queries 0, movers 29/30 (strict 28/30; cleaned 29/30, cleaned strict 29/30), retrieval key differs 0/30
+Stop rule (0 movers on every set): not triggered
+
+Baselines of the STORED (folded-ASCII) queries. Not the faithful sets' baseline: their retrieval key is identical, but A54 re-ranks them in strict/mixed mode, so today's faithful-set numbers must be measured (addendum 2026-10-26).
+  (top-3 / MRR / rank-1; L = legacy pool, --expected-tokens frozen; C = legacy pool, current; T = twin-controlled 0.7, current. Experiment 3 compares C and T.)
+  v4 (20): L-auto 0.9000 / 0.8000 / 14; C-auto 0.9000 / 0.8000 / 14; T-auto 0.8500 / 0.7500 / 13  [attempt 2, remeasure-2026-10-25]
+  held-out 1 (20): L-auto 0.7500 / 0.6750 / 12; C-auto 0.7500 / 0.6667 / 12; T-auto 0.7500 / 0.6667 / 12  [attempt 2, remeasure-2026-10-25]
+  LE-v1 (30): L-auto 0.8667 / 0.8000 / 22; C-auto 0.8667 / 0.8000 / 22; T-auto 0.8667 / 0.8000 / 22  [attempt 2, remeasure-2026-10-25]
+  NAME-v1 (30): committed 0.9667 / 0.8833 / 24  [pre-audit D' tree; not re-measured in attempt 2 — the baseline run must re-measure it]

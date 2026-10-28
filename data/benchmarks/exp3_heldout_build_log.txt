@@ -1,0 +1,58 @@
+Experiment 3, step 1 — held-out 2 and held-out 3 (build log, no ranker code)
+Corpus data/processed/examples.csv: sha256 44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2
+Selection is deterministic (builder ranks by rival count; no random seed exists).
+Twin guard: --exhaustive-twins (exact Fraction probes), overlap >= 0.9; BBAW window +-20; limit 20.
+Excluded sets: competitive_ambiguity_eval_queries.csv, competitive_ambiguity_eval_queries_v2.csv, competitive_ambiguity_eval_queries_v3.csv, competitive_ambiguity_eval_queries_v4.csv, competitive_ambiguity_eval_queries_v4_driftcorrected.csv, competitive_ambiguity_eval_queries_holdout_2026-09-05.csv, competitive_ambiguity_eval_queries_le_v1.csv, competitive_ambiguity_eval_queries_name_v1.csv, ambiguous_reading_eval_queries.csv
+
+== held-out 2 (selection set)
+$ python scripts/build_competitive_ambiguity_benchmark.py --examples data/processed/examples.csv --output <raw output> --limit 20 --exhaustive-twins --exclude-same-text --bbaw-window 20 --id-prefix HOLD2 --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v2.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v3.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4_driftcorrected.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv --exclude-benchmark data/benchmarks/ambiguous_reading_eval_queries.csv
+Twin detection over the full corpus: 130472 rows, 9468 distinct tokens.
+Excluding 164 rows named by data/benchmarks/competitive_ambiguity_eval_queries.csv, data/benchmarks/competitive_ambiguity_eval_queries_v2.csv, data/benchmarks/competitive_ambiguity_eval_queries_v3.csv, data/benchmarks/competitive_ambiguity_eval_queries_v4.csv, data/benchmarks/competitive_ambiguity_eval_queries_v4_driftcorrected.csv, data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv, data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv, data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv, data/benchmarks/ambiguous_reading_eval_queries.csv and 99 near-twins of them (overlap >= 0.9).
+Exclusion by rule (each row counted under the first rule that removes it): 164 target rows; 99 near-twins (overlap >= 0.9); 0 more sharing a TLA/AES/Ramses source_text_id; 408 more BBAW rows within +-20 sentence numbers; total 671. Benchmark rows not found in the corpus: 0.
+Candidates considered: 130472 rows -> 111213 eligible (skipped 671 excluded by --exclude-benchmark, 1117 too short, 3015 without distractors, 14456 with a near-identical twin anywhere in the corpus at overlap >= 0.9)
+Dropped 9 selected rows whose generated query was a single ubiquitous token (no retrievable signal).
+Wrote 20 competitive ambiguity benchmark rows to /private/tmp/claude-501/-Users-lediodurmishaj-projects-Egyptology-APP/4332bcd9-10e2-4d16-8260-fa93baa298e1/scratchpad/exp3_build/holdout2_raw.csv
+
+== held-out 3 (SEALED until step 4; counts only)
+$ python scripts/build_competitive_ambiguity_benchmark.py --examples data/processed/examples.csv --output <raw output> --limit 20 --exhaustive-twins --exclude-same-text --bbaw-window 20 --id-prefix HOLD3 --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v2.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v3.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_v4_driftcorrected.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv --exclude-benchmark data/benchmarks/ambiguous_reading_eval_queries.csv --exclude-benchmark data/benchmarks/competitive_ambiguity_eval_queries_holdout2_2026-10-27.csv
+Twin detection over the full corpus: 130472 rows, 9468 distinct tokens.
+Excluding 184 rows named by data/benchmarks/competitive_ambiguity_eval_queries.csv, data/benchmarks/competitive_ambiguity_eval_queries_v2.csv, data/benchmarks/competitive_ambiguity_eval_queries_v3.csv, data/benchmarks/competitive_ambiguity_eval_queries_v4.csv, data/benchmarks/competitive_ambiguity_eval_queries_v4_driftcorrected.csv, data/benchmarks/competitive_ambiguity_eval_queries_holdout_2026-09-05.csv, data/benchmarks/competitive_ambiguity_eval_queries_le_v1.csv, data/benchmarks/competitive_ambiguity_eval_queries_name_v1.csv, data/benchmarks/ambiguous_reading_eval_queries.csv, data/benchmarks/competitive_ambiguity_eval_queries_holdout2_2026-10-27.csv and 99 near-twins of them (overlap >= 0.9).
+Exclusion by rule (each row counted under the first rule that removes it): 184 target rows; 99 near-twins (overlap >= 0.9); 0 more sharing a TLA/AES/Ramses source_text_id; 730 more BBAW rows within +-20 sentence numbers; total 1013. Benchmark rows not found in the corpus: 0.
+Candidates considered: 130472 rows -> 110891 eligible (skipped 1013 excluded by --exclude-benchmark, 1116 too short, 3010 without distractors, 14442 with a near-identical twin anywhere in the corpus at overlap >= 0.9)
+Dropped 6 selected rows whose generated query was a single ubiquitous token (no retrievable signal).
+Wrote 20 competitive ambiguity benchmark rows to /private/tmp/claude-501/-Users-lediodurmishaj-projects-Egyptology-APP/4332bcd9-10e2-4d16-8260-fa93baa298e1/scratchpad/exp3_build/holdout3_raw.csv
+
+== faithful column (step 0 derivation: recipe where it folds back, else aligned)
+  held-out 2: fold-back fails 0/20 ; recipe 20, aligned 0; ASCII residue 0 ; char-aligned 0 
+  held-out 3: fold-back fails 0/20; recipe 20, aligned 0; ASCII residue 0; char-aligned 0
+
+== composition
+  held-out 2:
+  rows 20; query types {'partial_transliteration': 10, 'simplified_transliteration': 10}; sources {'AES': 2, 'BBAW': 11, 'Ramses': 2, 'TLA': 5}; stages {'(blank)': 13, 'Demotic': 4, 'Earlier Egyptian': 1, 'Late Egyptian': 2}
+  held-out 3:
+  rows 20; query types {'normalized_reading_order': 2, 'partial_transliteration': 9, 'simplified_transliteration': 9}; sources {'AES': 1, 'BBAW': 12, 'Ramses': 4, 'TLA': 3}; stages {'(blank)': 13, 'Demotic': 3, 'Late Egyptian': 4}
+
+== disjointness, checked after the build
+  held-out 2 vs competitive_ambiguity_eval_queries.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_v2.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_v3.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_v4.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_v4_driftcorrected.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_holdout_2026-09-05.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_le_v1.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs competitive_ambiguity_eval_queries_name_v1.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 2 vs ambiguous_reading_eval_queries.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs held-out 2: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_v2.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_v3.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_v4.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_v4_driftcorrected.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_holdout_2026-09-05.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_le_v1.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs competitive_ambiguity_eval_queries_name_v1.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+  held-out 3 vs ambiguous_reading_eval_queries.csv: same row 0, same source_text_id 0, BBAW within +-20 0 | diagnostics (not frozen rules): same AES text (source_ref) 0, Ramses line within +-20 same split 0
+
+== files
+  data/benchmarks/competitive_ambiguity_eval_queries_holdout2_2026-10-27.csv sha256 320c9b78f6d76bad87786603976d94d5662af6c89e4c3339d2aa712e83a437c0
+  data/benchmarks/competitive_ambiguity_eval_queries_holdout3_2026-10-27_SEALED.csv sha256 c80100cf93e64a0649f0616eca795aac469dbef1a74b9ca51107bd6f16d2d838
