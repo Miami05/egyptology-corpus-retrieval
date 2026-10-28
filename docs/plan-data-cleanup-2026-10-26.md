@@ -1,10 +1,24 @@
-# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 3)
+# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 8)
 
-Approved in outline by Ledio 2026-10-26 ~01:00, to start **after** `audit-fixes-2026-10-25` is
-merged into main, pushed and deployed. Written without running anything (a pre-registered
-regression run had the Mac overnight). This is a plan, not a pre-registration: part 2 and the
-part 3 re-measure each get their own pre-registration file, written and committed before their
-first run, in the style of `docs/remeasure-preregistration-2026-10-25.md`.
+**Status: DRAFT, rev. 8 (2026-10-28). Not approved, not a pre-registration.** Nothing in this
+file has been run, and no code or data was changed to write it. Rev. 3 was reviewed by Opus
+(`ready_after_small_fixes`) and by Codex gpt-6-astra (`not_ready`, 11 findings, 7 of them
+blockers). Rev. 4 answered every one of them. Rev. 4 (commit `5fcc4f8`) was then reviewed by
+Opus (`fix_first`, 2 blockers) and by Astra (`fix_first`, 4 blockers). Rev. 5 (commit `a40feaf`)
+answered those and was re-checked by Astra (`fix_first`, 3 blockers, 5 should-fix); rev. 6
+answered that re-check, and Astra's second re-check of rev. 6 (`da42841`; `fix_first`, 2
+blockers, 2 should-fix) is answered by rev. 7; rev. 8 applies four final review notes (see **Rev. 8 changes**). The maps are in the **Revision log** below. Opus confirmed the rev. 3
+blockers as fixed; they are not reopened here.
+
+The start condition has changed since rev. 3. The `audit-fixes-2026-10-25` merge is done and
+**the `kri-fixes-2026-10-26` merge is now done too**: main is `51f3757` (commit message
+"Merge kri-fixes-2026-10-26: cartouche window unit, pooled fallback default off"), the
+measured result is `docs/kri-fixes-results-2026-10-27-attempt5.md` (attempt 5, all steps
+passed, rule (b) DISABLE), and it is deployed and live (Ledio ran `~/egyptology-deploy.sh`).
+Cleanup starts from that main (§1.0). This plan is a plan, not a pre-registration: part 2
+and the part 3 re-measure each get their own pre-registration file, written and committed
+before their first run, in the style of `docs/remeasure-preregistration-2026-10-25.md`.
+Part 4 has its own status block (§4.0).
 
 Sources read: `docs/audit-2026-10-11.md` (A6–A10, A32–A39, fix order 7–8),
 `DATA-LICENSE.md`, `scripts/import_{tla_dataset,aes_relannis,bbaw_egyptian,ramses,ud_egyptian_pc}.py`,
@@ -12,6 +26,28 @@ Sources read: `docs/audit-2026-10-11.md` (A6–A10, A32–A39, fix order 7–8),
 `app/storage/repo.py` (`upsert_example`), `app/storage/models.py`, `app/ui/review_common.py`
 (`attach_db_ids`), `app/ui/whyptology_app.py` (`annotations_unlocked`), `app/data/loader.py`,
 `app/services/stage.py`, `scripts/eval_guards.py`, `docs/plan-source-scaffolding-2026-10-11.md`.
+Read for rev. 4 (read-only): `scripts/check_standrews_urkiv_gate.py`, `scripts/run_kri_fixes_eval.py`,
+`scripts/run_kri_fixes_prereg.sh`, `scripts/verify_release.py`, `scripts/backup_db.sh`,
+`scripts/egyptology-deploy.sh`, `scripts/import_examples.py`, `scripts/migrate_example_ids.py`,
+`app/core/config.py`, `deploy/systemd/egyptology.service`, `data/benchmarks/release_baseline.json`,
+`docs/kri-fixes-results-2026-10-27-attempt5.md`, `docs/kri-official-test-tooling-2026-10-26.md`,
+`docs/kri-bfreq-baseline-2026-10-26.md`, `scripts/kri_stats.py`.
+Read again for rev. 5 (read-only, rev. 4 text against code): `app/core/config.py`
+(`load_dotenv()`, the `database:` announcement and its `origin` wording),
+`scripts/egyptology-deploy.sh` (`load_env_file`, the "must not be sourced" comment),
+`scripts/run_kri_fixes_eval.py` (`row_id`, `--split-manifest`, the per-line boundary
+columns), `scripts/check_overlap.py` (`--examples`, `--private-dir`, `--manifest`),
+`scripts/eval_guards.py` (`text_level_test_mask`).
+Read again for rev. 6 (read-only, rev. 5 text against code): `scripts/kri_declaration.py`
+(`DECLARATION_COLUMNS`, `read_declaration`'s exact-header check),
+`scripts/run_kri_endpoints.py` (`verify_overlap_report`, the single `--overlap-report`
+argument), `scripts/check_overlap.py` (its CLI), `tests/test_kri_tooling_freeze.py`
+(`FROZEN_TOOLING`), `deploy/systemd/egyptology-backup.timer` (`Persistent=true`),
+`app/core/config.py` (`load_dotenv()` and the `database:` line).
+Read again for rev. 7 (read-only): `scripts/run_kri_endpoints.py` (`expected_private_sha256`
+and the sidecar's `private_sha256` check, which already ties G's report to `--private-dir`),
+`scripts/check_overlap.py` (the sidecar fields it writes, `private_sha256` empty without
+`--private-dir`).
 
 ## Rev. 2 changes (answering the Codex gpt-6-astra review, verdict `not_ready`)
 
@@ -102,26 +138,355 @@ Sources read: `docs/audit-2026-10-11.md` (A6–A10, A32–A39, fix order 7–8),
    by construction. A donorless TLA row kept unchanged is gated as an explicit, listed
    exception, never silently (§1.2 rule 3a, §1.3).
 
+## Rev. 4 changes (answering the Astra and Opus reviews of rev. 3; 2026-10-28)
+
+Both reviews were of rev. 3 at main `ac9158a`. Since then `kri-fixes` merged (main `51f3757`)
+and the KRI official-test tooling landed on main (`scripts/check_overlap.py`,
+`scripts/kri_*.py`, `docs/kri/exclusion-manifest.csv`, the frozen B-freq baseline).
+
+1. **Start condition (Astra 1, Opus 4):** cleanup starts only from a main that contains the
+   kri-fixes merge, has its results note committed, and is deployed. Rev. 3 named only the
+   audit merge. Attempt 5, the A7 amendment and the existing 0.80 / 0.70 twin-controlled
+   floors are cited as the historical references they are (Ground rules, §1.0).
+2. **The Urk. IV gate has no `--examples` flag (Astra 2):** `scripts/check_standrews_urkiv_gate.py`
+   accepts only `--stage`, `--rank-k` and `--private-dir`, and its `main()` always loads the
+   checkout's own `data/processed/examples.csv`. Rev. 4 does not change the script. The gate
+   is run from a throwaway measurement worktree whose `examples.csv` is the corpus under test,
+   one invocation per mode (`auto`, `declared`), with the corpus bound by sha256 before and
+   after and by the printed row and source counts (§2.1a).
+3. **Decoder and segmentation are measured (Astra 3):** the competitive sets never call
+   `ReadingModel.predict_sequence` or `Segmenter.segment`. Part 2 and the part 3 re-measure now
+   include `scripts/run_kri_fixes_eval.py`, on a fixed held-out partition taken from O so that
+   the test rows are the same across corpora, with leakage controls and frozen acceptance
+   rules (§2.3, §3.3).
+4. **Database targeting (Astra 4, Opus 6):** one verified absolute live path
+   (`/home/ledio/egyptology/egyptology.db`) is used for backup, counts, reconciliation,
+   dry-run and refresh. Backups are `.db.gz`; the exact published file is selected,
+   transferred, decompressed outside the repo and integrity-checked before any use. The
+   refresh needs zero would-be inserts first (§1.0a, §1.0b, §1.9).
+5. **systemd (Astra 5, Opus 7):** `systemctl --user daemon-reload` after every unit or drop-in
+   edit (pause and restore), `NeedDaemonReload=no` checked before the restart, no
+   `INSTALL_UNITS=1` in the cleanup deploy, and the pause checks repeated after the deploy
+   restart (§1.7, §1.9).
+6. **Target removal, twins, floors (Astra 6, Opus 9):** the removed-target query ids are
+   frozen before any run. Comparisons, the twin invariant and the loss budget use the common
+   retained-target set; removed-target queries are a separate table, with the twin fallback
+   (`eval_guards.twins_of_target`) named as its own mechanism. The floor denominator is the
+   full committed benchmark, exactly as `verify_release.py` computes it (§2.2).
+7. **Compute budget and where verification sits (Astra 7, Opus 5):** about 46 h for O + M + N
+   at the measured slow rate, the same again for any N′ and for the part 3 re-measure, heavy
+   runs from all worktrees serialized, and the local release verification moved before the
+   saving pause and before any deploy (§1.8, §2.6, order table).
+8. **B-freq and the PDFs (Astra 8, Opus 1, 2, 3):** §4.0 records the PDFs' arrival, the
+   exploratory self-test and the freeze deviation, picks the order (the corpus G is the one
+   named by the committed declaration; the replacement window is frozen around an official
+   run), and says the `kri-official-prep` checker is the §4a checker and must follow its
+   rules.
+9. **Exclusion manifest (Astra 9, Opus 3, 12):** the self-test passage (entry EX001, hash
+   still pending) and every other inspected line go into the manifest for **both**
+   endpoints, keyed by KRI reference and text hash, never by corpus row, so removal from the
+   corpus does not lift an exclusion. The manifest, complete, is an input to part 3 rule 6 and
+   to every confirmation run (§4.0, §3 rule 6, §4d, §4e).
+10. **Clustered lines (Astra 10):** the confirmation unit is one independent passage (one
+    seeded line per passage). The power floor is recomputed for that unit and for Holm's first
+    threshold: 250 passages, not 150 lines (§4e).
+11. **Removal only from BBAW and Ramses (Astra 11):** source-specific predicates and an
+    assertion that the removed set R contains no other source (§1.2 rule 4, §1.3).
+12. **Small corrections (Opus 8, 10, 11, 13):** the gate-code note re-reads at the 1.0 commit;
+    the floors that part 2 may touch are named; the paste gate cites A2.2′ as amended by A7;
+    the tagged-host SSH precheck; row 0 of the order table is marked done.
+
+## Rev. 5 changes (answering the Opus and Astra reviews of rev. 4; 2026-10-28)
+
+Both reviews were of rev. 4 (`5fcc4f8`, main `51f3757`). Nothing was run, no server was
+contacted, and no code was changed to write this revision. "O" = Opus finding, "A" = Astra
+finding, numbered in the order of the review.
+
+1. **Rollback (O1, A2; blockers):** new **§1.9a restore procedure** (triggers, service stop,
+   SQLite sidecars, restore of the exact snapshot-2 `.db.gz` after a checksum, integrity and
+   annotation checks, code rollback by reverting the merge, saving stays paused until the
+   restored state passes). §3.4 adds the backup and rollback sequence for part 3.
+2. **Config backups (O2, A2; blockers):** §1.7 step 1a: server-local mode-600 copies of every
+   file before it is edited, outside the clone, never read by an agent. The restore in §1.9
+   step 5 copies them back and checks them.
+3. **Live DB binding and dotenv (A1; blocker):** `app/core/config.py` runs `load_dotenv()`, so a
+   `.env` file can supply `DATABASE_URL` after systemd and `/proc` look clean. B1 now checks
+   every `.env` on the path, and requires the running app's own startup announcement
+   (`database: <path> (from default next to the code)`) in the journal. The refresh block no
+   longer sources `egyptology.env` (O3).
+4. **NC data is Ledio-gated (A3; blocker):** a Ground rule and the §2.1a, §4.0 steps. One
+   recorded approval per pre-registered use, naming operator, files and destinations.
+5. **Historical exposure (A4; blocker):** a KRI line is confirmation-eligible only if it is
+   `new` against G **and** against the historical corpora: O, the DB-only rows H, and the
+   removed rows R (§4.0 (b)3, §4a).
+6. **G is fixed at the gate-fixture draw (O4):** the circular definition is removed (§4.0 (c),
+   §4a, order table). The Case 1 freeze starts at the draw and is time-bounded.
+7. **Decoder (A5, A6, O5):** an identity contract through the split manifest and a new
+   training manifest (§2.0a, §2.3), D0b (fixed-heldout path equals the default path on O),
+   gross loss everywhere and exact integer budgets with a frozen denominator (D1-D3).
+8. **Worktree check (A7):** clean for O; exactly one modified file for M and N (§2.1a).
+9. **Small (O6, O7):** the allowed merge forms (§1.9 step 0); a stop criterion for the T3
+   review (§1.1a).
+
+**Not taken as written, with reasons.**
+
+* *Opus 2, "record each copy's sha256 in `pause_inventory.txt`":* the file is the Mac-side
+  record, and a bare hash of a file that holds a short passphrase (Ledio keeps the short key
+  knowingly) is a guessing oracle. The hashes stay in a server-local `SHA256SUMS`; only
+  `verified: yes/no` is reported back.
+* *Astra 3, "a Ledio gate before every NC-data read":* every read would make the six Urk. IV
+  gate runs and the paste runs ask six times for something Ledio already approved when he
+  approved the pre-registration. The gate is the recorded approval of a named use (operator,
+  files, destinations), plus a per-session approval for the KRI custody directory.
+* *Astra 4, "a hashed historical exclusion corpus":* a second, standing corpus file would be a
+  new artefact to keep consistent. O is recoverable from git at the recorded commit, H comes
+  from snapshot 1, and R is in the removal manifest. They are screened as extra invocations of
+  the unchanged checker, which gives the same protection without a new file format.
+* *Astra 5, "the two planned flags do not supply the mapping":* correct for the harness
+  outputs, but `--split-manifest` already exists and carries the composite key in the order
+  that `row_id` indexes. The contract uses it and adds only a training manifest (§2.3).
+
+## Rev. 6 changes (answering Astra's re-check of rev. 5; 2026-10-28)
+
+Astra (gpt-6-astra, medium) re-checked rev. 5 (`a40feaf`) read-only and found the split-manifest
+reuse, the server-only secret hashes, D0b, the gross D1/D2 budgets, the O clean-worktree check
+and the one NC approval per scoped use sound. Three blockers and five should-fix remained.
+Nothing was run, no server was contacted, no code or data was changed. "A" = Astra finding,
+numbered in the order of the re-check. The fixes prefer one rule over added branches.
+
+1. **Part 3 restore (A1; blocker):** part 3 now has the same pause, backup and restore as
+   part 1. `§1.9a` is **one procedure with a parameter table** (restore file, `A`, expected
+   examples count, corpus the code returns to, merge sha, pause directory), and §3.4 is
+   rewritten as pause, backup under the pause (equality with `A_pause3`), merge and deploy,
+   live check, key restore, rollback by §1.9a. A DB restore is allowed only inside the paused
+   window; later it is a lossy restore that needs Ledio's written decision first (§1.9a, scope).
+2. **Merge form (A2; blocker):** exactly one is allowed, `git merge --no-ff`, for part 1 and
+   part 3. Rebase and fast-forward are removed. The merge sha is recorded
+   (`MERGE_SHA_P1`, `MERGE_SHA_P3`) and `git revert -m 1 <MERGE_SHA>` is always the code
+   rollback (§1.9 step 0, §1.9a step 6, §3.4).
+3. **Historical screening in the tooling (A3; blocker):** verified against the code:
+   `read_declaration` rejects any header other than `DECLARATION_COLUMNS`, and
+   `run_kri_endpoints.py` takes one `--overlap-report`. New **tooling amendment H** (§4.0
+   (b)5), required before the first declaration and so before 4e: a `historical_sets_sha256`
+   declaration column, repeatable `--historical-report`, sidecar binding of every report to
+   byte-identical lines, its set's sha256 and the current checker, refusal of any line that is
+   not `new` in every report. `check_overlap.py` stays unchanged. Order-table row 4h; §4d
+   wording; §4e amendments follow H.
+4. **Config backups (A4; should-fix):** the backup set now includes every path listed under
+   `secrets.files`; original owner, group and mode are recorded server-side (`MODES`); a second
+   server-only file, `DEST_SUMS`, holds the hash of each original, and the restore checks the
+   **destinations** against it and the modes against `MODES` (§1.7 step 1a, §1.9 step 5).
+5. **B1 journal check (A5; should-fix):** `journalctl -o cat` scoped to the service's
+   `InvocationID`, count and line retrieved separately, and `/.env` added to the dotenv search
+   (the walk ends at the filesystem root). Same `-o cat` for the pause warning check.
+6. **Backup timer (A6; should-fix):** §1.9a step 2 records the timer's state, waits for a
+   running backup, never moves the DB under it; step 7 restores and verifies the timer (and its
+   `NEXT` time; the unit has `Persistent=true`) before the key goes back.
+7. **Case 1 freeze (A7; should-fix):** both ends bounded from the draw: declaration by day 7,
+   results by day 14, an explicit end-of-freeze list and a fixture-retirement rule (§4.0 (c);
+   order-table row 4d).
+8. **Decoder control arm (A8; should-fix):** one rule: D1-D3 and D7 gate `cartouche_only` only;
+   `all_off`, `pooled_only` and `all_on` are reported; D4 and D0 keep their own scope (§2.3
+   item 5 and the acceptance paragraph).
+
+## Rev. 8 changes (final review notes; 2026-10-28)
+
+Four small edits, plan text only, nothing run.
+
+1. **Code-only rollback, non-lossy option (§1.9a step 6):** after the revert deploy, the §1.9
+   step 2 and step 3 block is re-run against the reverted O CSV, expecting `WOULD create=0`; it
+   restores the allowlisted fields without touching annotations.
+2. **Trigger (3) alone (§1.9 step 5, §1.9a):** no DB restore; saving stays paused, the write is
+   investigated with the §1.7 1.3/1.4 checks, Ledio decides. §1.9a runs only if another trigger
+   also fires. Both sections now agree.
+3. **§1.9a step 4:** `chown --reference` next to `chmod --reference`, owner and group verified;
+   an unreadable failed DB is covered explicitly by Ledio's written loss decision, and the
+   preserved copy is kept as-is.
+4. **Ground rules:** the four pending unit settings may be installed only before §1.0 or after
+   part 3, or part 3's code-diff test against `BASE_P3` fails.
+
+## Rev. 7 changes (answering Astra's second re-check of rev. 6; 2026-10-28)
+
+Astra re-checked rev. 6 (`da42841`) read-only: `fix_first`, 2 blockers and 2 should-fix. Plan
+text only; nothing was run. "A" = Astra finding, in the order of the re-check. The fixes use one
+rule each, parameterised, with no new branches.
+
+1. **Restore can discard annotations (A1; blocker):** §1.9a no longer assumes a paused window
+   guarantees no newer annotation. Step 3 now preserves the failed DB and sidecars (hashes,
+   `cp -p` copy), reads `A_failed` on the stopped file, and gates: equal to `A` goes on, any
+   difference or unreadable file is a lossy restore needing Ledio's written loss decision
+   **inside the nominal pause too**, before any `mv`. Without it only the code rollback runs.
+   §1.9 step 5, §1.7 step 5 and §3.4 step 6 say the same.
+2. **Part 3 code-diff test (A2; blocker):** part 3 has its own baseline, `BASE_P3 =
+   MERGE_SHA_P1` (recorded when part 1 merges), and compares main against it, never against the
+   §1.0 sha that part 1's own `tests` and `data/benchmarks` changes would trip. §3.4 step 3 binds
+   the part 3 merge: `HEAD^2` is the measured admission commit, the corpus sha256 is P's
+   measured one, tests byte-identical, test run on main before the merge.
+3. **Timer restore (A3; should-fix):** step 7 restores the timer only if step 2 ran and
+   recorded it, requires `NEXT` only for a timer recorded active, leaves an inactive one
+   inactive, and skips the check on the code-only path (§1.9a trigger (6) note, step 7).
+4. **Amendment H and St Andrews (A4; should-fix):** common checks (lines, checker, manifest
+   hashes, per-set `examples_sha256`) apply to every report; `private_sha256` is separate.
+   Verified against `run_kri_endpoints.py`: G's report must carry what `--private-dir` implies
+   (empty with none, the `standrews.csv` hash when G includes it, §4a); only the historical
+   reports must have it empty (§4.0 (b)5).
+
+## Revision log
+
+| Date | Rev. | Entry |
+|---|---|---|
+| 2026-10-26 | 1–3 | Outline, then two Codex gpt-6-astra reviews; change lists above. |
+| 2026-10-28 | 4 | Answers the Astra review (verdict `not_ready`, 11 findings) and the Opus review (`ready_after_small_fixes`, 13 findings) of rev. 3. Map below. Draft only: no code, no data. Committed as `5fcc4f8`. |
+| 2026-10-28 | 5 | Answers the Opus review (`fix_first`: 2 blockers, 2 should-fix, 3 nits) and the Astra review (`fix_first`: 4 blockers, 3 should-fix) of rev. 4. Map below the rev. 4 map. Draft only: no code, no data, no server. Committed as `a40feaf`. |
+| 2026-10-28 | 6 | Answers Astra's re-check of rev. 5 (`fix_first`: 3 blockers, 5 should-fix): one parameterised restore procedure used by parts 1 and 3, one mandated merge form (`--no-ff`), historical screening wired into the declaration and driver (tooling amendment H), fuller config backups and destination checks, a working journal check, backup-timer restore, a bounded Case 1 freeze, one decoder gating rule. Map below the rev. 5 map. Draft only: no code, no data, no server. |
+| 2026-10-28 | 7 | Answers Astra's second re-check of rev. 6 (`da42841`; `fix_first`: 2 blockers, 2 should-fix): annotation-loss decision in the restore even inside the pause, a separate part 3 code baseline (`BASE_P3`) with the merge bound to the measured admission commit, conditional timer restore, G's private hash separated from the historical-only rule in amendment H. Map below the rev. 6 map. Draft only: no code, no data, no server. |
+| **2026-10-28** | **8** | Four final review notes: non-lossy code-only rollback (re-run the §1.9 step 2/3 block against the reverted O CSV); trigger (3) alone means no DB restore (§1.9 step 5 and §1.9a agree); `chown --reference` and unreadable-DB loss decision in §1.9a step 4; unit settings installable only before §1.0 or after part 3. Draft only: no code, no data, no server. |
+
+**Rev. 4 blocker map (2026-10-28).** "A" = Astra finding (its order in the journal), "O" = Opus
+finding (its order). Severity as the reviewer gave it.
+
+| # | Finding | Severity | Fixed in |
+|---|---|---|---|
+| A1 | Start condition names only the audit merge; kri-fixes must be merged first | blocker | Ground rules; §1.0; order table rows 0, 0b |
+| A2 | `--examples` does not exist on the Urk. IV gate; A7 modes unspecified | blocker | §2.1, §2.1a |
+| A3 | Decoder / segmentation not covered by the run set | blocker | §2.3, §3.3, order table |
+| A4 | Backup / refresh not bound to the live DB; `.db.gz` is not a database | blocker | §1.0a, §1.0b, §1.7 step 2, §1.9 |
+| A5 | `daemon-reload`; deploy can reintroduce settings; checks before the refresh | should-fix | §1.7 steps 1.2-1.3 and 5, §1.9 steps 1 and 5, Ground rules |
+| A6 | Target-removal rule contradicts the twin invariant; floor denominator | blocker | §2.2 (with §2.4, §2.5) |
+| A7 | 4 h estimate; `verify_release.py` after deploy | should-fix | §2.6, §1.8, §1.7, order table |
+| A8 | B-freq described as future; PDFs' G status implicit | should-fix | §4.0, §4e |
+| A9 | Manifest does not include the self-test; not a dependency of PT admission | blocker | §4.0, §4d, §3 rule 6, §4e |
+| A10 | Passage clustering ignored; 150-line floor wrong for Holm | blocker | §4e |
+| A11 | Removal not restricted to BBAW / Ramses | should-fix | §1.2 rule 4, §1.3, §1.2 tests |
+| O1 | §4 has two incompatible orderings; G undefined | blocker | §4.0, §4a |
+| O2 | The kri-official-prep checker is the §4a checker; dev fixture rules | blocker | §4a Timing |
+| O3 | Self-test lines already seen; replace 4c | blocker | §4.0, §4c, §4d |
+| O4 | Start condition: kri-fixes merged and deployed | should-fix | Ground rules; §1.0 |
+| O5 | 15.5 h per run, serialization | should-fix | §2.6, Ground rules |
+| O6 | Manual `import_examples.py` has no environment | should-fix | §1.0a, §1.9 steps 2 and 3 |
+| O7 | `INSTALL_UNITS=1` during the pause | should-fix | §1.9 step 1, Ground rules |
+| O8 | Stale "taken from the audit branch" note | nit | §1.7 preamble, §1.0 |
+| O9 | `expected_corpus_sha256` exists; two floor blocks | nit | §1.8, §2.2 |
+| O10 | Paste gate wording predates A2.2′ / A7 | nit | §2.5 |
+| O11 | Tagged tailnet host; SSH path | nit | §1.0 precheck |
+| O12 | Part 3 rule 6 needs the manifest path and sha | nit | §3 rule 6 |
+| O13 | Order table row 0 already done | nit | order table |
+
+**Rev. 5 blocker map (2026-10-28).** "O" and "A" as above, numbered by the order of the review
+of rev. 4.
+
+| # | Finding | Severity | Fixed in |
+|---|---|---|---|
+| O1 | No rollback for the live refresh and deploy | blocker | §1.9a (new), §1.7 step 2, §1.9 step 3 |
+| O2 | Pause edits remove secrets with no backup of the files | blocker | §1.7 step 1a, §1.9 step 5 |
+| O3 | `. egyptology.env` sourced in the refresh block | should-fix | §1.9 step 2 |
+| O4 | G is defined by a declaration that depends on the gate on G | should-fix | §4.0 (c), §4a, order table |
+| O5 | O not run with `--fixed-heldout`; harness bug looks like corpus dependency | nit | §2.3 (D0b) |
+| O6 | Fast-forward merge may be impossible; allowed forms unstated | nit | §1.9 step 0, §1.0 |
+| O7 | The T3 20-example read has no pass or stop criterion | nit | §1.1a |
+| A1 | Live DB binding ignores `load_dotenv()`; counts do not prove the app's DB | blocker | §1.0a B1 |
+| A2 | Rollback incomplete: config backups, sidecars, part 3 sequence | blocker | §1.9a, §1.7 step 1a, §3.4 |
+| A3 | NC data access not gated on Ledio | blocker | Ground rules, §2.1a, §4.0 |
+| A4 | Historical exposure (removed and DB-only rows) not screened | blocker | §1.0b, §4.0 (b)3-4, §4a |
+| A5 | Decoder pairing has no executable identity contract | should-fix | §2.0a, §2.3 |
+| A6 | D1/D2 net loss contradicts "gains never offset"; D3 denominator | should-fix | §2.3 |
+| A7 | The §2.1a worktree check cannot pass for O | should-fix | §2.1a step 1 |
+
+**Rev. 6 map (2026-10-28).** "A" = Astra finding, numbered by the order of its re-check of rev. 5.
+
+| # | Finding | Severity | Fixed in |
+|---|---|---|---|
+| A1 | Part 3 restore checks contradict its backup (annotations, corpus) | blocker | §1.9a table, §3.4, §1.0a B6 |
+| A2 | A rebase leaves no merge commit for `git revert -m 1` | blocker | §1.9 step 0, §1.9a step 6, §3.4, §1.0 item 1, order table |
+| A3 | Historical screening not in the declaration schema or the driver | blocker | §4.0 (b)5 (amendment H), §4d, §4e, order table 4h |
+| A4 | Config backup coverage, original modes, destination hashes | should-fix | §1.7 step 1a, §1.9 step 5 |
+| A5 | B1 journal grep cannot match; `/.env` | should-fix | §1.0a B1 (c), (d); §1.7 step 1.4 |
+| A6 | Backup timer stopped, never restored | should-fix | §1.9a steps 2 and 7 |
+| A7 | Case 1 freeze unbounded after the declaration | should-fix | §4.0 (c), order table 4d |
+| A8 | `all_off` gated in §2.3 item 5, reporting-only in the acceptance text | should-fix | §2.3 item 5, acceptance paragraph |
+
+**Rev. 7 map (2026-10-28).** "A" = Astra finding, numbered by the order of its re-check of rev. 6.
+
+| # | Finding | Severity | Fixed in |
+|---|---|---|---|
+| A1 | Automatic DB restore can discard annotations written inside the pause | blocker | §1.9a trigger (3), scope paragraph, step 3; §1.9 step 5; §1.7 step 5; §3.4 step 6 |
+| A2 | Part 3 reuses a code-diff test that part 1's own changes fail | blocker | §3 Dependencies (`BASE_P3`), §3.4 step 3, §1.9 step 0 |
+| A3 | Timer restore unconditional though the code-only path never recorded it | should-fix | §1.9a trigger (6) note, step 7 |
+| A4 | Amendment H demands an empty `private_sha256` of G's report too | should-fix | §4.0 (b)5 amendment H |
+
 ## Ground rules (all parts)
 
-* **One new branch** `data-cleanup-2026-10-26` cut from main after the merge, worktree
+* **Start condition (rev. 4).** Main must contain the `kri-fixes-2026-10-26` merge (main
+  `51f3757` or a descendant), its results note
+  `docs/kri-fixes-results-2026-10-27-attempt5.md` must be committed on main, and that main must
+  be pushed **and deployed** (Ledio confirms the deploy; the live app then runs the merged
+  decoder). A kri-fixes change landing after the cleanup branch is cut would be a mid-run code
+  change and ends the run (A2.9 of the 2026-10-25 pre-registration). Historical measurements
+  stay what they were: attempt 2 of the 2026-10-25 re-measurement
+  (`docs/remeasure-results-2026-10-26-attempt2.md`) and attempt 5 of the kri-fixes series are
+  references, never relabelled as post-cleanup results. The rules in force are A7 (the St
+  Andrews rank is reported, not gated) and the twin-controlled floors 0.80 / 0.70 already in
+  `data/benchmarks/release_baseline.json`.
+* **One new branch** `data-cleanup-2026-10-26` cut from that main (§1.0), worktree
   `.claude/worktrees/data-cleanup-2026-10-26`. Pair style: worker → independent verifier
-  (Opus + Astra) → lead re-runs the gates, one heavy process at a time.
+  (Opus + Astra) → lead re-runs the gates, one heavy process at a time. This plan lives on
+  `plan-cleanup-2026-10-28`; it is not on the cleanup branch.
+* **Heavy runs are serialized across every worktree.** The Mac is shared with the KRI
+  official-test tooling, Experiment 3 and any later measurement. At most one heavy process
+  (a competitive run, the paired harness, the Urk. IV gate, routing, `verify_release.py`, the
+  full suite) runs at a time, whichever worktree it belongs to. Before each one the lead
+  records in `$R/queue.txt` what else is running (`ps`) and the start time. A run that was
+  interrupted (sleep, signal) is not resumed: it counts as failed and is redone in full, under
+  the rules of the 1.7 step 4 amendment. Launches use the pattern of
+  `scripts/run_kri_fixes_prereg.sh` (`caffeinate`, no ignored HUP/INT/TERM; its `step0-signals`
+  check), because attempt 3 of the kri-fixes series failed for that reason.
 * Run outputs go to `$R = ~/egyptology-runs/data-cleanup-2026-10-26/` (outside the repo and
   iCloud; Desktop/Documents are iCloud-synced on this Mac).
+* **Measurement worktrees.** Evaluations that cannot take a corpus argument are run from a
+  throwaway, detached worktree at the pinned code commit whose `data/processed/examples.csv`
+  is replaced by the corpus under test (§2.1a). They live under `$R/meas/`, never under the
+  repo, are never committed from, and are removed after the run.
+* **Server work is Ledio's.** No agent runs `ssh`, `scp` or any server command. Every server
+  step in this plan is a command or check that Ledio runs himself and reports back, names and
+  counts only, never secret values. The server is now a tagged tailnet device, so its SSH and
+  `systemctl --user` / `journalctl --user` access may differ from the earlier user-owned
+  device. §1.0 has a precheck.
+* **No `INSTALL_UNITS=1` in this pass.** The cleanup deploy runs `~/egyptology-deploy.sh`
+  without it (its default is 0). The repo unit files equal the installed ones since
+  2026-10-26 (`deploy/systemd/egyptology.service`, header), and four wanted settings are still
+  *not* installed (OnFailure, `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none`, `MemoryMax=6G`, the
+  backup unit's `EnvironmentFile=`). Installing them is its own deploy, **only before §1.0 or after
+  part 3** (rev. 8: a unit-file change in between would make part 3's code-diff test against
+  `BASE_P3` fail), never inside the pause window or between parts 1 and 3: it restarts the service, and changed `Environment=`
+  lines would make the §1.7 pause inventory describe a process that is no longer running.
 * `data/processed/examples.csv` is **never written by an importer** in this plan. Importers
   write donor files to `$R` only. One new merge script builds *candidate* CSVs, and a
   human-reviewed diff report plus the part 2 measurement come before any of them replaces the
   file.
 * **Measure before deploy.** Order: inventory (1.1a) → candidates → report → review → part 2
-  pre-registration → part 2 measurement on the candidates → commit → server. Nothing is
-  deployed on an unmeasured corpus.
+  pre-registration → part 2 measurement on the candidates → **commit on the branch and local
+  release gate (1.8)** → saving pause and snapshot 2 (1.7) → merge, push, deploy (1.9).
+  Nothing is deployed on an unmeasured corpus, and no expensive check runs inside the pause
+  window.
 * Ask Ledio before replacing `examples.csv`, pushing, deploying, running any server command
   that writes, sending any email, or touching `REVIEWER_KEY`. Egyptological questions go to
   the experts, never to Ledio. Current behaviour stays until they answer.
 * KRI material never enters the repo, the public corpus, the server, `data/private/` or any
   synced folder. St Andrews rows never enter the repo or the public corpus. On the server
   they exist only as the allowlisted file of §4b.
+* **NC-data gate (rev. 5).** Any use of non-commercial data (the St Andrews file in
+  `data/private/`, anything under `~/egyptology-private-kri/`) needs **Ledio's recorded
+  approval of that named use** before the first access. The approval names the **operator**
+  (the lead; workers, adjudicators and reviewers are never given the paths), the **files** (by
+  name and sha256), the **purpose** and the **destinations** (`$R` only for logs; aggregates
+  only in anything that is committed; nothing leaves the Mac). For the St Andrews rows, one
+  approval per pre-registered use is enough, and it is the approval of that pre-registration:
+  part 2 lists its six Urk. IV gate invocations and the paste runs with private rows (§2.1a),
+  and the §1.8 local gate and the part 3 re-measure each list theirs. A use not on the list
+  needs a new approval first. For the KRI directory the approval is **per session**, recorded as
+  one line (date, purpose, files) in `~/egyptology-private-kri/access.log`, which is itself
+  private. An agent that finds a step needing NC data with no recorded approval stops and
+  asks; it never "just reads once".
 
 ---
 
@@ -155,13 +520,42 @@ those rows.
 
 ### Steps
 
-**1.0 Preconditions.** Main = the merged audit branch, tree clean, and the regression (A)
-results note exists. Record in `$R/env.txt`:
+**1.0 Preconditions (rev. 4).** All of these hold before anything below runs, and are recorded
+in `$R/env.txt`:
 
-* commit;
-* `shasum -a 256 data/processed/examples.csv` (this file is **O**);
-* row count (130,472);
-* Python version and `pip freeze`.
+1. **Main.** `git rev-parse main` = `51f3757` or a descendant that contains it; tree clean;
+   the kri-fixes results note is committed; the push and the deploy are done (Ledio confirms;
+   the deploy log shows the merged commit). Record the main sha, and cut
+   `data-cleanup-2026-10-26` from it **only after** that. A later change to main's code
+   (including another kri-fixes commit) before 1.8 ends the run. **What counts as a code
+   change (rev. 5):** `git diff <the 1.0 sha> main -- app scripts tests requirements*.txt
+   deploy data/benchmarks` is non-empty. Docs-only commits on main (this plan, the
+   Experiment 3 notes, results notes) do not end the run; they only mean main will have moved
+   by the time of the merge, which is always a merge commit (§1.9 step 0, the one mandated
+   form). The diff is re-run and recorded at 1.8 and again at 1.9 step 0.
+2. **Corpus O.** `shasum -a 256 data/processed/examples.csv` (this file is **O**; expected
+   `44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2`, the sha in
+   `release_baseline.json` and in attempt 5; a different sha stops), row count 130,472.
+3. **Floors in force.** Copy `data/benchmarks/release_baseline.json` into `$R/` and record its
+   sha256. It carries two floor blocks: the top-level legacy block (0.90 / 0.7917, 2026-09-05)
+   and `twin_controlled` (0.80 / 0.70, 2026-10-26). `verify_release.py` gates on the second;
+   the first is printed, non-gating.
+4. **Code that matters, by hash.** sha256 of `scripts/eval_guards.py`,
+   `scripts/run_reading_model_eval.py`, `scripts/run_kri_fixes_eval.py`,
+   `scripts/check_standrews_urkiv_gate.py`, `scripts/verify_release.py`, and of the source text
+   of `configured_setting` and `annotations_unlocked` in `app/ui/whyptology_app.py`
+   (re-read at this commit, which is post-kri-fixes; the gate code is on main and kri-fixes
+   touched only the UI evidence, not the gate).
+5. **Environment.** Python version and `pip freeze`; the venv is `~/venvs/egyptology`
+   (Python 3.12).
+6. **Server SSH precheck (Ledio; no agent ssh).** The server is now a tagged tailnet device,
+   which can change Tailscale SSH and ACL behaviour. Before snapshot 1, Ledio confirms from
+   his own machine that `ssh ledio@vela-optiplex-3070` works and that, on the box,
+   `systemctl --user status egyptology` and `journalctl --user -u egyptology -n 5` work. If
+   either fails, 1.0b waits, and so does everything that needs P (the candidates). The donor
+   files (1.1) and the inventory without the P intersection do not need the server.
+7. **Nothing else is writing the Mac.** The heavy-run queue (Ground rules) is empty or
+   ordered. The `exp3-2026-10-26` branch and its worktrees are not touched by anything here.
 
 Raw inputs must be present in the main checkout's `data/raw/` and are hashed into
 `$R/raw_sha256.txt`:
@@ -174,9 +568,109 @@ Raw inputs must be present in the main checkout's `data/raw/` and are hashed int
 * The Ramses raw dir.
 * The tracked TLA worklist `data/raw/real_examples_worklist.csv`.
 
-**1.0b DB reconciliation and protected set P (read-only, on a copy of the production DB).**
-With Ledio: run `scripts/backup_db.sh` on the server, then copy the newest backup to
-`$R/db/snapshot1.db` (never into the repo). A new read-only script,
+**1.0a Live database binding and snapshot protocol (rev. 4; used by 1.0b, 1.7 and 1.9).**
+Rev. 3 said "run `scripts/backup_db.sh`, copy the newest backup to `snapshot1.db`" and ran the
+refresh without saying which database it touched. Both were unsafe: `backup_db.sh` and
+`import_examples.py` fall back to a database *next to the checkout they run in* when
+`DATABASE_URL` is unset (`app/core/config.py`: `sqlite:///egyptology.db`, anchored at the
+project root), `import_examples.py` calls `create_tables()` even in `--dry-run` (a wrong path
+would silently create and "pass" on an empty database), and the backups are published as
+`egyptology-<date>[-rNN].db.gz`, which is not a SQLite file. Everything below is therefore
+bound to one absolute path.
+
+* **`LIVE_DB` = `/home/ledio/egyptology/egyptology.db`.** The live app and the backup unit use
+  it today with no `DATABASE_URL` (the unit sets `WorkingDirectory=/home/ledio/egyptology`,
+  the config anchors the default at the clone, and the installed backup unit does not read
+  `egyptology.env`). That is a **claim to verify, not to assume**, on every use (step B1).
+* **`BACKUPS` = `/home/ledio/egyptology-backups`** (the backup script's default; gzip'd
+  snapshots, a `monthly/` folder, hidden `.candidate-*` files that are never published).
+* **`R_DB` = `$R/db/`** on the Mac: outside the repo, outside iCloud, never under Desktop or
+  Documents.
+
+Steps (Ledio runs B1-B3 on the server and reports; the lead runs B4-B6 on the Mac):
+
+* **B1. Prove the binding (names only).** (a) `DATABASE_URL` is absent from all four places:
+  `/home/ledio/egyptology.env`, `systemctl --user cat egyptology` (unit and drop-ins), the
+  running process (`tr '\0' '\n' < /proc/$PID/environ | cut -d= -f1 | grep -cx DATABASE_URL`,
+  PID from `systemctl --user show egyptology -p MainPID`), and the backup unit
+  (`systemctl --user cat egyptology-backup`). Counts only; if any is non-zero, stop and
+  re-derive the live path, do not proceed on the assumption. (b) `LIVE_DB` exists and is
+  non-empty (`test -s`), and `sqlite3 -readonly "$LIVE_DB" 'SELECT COUNT(*) FROM examples;
+  SELECT COUNT(*), MAX(id) FROM annotations;'` returns the live example count and annotation
+  `COUNT, MAX(id)`. The three numbers are recorded in `$R/db/live_probe_<step>.txt`.
+  (c) **dotenv (rev. 5).** `app/core/config.py` calls `load_dotenv()` before it reads
+  `DATABASE_URL`. `python-dotenv`'s `find_dotenv` walks **up** from the directory of the file
+  that called it, and `load_dotenv` does not override a variable that is already set. So a
+  `.env` file can supply `DATABASE_URL` to the running app while systemd's environment and
+  `/proc/<pid>/environ` (which show only what the process started with) stay clean. For each
+  of `/home/ledio/egyptology/app/core`, `/home/ledio/egyptology/app`,
+  `/home/ledio/egyptology`, `/home/ledio`, `/home` **and `/`** (the walk ends at the
+  filesystem root, so `/.env` is part of the search), Ledio reports whether a `.env` exists
+  and `grep -cE '^\s*(export\s+)?DATABASE_URL\s*=' <dir>/.env` (a count only, never a
+  value). Any non-zero count stops the run: the live path is re-derived from that file.
+  (d) **The running app's own announcement.** `config.py` prints one line to stderr at import,
+  `database: <path> (from <origin>)`, and `origin` is `DATABASE_URL` whenever the variable was
+  set **after** dotenv ran, whatever supplied it. The expected line for the live app is
+  `database: /home/ledio/egyptology/egyptology.db (from default next to the code)`. Plain
+  `journalctl` output prefixes every message with a timestamp, host and process, so a
+  `grep '^database:'` on it matches nothing; the message is read **without the prefix**, scoped
+  to the **current service invocation** only:
+  `journalctl --user -u egyptology -o cat _SYSTEMD_INVOCATION_ID="$(systemctl --user show
+  egyptology -p InvocationID --value)" | grep '^database:'`. (If that filter returns nothing,
+  the fallback is `journalctl --user -u egyptology -o cat --since "$(systemctl --user show
+  egyptology -p ActiveEnterTimestamp --value)" | grep '^database:'`.) Ledio first reports the
+  **count** of matching lines (`| grep -c '^database:'`, which must be 1 for one process
+  start), and then sends the matching line itself as a separate retrieval; it must be exactly
+  the expected line. The words `from DATABASE_URL` mean something does supply a URL (dotenv, a
+  drop-in, a secrets file): stop.
+  The line only exists after a restart, so for the first use B1 is read after the
+  service's most recent start, and a service that has not restarted since the journal rolled
+  over is restarted once by Ledio (before the pause, saving still open) to produce it.
+  (e) **The open file, where available.** `readlink /proc/$PID/fd/* | grep -c egyptology.db`
+  and, if non-zero, that every such link is `LIVE_DB` (a SQLite connection may be closed
+  between requests, so no open handle is not a failure; the announcement in (d) is the
+  primary evidence and (e) can only add a contradiction). Counts taken from `LIVE_DB` prove
+  nothing about the app until (c) and (d) agree.
+* **B2. Take the backup with explicit paths.** `/home/ledio/bin/backup_db.sh "$LIVE_DB"
+  "$BACKUPS"` (the installed helper that the timer runs, called with both paths so no default
+  or environment can redirect it). Required: exit 0; its first output line is
+  `backup: database /home/ledio/egyptology/egyptology.db` (string-equal to `LIVE_DB`). The
+  newly published file is the one that appears in `ls -1 "$BACKUPS"` after but not before the
+  run, matching `egyptology-YYYY-MM-DD(-rNN)?.db.gz`. Any exit 2-5, a `.suspect`,
+  `.unverified` or `.corrupt` file, or no new file means **no backup**: stop. An older
+  backup is never silently used instead; Ledio decides.
+* **B3. Select exactly one file and record it.** Ledio sends the exact file name and runs
+  `sha256sum` on it; both go to `$R/db/snapshotN_source.txt`. He copies that single `.gz` to
+  `$R_DB` (one file, not a directory or `rsync` of the folder). For snapshot 2 he **also
+  keeps a second server-side copy** of that exact `.gz` in the `pause-backup-<date>`
+  directory of §1.7 step 1a, because the backup timer's pruning is not under this plan's
+  control and §1.9a restores from that file.
+* **B4. Verify the copy.** On the Mac: `shasum -a 256` equals the server's; `gzip -t` exits 0.
+* **B5. Decompress outside the repo, read-only.** `gunzip -c <file>.db.gz > $R_DB/snapshotN.db`
+  (the `.gz` is kept; nothing is decompressed in place or inside any checkout), then
+  `chmod 444`. Record `shasum -a 256 snapshotN.db`.
+* **B6. Integrity and content checks before first use.** All with `sqlite3 -readonly`:
+  `PRAGMA integrity_check;` returns exactly one row, `ok`; `PRAGMA quick_check;` is `ok`;
+  `PRAGMA foreign_key_check;` is empty; the tables `examples` and `annotations` exist;
+  `SELECT COUNT(*) FROM examples` is at least 130,472 (O) and equals O ∪ H after 1.0b
+  reconciliation (for the part 3 backup: equals snapshot 2's count, because part 1 inserted
+  nothing); `SELECT COUNT(*), MAX(id) FROM annotations` is recorded. **Equality rule:**
+  for snapshot 2 and for the part 3 backup (both taken with saving paused) the annotation
+  `COUNT, MAX(id)` must equal `A_pause` (respectively `A_pause3`) read live in B1; for
+  snapshot 1 (saving open) the live count read at the same moment must be at least the
+  snapshot's, and both are recorded. A failure of any check
+  stops the run and the file is not used.
+* **Every script that opens a snapshot opens it read-only.** `check_annotation_keys.py` takes
+  `--db-url` and opens the SQLite file through a `file:<abs path>?mode=ro` URI, never through
+  `app.core.config` or `create_tables()`, refuses a path that does not exist, and prints the
+  absolute path it opened. `migrate_example_ids.py` (which uses `DATABASE_URL`) is run only
+  with `DATABASE_URL=sqlite:////<absolute path of the 444 snapshot>` (four slashes: the
+  absolute path starts with one) and without `--yes`; its `database:` line is compared with
+  the path.
+
+**1.0b DB reconciliation and protected set P (read-only, on a verified copy of the production DB).**
+With Ledio: take and verify snapshot 1 by the protocol of 1.0a (B1-B6), giving
+`$R/db/snapshot1.db`. A new read-only script,
 `scripts/check_annotation_keys.py --db-url … --csv … --out-dir …`, writes:
 
 1. **Reconciliation of DB vs O** by composite key `(source, source_text_id,
@@ -188,7 +682,11 @@ With Ledio: run `scripts/backup_db.sh` on the server, then copy the newest backu
      Listed; non-zero stops the run.
 
    H is recorded with counts per source and kept apart from everything later. It is
-   *not* this pass's removal set and is never deleted here.
+   *not* this pass's removal set and is never deleted here. The text of the H rows is also
+   written, read-only, to `$R/db/H_rows.csv` (the columns of `examples.csv`, one row per H
+   key) with its sha256: it is one of the historical corpora that §4.0 (b)3 and §4a screen KRI
+   lines against, because those rows once belonged to the public corpus and are in no commit
+   that this pass will keep.
 2. **Annotation chain.** For every annotation the chain is annotation → `example_id` →
    `examples.id` → composite key → that key's row in O. The row's `hieroglyphs` and
    `transliteration_gold` must equal the DB row's text. Outcomes per annotation: `ok`,
@@ -252,9 +750,13 @@ non-trivial class:
   a candidate is built. The rows are listed, and Ledio chooses per class. The only
   pre-approved resolution is "leave the row unchanged as donorless".
 * A source whose T3 share is above 5% gets 20 seeded examples read independently by Opus and
-  Astra before continuing.
+  Astra before continuing. The question each answers is "is the old row correctly paired with
+  this donor occurrence?", from the row pair alone, without the assignment tier. **Pass:** both
+  say yes for all 20. **Any wrong assignment, from either reviewer, stops the run** and the case
+  goes to Ledio, like the other stop classes; no sample is redrawn to get a clean one, and the
+  rule for T3 for that source is not widened by anything short of his decision.
 * If `benchmark targets ∩ (flagged ∖ P)` is above 5 for any one query set, stop and ask
-  Ledio. At 5 or fewer, the rule in part 2 applies.
+  Ledio. At 5 or fewer, §2.2 applies.
 
 **1.2 Merge script (new).** `scripts/cleanup_merge_corpus.py --old O --donor SOURCE=PATH …
 --protected $R/protected_keys_snapshot1.csv --exceptions $R/exceptions.csv --mode {N,M}
@@ -287,14 +789,24 @@ rules, per old row, in old order:
    `$R/report/donorless_kept.csv` (key, source, current `period`, the reason it has no
    donor), and that file is frozen in the part 2 pre-registration as the explicit exception
    list for the 1.3 period gates.
-4. **Removal (mode N only)** happens when the fixed lacuna predicate flags the old row's
+4. **Removal (mode N only), source-specific (rev. 4).** Removal is allowed **only** for
+   BBAW and Ramses rows. It happens when the old row's source-specific predicate flags the
    transliteration **and** the key is not in P **and** it is not on the BBAW `_` exception
-   list (1.4). The predicate is the importers' own `TRANSLIT_LACUNA_RE` plus the Ramses word
-   rules, imported, not copied. AES rows are never removed in this pass. Checks:
-   * every row that is flagged, not in P and not an exception is removed;
-   * every removed row is flagged and in neither set;
-   * the flagged rows that remain are exactly (flagged ∩ P) ∪ (flagged ∩ exceptions), each
-     listed with its reason.
+   list (1.4). The predicates are the importers' own, imported, not copied:
+   * **BBAW:** `TRANSLIT_LACUNA_RE` (brackets, `//`) plus the `_` rule of 1.4;
+   * **Ramses:** `TRANSLIT_LACUNA_RE` plus the Ramses word rules;
+   * **TLA (Earlier, Late, Demotic):** none. TLA has a metadata-only scope in the audit
+     table above, so a TLA row is never removed, whatever its transliteration looks like;
+   * **AES:** none (the 22 `_` rows wait for Camilla, see "Stays deferred");
+   * **any other source** (St Andrews is not in the public file; UD is not in O): none.
+
+   Assertions, checked by the script and again by a test on the committed file (1.8):
+   * `sources(R) ⊆ {BBAW, Ramses}`; for every other source `|R| = 0`. A removal candidate in
+     any other source stops the run, it is never removed "because the predicate fired";
+   * every BBAW/Ramses row that is flagged, not in P and not an exception is removed;
+   * every removed row is flagged by its own source's predicate and in neither set;
+   * the flagged BBAW/Ramses rows that remain are exactly (flagged ∩ P) ∪ (flagged ∩
+     exceptions), each listed with its reason.
 5. **Nothing is added.** Donor occurrences unused by O are counted by reason (internal
    duplicate, cross-source dedup at original import, etc.) and listed, not added.
 6. **Mode M** (metadata-only control): start from O; apply the allowed updates for rows that
@@ -306,7 +818,9 @@ Tests use synthetic fixtures only:
 
 * an unchanged row stays byte-identical;
 * a disallowed column change blocks;
-* a flagged row is removed, but a flagged row in P is kept;
+* a flagged BBAW or Ramses row is removed, but a flagged row in P is kept;
+* a row that matches the lacuna predicate but belongs to TLA, AES or any other source is
+  **kept**, and a candidate removal from such a source stops the run;
 * an unflagged missing row stops;
 * a conflicting donor group stops;
 * a short group never reuses a donor;
@@ -327,7 +841,8 @@ checks are printed at the top:
 | ids: every candidate row's composite key exists in O, unique | 0 new, 0 duplicate |
 | non-allowed column changes not on the frozen benign list | 0 |
 | R ∩ P | 0 |
-| R ∩ benchmark targets | equal to the 1.1a count; each listed (handled per part 2) |
+| sources(R) | ⊆ {BBAW, Ramses}; every other source 0 removed (rule 4) |
+| R ∩ benchmark targets (= Q_R) | equal to the 1.1a count; each listed, handled per §2.2 |
 | Ramses `period` value set, over **all** Ramses rows in M and N (donor, donorless, kept-flagged) | `{unknown}`, no exceptions (rule 3a) |
 | TLA `period` equal to a language-stage name; `Undated range` | 0 outside `donorless_kept.csv`; any `Undated range` left (dates outside −4000…642) listed one by one. Rows on `donorless_kept.csv` are counted and listed in their own line of the report, never merged into the pass count |
 | `donorless_kept.csv` | equal to the 1.1a donorless set Ledio approved; sha256 equal to the pre-registered one |
@@ -360,8 +875,11 @@ re-admission list for a "mark, don't drop" answer.
 **1.5 Annotation proof on the candidate (read-only, snapshot1).**
 
 ```bash
+# $R is already expanded and absolute, so the URL has four slashes; the snapshot is the 444
+# copy verified in 1.0a. The script's `database:` line must show this exact path.
 DATABASE_URL=sqlite:///$R/db/snapshot1.db $PY scripts/migrate_example_ids.py --new-csv $R/candidate_N.csv
 ```
+(`sqlite:///` + an absolute `$R` = `sqlite:////Users/…`; run without `--yes`.)
 
 Expected:
 * `to rename 0`, `ambiguous 0`, `collisions 0`, `csv_duplicates 0`;
@@ -372,14 +890,30 @@ Expected:
 * every chain from 1.0b still `ok` against N (key present, text unchanged);
 * **0 annotations on R**.
 
-**1.6 Part 2 runs here** (pre-registration, then measurement on O, M, N). A failed part 2
-stop rule ends part 1 at this point: nothing is committed or deployed.
+**1.6 Part 2 runs here** (pre-registration, then measurement on O, M, N, with the decoder and
+Urk. IV gate additions of part 2). A failed part 2 stop rule ends part 1 at this point:
+nothing is committed or deployed.
 
-**1.7 Production re-check with saving paused (immediately before replacement).** With Ledio,
-on the server:
+**Order of execution (rev. 4).** Rev. 3 put the saving pause *before* the commit and the
+suite, which left the expensive checks inside the window and discovered release failures
+only after the server steps had started. The order is now:
 
-**How the gate reads its settings (from the code at 1.0; re-read it then, because this is
-taken from the audit branch).** `configured_setting(secret_name, env_name)` in
+1. 1.0 → 1.0b → 1.1 → 1.1a → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 (all measuring done);
+2. **1.8** commit on the branch, **local** release gate (full suite, paste, full
+   `verify_release.py`): all expensive checks, no server involvement, saving still open;
+3. **1.7** pause, snapshot 2, P2 check (this is the only part that needs the saving
+   window, and it needs no long computation unless N must be rebuilt);
+4. **1.9** merge and push (Ledio), deploy, refresh, live check, restore.
+
+The numbering is kept so that the references elsewhere hold; the order above is the order
+of work. Nothing is merged to main or pushed before step 3 clears.
+
+**1.7 Production re-check with saving paused (after the local gate of 1.8, immediately before
+the merge, push and deploy).** With Ledio, on the server:
+
+**How the gate reads its settings (re-read at the 1.0 commit, which is post-kri-fixes; the
+sha256 of the two functions' source is recorded in `$R/env.txt`, and a difference from what is
+quoted here stops the run).** `configured_setting(secret_name, env_name)` in
 `app/ui/whyptology_app.py` returns `st.secrets[secret_name]` when that is non-empty, and
 falls back to `os.getenv(env_name)` only otherwise. Two settings decide saving:
 
@@ -414,13 +948,46 @@ With Ledio, on the server:
       whether `reviewer_key`/`REVIEWER_KEY` and
       `allow_open_annotations`/`ALLOW_OPEN_ANNOTATIONS` are present. Record names and
       locations only, so the restore in 1.9 puts the key back exactly where it was.
+   1a. **Back up every file first (rev. 5, completed in rev. 6; before any edit).** The
+      inventory records names, so a lost line, its quoting, its mode or a whole drop-in could not
+      be put back exactly. The set to back up is **every file the inventory found plus every
+      file the configuration points at**: the env file, the installed unit and each drop-in
+      under `~/.config/systemd/user/`, both secrets files, every `config.toml` that lists
+      `secrets.files` **and every path listed there** (a secrets file reached only through that
+      list is a secrets file), and any file that a later edit of this step would touch. Ledio
+      makes a **server-local** copy of each:
+      `install -d -m 700 /home/ledio/pause-backup-<date>` once, then
+      `cp -p <file> /home/ledio/pause-backup-<date>/<flat name>` and `chmod 600` on each copy
+      (the flat name is a fixed label such as `env`, `unit`, `dropin-<name>`, `secrets-clone`,
+      `secrets-home`, `secrets-extra-<n>`). Because the copy is chmodded to 600, **the original
+      owner, group and mode are recorded first**, server-side, in
+      `/home/ledio/pause-backup-<date>/MODES` (`stat -c '%n %U %G %a' <original>`, one line per
+      file; a mode is not a secret, but the file stays on the server with the rest). Two
+      server-only check files are made: `SHA256SUMS` (the hash of each **copy**, against the copy
+      paths) and `DEST_SUMS` (the hash of each **original**, written as `<hash>  <original
+      path>`). The directory is **outside the clone and outside any synced folder**, the copies
+      and both check files are never copied to the Mac, never put in `$R`, and never read,
+      printed or `cat`ed by an agent or in anything an agent sees. What comes back to
+      `$R/pause_inventory.txt` is the file list (labels and original locations) and
+      `copies made: yes`, never a hash: a bare hash of a file that holds a short passphrase would
+      let anyone with the hash test guesses offline. Before the first edit,
+      `sha256sum -c SHA256SUMS` (run inside the directory) must report all `OK`, and
+      `sha256sum -c DEST_SUMS` must report all `OK` too (the originals still equal what was
+      copied). **No file is edited until both checks pass.**
    2. **Remove.** Ledio removes the key from **every** place it was found. He also removes or
-      empties any `allow_open_annotations`/`ALLOW_OPEN_ANNOTATIONS`. Then he restarts the
-      service (`systemctl --user restart egyptology`).
-   3. **Verify the sources** (static): a re-run of the inventory shows 0 occurrences of all
+      empties any `allow_open_annotations`/`ALLOW_OPEN_ANNOTATIONS`. If any edit was to the
+      unit file or a drop-in (as opposed to `egyptology.env` or a secrets file), he runs
+      `systemctl --user daemon-reload` **before** the restart: a restart alone can keep
+      systemd's previously loaded configuration, which would leave the setting in force
+      while the file no longer shows it. Then he restarts the service
+      (`systemctl --user restart egyptology`).
+   3. **Verify the sources** (static): `systemctl --user show egyptology -p NeedDaemonReload`
+      prints `NeedDaemonReload=no`; a re-run of the inventory shows 0 occurrences of all
       four names in all places. `/proc/<MainPID>/environ` of the restarted process (PID
       from `systemctl --user show egyptology -p MainPID`) has neither `REVIEWER_KEY` nor
-      `ALLOW_OPEN_ANNOTATIONS`.
+      `ALLOW_OPEN_ANNOTATIONS`. The inventory is of the **installed** unit
+      (`systemctl --user cat egyptology`), which is the only one the process obeys; the repo
+      unit is not evidence.
    4. **Verify in the running app** (behavioural; required, because a source the inventory
       missed would show up only here):
       * open the live app as an ordinary visitor. The sidebar shows *"Annotation saving is
@@ -430,7 +997,7 @@ With Ledio, on the server:
         reviewer-key field;
       * open one example's Workspace. It shows *"Saving is switched off on this
         deployment."* and no Save button;
-      * `journalctl --user -u egyptology --since <restart>` contains the one-per-process
+      * `journalctl --user -u egyptology -o cat --since <restart>` contains the one-per-process
         warning *"annotations: ANNOTATIONS_DURABLE is on but REVIEWER_KEY is not set and
         ALLOW_OPEN_ANNOTATIONS is off, so annotation saving is switched off for everyone."*
         It is emitted on the first page render after the restart;
@@ -440,8 +1007,14 @@ With Ledio, on the server:
       Any check that fails stops here. Nothing is snapshotted until all four pass.
    Side effect: keyed sessions lose the St Andrews rows for the window. Ledio announces
    this to reviewers.
-2. `scripts/backup_db.sh` → copy to `$R/db/snapshot2.db`. Its annotation `COUNT(*), MAX(id)`
-   must equal `A_pause`.
+2. Snapshot 2 by the protocol of 1.0a (B1-B6, explicit `LIVE_DB` and `BACKUPS` paths, the
+   exact published `.db.gz`, decompress outside the repo, integrity-check) →
+   `$R/db/snapshot2.db`. Its annotation `COUNT(*), MAX(id)` must equal `A_pause` (B6
+   equality rule). Snapshot 2 is also the restore point if anything after it goes wrong, and
+   **§1.9a is the written procedure for using it**: what triggers it, how the DB and the code are
+   put back, and when saving may be switched on again. Each pause takes its own dated
+   `pause-backup-<date>` directory (step 1a); a repeated pause (step 4.5) does not reuse an
+   older one.
 3. Re-run 1.0b and 1.5 on snapshot2 → `P2`, `H2`.
    * If `P2 ∖ P` does not intersect R, the measured N stands unchanged (same sha256 as part
      2), and we go to step 5.
@@ -449,8 +1022,10 @@ With Ledio, on the server:
      measured N is **not** shipped. Go to step 4.
 4. **Rebuilt N = a new measurement (no shortcut).** Any rebuild of N, for whatever reason, is
    handled as follows:
-   1. **Restore saving** (as 1.9 step 5) for the duration. The window must not stay open
-      overnight.
+   1. **Restore saving** (as 1.9 step 5, including the `daemon-reload` after any unit or
+      drop-in edit) for the duration. "The window must not stay open overnight" is about
+      the **pause**; the re-measure itself is long (§2.6: about 46 h of wall time for the
+      full set) and normally runs with saving **open**.
    2. Write a dated **pre-registration amendment** (an appended section in the part 2 file,
       committed before any run). It states the reason and the new inputs:
       * `protected_keys_snapshot2.csv` = P ∪ P2, with sha256;
@@ -465,136 +1040,707 @@ With Ledio, on the server:
    4. Run the **complete part 2 run set**: O, M, N′, every set, in one session, on the same
       code. This happens even if no per-query output is expected to move. The results note
       gains an amendment section, and N′ ships only if it passes the frozen rules.
-   5. Start §1.7 again from step 1 (pause, verify, snapshot3, P3), with P ∪ P2 as the new
-      P. If a second rebuild is needed, stop and decide with Ledio, for example a pause
-      kept open across the re-measure by agreement with the reviewers.
-5. Only then go on to 1.8 and 1.9, with saving still paused. The key is restored at the end
-   of 1.9, after the live re-check. Before the restore, the live annotation
-   `COUNT(*), MAX(id)` must still equal `A_pause`; any difference means a write got through
-   and stops the run.
+   5. Redo §1.8 (commit and local gate on N′), then start §1.7 again from step 1 (pause,
+      verify, snapshot3, P3), with P ∪ P2 as the new P. Because the re-measure takes days
+      and annotators keep writing, **a second rebuild is likely**, not exceptional. If P3
+      ∖ (P ∪ P2) intersects R again, stop and decide with Ledio, for example a pause kept
+      open across the re-measure by agreement with the reviewers, announced in advance.
+5. Only then go on to the merge, push and 1.9, with saving still paused. The key is restored
+   at the end of 1.9, after the live re-check, from the pre-pause copies of step 1a. Before the
+   restore, the live annotation `COUNT(*), MAX(id)` must still equal `A_pause`; any difference
+   means a write got through and stops the run; **no automatic DB restore follows**, the
+   loss decision of §1.9a (scope) comes first. If anything in 1.9 trips a trigger of §1.9a,
+   that section is followed instead, and the key stays out until it says otherwise.
 
-**1.8 Commit (Ledio approves).** One commit containing:
+**1.8 Commit and local release gate (executed BEFORE 1.7; Ledio approves the commit).** One
+commit on `data-cleanup-2026-10-26`, **local only**: not merged, not pushed. It contains:
 
 * `examples.csv` = the measured N, or N′ after an amendment (sha256 equal to the last
   complete part 2 run set);
-* `release_baseline.json` corpus fields (`expected_corpus_rows`, plus
-  `expected_corpus_sha256` if rule 8 of (A) added it); floors are changed only per part 2;
+* `data/benchmarks/release_baseline.json`: **`expected_corpus_rows` and
+  `expected_corpus_sha256` are updated** (the sha key already exists since rule 8 of (A); it
+  is an update, not an addition) and the `recorded_*` notes say why. **No floor value in
+  either block moves in this commit:** neither the top-level legacy block (0.90 / 0.7917,
+  non-gating) nor `twin_controlled` (0.80 / 0.70, the gating block). A floor is never relaxed
+  to fit N; if N cannot meet it, part 2 has already stopped (§2.2, §2.5). A *rise* of a floor
+  after a gain would be a separate, later commit with its own measurement;
 * the removal manifest;
 * DATA-LICENSE.md indication of changes per source (counts, date, what was removed and why,
   the kept exceptions, what is deferred);
-* tests asserting the 1.3 table on the committed file.
+* tests asserting the 1.3 table on the committed file, including `sources(R) ⊆ {BBAW,
+  Ramses}`.
 
-Full suite + paste 8/8 Auto before merging.
+**Local release gate (all expensive checks, saving still open, no server).** Run in the
+branch checkout, where `data/processed/examples.csv` *is* N, so the scripts that hard-code
+that path (`verify_release.py`'s `CORPUS_PATH`, the Urk. IV gate) measure the committed file
+with no worktree trick. One heavy process at a time:
+
+1. `shasum -a 256 data/processed/examples.csv` equals the part 2 N sha256 and
+   `expected_corpus_sha256`.
+2. The full test suite, not skipped.
+3. `scripts/verify_release.py --require-corpus-sha256` (full, with its tests). It re-runs the
+   twin-controlled and legacy v4 lanes and the paste check. Its numbers must equal the part 2
+   N run for the same lanes (a determinism check, as step 8 of the kri-fixes run was), the
+   floors must hold, and the verdict must be READY. This is where a release failure is found:
+   before the pause, not after.
+4. The Urk. IV gate, both modes, in this checkout with `--private-dir` explicit (§2.1a
+   command; no swap is needed here): `GATE: PASS` in `auto` and in `declared`. This is a
+   **named NC use** (Ground rules): it is on the part 2 pre-registration's list, with the same
+   operator, file and destination limits.
+5. The 1.3 table tests on the committed file.
+
+Any failure ends the pass here: nothing is merged, pushed, paused or deployed. The only
+checks left for the pause window are cheap: the committed `examples.csv` sha256 is still the
+gated one (`git diff` since the gate is empty), and the DB counts of 1.7.
 
 **1.9 Server.** The DB never re-seeds (empty-table guard), and deploys run
-`import_examples.py`, which is insert-only. Sequence with Ledio, while saving is still paused:
+`import_examples.py`, which is insert-only. Sequence with Ledio, while saving is still
+paused (§1.7 has cleared with the final N):
 
-1. Deploy. The deploy log must show `inserted 0`.
-2. `import_examples.py --dry-run`. The refresh-field list must be a subset of the
-   **allowlist**: `period`, `grammar_notes`, `display_sequence` and the derived fields
-   `example_payload` computes from them, i.e. `display_sequence_norm` (plus any other `*_norm`
-   the 1.0 code shows is derived from an allowed column, written into the pre-registration).
-   Any other field (e.g. `transliteration_norm` changed by normaliser drift since seeding)
-   stops the run, to be decided separately.
-3. `import_examples.py --refresh-existing`.
-4. Re-run `check_annotation_keys.py` on the live DB: chains `ok`, 0 annotations on R, H
-   unchanged.
-5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5). Then Ledio
-   restores the key to exactly the places listed in `$R/pause_inventory.txt` (and any
-   `allow_open_annotations` setting that was there) and restarts. The sidebar then shows the
-   reviewer-key field again, and a keyed test session can unlock saving. No test annotation
-   is written.
+0. **Merge and push (Ledio).** Nothing is merged or pushed before 1.7 clears: if P2 ∖ P hit
+   R, N′ replaces N first and §1.8 reruns. **One mandated merge form (rev. 6): a merge commit,
+   `git merge --no-ff data-cleanup-2026-10-26`.** A fast-forward and a rebase are **not**
+   allowed in this plan (rev. 5 allowed a rebase, which leaves no merge commit, so
+   `git revert -m 1` in §1.9a had nothing to revert). Main may have gained docs-only commits
+   during the multi-day run (this plan, the Experiment 3 notes); the merge commit is correct
+   with or without them, and is allowed **only if** `git diff <the 1.0 sha> main -- app scripts
+   tests requirements*.txt deploy data/benchmarks` is empty (the same test as §1.0 item 1,
+   run on **main before the merge**, so the branch's own changes do not count). If it is not
+   empty, main's code changed mid-run: the run ends under §1.0 and nothing is pushed.
+   After the merge, and before the push: `git rev-parse HEAD` is the **merge sha** and is
+   recorded in `$R/env.txt` as `MERGE_SHA_P1`; `git rev-parse HEAD^1` is the pre-merge main
+   and `HEAD^2` is the gated branch commit (both recorded; the second must be the 1.8 commit);
+   `shasum -a 256 data/processed/examples.csv` equals the gated N; and the committed test files
+   are byte-identical to the 1.8 gate's. The 1.8 record is updated with the merge sha, and the
+   cheap checks of 1.8 are repeated; no heavy gate is. **`MERGE_SHA_P1` is also part 3's
+   baseline** (`BASE_P3`, §3 Dependencies): part 3 uses the same merge form but **its own**
+   code-diff test against `BASE_P3`, never against this section's 1.0 sha, because part 1's own
+   changes to `tests` and `data/benchmarks` are in main by then (§3.4 step 3).
+1. **Deploy: `~/egyptology-deploy.sh`, run by Ledio, without `INSTALL_UNITS=1`** (the default
+   is 0; the line is not typed). The installed unit files are not touched. The deploy log
+   must show `inserted 0`, and may print "unit files differ … review" if the pause edited the
+   installed unit; that is expected and is not acted on. A deploy that rolls back or fails
+   stops the run (its own recovery notes apply, §1.7 stays paused).
+   **After the deploy's restart, repeat §1.7 step 1.3 (static, names only, including
+   `NeedDaemonReload=no`) and step 1.4 (the in-app caption, the Workspace message, the
+   journal warning since this restart, and `COUNT(*), MAX(id)` = `A_pause`) before going
+   on.** The restart is a new process; the pause inventory of §1.7 described the old one.
+2. **Dry run, bound to the live database.** Ledio runs this block, once, in a subshell (the
+   environment lives only inside it; nothing is echoed):
+
+   ```bash
+   (
+     export PRIVATE_DATA_DIR="/home/ledio/egyptology-private"
+     export ANNOTATIONS_DURABLE=1
+     export DATABASE_URL="sqlite:////home/ledio/egyptology/egyptology.db"   # = LIVE_DB, B1
+     cd /home/ledio/egyptology                           # import_examples.py reads its CSV by relative path
+     /home/ledio/venvs/egyptology/bin/python scripts/import_examples.py --dry-run
+   )
+   ```
+
+   **Rev. 5: this block does not source `egyptology.env`.** The deploy script says in so many
+   words that the file is read literally by systemd and must not be run through a shell
+   (`load_env_file` in `scripts/egyptology-deploy.sh`: a `REVIEWER_KEY` passphrase may hold
+   spaces, `$` or `&`), and the block has no need of it: B1 proves the service has no
+   `DATABASE_URL`, and the three variables above are all the script's imports use. The values
+   are fixed strings, not read from the host. If a further variable is genuinely needed, it is
+   loaded with the deploy script's non-executing `load_env_file` parser, never `source`, and the
+   block is rewritten and reviewed first. A `.env` file in the clone cannot redirect the block,
+   because `load_dotenv()` never overrides a variable that is already set (B1 (c)). The explicit
+   `DATABASE_URL` is correct only because B1 proved the service has none of its own; if B1
+   found one anywhere, this block is rewritten to that path first. Conditions,
+   all required before step 3:
+   * the `database:` line the script prints on stderr is exactly
+     `database: /home/ledio/egyptology/egyptology.db (from DATABASE_URL)` (the path only;
+     no credential is ever printed). Anything else stops the run;
+   * `LIVE_DB` existed and was non-empty before the run (B1 `test -s`), and its inode is
+     unchanged after it (`stat -c '%i'` before and after), so no second database was
+     created. The dry run calls `create_tables()`, which is a no-op on the live schema and
+     would otherwise create an empty file at a wrong path and report a false pass;
+   * `Default sync WOULD insert=0` (the deploy already inserted; a non-zero would-insert
+     means the wrong database or a deploy that did not sync: **stop**, do not refresh);
+   * `--refresh-existing WOULD create=0`; `update + unchanged` equals the CSV's row count;
+   * the refresh-field list is a subset of the **allowlist**: `period`, `grammar_notes`,
+     `display_sequence` and the derived fields `example_payload` computes from them, i.e.
+     `display_sequence_norm` (plus any other `*_norm` the 1.0 code shows is derived from an
+     allowed column, written into the pre-registration). Any other field (e.g.
+     `transliteration_norm` changed by normaliser drift since seeding) stops the run, to be
+     decided separately.
+3. **Refresh**, in the same block typed identically with `--refresh-existing` in place of
+   `--dry-run`, and the same `database:` line check. Snapshot 2 (taken after the pause, before
+   the deploy) is the restore point; **§1.9a is the procedure**, and its triggers apply from
+   the first byte this step writes. The deploy script's own `rollback()` restores code, units
+   and the venv after a failed deploy. It does **not** restore database contents, and it does
+   not fire at all on a failed refresh or a failed live check after the deploy has succeeded.
+4. Re-run `check_annotation_keys.py` on the live DB (read-only URI, the deployed venv, in the
+   clone): chains `ok`, 0 annotations on R, H unchanged, the printed path equal to `LIVE_DB`.
+5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5). **A difference alone
+   (trigger (3) with every other check passing) means NO DB restore (rev. 8):** saving stays
+   paused, the key and settings are not restored, Ledio investigates how a write got past the
+   pause with the §1.7 step 1.3 and 1.4 checks, and he decides; §1.9a runs only if another
+   trigger also fires. Otherwise Ledio
+   restores every file **from its pre-pause copy** (§1.7 step 1a), not from memory and not
+   from the names-only inventory. For each place listed in `$R/pause_inventory.txt`:
+   `cp -p /home/ledio/pause-backup-<date>/<label> <original path>`, then the owner, group and
+   mode **recorded in `MODES`** are put back (`chown`/`chmod` to those values; the copy itself
+   is mode 600, the original may not have been). The check is against the **destinations**:
+   `sha256sum -c DEST_SUMS` (run in the pause directory; its paths are the restored files)
+   must say `OK` for every line, i.e. each restored destination equals the file as it was
+   before the pause; and the `stat` of each destination equals its `MODES` line. If any
+   restored place is the unit or a drop-in, he runs `systemctl --user daemon-reload` first and
+   checks `NeedDaemonReload=no`, then restarts. The sidebar then shows the reviewer-key field
+   again, and a keyed test session can unlock saving. No test annotation is written. He
+   reports `restored: all OK` (destination hashes and modes both) and `keyed unlock works:
+   yes/no`. **The copies and both check files are kept (mode 700 directory) until that report
+   is in and Ledio has used the app once with the key**; he then deletes the directory
+   himself. They are never deleted by an agent and never earlier.
 
 Removed rows stay in the DB, unreachable from the UI (`attach_db_ids` is CSV-driven). If the
 FastAPI `/examples/search` is served publicly (A52), deleting the unannotated R rows (never H)
 is a separate, backed-up step. Otherwise they are left.
+
+**1.9a Restore procedure (rev. 5, parameterised in rev. 6). Ledio runs it; no agent connects to
+the server.** It is written once and used by **both** deploys, part 1 (§1.9) and part 3 (§3.4),
+with the parameters of the table below. It is written now so that nobody decides it at 23:00.
+It covers the DB, the backup timer and the code, and saving stays paused throughout.
+
+| Parameter | Part 1 (§1.9) | Part 3 (§3.4) |
+|---|---|---|
+| `RESTORE_FILE` (the exact `.db.gz`, name and sha256) | snapshot 2 (or that of the last pause, if §1.7 step 4.5 repeated it): `$R/db/snapshot2_source.txt` | the part 3 backup: `$R/db/snapshot_p3_source.txt` |
+| `A` (annotation `COUNT(*), MAX(id)` while saving was paused) | `A_pause` (§1.7 step 1.4) | `A_pause3`, read at the part 3 pause (§3.4 step 1) |
+| `X` (`COUNT(*) FROM examples` the restored file must show) | snapshot 2's count (= \|O ∪ H\|) | the backup's count |
+| `EXPECTED_CORPUS` (sha256 the server's `examples.csv` must have after the code rollback) | O (`44543932…f1e2`) | N (the committed part 1 corpus) |
+| `MERGE_SHA` (the `--no-ff` merge commit, §1.9 step 0) | `MERGE_SHA_P1` | `MERGE_SHA_P3` |
+| pause directory with the config copies | the `pause-backup-<date>` of §1.7 step 1a | the one made for the part 3 pause (§3.4 step 1) |
+
+*Triggers (any one):* (1) the refresh (part 1) exits non-zero, or the part 3 deploy's log shows
+a count other than `inserted = admitted, updated 0`, or the `database:` line was not the exact
+`LIVE_DB` line; (2) `check_annotation_keys.py` on the live DB is not all `ok`, reports an
+annotation on R, changes H, or prints a path other than `LIVE_DB` (part 1 only); (3) the live
+annotation `COUNT(*), MAX(id)` differs from `A` (this is a **loss question**, see the scope
+paragraph, not an ordinary restore trigger; **rev. 8: trigger (3) alone means NO DB restore**:
+saving stays paused, Ledio investigates how the write got past the pause with the §1.7 step
+1.3 and 1.4 checks and decides, and this section runs only if another trigger also fires,
+as §1.9 step 5 says); (4) the live `COUNT(*) FROM examples` is not
+the expected count (part 1: equal to `X`, since the refresh updates fields and inserts and
+deletes nothing; part 3: `X` plus the admitted count); (5) the post-deploy pause checks or the
+live app check fail (no result card, `Read-only mode.` notice, a rolled-back deploy followed by
+a wrong corpus); (6) the deploy itself failed and its own rollback ran. In case (6) the DB was
+not written (the deploy inserts 0 in part 1; in part 3 the sync did not run), so only the code
+state is checked (step 6) and steps 2-5 are skipped unless a DB check also fails. **A run that
+skips steps 2-5 never stops or records the timer, and step 7 then leaves it alone.**
+
+**Scope of the DB restore (rev. 7: one rule).** A paused window does not by itself prove that
+no newer annotation exists: trigger (3) and §1.7 step 5 both treat a difference from `A` as a
+write that got through. So the DB steps never assume it; **step 3 checks it on the stopped
+database.** The restore file's own annotations equal `A` by construction (B6 equality rule), so
+the file is restored without further ado **only if the failed database's annotation `COUNT(*),
+MAX(id)` is read and equals `A`** (nothing is lost). In every other case the restore is a
+**lossy restore**, inside the nominal pause as much as after it: the count differs from `A`,
+it cannot be read or established (integrity failure, no read-only open, a partial or missing
+file), or saving has been reopened since the pause. A lossy restore needs, **before any `mv`**
+of the live database, a written decision by Ledio that states the number of annotations that
+would be lost (the failed file's annotation count minus the restore file's, or "unknown" when
+it cannot be read, in which case nothing is restored until the preserved copy has been read) and
+how they are kept (the failed file is kept whole, step 3, and re-applying its newer annotations
+is its own reviewed step, not improvised here). Until that decision exists, only step 2 (writers
+stopped), the preservation of step 3 and the code rollback of step 6 run, and the database stays
+where it is. The code rollback is not lossy: it touches no annotation.
+
+*Steps:*
+
+1. **Keep saving paused.** Nothing in this section restores the key.
+2. **Stop the writers, and record the timer.** First record, in `$R/db/restore_<date>.txt`,
+   the backup timer's initial state: `systemctl --user is-enabled egyptology-backup.timer`,
+   `is-active egyptology-backup.timer` and `is-active egyptology-backup.service` (the unit
+   names are in `deploy/systemd/`; confirm them with `systemctl --user list-timers`). Then
+   `systemctl --user stop egyptology-backup.timer egyptology`. If
+   `egyptology-backup.service` is active (a backup is running), **wait until it is
+   inactive**; never kill it, and never move the database while it runs. The timer is stopped
+   so that nothing snapshots a half-restored file.
+3. **Preserve the failed database, check its annotations, then (only if allowed) move it
+   aside; never delete it.** With the writers stopped (step 2) and the files still under their
+   old names: record the size and `sha256sum` of `LIVE_DB` and each of `LIVE_DB-wal` and
+   `LIVE_DB-shm` that exists; take `cp -p` copies of them into the pause directory under
+   `failed-<date>/` (after a `df` check that the space is there; if it is not, the files in
+   place stay untouched and that is the preservation, recorded as such). Then, `sqlite3
+   -readonly` on `LIVE_DB`, record the failed file's `PRAGMA integrity_check` and annotation
+   `COUNT(*), MAX(id)` as `A_failed`. **Gate:** if `A_failed` was read and equals `A`, go on. If
+   it differs, or could not be read, **stop here** and follow the scope paragraph: the
+   written loss decision comes first, and nothing below runs without it. With the gate
+   passed (or the decision in hand): for `LIVE_DB` and each of `LIVE_DB-wal` and `LIVE_DB-shm`
+   that exists, `mv <file> <file>.failed-<date>`. A leftover `-wal` or `-shm` next to a
+   restored file would be replayed onto it, so none may remain under the old names.
+4. **Restore the exact `RESTORE_FILE`.** The file name and sha256 are in the record named in
+   the table, and the file is in `BACKUPS` and in the pause directory. First `sha256sum` it and
+   require equality with the recorded value, and `gzip -t`. Then `gunzip -c <that .gz> >
+   LIVE_DB`, with `chmod --reference=<failed file>` **and `chown --reference=<failed file>`** on `LIVE_DB`
+   (rev. 8), then `stat` shows the same owner, group and mode as the failed file; a mismatch
+   stops the run. Nothing else is used: not a newer backup, not a "latest". If the failed
+   database cannot be read (step 3), Ledio's written loss decision explicitly covers the
+   unreadable case, and the preserved copy is kept as-is, never opened for writing or altered.
+5. **Check it before it serves anything**, `sqlite3 -readonly` on `LIVE_DB`: `PRAGMA
+   integrity_check` = `ok`, `quick_check` = `ok`, `foreign_key_check` empty; `COUNT(*)` of
+   `examples` equals the restore file's own count (`X`); annotation `COUNT(*), MAX(id)` equals
+   `A` (after a lossy-restore decision this is the restore file's own count, and the report
+   states the lost count that the decision named). A failure leaves the `.failed` file and every backup untouched and ends the procedure
+   for Ledio to decide with the lead; it is never improvised.
+6. **Roll the code back to match, by revert, not rewrite.** The restored DB holds the
+   pre-deploy rows, while a deployed clone holds the new `examples.csv`, so serving them
+   together is an inconsistent state. Because the merge is always a merge commit (§1.9 step 0),
+   the rollback is always the same: the lead prepares `git revert -m 1 <MERGE_SHA>` on a branch
+   from the pushed main (never in the main checkout, no force push), Ledio reviews and pushes
+   it, and runs `~/egyptology-deploy.sh` **without** `INSTALL_UNITS`. The server's
+   `data/processed/examples.csv` then has sha256 `EXPECTED_CORPUS`. If the failure came
+   **before** the push (the merge was local), nothing is pushed and the server code is already
+   the old one; the check is the sha256 only, and the local merge is left alone until Ledio
+   decides what to do with it. Leaving the new code on the restored DB is allowed only if
+   Ledio decides so in writing, with the reason (for example, a failure that touched no row);
+   it is never the default.
+   **Non-lossy option for the code-only rollback (rev. 8):** after the revert deploy, re-run
+   the §1.9 step 2 and step 3 block against the reverted O CSV (same `database:` line check,
+   inode check and allowlist check as step 2), expecting `WOULD create=0`. That restores the
+   allowlisted fields without touching annotations or restoring the DB.
+7. **Re-verify, restore the timer, and only then restore saving.** After the restart: B1 (all
+   of (a) to (e), so the restored state is bound to `LIVE_DB` again), the §1.7 step 1.3 and
+   1.4 checks (the pause is still in force and `NeedDaemonReload=no`), and the step 5 checks
+   again on the live file. **Then the backup timer, only if step 2 ran, is put back to the
+   state recorded there:** `systemctl --user start egyptology-backup.timer` if the record says
+   it was active, and Ledio reports `is-enabled` and `is-active` equal to the record. A
+   `NEXT` time in `systemctl --user list-timers` is required **only for a timer that was
+   active** (its `Persistent=true` makes a missed run fire after the start); a timer that was
+   recorded inactive stays inactive and is not started, and no `NEXT` is expected for it. If
+   step 2 did not run (the code-only path), no record exists, the timer was never touched
+   here, and this check is skipped; Ledio only reports `list-timers` as he finds it. Only when all
+   of that passes are the key and the settings restored from the pause directory exactly as
+   §1.9 step 5 says, including the checksum, `daemon-reload` and the keyed-unlock check.
+8. **After.** The cleanup is a failed pass for the purposes of the plan. The `.failed` files
+   and the backups stay until the cause is understood and Ledio agrees. The results note
+   records the trigger, the steps taken and the checks passed, counts and names only.
+   `$R/db/restore_<date>.txt` keeps the same.
 
 ---
 
 ## Part 2 — Re-measure on the candidates, before replacement (pre-registration first)
 
 New file `docs/remeasure-preregistration-cleanup-<date>.md`, same structure as 2026-10-25
-part (A). It covers regression only: no accuracy or independence claim, nothing quoted to
-experts. Release floors are **descriptive regression tolerances**, not results.
+part (A) and as `docs/kri-fixes-preregistration-2026-10-26.md`. It covers regression only: no
+accuracy or independence claim, nothing quoted to experts. Release floors are **descriptive
+regression tolerances**, not results.
 
-**Frozen in the pre-registration before any run:**
+Rev. 4 adds three things the rev. 3 run set could not do: a way to run the Urk. IV gate on a
+candidate corpus (§2.1a), a defined treatment of benchmark targets that part 1 removes, with
+twins and floors (§2.2), and a decoder / segmentation measurement (§2.3).
+
+### 2.0 Frozen in the pre-registration before any run
 
 * sha256 of O, M and N, P, H, `$R/exceptions.csv` (benign column list + BBAW `_`
   exceptions), the removal manifest and `donorless_kept.csv`;
 * the amendment rule of §1.7 step 4: a rebuilt N′ gets a dated amendment, refreshed
   hashes and the complete run set (O, M, N′). There is no partial re-run;
-* query-file sha256s, code commit and `pip freeze`;
-* the sampling seed and procedure (routing);
+* the **pinned code commit**: main at §1.0 plus the measurement-code commit of 2.0a, one sha
+  for every run of every corpus, with the sha256 of each measured script and `pip freeze`;
+* query-file sha256s (the three competitive sets, `expert_paste_queries.csv`, the known-twins
+  and cross-edition files) and `release_baseline.json`'s sha256;
+* the sampling seed and procedure (routing: `--seed 20261025 --per-stage 200`);
 * the list of **corpus-dependent statistics** at that commit. The worker writes this list
   from the code before any run, at minimum:
   1. evidence rows / top-k pool membership;
   2. global IDF and document frequencies;
-  3. reading attestation counts and suggestion frequency priors;
+  3. reading attestation counts and suggestion frequency priors, **including the singleton
+     tie counts behind the `/k` confidence discount and the stage-versus-pooled counts behind
+     the pooled-fallback eligibility** (the fallback is default off since kri-fixes, but the
+     counts are still corpus-dependent and the harness still measures them);
   4. segmentation/boundary-model statistics (C1 sign adjacency, quadrat hints);
   5. stage priors and routing counts;
   6. twin-guard pools;
-  7. row order / tie-breaks.
-* the benchmark-target rule: a target in R stays removed (A35 applies to all rows). Its
-  query is reported in a separate "target removed" table, kept out of the O-vs-N comparison
-  but listed by id. If there are more than 5 such queries in any one set, part 1 has already
-  stopped at 1.1a.
-* the loss-acceptance and stop rules below.
+  7. row order / tie-breaks;
+  8. the twin representation of a target that is no longer in the corpus (§2.2: the fallback
+     to the benchmark's `expected_key_tokens`);
+  9. benchmark answerability (a query's answerability is "at least one corpus row is useful
+     with the target removed", `scripts/compute_v4_answerability.py`; removing rows can
+     change it);
+* **Q_R**, the removed-target query ids, with their sha256 (§2.2);
+* the decoder partition H_O, the arms, the identity contract and output paths of 2.0a, and
+  every acceptance number of §2.3 **as the integer formulas** (D1 ⌊P/1000⌋, D2 ⌊L/500⌋, D3
+  ⌊B/500⌋, with the denominators defined there), gross for D1 and D2;
+* **the NC-data uses** (Ground rules): each use of the St Andrews file, named, with operator,
+  file sha256 and destinations; Ledio's approval of the pre-registration is that approval;
+* the loss-acceptance and stop rules of §2.5.
 
-**Runs (same code commit, same evaluation code, run in one session, one heavy process at a
-time):** O re-run fresh (the 2026-10-25 (A) run is only a reference), then M, then N. The
-commands are those of (A) A1, with `--examples` pointing at the corpus under test. The sets:
+### 2.0a Measurement code that must exist first (written, tested, reviewed, then frozen)
 
-* paste ×3 modes;
-* the Urk. IV gate;
-* v4 / held-out 1 / LE-v1, each with T-auto, C-auto and L-auto;
-* the twin inventory;
-* routing (same seed and procedure; the sample is redrawn because the eligible set changes,
-  and the redraw is pre-specified).
+Both are small, are separate commits with tests on synthetic fixtures only, are reviewed by
+Opus and Astra before the pre-registration is committed, and are part of the pinned commit.
+They are **not** written in this draft.
 
-**Prediction 1 (M).** Period and `grammar_notes` are not read by ranking, routing or the
-benchmark's declared stage (the precomputed `language_stage` column in each query CSV;
-`derive_stage_from_period` is not used at load). So M's **evaluation outputs** must be
-byte-identical to O's from the same code: per-query results CSVs, summary JSONs and twin
-inventory, all produced with the same pinned query files and environment. M itself differs
-from O by construction. Any output difference means a hidden dependency → stop.
-`grammar_notes` does feed card citations (`app/data/source_metadata.py`). That is display
-only, checked by eye on 5 AES cards.
+1. `scripts/run_kri_fixes_eval.py`: three new flags (§2.3): `--fixed-heldout PATH`,
+   `--heldout-out PATH` (written for **every** corpus, not only O; one row per partition row
+   with its exclusion reason) and `--train-manifest PATH` (the composite keys of every training
+   row). Without any of them the harness's outputs must be byte-identical to today's on a
+   fixture, and with `--fixed-heldout` pointing at the partition the default path itself writes,
+   the outputs must be byte-identical to the default run (a fixture test; on O it is D0b).
+   **Identity contract (rev. 5).** The harness's `row_id` is `source:row_index`, where
+   `row_index` is the position in the **test frame**, so it shifts whenever a preceding test row
+   is removed, and the position and line outputs carry no text or sentence id. Pairing across
+   corpora therefore never uses `row_id` directly. Every run passes `--split-manifest`
+   (it already exists: the test frame's `source`, `source_text_id`, `source_sentence_id`, in
+   the order `row_index` counts, including rows the decoder skips for a length mismatch), and
+   `compare_cleanup_runs.py` maps `row_id` to the composite key through line `row_index` of that
+   manifest, per corpus, then pairs by key and `position`. It asserts that the manifest has all
+   three key columns, that its length equals the number of distinct `row_id`s plus the skipped
+   rows, and that the key set is unique. A fixture test removes one row **before** a test row
+   and shows that the pairing still holds. The output paths are always passed explicitly,
+   under `$R/decoder/<c>/` (`--positions`, `--lines`, `--summary`, `--calibration`,
+   `--split-manifest`, `--heldout-out`, `--train-manifest`); the harness's own defaults, which
+   point into the repo, are never used.
+2. `scripts/compare_cleanup_runs.py`: an offline comparer that reads per-query results,
+   per-position results, twin inventories and the Q_R file; matches everything by composite
+   key (never by row position, because positions shift when rows are removed); produces the
+   mechanism tables of §2.4 and the tables of §2.2 and §2.3. It runs no evaluation and loads
+   no index.
 
-**Prediction 2 (N).** Every changed query is classified by mechanism from the frozen
-list, with evidence. For mechanism 1, name the removed row and its role (target, twin or
-top-k evidence). For mechanisms 2–7, give before/after values of the statistic and the
-scores of the swapped candidates. "IDF shift" without numbers is not a classification.
-The twin inventory may only shrink, and only by ids in R.
+The Urk. IV gate script is deliberately **not** changed (§2.1a).
 
-**Loss acceptance (frozen):**
+### 2.1 Runs
 
-* Hard gates must hold: paste 8/8 auto and declared; Urk. IV gate pass; routing
-  Earlier/Late → Demotic 0/200.
-* Every loss must be traced to a named mechanism. One untraced loss means N is not
-  shippable.
-* A traced loss is accepted only if it is mechanism 1 with a removed broken reading, or
-  mechanisms 2–7 at no more than 2 losses per set.
+Same pinned code, same evaluation code, one session, one heavy process at a time (Ground
+rules): O re-run fresh (attempt 2 of the 2026-10-25 series and attempt 5 of kri-fixes are
+references, never the baseline), then M, then N. Corpus files live at `$R/corpus/{O,M,N}.csv`
+and are hashed before and after every run. `PY=~/venvs/egyptology/bin/python`,
+`B=<pinned checkout>/data/benchmarks`, `CORPUS=$R/corpus/<c>.csv`. Every command writes under
+`$R/<c>/`. The commands, with the flags each script actually has (checked against
+`--help` at 1.0; a missing flag stops the run):
+
+| Set | Command (per corpus `<c>`) |
+|---|---|
+| paste ×3 modes | `$PY scripts/run_expert_paste_eval.py --examples $CORPUS --queries $B/expert_paste_queries.csv --stage {none,auto,declared} --results $R/<c>/paste_<mode>.csv` |
+| Urk. IV gate, both modes | §2.1a (6 invocations in all: 3 corpora × `auto`, `declared`) |
+| v4 / held-out 1 / LE-v1, T-auto | `$PY scripts/run_competitive_ambiguity_eval.py --examples $CORPUS --query-path app --useful-rule v4 --benchmark <set> --stage auto --exclude-twins 0.7 --expected-tokens current --results … --failures …` |
+| the same, C-auto | as T-auto with `--exclude-twins 0 --expected-tokens current` |
+| the same, L-auto | as T-auto with `--exclude-twins 0 --expected-tokens frozen` |
+| twin inventory | `$PY scripts/list_benchmark_twins.py --examples $CORPUS --output $R/<c>/known_twins_now.csv` (key-based diff in `compare_cleanup_runs.py`) |
+| answerability, v4 | `$PY scripts/compute_v4_answerability.py --examples $CORPUS --useful-rule v4 --out $R/<c>/answerability_v4.csv` |
+| routing | `$PY scripts/run_stage_routing_eval.py --examples $CORPUS --seed 20261025 --per-stage 200 --results $R/<c>/routing.csv`; the sample is redrawn because the eligible set changes, and the redraw is pre-specified |
+| decoder + segmentation | §2.3 |
+
+The set of competitive runs matches `scripts/run_kri_fixes_prereg.sh` step 7 and
+`scripts/verify_release.py`'s own lanes, so the part 2 N numbers and the 1.8 local gate are the
+same measurement.
+
+### 2.1a The Urk. IV gate on a candidate corpus (rev. 4)
+
+`scripts/check_standrews_urkiv_gate.py` has no `--examples` flag. Its parser takes `--stage
+{none,auto,declared}` (default `auto`), `--rank-k` and `--private-dir`; `main()` loads the
+public frame from the module constant `EXAMPLES_PATH` (the checkout's own
+`data/processed/examples.csv`) through `load_corpus(private_dir)`, which would accept an
+`examples_path` argument that `main()` never passes. Running it with a corpus "pointed at" by a
+flag is therefore impossible, and running it in the main checkout would test O for all three
+candidates without saying so. The script also runs **one stage mode per invocation**, so the A7
+requirement (auto **and** declared) is two invocations per corpus.
+
+**Decision: the script is not changed.** Its sha256 stays equal to the one in the kri-fixes
+attempt-5 record, so the gate's own code is not a variable. The corpus is selected by *where
+the script runs*:
+
+1. A throwaway worktree per corpus: `git -C <repo> worktree add --detach $R/meas/<c>
+   <pinned sha>`, then `cp $R/corpus/<c>.csv $R/meas/<c>/data/processed/examples.csv`.
+   The check is **per corpus, and the hash is the authority** (rev. 5: O's copy is
+   byte-identical to the pinned checkout's own file, so `git status` is clean for O and a rule
+   that required a modified file could not pass):
+   * **O:** `git -C $R/meas/O status --porcelain` is **empty** and `git diff --stat` is empty;
+     `shasum -a 256 $R/meas/O/data/processed/examples.csv` equals O's frozen sha256 (and the
+     checkout's own file at the pinned commit).
+   * **M and N:** `git -C $R/meas/<c> status --porcelain` lists **exactly one** path,
+     ` M data/processed/examples.csv`, and `git diff --stat` shows that file alone; the sha256
+     of the file equals the frozen M or N sha256.
+
+   So every script is byte-identical across O, M and N, and only the corpus differs.
+2. `shasum -a 256 $R/meas/<c>/data/processed/examples.csv` is recorded **before and after**
+   each invocation and must equal the frozen sha of that corpus both times.
+3. Per invocation (cwd = the worktree, so `PROJECT_ROOT` is the worktree; the private
+   directory is the one that holds the St Andrews file, passed explicitly):
+   `$PY scripts/check_standrews_urkiv_gate.py --private-dir ~/projects/Egyptology-APP/data/private --stage auto`
+   and again with `--stage declared`, output to `$R/<c>/urkiv_{auto,declared}.txt`. The
+   private file's sha256 is recorded once and is identical for all six runs. **NC gate (rev. 5,
+   Ground rules):** this step reads the St Andrews file (`data/private/standrews.csv`, sha256
+   recorded) and writes text-bearing logs, so it is **listed in the pre-registration as a
+   named use** and runs only after Ledio has approved that pre-registration. Operator: the
+   lead, not the worker (the worker is told the command, never the path or the content). Files:
+   that one file. Destinations: `$R/<c>/` for the logs, nothing else, no copy, no commit. The
+   same listing covers the `run_expert_paste_eval.py` runs that load private rows (the
+   `--private-dir` path of the paste lane), and the part 3 re-measure lists its own. An extra
+   read (a "quick look" at a log row) is a use not on the list.
+4. The corpus identity is checked from the output as well, not only by hashing: the line
+   `corpus N rows: {...}` must equal the candidate's row count plus the private row count and
+   its per-source counts (for N the BBAW and Ramses counts differ from O's, so the output
+   alone distinguishes N; for M the pre/post hash is what distinguishes it from O, since M has
+   O's counts).
+5. **Pass rule (A7, amending A2.2 and A1 of the 2026-10-25 pre-registration; the single-mode
+   command of A1 is superseded):** in **both** modes the output ends `GATE: PASS` and the
+   process exits 0, which the script grants only when all 8 paste checks pass with the private
+   rows loaded **and** the pinned row `S_urkIV-001_urkIV-001Tr_0003` is present exactly once
+   with its expected reading. A missing private directory or zero private rows exits non-zero
+   and is "not run", never "passed". The St Andrews rank is **printed and reported, never
+   gated**: the number of St Andrews rows in the retrieval pool and the rank (or "not
+   retrieved") for O, M and N go into the results note as diagnostics.
+6. Custody: the logs can contain St Andrews (CC BY-NC-SA) row text (`row:`, `top 5 overall`).
+   They stay in `$R`, outside the repo. The results note quotes only PASS/FAIL, counts and the
+   rank, never a row.
+7. The worktrees are removed afterwards (`git worktree remove --force`). Nothing in them is
+   committed.
+
+The same swap would work for any other script, but only the gate needs it: every other script
+in the table takes `--examples`. If a later pass wants the flag, adding it is its own reviewed
+commit and the gate is then re-pinned; it is not smuggled into this one.
+
+### 2.2 Benchmark targets in R, twins and floors (rev. 4)
+
+**What the code does.** The competitive harness excludes a benchmark's own target row from
+the pool whenever it is in the corpus (`guard.target_positions`), and scores against the
+benchmark's `expected_transliteration`, so a removed target does **not** make a query
+unscorable. But `eval_guards.twins_of_target` (lines 156-168) builds a target's twin set from
+the corpus row's tokens when the row exists and from the benchmark's fallback
+(`expected_key_tokens`, the folded `expected_transliteration`) when it does not. A query whose
+target part 1 removes therefore gets a **different twin set**, which can gain or lose members
+that have nothing to do with R. Rev. 3 said "the twin inventory may only shrink, and only by
+ids in R" and, in the same breath, put these queries in a separate table. Both cannot hold. Rev.
+4 separates them.
+
+**Definitions, frozen before any run (and re-derived and re-frozen in any N′ amendment):**
+
+* **Q_R** = every benchmark query id, in every file under
+  `data/benchmarks/competitive_ambiguity_eval_queries*.csv`, `expert_paste_queries.csv`,
+  `expert_review_sheet.csv`, `known_twins_2026-10-12.csv` and `cross_edition_pairs_v1.csv`,
+  whose `expected_source_text_id`/`expected_source_sentence_id` key is in the final R (after
+  the 1.4 exceptions). Written to `$R/report/target_removed.csv` (set, query id, key, source,
+  lacuna kind or stratum) with its sha256. The 1.1a stop rule (more than 5 in any one set)
+  still applies before anything is built.
+* **C** = the **common retained-target set**: every query not in Q_R. It is identical for O,
+  M and N, because the same ids are dropped before aggregation in every arm.
+* **Floor population** = the **full committed benchmark**, Q_R included, exactly as
+  `verify_release.py` computes it (`expected_queries` unchanged, 20 for v4). The release
+  floors are never evaluated on C alone. This keeps the pre-registration, the part 2 N run and
+  the §1.8 local gate on one definition.
+
+**Rules:**
+
+1. **Comparisons use C.** The O-versus-N loss and gain counts, the loss budget of §2.5, the
+   mechanism classification of §2.4 and the twin-inventory prediction are computed over C,
+   by query id, with `compare_cleanup_runs.py` dropping Q_R rows from every arm before it
+   counts anything. The per-query CSVs are not edited, and the query files' sha256s stay as
+   pinned.
+2. **Twin invariant, over C.** Keyed by composite key, not by position: for every query in C
+   the twin set in N is a subset of the twin set in O, and the difference is a subset of R.
+   A twin in N that is not in O, or a vanished twin outside R, is a hidden dependency: stop.
+3. **Q_R is its own table**, never mixed into C's counts. For each id it lists: O's result
+   (rank, useful or not, the twin set from the corpus row), N's result, the twin set N derived
+   from the **fallback** representation, and the symmetric difference of the two twin sets by
+   key. As a diagnostic control it also reports a third twin set computed in N with the target
+   tokens **frozen from O's row** (a fixed O-derived target representation, computed offline
+   by `compare_cleanup_runs.py` through `TwinGuard`, no evaluation run), so that how much of
+   the difference is the representation switch and how much is corpus change is visible.
+   No containment prediction is made for Q_R. A change on a Q_R query is traced to the new
+   **mechanism 8 (target-representation fallback)** or to mechanisms 1-7 and 9 with numbers.
+4. **Q_R losses are visible to the floors, not to the budget.** A Q_R query that is a hit in O
+   and a miss in N counts toward the full-benchmark floor test (rule 5) and must be traced
+   to a named mechanism with numbers; it does not count against the "at most 2 per set"
+   budget of §2.5, because that budget is defined on C. An untraced Q_R loss is an untraced
+   loss: stop.
+5. **Floor arithmetic, frozen.** `verify_release.py` fails a lane when a value is below its
+   floor by more than `FLOOR_EPSILON`, so a value equal to the floor passes. v4 T-auto is
+   17/20 = 0.85 top-3 and 0.75 MRR (attempt 2; the same in attempt 5) against
+   `twin_controlled` floors 0.80 and 0.70 (`recorded_commit 3e29304`). Top-3 therefore has
+   **one query of slack** (16/20 = 0.80 passes, 15/20 fails) and MRR **1.0 of summed
+   reciprocal rank** (0.05 × 20). If N costs v4 more than that, the floors fail by
+   construction and the run stops; the floors are not edited to fit (§1.8). The held-out and
+   LE-v1 sets have no gating floor; they are reported, with the same loss rules.
+6. **Which numbers `release_baseline.json` may take from this pass:** only
+   `expected_corpus_rows` and `expected_corpus_sha256` (§1.8). The top-level legacy block
+   (0.90 / 0.7917) is non-gating and unchanged; the `twin_controlled` block's floor values are
+   unchanged.
+
+### 2.3 Decoder and segmentation regression (rev. 4)
+
+**Why.** `scripts/run_kri_fixes_eval.py` states its own reason to exist: the competitive
+benchmarks never call `ReadingModel.predict_sequence` or `Segmenter.segment`, and
+`scripts/run_reading_model_eval.py` never attaches a pooled model. Cleanup changes what both
+are trained on: removing about 2,200 BBAW and Ramses rows changes the stage-restricted counts
+that drive singleton ties and the `/k` discount, and the boundary statistics the segmenter is
+built from; PT admission (part 3) adds Earlier-stage evidence. The competitive sets cannot see
+that, and measuring the decoder on O before the merge says nothing about N. The harness is
+re-run on every corpus.
+
+**Held-out comparability: the problem.** The harness's test set comes from
+`eval_guards.text_level_test_mask`: every text group (BBAW and TLA rows are single-sentence
+groups) is held out when its **ordinal in order of first appearance** is a multiple of 5.
+Removing rows from N shifts the ordinal of every later group, so the held-out 20% would be a
+*different* sample in N than in O, and nothing could be paired. The split also moves when part
+3 appends rows. Re-running the harness as it is would compare unlike with unlike.
+
+**Design (frozen):**
+
+1. **Fixed held-out partition H_O.** The O run writes the full held-out partition **before**
+   duplicate and lexicon exclusions (`--heldout-out`, the new flag of 2.0a), as
+   `$R/decoder/H_O.csv` (source, text id, sentence id, sign string, and for each row whether it
+   survived exclusion in O and, if not, the reason: `exact_duplicate`, `near_duplicate` or
+   `lexicon_leak`), with its sha256 recorded. **O is run twice** (about 12 minutes each): first
+   in the harness's default mode, which writes H_O and gives D0, then again with
+   `--fixed-heldout $R/decoder/H_O.csv`, which is the **O baseline for every comparison**
+   (D0b below). M, N and P are compared with O's fixed-mode run, never with the default-mode one.
+   H_O's post-exclusion part must reproduce the attempt-5 split manifest, sha256
+   `ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba` (3,473 test rows:
+   BBAW 1,013, TLA 2,460); a difference stops the run and is investigated before anything is
+   compared, since the corpus and the split code are supposed to be unchanged.
+2. **Every other corpus** (M, N, and later P) is run with `--fixed-heldout $R/decoder/H_O.csv`:
+   the held-out rows are exactly the rows of H_O that exist in that corpus (matched by
+   composite key), and **training is every other aligned row**, with whole text groups kept
+   on one side (`assert_text_groups_disjoint`). Rows removed by part 1 simply leave the
+   partition; rows added later (UD) are train only, because they are in no partition. Each run
+   writes its own `--heldout-out` (so each corpus has its own exclusion reasons) and its
+   `--train-manifest`; the comparer's leakage check of item 3 reads these two files and the
+   split manifest, not the harness's say-so.
+3. **Leakage controls**, all applied per corpus to its own training set, exactly as
+   `select_test_rows` does today: exact-duplicate sign strings and near-duplicates (overlap
+   0.8) are dropped from test (and, as today, **not** moved to training: they are in neither
+   manifest), and `--lexicon-exclude-test-sources` keeps its default.
+   Held-out rows are asserted absent from training in every run (key intersection of the
+   split manifest and the training manifest empty), and the comparer checks it again from the
+   two files. A held-out row that is dropped as a
+   duplicate in one corpus and kept in another is listed with the reason.
+4. **Comparison set C_D** = the held-out rows that survive exclusion in **every** corpus being
+   compared (O ∩ M ∩ N for part 2). All paired statistics are over C_D, by composite key and
+   position index, with the counts beside every rate. Rows of H_O absent from N because they
+   are in R are reported separately ("held-out row removed") and are not scored.
+5. **Arms.** The harness's five arms as they are (`all_off`, `pooled_only`, `discount_only`,
+   `cartouche_only`, `all_on`), no `--arms` filter, all other flags at their defaults
+   (`--split text`, `--test-fraction 0.2`, lexicon on, `--exclude-duplicates`, near-duplicate
+   0.8). The **shipped** configuration is `cartouche_only` (pooled fallback default off since
+   `97ddff2`, cartouche window in units since `43fbecb`; the `/k` discount moves no
+   prediction, so its predictions are the shipped ones). **The gates D1-D3 and D7 apply to
+   `cartouche_only` only** (rev. 6: one rule; rev. 5 gated `all_off` here and called it
+   reporting-only in the acceptance paragraph). D4 is the invariant check on `cartouche_only`
+   and `all_on`, and D0 an identity check on `all_off` and `cartouche_only`. Beyond those,
+   `all_off`, `pooled_only` and `all_on` are **reported, never gated**: `all_off` is the control
+   row that shows whether a movement is in the corpus or in the cartouche constraint, and
+   `pooled_only` and `all_on` stay because the fallback code stays and its counts are
+   corpus-dependent. About 11-12 minutes per corpus at the observed rate.
+6. **M** differs from O in `period` and `grammar_notes` only, and the decoder reads neither
+   (`app/services/stage.py` uses `language_stage`). Its harness outputs (positions, lines,
+   summary, calibration) must be **byte-identical** to O's fixed-mode run (and so, by D0b, to
+   O's default-mode run). A difference is a hidden dependency:
+   stop.
+
+**Acceptance rules for N against O (frozen; tolerances are engineering budgets, not claims).**
+All on C_D, shipped arm `cartouche_only`, paired by composite key and position (the identity
+contract of 2.0a), against O's fixed-mode run, counts beside every rate. **Integer arithmetic
+only (rev. 5):** every budget above is computed as `⌊numerator / denominator⌋` on integers
+(Python `//`, or `Fraction`), the denominators P, L and B are recorded in the results note
+beside the budget, and no rate is rounded before it is compared. **Net or gross is not
+chosen after seeing results: D1 and D2 are gross.** Rev. 4 said "net loss" for D1 and D2 and
+"gains never offset losses" in the same section; the second statement is the project's
+rule (§2.5), so D1 and D2 follow it. D3 is the one total, because it counts errors, and its
+per-line worsenings are listed. D1-D3 are also computed for `all_off` as a
+control and reported; the gate is on `cartouche_only` only, as item 5 says.
+
+| Id | Quantity | Rule |
+|---|---|---|
+| D0 | harness identity | O (default mode) reproduces attempt 5's `all_off` and `cartouche_only` aggregates on its own held-out partition (positions, lines, exact segmentations, boundary TP/FP/FN); a mismatch stops the run before N is read |
+| D0b | the fixed-heldout path | O run with `--fixed-heldout H_O.csv` gives positions, lines, summary and calibration **byte-identical** to O's default-mode run. A difference is a bug in the new flag, not a corpus effect; it is fixed (a new reviewed commit, which re-pins the code and restarts the pre-registration) before M, N or P is read |
+| D1 | reading-track position accuracy | **gross loss**: W1 = the number of C_D positions that are correct in O and wrong in N (gains do not offset). Gate: W1 ≤ ⌊P / 1000⌋, with P = the number of C_D positions in the shipped arm (identical in O and N by construction). That is 0.10 percentage points. The exact paired sign test is reported, not gating |
+| D2 | whole-line exact reads | **gross loss**: W2 = the number of C_D lines with `line_exact` 1 in O and 0 in N. Gate: W2 ≤ ⌊L / 500⌋, L = the number of C_D lines. That is 0.20 percentage points |
+| D3 | boundary errors outside cartouches (segmentation track) | E = the sum over C_D lines of `boundary_fp_outside_cartouche + boundary_fn_outside_cartouche` (a count of errors, so it is a total by nature). Gate: E_N ≤ E_O + ⌊B / 500⌋, with **B = the sum over C_D lines of the gold boundaries, `boundary_tp + boundary_fn`** of that line's `cartouche_only` row (gold-side, so identical in O and N). That is 0.20 percentage points of boundaries. Every C_D line whose `seg_exact` goes 1 → 0 is listed and traced to d3 or d5. Boundary F1 reported |
+| D4 | cartouche invariants | cartouches split 0 of all, boundaries inside cartouches 0, in `cartouche_only` and `all_on` (these hold by construction of the shipped code, so any non-zero is a hidden dependency) |
+| D5 | stage routing inside the harness | lines whose chosen stage differs between O and N are counted and listed, with the attested coverage that moved them; reported, not gated (the routing set of §2.1 gates the router) |
+| D6 | calibration (Brier, three confidences) | reported only |
+| D7 | traceability | every position that is worse in N is classified by mechanism (below), with the training counts for the gold and the chosen reading in O and in N; one **untraced** worse position means N is not shippable |
+
+**Decoder mechanisms (frozen list; used by D7):** (d1) a removed row carried the gold reading's
+attestation, counts before and after named; (d2) a removed row changed a competing reading's
+count or a singleton tie, counts named; (d3) the chosen stage changed (D5); (d4) the position
+is adjacent to a changed group (Viterbi coupling), with the changed neighbour named; (d5) a
+boundary-model statistic changed for a sign pair in the line, before and after named.
+"Training counts changed" without the numbers is not a classification. Gains are listed and
+never offset losses.
+
+**Stop rules.** D0 or D0b or M's byte-identity failing, any D4 violation, any D7 untraced
+position, or D1-D3 over budget: stop, write the report, commit nothing, decide with Ledio.
+
+### 2.4 Predictions
+
+**Prediction 1 (M).** Period and `grammar_notes` are not read by ranking, routing, the
+decoder or the benchmark's declared stage (the precomputed `language_stage` column in each
+query CSV; `derive_stage_from_period` is not used at load; `app/services/stage.py` reads
+`language_stage`). Re-checked against main `51f3757`: kri-fixes changed none of this. So M's
+**evaluation outputs** must be byte-identical to O's from the same code: per-query results
+CSVs, summary JSONs, the twin inventory and the decoder harness outputs (the latter against O's
+fixed-mode run, §2.3), all produced with the same pinned query files and environment. M itself differs from O by construction. Any output
+difference means a hidden dependency → stop. `grammar_notes` does feed card citations
+(`app/data/source_metadata.py`). That is display only, checked by eye on 5 AES cards.
+
+**Prediction 2 (N).** Every changed query in **C** is classified by mechanism from the frozen
+list, with evidence. For mechanism 1, name the removed row and its role (twin or top-k
+evidence; a target is in Q_R by definition and handled by §2.2). For mechanisms 2-9, give
+before/after values of the statistic and the scores of the swapped candidates. "IDF shift"
+without numbers is not a classification. The twin inventory over C may only shrink, and only by
+ids in R (§2.2 rule 2). Changes on Q_R follow §2.2 rules 3-4.
+
+### 2.5 Loss acceptance (frozen)
+
+* Hard gates must hold: paste 8/8 in `auto` and in `declared` **with the private rows loaded,
+  the pinned row present exactly once, and the St Andrews rank reported but not gated**
+  (A2.2′ as amended by A7; the public-only `run_expert_paste_eval.py` runs in the same two
+  modes and must also be 8/8); the Urk. IV gate `GATE: PASS` in both modes (§2.1a); routing
+  Earlier/Late → Demotic 0/200; v4 T-auto above the `twin_controlled` floors (§2.2 rule 5);
+  M byte-identical (Prediction 1); the decoder rules D0-D7 (§2.3).
+* Every loss on a query in C must be traced to a named mechanism. One untraced loss means N is
+  not shippable.
+* A traced loss in C is accepted only if it is mechanism 1 with a removed broken reading, or
+  mechanisms 2-9 at no more than 2 losses per set (the budget is defined on C; Q_R follows
+  §2.2 rule 4).
 * More losses than that → stop. The report is written, nothing is committed, and a decision
   is taken with Ledio.
 * Gains are listed and never offset losses.
 
-**Then** 1.7 → 1.8 → 1.9. The release floors are updated per (A) rule 8 if N moved them, and
-`verify_release.py --skip-tests` is run. A code change during the run ends the run (as (A)
-A2.9/A3).
+**Then** 1.8 (commit and local release gate) → 1.7 → 1.9. Only `expected_corpus_rows` and
+`expected_corpus_sha256` are updated in `release_baseline.json`; no floor value moves (§1.8).
+A code change during the run ends the run (as (A) A2.9/A3).
 
-Effort: ~1 h to write, ~½ day results note. **Compute: budget a full night and plan for a
-second one** (the earlier "~4 h overnight" was wrong). Measured 2026-10-26: the
-pre-registered regression run's 15 competitive runs — one corpus, the same T×3/C/L shape
-this part runs three times — took about **11 h 40 min** in attempt 2 against about **2 h**
-in attempt 1 for byte-identical outputs (contention or throttling suspected, not measured;
-see the "Runtime observed 2026-10-26" addendum in `docs/remeasure-preregistration-2026-10-25.md`).
-Three corpora at the fast rate is ~6 h; at the slow rate it does not fit in one night. Start
-the session early, do not schedule the review for the next morning, and accept that a
-restart costs another full run — the 1.7 step 4 rule allows no partial re-run.
+### 2.6 Effort and compute (rev. 4)
+
+~1 h to write the pre-registration, ~½ day for the results note, ~1 day for the 2.0a code and
+its review. **Compute, from observed timings (do not use an estimate):** one corpus's 15
+competitive runs took about **11 h 40 min** in attempt 2 of the 2026-10-25 series and about
+**2 h** in attempt 1 for byte-identical outputs (see the "Runtime observed 2026-10-26" addendum
+in `docs/remeasure-preregistration-2026-10-25.md`); both rev. 3
+reviews cite a measured **~15.5 h per corpus run set** on this Mac. Part 2 runs that set for
+O, M and N: budget **about 46 h of wall time** (3 × 15.5 h), and plan on it, not on
+"overnight".
+The decoder harness (about 12 min per corpus, and one extra O run for D0b), the six Urk. IV gate invocations (about one
+corpus build each) and routing are inside that figure or small beside it. Any N′ amendment
+repeats the **whole** set (§1.7 step 4, no partial re-run), and the part 3 re-measure (§3.3)
+needs about the same again. The Mac is serialized across worktrees (Ground rules). Start the
+session early, do not schedule a review for the next morning, and accept that an interrupted
+run costs another full run. This is also why §1.7 step 4 says a second rebuild is likely:
+saving is open for days and annotators keep writing.
 
 ---
 
 ## Part 3 — Pyramid Texts (UD_Egyptian-PC) admission
+
+**Dependencies (rev. 4).** Part 3 starts only when (a) part 1 is committed, merged and deployed
+(order table row 1s), and **`BASE_P3` is recorded in `$R/env.txt` (rev. 7): it is
+`MERGE_SHA_P1`**, the post-part-1 main, with the §1.0 item 4 code hashes and the corpus N
+sha256 re-recorded at it. Part 3's code-change test is `git diff <BASE_P3> main -- app scripts
+tests requirements*.txt deploy data/benchmarks`, empty at the part 3 pre-registration, at the
+§3.3 measurement and at the §3.4 merge (docs-only commits on main do not count, as in §1.0).
+The §1.0 sha is **not** used for part 3: part 1 itself changed `tests` and `data/benchmarks`
+(§1.8), so that test would reject the normal sequence. A non-empty diff ends part 3 as it ends
+part 1 under §1.0; (b) the (B) exclusion manifest `docs/kri/exclusion-manifest.csv` is
+**complete** (§4.0: no pending hash, the self-test entry EX001 filled) and its sha256 is
+written into the part 3 pre-registration; (c) the 4a negative holdout is drawn (rule 7). If
+(b) is not true, rule 6 cannot be evaluated and part 3 waits; parts 1 and 2 do not depend on
+it.
 
 Input: `data/processed/ud_egyptian_pc_candidates.csv` **rebuilt against the post-cleanup
 corpus** (`import_ud_egyptian_pc.py --raw-dir … --output $R/ud/candidates.csv --examples
@@ -672,7 +1818,15 @@ commit sha is recorded in each report.
    `Old Egyptian (Pyramid Texts); spell: <n>; section: <s>; witness: <king/pyramid>;
    edition: <e>`. The admission report keeps them as separate columns. No schema change.
 6. **Not a benchmark target or near-twin** (pinned Jaccard ≥ 0.5) of any query in the
-   exclusion manifest of (B).
+   exclusion manifest of (B), **as committed at `docs/kri/exclusion-manifest.csv` with the
+   sha256 recorded in the part 3 pre-registration**. The check is the manifest route of
+   `scripts/check_overlap.py` (canonical hash, KRI reference span, and the §4a predicates
+   against the private excluded texts in `~/egyptology-private-kri/excluded-texts.csv`, which
+   must hash to the manifest's entries). Exclusions are keyed to the KRI reference and text
+   hash, not to a corpus row, so a row that part 1 removed or an edition that left the corpus
+   does not lift one. Near-twins of an excluded passage are listed with the entry id. The
+   PT-versus-KRI overlap is expected to be nil (Old Kingdom against Ramesside), but the rule
+   is the rule, and an incomplete manifest stops part 3 (dependency (b)).
 7. **Not held out for the overlap gate (rev. 3).** The 4a negative UD lines are drawn from
    the rule-1/2/4/6-passing candidates **before** this filter runs. They go in
    `$R/ud/fixture_holdout.csv` (`ud_sent_id`, strict key, sha256), which is frozen in the part 3
@@ -713,8 +1867,24 @@ prefix is byte-identical). There is no annotation impact (new ids only). The dep
 `inserted = admitted`. As in part 1, the re-measure below runs on the candidate *before* it
 replaces examples.csv or is deployed.
 
-**Re-measure after admission:** a second short pre-registration, same structure as part 2,
-baseline = the committed part 1 N, re-run fresh on the same code. Predictions are classified
+**3.3 Re-measure after admission (rev. 4: with the decoder harness).** A second short
+pre-registration, same structure as part 2 (including its list of named NC uses, §2.0 and the
+Ground rules: the six gate invocations and the private paste runs are approved by Ledio when he
+approves it), baseline = the committed part 1 N, re-run fresh
+on the same pinned code. Everything in part 2 applies with N as the baseline and the
+candidate P (= N plus the admitted rows) as the corpus under test: §2.1 and §2.1a commands
+(N → P), §2.2 (Q_R is empty for P because nothing is removed; the twin invariant is over all
+queries and extends to "a UD row that twins a benchmark target is listed"), §2.5. The
+**decoder and segmentation harness is repeated** (§2.3) with N's partition: the held-out
+partition is **still H_O** (`--fixed-heldout`), so UD rows, which are in no partition, are
+training only, and the comparison set is the rows kept as test in both N and P. A PT row that
+makes a held-out row a near-duplicate removes that row from the comparison and is listed.
+Budgets for N → P are tighter than for O → N because the added evidence is small, and are
+the same integer formulas with the same denominators (§2.3), gross for D1 and D2: D1 gross
+loss ≤ ⌊P / 2000⌋ (0.05 percentage points), D2 gross loss ≤ ⌊L / 2000⌋ (0.05), D3 total error
+increase ≤ ⌊B / 1000⌋ (0.10), D0b and D4-D7 unchanged. P, L and B are those of N's comparison
+set, recorded beside each budget. The Earlier-stage positions
+are reported separately; no gain is claimed. Predictions are classified
 by the same frozen list of corpus-dependent statistics, not only "a UD row entered top-k":
 
 * added Earlier rows shift global IDF;
@@ -726,23 +1896,255 @@ Each changed query needs a named mechanism with numbers, and the same loss-accep
 applies. Hard gates are unchanged: paste 8/8, Urk. IV gate, Demotic 0/200. The twin
 inventory diff lists any UD row that twins a benchmark target (expected 0 after rule 6).
 
+**3.4 Admission deploy and rollback (rev. 5, reworked in rev. 6).** Rev. 4 gave part 3 a
+re-measure but no backup and no way back. Rev. 5 reused §1.9a's steps 2-8 with a backup that
+was **not** taken under a pause, so the restore checks (annotations equal to `A_pause`, corpus
+equal to O) could not hold for it. Rev. 6 simplifies: **part 3 uses the same pause, the same
+backup protocol and the same restore procedure as part 1, with different parameters** (the
+column "Part 3" of the §1.9a table). The admission is **append-only** (the old prefix of
+`examples.csv` is byte-identical, no annotation can sit on a new id), but the window is short
+and pausing costs little, and it removes the question of what a restore does to annotations
+written in between.
+
+1. **Pause saving** exactly as §1.7 step 1 (inventory, 1a copies with `MODES`, `SHA256SUMS`
+   and `DEST_SUMS` in a **new** dated `pause-backup-<date>` directory, removal,
+   `daemon-reload` where a unit or drop-in changed, the static and in-app checks 1.3 and 1.4).
+   Record the live annotation `COUNT(*), MAX(id)` as **`A_pause3`**. Reviewers are told, as in
+   §1.7. Nothing else of §1.7 applies (no P2, no N′: the admission removes nothing).
+2. **Backup under the pause.** By the §1.0a protocol (B1 with all of (a)-(e), B2, B3, B4-B6),
+   with the B6 equality rule: the backup's annotation `COUNT, MAX(id)` equals `A_pause3`. Its
+   name and sha256 go to `$R/db/snapshot_p3_source.txt`, and, as for snapshot 2, a second
+   server-side copy of that exact `.gz` is kept in the pause directory.
+3. **Merge and deploy.** The part 3 work is on its own branch `ud-admission-<date>`, cut from
+   `BASE_P3` or a docs-only descendant; its tip is the **admission commit**, the one the §3.3
+   re-measure ran on (the candidate P is its `examples.csv`; the old prefix is byte-identical
+   to N). Merge by the one mandated form (§1.9 step 0: `git merge --no-ff`), allowed only if
+   the part 3 code-diff test against **`BASE_P3`** (Dependencies) is empty on main before the
+   merge. After the merge and before the push, record `MERGE_SHA_P3` and check, in
+   `$R/env.txt`: `HEAD^2` **is the measured admission commit** (the sha the §3.3 results note
+   names); `HEAD^1` is main as tested; `shasum -a 256 data/processed/examples.csv` equals P's
+   measured sha256 (the corpus hash in the part 3 pre-registration and results note); the
+   committed tests are byte-identical to the measured commit's. Any mismatch: nothing is
+   pushed. Then push, and Ledio runs `~/egyptology-deploy.sh` without `INSTALL_UNITS`. The log must show `inserted = admitted`
+   (the admission count in the part 3 report), updated 0 and the merged commit. After the
+   restart the post-restart pause checks of §1.9 step 1 are repeated (1.3 and 1.4, with
+   `A_pause3`).
+4. **Live check:** the app renders a result card for a pasted line; the UD credit shows; the
+   live `COUNT(*) FROM examples` equals the backup's plus the admitted count; the live
+   annotation `COUNT(*), MAX(id)` equals `A_pause3`; the server's `examples.csv` is the merged
+   one. A failure of any of these, or a deploy that rolled back, is a **§1.9a trigger**.
+5. **Restore the key** from the pause directory exactly as §1.9 step 5 says (destination
+   hashes and modes checked, `daemon-reload`, keyed-unlock check).
+6. **Rollback: §1.9a with the part 3 parameters.** One procedure, no special cases:
+   * **Inside the window** (steps 1-4, before the key is back): §1.9a as written. A failed
+     deploy whose own rollback ran is its trigger (6): only the code state is checked (the
+     server's `examples.csv` has N's sha256), because the DB gained nothing. Otherwise, **if
+     the failed DB's annotations were read and equal `A_pause3`** (§1.9a step 3 gate), the
+     backup is restored (the exact `snapshot_p3_source.txt` file), the failed file is kept,
+     the code is reverted by `git revert -m 1 <MERGE_SHA_P3>`, and the timer is put back as
+     recorded. If they differ or cannot be read, §1.9a's loss decision comes first, here too.
+   * **After the window** (a bad admission found once saving is open): the DB steps are
+     **not** run (§1.9a, scope of the DB restore: a lossy restore needs Ledio's written
+     decision first). Only the code revert runs. The inserted UD rows stay in the DB,
+     unreachable from the UI (`attach_db_ids` is CSV-driven), exactly as the part 1 removed
+     rows do; the same FastAPI `/examples/search` caveat (A52) applies and is checked before
+     the part is called finished.
+
 Effort: script + tests ½ day; conversion check + review ½ day; docs/credits 2 h; re-measure
-overnight + ½ day — with the same caveat as part 2: measured on 2026-10-26, one corpus's
-15 competitive runs took between ~2 h and ~11 h 40 min for identical work, so "overnight"
-is a floor, not a plan.
+about 15.5 h of wall time for P and the same again for the baseline N re-run fresh (about
+31 h in all, §2.6), plus ½ day to write up. The earlier "overnight" was wrong. Heavy runs
+are serialized across worktrees (Ground rules).
 
 ---
 
 ## Part 4 — KRI test with Camilla
 
+### 4.0 Status, order and exposure (rev. 4)
+
+Rev. 3 was written before the KRI PDFs arrived and before the official-test tooling existed.
+Both have happened, so this block records what is true as of 2026-10-28 and fixes the order.
+
+**(a) What happened, dated.**
+
+* **2026-10-26 about 07:43:** the KRI PDFs were received (scanned images, no text layer; they
+  live in `~/egyptology-private-kri/`).
+* **2026-10-26 08:37 and 08:40:** the B-freq baseline code was committed and its hash record
+  written. That is a freeze **after receipt and before reported content inspection**, not the
+  pre-arrival freeze §4e requires. The deviation is recorded in
+  `docs/kri-bfreq-baseline-2026-10-26.md`, on the lead's attestation that no KRI text or page
+  content was viewed before freezing (not independently verified).
+* **2026-10-26:** an **exploratory self-test** ran the app on KRI lines. The passage is
+  `KRI II 569 (lines 3-16), Karnak Great Hypostyle Hall` (manifest entry `EX001`, hash still
+  pending). The three kri-fixes changes (cartouche constraint, singleton `/k` discount,
+  pooled fallback; merged 2026-10-27, main `51f3757`) were made **because of** that
+  self-test. Those lines are therefore *seen*, and the code was *tuned on them*.
+* **2026-10-26:** the official-test tooling was built on synthetic fixtures only and is on main:
+  `scripts/check_overlap.py` with `scripts/kri_overlap.py`, `scripts/kri_declaration.py`,
+  `scripts/kri_exclusion_manifest.py`, `scripts/kri_stats.py`, `scripts/run_kri_endpoints.py`,
+  `scripts/kri_segment_mapping.py`, the frozen B-freq baseline (`scripts/bfreq_baseline.py`,
+  `scripts/build_bfreq_table.py`), the dev fixture `tests/fixtures/overlap_dev_v1.csv`, and
+  `docs/kri/exclusion-manifest.csv`. There is **no gate fixture yet**, so the §4a gate has not
+  been passed, only the dev fixture.
+
+**(b) Consequences, fixed now.**
+
+1. **Exposure applies to both endpoints.** The B-freq record says endpoint R is "unaffected by
+   the late freeze". That is true of the freeze and false of the self-test: a line the app
+   was run on, or that the kri-fixes changes were tuned on, cannot confirm anything for
+   endpoint R **or** endpoint G. Every self-test line, its whole passage and every other
+   edition of it goes into the (B) manifest as an exclusion for both endpoints.
+2. **Lines from the current PDFs are exploratory for endpoint G whatever their selection
+   date** (the freeze record). A G *confirmation* needs a separately eligible cohort whose
+   material arrives after the freeze. For endpoint R, a line from these PDFs is
+   confirmation-eligible only if it was never seen in the self-test or in any development
+   inspection, and is not excluded by the manifest.
+3. **The manifest is a precondition, not an afterthought.** It must be **complete**
+   (`scripts/kri_exclusion_manifest.py`: no pending hash, every reference parses as a KRI
+   citation, every entry has its text in custody) and committed with its sha256 **before**
+   any official run, before the §4a gate fixture's negatives are adjudicated against it, and
+   before part 3 rule 6 (which reads it). To complete it, the lead, who alone may open the
+   private directory, **and only in a session Ledio has approved and logged in
+   `~/egyptology-private-kri/access.log` (Ground rules, NC-data gate; the log line names this
+   purpose and the files)**, (i) fills `EX001`'s hash from the passage text (`--text-file`),
+   (ii) lists by KRI reference **every other** line, passage or edition inspected in the
+   self-test, in the kri-fixes development or in any other development look (from the
+   self-test notes and the `~/egyptology-runs/kri-*` logs), and adds an entry for each,
+   (iii) adds the other editions, found by the checker's private excluded-text route (pinned
+   Jaccard ≥ 0.5, identical fold, containment, shared run, edition links). Only identifiers,
+   hashes and aggregates are ever committed; no KRI text enters a tracked file.
+4. **Exclusion survives removal.** Entries are keyed to the KRI reference and the canonical
+   text hash, never to a corpus row. A corpus row that part 1 removes, or an edition that
+   later leaves the corpus, does not lift an exclusion. Rows of O that were retrieved as
+   neighbours in the self-test are history, not material: any KRI line equal or near to them
+   is caught by the hash and Jaccard routes, not by the row id.
+5. **Historical exposure screening (rev. 5).** The manifest keys exclusions by KRI reference
+   and hash, but the *overlap* check (the §4a predicates) runs only against the corpus it is
+   given. After part 1, a row of O that was removed (R), and any row that only ever lived in
+   the DB (H), is in no corpus the checker is given, so a KRI line that resembles such a row
+   would be `new` against the cleaned G and look unexposed, although the self-test and the
+   kri-fixes development may have retrieved that very row. Rev. 5 therefore adds a
+   **historical screening set**, built from public material only and screened by extra
+   invocations of the **unchanged** checker (`scripts/check_overlap.py --examples <csv>`, one
+   per set; no checker change, so the gate fixtures are not retired):
+   * **O**: `examples.csv` at the 1.0 commit, restored from git into `$R/hist/O.csv` with
+     its sha256 (130,472 rows, `44543932…f1e2`). In Case 1, G = O, so it is G itself;
+   * **H**: `$R/db/H_rows.csv` (§1.0b), with its sha256;
+   * **R**: the removed rows, `$R/hist/R_rows.csv`, built from the removal manifest's old
+     readings and the O rows, in the columns of `examples.csv`, with its sha256 (R ⊆ O, so
+     it is a subset of the first set; it is listed separately so that a later "re-admit"
+     decision cannot lose it);
+   * **the self-test's retrieved neighbours**: the row keys named in the self-test and kri-fixes
+     development logs, looked up in O ∪ H, added to the same set (the lead reads the logs,
+     under the NC-data gate, and commits no text).
+
+   A KRI line's label for **eligibility** is the strictest of its runs (`contained` >
+   `partial` > `new`): it is confirmation-eligible only if it is `new` against G **and**
+   against every historical set. The **gate fixture's labels stay computed against G alone**
+   (§4a), because the gate tests the checker, not the exposure.
+
+   **Integration into the tooling (rev. 6; required, not optional).** Rev. 5 specified the
+   screening but the tools cannot carry it: `scripts/kri_declaration.py` reads a declaration
+   only if its header equals `DECLARATION_COLUMNS` exactly (no column for a historical set),
+   and `scripts/run_kri_endpoints.py` takes one `--overlap-report`, binds it to G's sha256,
+   and checks `label == new` and `runnable == yes` in that one report. A historical report
+   would never be read, so a line that is `new` against G and `contained` against R would
+   run. The **unchanged** `check_overlap.py` stays unchanged (the gate fixtures and its hash
+   record stay valid), but a reviewed **tooling amendment H** must be committed **before the
+   first declaration is written (§4d), hence before 4e too**, with these requirements:
+   * `declaration.csv` gains one column, `historical_sets_sha256`: the sha256 of a private file
+     `~/egyptology-private-kri/historical_sets.csv` (columns `set_name`, `csv_sha256`; one row
+     for each of O, H, R and the neighbour set). The value is the same on every row, as
+     `corpus_sha256` is, and `validate` refuses a missing, malformed or varying value;
+   * `run_kri_endpoints.py` gains a repeatable `--historical-report NAME=PATH`. The names given
+     must **equal** the file's `set_name` values (none missing, none extra), and the file's
+     sha256 must equal the declared one;
+   * **Common checks (rev. 7), every report, G's and each historical one**, through its sidecar
+     as G's is verified today, **plus**: its `lines_sha256` equals the sha256 of the one lines
+     file passed to the run (so every report was made from **byte-identical line inputs**), its
+     `checker_sha256` is the current checker's, and its manifest hashes equal G's report's.
+     `examples_sha256` is checked against the corpus that report is *for*: G's against the
+     declared G sha256 (as today), each historical report's against that set's `csv_sha256`.
+   * **G's report only: `private_sha256`** must equal what the driver already requires
+     (`expected_private_sha256(--private-dir)`, verified against `run_kri_endpoints.py`): empty
+     when the run has no `--private-dir`, and otherwise the sha256 of `standrews.csv` in that
+     directory, which is the St Andrews input G includes (§4a) and is the one recorded with
+     the fixture. **Historical reports only: `private_sha256` must be empty**: the historical
+     sets are public-only and are screened without `--private-dir`. The two rules are separate
+     so that a G that includes St Andrews is not refused;
+   * every declared line must be present in every report, and a line is runnable only if
+     `label == new` and `runnable == yes` in **all** of them. A line that is `contained` or
+     `partial` in **any** report refuses the run (`SystemExit`, as for G today), and a
+     confirmation line needs `confirmation_eligible == yes` and an empty `excluded_by` in
+     every report;
+   * the results record each historical report's sha256 and its set's sha256.
+
+   `kri_declaration.py` and `run_kri_endpoints.py` are in `FROZEN_TOOLING`
+   (`tests/test_kri_tooling_freeze.py`), so amendment H updates the hash rows in
+   `docs/kri-official-test-tooling-2026-10-26.md` in the same commit, with an explicit note that
+   the change is stricter-only (it can only refuse more lines) and was made without KRI text in
+   view. Tests use synthetic fixtures only. Until H is committed no declaration is written and
+   no official run is made.
+
+**(c) The order (O1; decided, with a rule so it needs no later argument).** Two orderings
+existed in rev. 3: the official test after cleanup (G = N plus PT, B-freq rebuilt and amended
+twice), or before it (G = O, B-freq as frozen). Neither can be forced, because Camilla's
+material is not ours to schedule. The rule is:
+
+* **G is fixed at the gate-fixture draw (rev. 5).** Rev. 4 defined G as the corpus on main when
+  the declaration's sha256 is committed, and the declaration can only be committed after the
+  gate on G has passed, so G was defined by an event that comes after the gate that needs
+  it. Now: **G = `data/processed/examples.csv` at the main commit and sha256 written into the
+  gate fixture's header at the moment the fixture is drawn** (§4a Timing 5). From that moment G
+  does not move. `declaration.csv` (§4d) must carry **the same** commit and corpus sha; a
+  mismatch means re-verification of every label on the new sha by both adjudicators, or
+  retirement of the fixture, under the existing rule of §4a. The Case 1 / Case 2 choice is
+  made **at the draw**, not at the declaration.
+* **Case 1, the fixture is drawn before §1.9's merge:** G = **O** (sha
+  `44543932…f1e2`, 130,472 rows) at the post-kri-fixes main commit (`51f3757` or a descendant,
+  pinned in the fixture header). B-freq needs no rebuild. From the **draw** (not from the
+  declaration, rev. 5) until the official results are committed there is a **replacement
+  freeze**: the §1.8 merge and §1.9 deploy do not run, so no cleanup can merge between the draw
+  and the declaration. **The freeze is bounded at both ends (rev. 6):** Case 1 is chosen only if
+  Camilla's gold for at least one confirmation-eligible line is already in hand at the draw.
+  Two deadlines run from the **draw** (day 0): the declaration's sha256 is committed by
+  **day 7**, and the official run's results are committed by **day 14**. The freeze ends at the
+  first of: the results committed; day 7 with no declaration; day 14 with no results; or an
+  abandoned run (a run that fails or is interrupted counts as failed under the Ground rules
+  and is redone only if it still fits before day 14). **Fixture-retirement rule:** whenever the
+  freeze ends without committed results, the fixture is retired and G is released, because the
+  cleanup merge may now move the corpus. Case 2 applies and a later draw is a new fixture with
+  a new seed. The lines that were run or inspected stay excluded (they were seen, §4d), and
+  a dated one-line note in the results file records the end and the reason. (An unbounded
+  freeze would let a pending email, or a run that never finishes, block the cleanup.) Parts 1-2 may keep measuring
+  candidates (they replace nothing) but heavy runs are serialized and the official run goes
+  first at its turn. After it, part 1 proceeds, and §1.8 does **not** relabel the official run:
+  its labels and results stay those of O, and its record says so. B-freq is rebuilt and
+  amended only for a *later* cohort.
+* **Case 2, the cleanup is merged first:** G = the then-current main corpus. B-freq is
+  rebuilt and `docs/kri-bfreq-baseline-2026-10-26.md` amended with the new corpus and table
+  sha256s (item 6 of its list: counts change, the rule, keys, tie-break and surface rule do
+  not) **before** the declaration is written: after part 1 if the declaration comes before
+  part 3 (G = N), and again after part 3 (G = N plus PT). The KRI test then waits for
+  parts 1-3, about 46 h of measurement plus the server steps (§2.6), which is the price of
+  this case.
+* If no gate fixture has been drawn when §1.8 is ready to merge, Case 2 applies and nothing
+  waits. If Camilla's material is already in hand at that point, **prefer Case 1**: it costs no
+  rebuild and the test is on the corpus whose B-freq tables are frozen. (It does not need a
+  declaration yet: the draw fixes G and starts the bounded freeze.)
+
 ### 4a. Overlap checker (scaffolding plan Phase 3): spec now, gate fixture frozen on the gate corpus
 
-**Gate corpus G (rev. 3).** The gate runs against `data/processed/examples.csv` **at the part
-3 commit**: the cleaned N plus the admitted UD rows. That is the corpus 4d runs on. Its
-commit and sha256 go in the fixture header. With `--private-dir`, G also includes
-`standrews.csv` at a recorded sha256. If `examples.csv` changes again before 4d, both
-adjudicators re-verify every label on the new sha. Any changed label retires the fixture,
-and a new one is drawn with a new seed.
+**Gate corpus G (rev. 5).** G is **the corpus on main at the moment the gate fixture is drawn**
+(§4.0 (c)): `data/processed/examples.csv` at the main commit and sha256 written into the fixture
+header at the draw. `declaration.csv` must name the same commit and sha. G is O
+(`44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2`) in Case 1, and the
+then-current cleaned corpus in Case 2. Rev. 3's "G = `examples.csv` at the part 3 commit" is
+withdrawn: it tied the official test to a cleanup that takes days of measurement. The commit
+and sha256 go in the fixture header. With `--private-dir`, G also includes `standrews.csv` at a
+recorded sha256. If `examples.csv` on main changes again before the official run, both
+adjudicators re-verify every label on the new sha (in Case 1 the §4.0 replacement freeze, which
+starts at the draw, makes that impossible by design). Any changed label retires the fixture, and a new one is drawn with
+a new seed.
 
 **Predicates (fixed now; thresholds are part of the spec).** For a line q and a corpus row
 r ∈ G:
@@ -806,16 +2208,37 @@ Camilla's Ahmose/Urk. IV line is a separate private fixture (its label is alread
 established: recoverable with St Andrews): `contained` with the private dir, ≥ `partial`
 without. That is checked against the same predicates.
 
-**Timing.**
-1. The predicates, thresholds, strata and seeds are committed now, with the plan
-   implementation.
-2. The holdout draw happens before the part 3 filter runs and is frozen in the part 3
-   pre-registration.
-3. Gate fixture rows and labels are drawn and frozen after the part 3 commit.
-4. Checker code may be written in parallel, but only against a **dev fixture**. Its rows
-   are drawn with different seeds and listed, and the gate draws exclude them.
+**Timing (rev. 4).**
+1. The predicates, thresholds, strata and seeds are committed (done: `scripts/kri_overlap.py`,
+   `scripts/check_overlap.py`, the dev fixture, on main).
+2. **The checker is the `kri-official-prep` checker.** `scripts/check_overlap.py` and
+   `scripts/kri_overlap.py` on main *are* the §4a checker, not a second one, and they follow
+   these rules. Nothing may be changed in them to make a gate row pass (a change retires the
+   gate fixture, see Gates below).
+3. **Dev fixture first, and committed.** The dev fixture's rows and seeds
+   (`tests/fixtures/overlap_dev_v1.csv`, `tests/fixtures/overlap_dev_corpus.csv`; synthetic, 6
+   invented corpus rows, 10 labelled lines) are committed on main **before** the checker is
+   run on any gate fixture. The gate draws exclude them. Today they are committed; this is
+   checked, not assumed, at the time of the gate draw.
+4. **Holdout.** The 4a negative UD lines are drawn once, before any part 3 filter runs and
+   before the gate fixture is adjudicated, from rule-1/2/4/6-passing candidates built against
+   **G**, and frozen in `$R/ud/fixture_holdout.csv` with its sha256. Part 3 rule 7 consumes
+   that same file. If part 3's corpus differs from G, rule 7's "would make a holdout line
+   non-`new`" test is re-evaluated on the part 3 corpus.
+5. **Gate fixture drawn and frozen on G**, whichever corpus G is (§4.0 (c)), **after** the
+   manifest is complete and committed (§4.0 (b)). **The draw is the event that fixes G**
+   (rev. 5): the main commit and `examples.csv` sha256 go into the fixture header at that
+   moment, the Case 1 / Case 2 choice is made and recorded in the header, and in Case 1 the
+   replacement freeze starts. The fixture file's sha256 is **committed before the checker is
+   first run on it.** The adjudications and the gate come after the draw and do not change G.
+6. **Adjudicators are blind to the checker.** Opus and Astra each write their own script that
+   calls the pinned repo functions directly (including `scripts.bfreq_baseline.sign_key`, per
+   the 2026-10-26 addendum at the end of this plan), and are not given `scripts/check_overlap.py`
+   or `scripts/kri_overlap.py` and are not told its results. Their scripts are written in
+   sessions that have no read access to those two files. A disagreement drops the row, never
+   relabels it.
 
-**Implement** `scripts/check_overlap.py --lines FILE --examples … [--private-dir DIR]
+**Implemented** (on main): `scripts/check_overlap.py --lines FILE --examples … [--private-dir DIR]
 [--manifest FILE] --output FILE`. It computes exactly C1–C4 and P1–P3 with the pinned
 functions, plus the yod ꞽ/j/i and spacing-before-`=` folds the tool uses. A fold beyond
 `search_fold` is reported as its own evidence type and never changes a C/P result. It also
@@ -841,6 +2264,9 @@ seed before re-testing. Changing any threshold or predicate also retires the fix
   to Camilla, and Zoom cloud recording. The Zoom pack is screen-shared from local disk, not
   uploaded.
 * **Commits:** only aggregates, counts and sha256s, never a KRI line.
+* **Access (rev. 5):** opening this directory needs Ledio's approval of that session, logged
+  as one line in `~/egyptology-private-kri/access.log` (Ground rules, NC-data gate). The lead
+  is the only operator; workers, adjudicators and reviewers are never given its path.
 * **St Andrews server copy (explicit allowlist):** only `standrews.csv`, by exact filename
   and with its sha256 checked after copy, to the server's `PRIVATE_DATA_DIR`. It is copied
   with a single-file `scp`, never a directory copy or `rsync` of `data/private`. Any other
@@ -848,17 +2274,28 @@ seed before re-testing. Changing any threshold or predicate also retires the fix
 * **Belt and braces:** a loader test that a CSV in a subfolder of the private dir is never
   loaded stays as a guard, even though no KRI file lives there.
 
-### 4c. What to ask Camilla (one short email, Ledio sends)
+### 4c. What to ask Camilla (rev. 4: the PDFs have already arrived; one short email, Ledio sends)
 
-Ask for 3–5 passages she wants tried. Per line:
+Rev. 3 asked her for passages. The PDFs came first (§4.0 (a)), so the email changes shape.
 
-* her transliteration (input and gold);
-* the hieroglyphs (Unicode, MdC/JSesh, or a page image);
-* the KRI reference (vol., page, line);
-* whether her transliteration is diplomatic or normalised.
+**Confirm, do not ask for material:** the source and permissions of the PDFs in custody: which
+edition and scan they are, whether she is content for them to be used for tests and
+screen-shared (not uploaded) in the Zoom session, and any restriction on keeping them in
+`~/egyptology-private-kri/`.
 
-Optional: which lines she expects to be hard; whether ≥ 100 lines could be supplied later
-(for 4e).
+**Ask only for what we cannot make ourselves**, for each passage she wants tried (3-5 to
+start):
+
+* her gold: the transliteration and her **word division of the glyph input** (the gold groups
+  must concatenate to exactly the pasted glyph string) with one reading per group;
+* the KRI reference (vol., page, line), and a passage identity (which monument or scene);
+* whether her transliteration is diplomatic or normalised;
+* later, her blind judgements for endpoint R, once a blind pack exists.
+
+Tell her that the self-test passage (`KRI II 569`, lines 3-16) is already used and will be
+exploratory only. Optional: which lines she expects to be hard; whether many more
+**independent passages** (§4e needs about 250 per endpoint to confirm anything) could be
+supplied later.
 
 ### 4d. Run and report (small n, exploratory)
 
@@ -869,7 +2306,9 @@ sha256 committed before the first run):
 * the endpoint;
 * the stage setting (`--stage auto`);
 * the commit;
-* the corpus sha.
+* the corpus sha, which must equal the gate fixture's G (§4.0 (c)), and
+  `historical_sets_sha256`, the sha256 of the file that lists the historical screening sets
+  (§4.0 (b)5, tooling amendment H).
 
 There are two pairings:
 
@@ -881,7 +2320,9 @@ There are two pairings:
 A line with both kinds of input gets two declared runs, reported separately. Nothing is
 re-declared after results.
 
-Overlap-check every line first. Ramses risk: KRI is Ramesside, and Ramses is Ramesside Late
+Overlap-check every line first, against G **and** against the historical screening sets
+(§4.0 (b)5): one report per set, all from the same lines file; the driver (tooling amendment H)
+refuses a line that is not `new` in every one of them. Ramses risk: KRI is Ramesside, and Ramses is Ramesside Late
 Egyptian. Ramses lines are shuffled with no text ids (overlap only by content), and its
 transliteration is normalised to the expected grammatical form, so a diplomatic line may
 score lower than it should. The overlap report therefore shows the Ramses nearest neighbour
@@ -891,87 +2332,171 @@ showing supporting sentences with hieroglyphs and source. Report **case by case*
 with no percentages or intervals while n < 30 and no claim to anyone beyond "on these lines".
 Zoom pack per scaffolding plan Phase 4.5 (private, local).
 
-**Permanent exclusion:** every line seen here, its whole passage (KRI vol./page range), and
-every other edition of the same text (other KRI references, a TLA/Ramses row with pinned
-Jaccard ≥ 0.5, edition links) go into the (B) exclusion manifest as sha256 + reference the
-day the material arrives. They can never count toward 4e.
+**Permanent exclusion (rev. 4).** Exclusion is recorded when a line is *seen*, not when
+material arrives: the self-test lines are already in the manifest (§4.0). Every line run in
+4d is added to the (B) manifest (reference + canonical hash, with its whole passage as a KRI
+vol./page range and every other edition of the same text: other KRI references, a TLA/Ramses
+row with pinned Jaccard ≥ 0.5, edition links) **before** its run, because a run is an
+inspection. A line run here is exploratory: it is `runnable`, never `confirmation_eligible`,
+for **both** endpoints, and can never count toward 4e. `declaration.csv` carries the code
+commit and the corpus sha (= G as fixed at the gate-fixture draw, §4.0 (c)); its `validate` output prints the sha256 that is
+committed before the first run.
 
-### 4e. If ≥ 100 new lines become available
+### 4e. If enough independent passages become available (rev. 4: clustering and power)
 
 Protocol (B) of the 2026-10-25 pre-registration was written for one endpoint only:
 useful-in-top-3 retrieval, compared against word overlap and BM25. It has no baseline for
 glyph → reading. Rev. 3 therefore runs **two separate, endpoint-specific comparisons**.
 Each has its own baseline, scoring, analysis unit and power floor, and they are **never
-pooled**: no combined rate and no combined test. A line declared for both inputs is one
-unit in each endpoint and is analysed separately in each. Shared by both:
+pooled**: no combined rate and no combined test. Rev. 3 also called the unit "one declared line,
+clustered by passage" while specifying a line-level exact binomial test and a line-level paired
+interval; lines of one passage share vocabulary, formulae and often a scribe, so they are not
+independent trials, and "reporting passage sensitivity" does not make them so. Rev. 4 fixes the
+design instead of the report.
 
-* the exclusion manifest is committed first, including the 4d exclusions;
-* exclusion checks: pinned Jaccard ≥ 0.5, identical fold, same text, edition link, and the
-  4a checker (only `new` lines enter);
-* each line's input modality and endpoint are declared up front in the declaration file
-  (same pairing as 4d), before any line is run;
+**Unit of analysis: one independent passage.**
+
+* A **passage** is one continuous KRI text unit (one monument's inscription or scene, as a
+  KRI volume / page range). Two editions of one text are **one** passage (the manifest's rule).
+  Each declared line carries a `passage_id` in `declaration.csv`.
+* **One line per passage per endpoint.** For each endpoint, each confirmation-eligible
+  passage contributes exactly **one** declared line, chosen by a seeded draw (seed 20261028;
+  eligible lines sorted by KRI reference, then drawn) made **from the declaration alone, before
+  any run, before any blind judgement and before any output exists**, and committed with the
+  declaration's sha256. The other lines of the passage are not part of the confirmatory
+  analysis. A line declared for both inputs is a unit in each endpoint, and a passage's drawn
+  line for R and for G are drawn independently.
+* Lines are therefore independent units by construction, and the sign test and the paired
+  interval below are valid as stated. The all-lines view is **secondary and descriptive**
+  (below).
+
+**Shared by both endpoints:**
+
+* the exclusion manifest is committed first, complete (§4.0 (b)), including every 4d line and
+  the self-test exclusions, for **both** endpoints;
+* exclusion checks: pinned Jaccard ≥ 0.5, identical fold, same text, edition link, the 4a
+  checker (only `new` lines enter) and the manifest routes;
+* each line's input modality, endpoint, `passage_id`, the pinned commit and the corpus sha
+  (= G, §4.0 (c)) are declared up front in the declaration file before any line is run;
 * `--stage auto`, one evaluation on a pinned commit and a pinned corpus sha; any change after
   seeing results retires the set (for both endpoints);
-* the test and effect shape of (B): per line, a binary success for the app and for the
-  baseline; discordant pairs W/L; one-sided exact sign test p < 0.05 **and** a 95% Newcombe
-  paired interval with lower bound > 0, both required;
-* **Holm** correction across the two endpoints (family of 2, α = 0.05). An endpoint below
-  its power floor is reported as "uninformative" and still counts in the family.
+* per unit, a binary success for the app and for the baseline; discordant pairs W (app only)
+  and L (baseline only); ties dropped from the test and reported; one-sided exact sign test
+  P(X ≥ W | X ~ Bin(W+L, ½)) and a **95%** two-sided Newcombe paired interval; both must
+  clear (below) for "beats the baseline";
+* **Holm** across the two endpoints (family of 2, α = 0.05, exact rational thresholds, as
+  `scripts/kri_stats.py` does): the smaller p is compared with 0.025, and only if it is
+  rejected the other with 0.05. The interval stays 95% at both steps (conservative at the
+  second). An endpoint below its power floor is reported as "uninformative" and still counts
+  in the family.
 
-**Endpoint R: transliteration input → retrieval.** This is (B) unchanged:
-* unit = one declared line, clustered by passage;
-* success = a useful supporting passage in the top 3, as judged by Camilla. She is blind
-  to which system produced it, and both systems' top 3 are shown merged and shuffled;
+**Endpoint R: transliteration input → retrieval.** (B) unchanged except for the unit and the
+power floor above and below:
+* success = a useful supporting passage in the top 3, as judged by Camilla, blind to which
+  system produced it, with both systems' top 3 shown merged and shuffled;
 * primary baseline: word overlap. BM25 is secondary, with per-pool statistics;
-* power floor: about 150 lines of **this endpoint**.
+* the blind-pack generator and BM25's per-pool statistics are **not built** (tooling note):
+  endpoint R cannot be run until they are built, frozen and reviewed.
 
-**Endpoint G: glyph input → reading.** This is a new comparison. It is pre-registered as an
-addendum to (B), committed before any 4e material arrives.
+**Endpoint G: glyph input → reading.** A new comparison, pre-registered as an addendum to (B).
+**Status (rev. 4):** the baseline is no longer future work. B-freq is implemented, tested and
+frozen (`scripts/bfreq_baseline.py`, `scripts/build_bfreq_table.py`,
+`tests/test_bfreq_baseline.py`, the hash record in `docs/kri-bfreq-baseline-2026-10-26.md` with
+its rev. 2 and rev. 3 amendments, guarded by `tests/test_kri_bfreq_freeze.py`), and the
+app-segment → gold-span mapping is built (`scripts/kri_segment_mapping.py`). It was frozen
+**after** the PDFs were received (§4.0 (a)), so **lines drawn from the current PDFs are
+exploratory for G regardless of when they are selected**, and no G number from them goes to
+experts. A G confirmation needs a separately eligible cohort whose material arrives after the
+freeze and the table rebuild below.
 
-* **Unit:** one declared line. A line's groups are her gold word division of that line,
-  mapped onto the glyph input. Lines are clustered by passage.
+* **Unit:** one independent passage, one drawn line (above). A line's groups are her gold word
+  division of that line, mapped onto the glyph input (`kri_segment_mapping`).
 * **App score:** for each gold group, a hit if her gold reading is in the app's top 3 for
   that group (strict key primary; folded key reported). A group the app's segmentation
   does not produce, or that it merges or splits, counts as a miss for the app. The line
   score `s` = hits / groups.
-* **Baseline B-freq (defined now):** for each gold group, take `signs(group)` (the 4a
-  definition). Its top 3 = the three most frequent `strict_reading_key` values among the
-  word-level (sign group, reading) pairs of the same pinned public corpus that carry
-  exactly that sign string. The pairs come from the same word alignment the app's reading
-  model is built from (no stage filter, no context). Ties are broken by count, then by
+* **Baseline B-freq (as frozen):** for each gold group, take `signs(group)` (the 4a
+  definition, `scripts.bfreq_baseline.sign_key`). Its top 3 = the three most frequent
+  `strict_reading_key` values among the word-level (sign group, reading) pairs of the same
+  pinned public corpus that carry exactly that sign string. Ties are broken by count, then by
   strict key in code-point order. An unattested sign string gives an empty list, which is a
-  miss. B-freq is given the gold segmentation, which favours the baseline; that is stated
-  in the report.
-* **Binary success per line:** `s ≥ 0.5`, for both app and baseline. The continuous `s` is
-  reported descriptively for every line.
-* **Secondary (descriptive, outside the Holm family):**
-  * B-freq restricted to Late Egyptian rows;
-  * the group-level hit counts.
-* **Precondition:** G can be part of a confirmation only if B-freq is implemented,
-  unit-tested on synthetic fixtures and committed with its sha256 **before** any 4e material
-  arrives. Otherwise G is reported as exploratory, and no G number goes to experts.
-* **Power floor:** about 150 lines of this endpoint, judged separately from R.
+  miss. B-freq is given the gold segmentation, which favours the baseline; that is stated in
+  the report.
+* **Binary success per unit:** `s ≥ 0.5`, for both app and baseline. The continuous `s` is
+  reported descriptively.
+* **Table rebuild, not a rule change.** The B-freq table is frozen against **O**
+  (`44543932…f1e2`). It is rebuilt, and the freeze record amended with the new corpus and
+  table sha256s, whenever the declared G is not O (§4.0 (c) Case 2): after part 1, and again
+  after part 3 if the declaration comes later. The rule, the keys, the tie-break and the
+  surface rule do not change; only the counts do. A change to any of them retires the
+  baseline, as the freeze record says. Every rebuild is recorded; none is silent.
+* **Secondary (descriptive, outside the Holm family):** B-freq restricted to Late Egyptian
+  rows; group-level hit counts.
+
+**Power floor, recomputed for this design (rev. 4).** Rev. 3's "about 150 lines" came from a
+calculation at one-sided α = 0.05 with lines as units (0.89 at 20% discordance and 0.69 at 30%
+for N = 150). Neither holds here: the unit is a passage, and Holm's first step is 0.025.
+Calculated for this revision on 2026-10-28 (not committed; the calculation must be re-run
+from a committed script using `scripts/kri_stats.exact_sign_test` and
+`newcombe_paired_interval` before the pre-registration is written). Assumptions: true paired
+margin +0.10, baseline success rate 0.40, discordance 20% or 30%, both gates required (exact
+one-sided p < 0.025 and the 95% Newcombe lower bound > 0):
+
+| Independent passages | 100 | 150 | 200 | 250 | 300 | 350 | 400 |
+|---|---|---|---|---|---|---|---|
+| power, 20% discordance | 0.54 | 0.75 | 0.88 | 0.94 | 0.97 | 0.99 | 0.99 |
+| power, 30% discordance | 0.37 | 0.56 | 0.70 | 0.80 | 0.87 | 0.92 | 0.95 |
+
+**The floor is 250 independent passages per endpoint** (power ≥ 0.80 at 30% discordance),
+judged separately for R and G. Below it the endpoint is "uninformative": counts only, no
+claim of superiority and none of equivalence, still in the Holm family. Lines within a passage
+never add to N. Stated plainly: 250 independent KRI passages is a large amount of material,
+and if Camilla cannot supply it, confirmation is out of reach and every number stays
+descriptive. That is an honest outcome, and it is better than a test that cannot fail.
+
+**Secondary analysis (descriptive, outside Holm):** every confirmation-eligible line, reported
+as counts per passage with a passage-clustered summary, and a sign-flip permutation over
+passages of the per-passage margins as a diagnostic. It informs nothing that is quoted.
+
+**Tooling amendments required before any 4e material (not made in this draft).** The
+historical-binding amendment H (§4.0 (b)5) comes first, before the first declaration, and is
+its own reviewed commit. Then one reviewed commit with tests, updating `tests/test_kri_tooling_freeze.py`'s hash record in the same
+commit with an explicit note: `scripts/kri_declaration.py` gains `passage_id`;
+`scripts/run_kri_endpoints.py` performs the seeded one-line-per-passage draw and the
+descriptive clustered secondary; `scripts/kri_stats.POWER_FLOOR` becomes 250 and counts
+passages. The frozen B-freq files are **not** touched.
 
 Only these comparisons yield a new number for experts, quoted per endpoint with its
 baseline named.
 
 ---
 
-## Order, dependencies, effort, who
+## Order, dependencies, effort, who (rev. 4)
+
+Heavy runs (any worktree) are serialized. "Compute" is wall time on this Mac from the observed
+timings in §2.6.
 
 | # | Step | Depends on | Effort | Needs |
 |---|---|---|---|---|
-| 0 | Merge + push + deploy audit branch; (A) results reviewed | — | morning | **Ledio** present |
-| 1.0b | DB snapshot1, reconciliation (H), protected set P | 0 | 1 h | **Ledio**: server backup |
+| 0 | Merge + push + deploy audit branch; (A) results reviewed | — | **DONE** (`3465478` merged and deployed; `docs/remeasure-results-2026-10-26-attempt2.md`) | — |
+| 0b | Merge + push + deploy `kri-fixes-2026-10-26`; attempt 5 results note | 0 | **DONE** (main `51f3757`, live; `docs/kri-fixes-results-2026-10-27-attempt5.md`) | — |
+| 0c | KRI official-test tooling and frozen B-freq on main | — | **DONE** (synthetic fixtures only; no gate fixture yet) | — |
+| 4.0 | Complete the (B) exclusion manifest (EX001 hash, every inspected line, other editions); commit its sha256; build the historical screening sets (§4.0 (b)5) | 0c | ½ day | lead (private custody); **Ledio** approves and logs the session |
+| 4h | Tooling amendment H: historical-set binding in `kri_declaration.py` / `run_kri_endpoints.py`, reviewed, tooling hash record updated in the same commit (§4.0 (b)5); needed before any declaration | 0c | ½ day | Opus + Astra |
+| 1.0 | Preconditions, hashes, floors recorded, SSH precheck on the tagged host | 0b | 1 h | **Ledio**: SSH check |
+| 1.0b | Snapshot 1 by the 1.0a protocol, reconciliation (H), protected set P | 1.0 | 1 h | **Ledio**: server backup |
 | 1 | `--donor-output` + inventory 1.1a (stop rules) → merge script → candidates N, M → report | 1.0b | ~1½ days | — |
-| 4a | Predicate spec + seeds now; checker on a dev fixture in parallel; holdout drawn before the part 3 filter; gate fixture drawn, adjudicated and frozen on G (part 3 commit), then gates | spec: 0; holdout: before 3's filter; gate: 3 committed | 1½ days | Opus + Astra adjudicate |
+| 4a | Gate fixture drawn on G, **the draw fixes G and chooses Case 1 or 2** (after manifest complete); holdout drawn before the part 3 filter; checker is the kri-official-prep one | 4.0; holdout: before 3's filter | 1½ days | Opus + Astra adjudicate, blind to the checker |
 | 1r | Report review, BBAW `_` strata, exceptions frozen | 1 | ½ day | Opus + Astra; **Ledio** approves |
-| 2 | Pre-reg + regression O / M / N on candidates | 1r | 1 h + 1–2 nights compute (observed 2026-10-26: ~2 h to ~11 h 40 min per corpus run set) + ½ day | — |
-| 1s | Pause saving, snapshot2 re-check, commit, deploy, refresh, live check, restore key | 2 passes | ½ day | **Ledio**: server env, sudo |
-| 3 | UD exporter columns, PT admission (rules 1–7) + its re-measure (before its deploy) | 1s, 4a holdout | ~2 days | **Nederhof**: only if conversion check fails |
-| 4c | Email to Camilla | any time | 15 min | **Ledio** sends; **Camilla** supplies passages |
-| 4d | Declarations, KRI run, Zoom pack | 4a gates, 3, her material | ½ day | **Camilla** |
-| 4e | Endpoint R (B unchanged) and endpoint G (B-freq baseline, committed before material) | ≥ 100 lines, not overlapping 4d exclusions; G also needs B-freq frozen | 1–2 days (+½ day B-freq) | **Camilla** |
+| 2.0a | `--fixed-heldout` / `--heldout-out` harness flags, `compare_cleanup_runs.py` (reviewed, frozen) | 1r | ~1 day | Opus + Astra |
+| 2 | Pre-reg, then O / M / N on candidates: competitive sets, paste ×3, six Urk. IV gate runs, twins, answerability, routing, decoder harness | 1r, 2.0a | 1 h + **about 46 h compute** + ½ day | — |
+| 1.8 | Commit on the branch + local release gate (full suite, full `verify_release.py`, gate, paste) | 2 passes | ½ day + the gate's compute | **Ledio** approves the commit |
+| 1.7 | Pause saving, snapshot 2 (1.0a), P2; if P2 ∖ P hits R: N′ → repeat 2 and 1.8 | 1.8 | ½ day (N′: +~46 h) | **Ledio**: server env, sudo |
+| 1.9 | Merge + push (`--no-ff` merge commit only, and only if the code diff is empty), deploy (no `INSTALL_UNITS`), post-restart pause checks, live-bound dry-run and refresh, live check, restore key from the pre-pause copies; **§1.9a is the way back** | 1.7 clears; no replacement freeze (§4.0 (c)) | ½ day | **Ledio** |
+| 3 | UD exporter columns, PT admission (rules 1-7) + its re-measure 3.3 (before its deploy) + pause, backup, deploy and rollback 3.4 (the §1.7 pause, the §1.0a backup, §1.9a with the part 3 parameters) | 1.9, 4a holdout, manifest complete | ~2 days + ~31 h compute | **Nederhof**: only if the conversion check fails; **Ledio**: server pause, backup and deploy |
+| 4c | Email to Camilla (confirm PDF permissions; ask for gold, passages, identities) | any time | 15 min | **Ledio** sends; **Camilla** supplies |
+| 4d | Declaration (same commit and sha as the gate fixture's G, plus `historical_sets_sha256`), KRI run, Zoom pack | 4a gates, 4.0, 4h, her material; Case 1: the fixture is drawn before 1.9's merge, the declaration is committed within 7 days and the results within 14 days of the draw (else the fixture is retired, §4.0 (c)); Case 2: fixture drawn after 1.9 (G = N) or after 3 (G = N plus PT) | ½ day | **Camilla** |
+| 4e | Endpoint R and G on independent passages (250 per endpoint to confirm); tooling amendments first | 4h, 4e amendments, ≥ 250 passages per endpoint, not overlapping exclusions; G also needs the B-freq table matching G | 1-2 days + tooling | **Camilla** |
 
 Expert answers that can change this plan:
 
