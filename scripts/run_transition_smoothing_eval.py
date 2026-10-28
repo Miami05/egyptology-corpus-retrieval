@@ -124,7 +124,7 @@ class HarnessFault(Exception):
 class DevSplit:
     rate: float
     dev: pd.DataFrame
-    fit: pd.DataFrame  # the training partition minus every drawn row
+    fit: pd.DataFrame  # the training partition minus the drawn rows that are dev or hygiene-dropped
     drawn: int
     drawn_units: int
     dropped_exact: int
@@ -166,13 +166,16 @@ def split_dev(
 ) -> DevSplit:
     """Draw the dev rows from `train`, then apply the test split's hygiene (R4).
 
-    Order and wording follow `select_test_rows`: exact sign-string duplicates of a row in
-    the fit data are counted and dropped, then rows at sign-group Jaccard >= the overlap
-    to a fit row, then (lexicon on) rows of the lexicon-leaking sources. Every comparison
-    is against `fit` = the training partition minus ALL drawn rows, so no dev row can
-    have a duplicate or a near-duplicate in the data a dev model is fitted on. A drawn row
-    that the hygiene drops leaves the experiment: it is in neither dev nor `fit`, as a
-    dropped test row is in neither test nor train.
+    R4: with the lexicon on, drawn rows of the lexicon-leaking sources (Ramses, AES) are
+    removed from dev but STAY in the training partition, so they go back into `fit`. Then,
+    in the order of `select_test_rows`, exact sign-string duplicates of a row in `fit` are
+    counted and dropped, then rows at sign-group Jaccard >= the overlap to a `fit` row.
+    `fit` is therefore the training partition minus the drawn rows that become dev rows or
+    are dropped by the hygiene, so no dev row can have a duplicate or a near-duplicate in
+    the data a dev model is fitted on. A drawn row dropped as an exact or
+    near duplicate leaves the experiment (in neither dev nor `fit`), as a dropped test row
+    is in neither test nor train. `dropped_leaky` counts the leaking rows moved back to
+    `fit`, not rows lost to the experiment.
     """
     if lexicon_exclude is None:
         lexicon_exclude = parse_source_list(LEXICON_EXCLUDE_SOURCES)
@@ -180,19 +183,21 @@ def split_dev(
     keys = text_group_keys(train)
     drawn_mask = np.array([key in chosen for key in keys], dtype=bool)
     drawn = train[drawn_mask]
-    fit = train[~drawn_mask]
+    dropped_leaky = 0
+    leaky_back = np.zeros(len(train), dtype=bool)
+    if lexicon_on and lexicon_exclude:
+        leaky_back = drawn_mask & train["source"].astype(str).isin(lexicon_exclude).to_numpy()
+        dropped_leaky = int(leaky_back.sum())
+    # drawn leaking rows stay in training (R4); every other drawn row leaves `fit`
+    fit = train[~drawn_mask | leaky_back]
+    drawn_dev = train[drawn_mask & ~leaky_back]
     fit_signs = set(fit["hieroglyphs_norm"].astype(str))
-    exact_mask = drawn["hieroglyphs_norm"].astype(str).isin(fit_signs)
+    exact_mask = drawn_dev["hieroglyphs_norm"].astype(str).isin(fit_signs)
     dropped_exact = int(exact_mask.sum())
-    dev = drawn[~exact_mask]
+    dev = drawn_dev[~exact_mask]
     near_mask = near_duplicate_mask(dev, fit, near_duplicate_overlap)
     dropped_near = int(near_mask.sum())
     dev = dev[~near_mask]
-    dropped_leaky = 0
-    if lexicon_on and lexicon_exclude:
-        leaky = dev["source"].astype(str).isin(lexicon_exclude)
-        dropped_leaky = int(leaky.sum())
-        dev = dev[~leaky]
     return DevSplit(
         rate=rate,
         dev=dev,
@@ -562,8 +567,30 @@ def _log_models(out: Path, resources: HarnessResources, prefix: str) -> dict:
     return {"seconds": seconds}
 
 
+def phase_outputs(phase: str) -> list[str]:
+    """Every file name a phase writes into its output directory."""
+    if phase == "manifests":
+        return ["split_manifest.csv", "dev_manifest_r10.csv", "dev_manifest_r20.csv", "manifests.json"]
+    prefix = "dev" if phase == "dev" else "test"
+    names = [f"{prefix}_{kind}" for kind in (
+        "positions.csv", "lines.csv", "summary.csv", "calibration.csv", "timing.csv",
+        "smoothing_report.json",
+    )]
+    if phase == "dev":
+        return names + ["dev_counts.json", "dev_manifest_used.csv"]
+    return names + ["test_manifest_used.csv"]
+
+
 def main(argv: "list[str] | None" = None) -> int:
     args = _parse_args(argv)
+    existing = [n for n in phase_outputs(args.phase) if (Path(args.out_dir) / n).exists()]
+    if existing:
+        print(
+            f"refusing to run: {args.out_dir} already holds {existing}; evidence is never "
+            "overwritten (use a fresh directory)",
+            file=sys.stderr,
+        )
+        return 2
     started = time.monotonic()
     if reading_model_module.TRANSITION_SMOOTHING_BY_DEFAULT != "off":
         print(

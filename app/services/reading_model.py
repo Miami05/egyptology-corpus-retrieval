@@ -219,6 +219,11 @@ USE_POOLED_FALLBACK_BY_DEFAULT = False
 # without a code change; it is never set in production. Stage routing is NOT affected
 # by it: `app.services.stage.choose_stage_by_likelihood` passes "off" explicitly (R2).
 #
+# The sentence-edge contexts are not changed by any scheme: a transition out of the
+# BOUNDARY marker, a sign context whose previous sign is BOUNDARY and a next-sign context
+# whose next sign is BOUNDARY keep the add-k value in every scheme (pre-registration R3,
+# R8: "BOUNDARY keeps the current value"), so sentence starts and ends decode as before.
+#
 # Not tuned here, and kept as they are: SMOOTHING, UNREADABLE_EMISSION and every decode
 # weight.
 SMOOTHING_SCHEMES = ("off", "c2", "c3", "c2_transition_only")
@@ -583,7 +588,7 @@ class ReadingModel:
         return log(numerator / (total + SMOOTHING * vocabulary))
 
     def _transition(self, previous_reading: str, reading: str, mode: str = "off") -> float:
-        if mode != "off" and reading != "":
+        if mode != "off" and reading != "" and previous_reading != BOUNDARY:
             return self._smoothed("transition", previous_reading, reading, mode)
         counts = self.reading_bigram.get(previous_reading, Counter())
         total = sum(counts.values())
@@ -595,7 +600,7 @@ class ReadingModel:
     def _sign_context(
         self, previous_sign: str, sign: str, reading: str, mode: str = "off"
     ) -> float:
-        if mode != "off" and reading != "":
+        if mode != "off" and reading != "" and previous_sign != BOUNDARY:
             return self._smoothed("sign_context", (previous_sign, sign), reading, mode)
         counts = self.sign_context.get((previous_sign, sign), Counter())
         total = sum(counts.values())
@@ -607,7 +612,7 @@ class ReadingModel:
     def _next_sign_context(
         self, sign: str, next_sign: str, reading: str, mode: str = "off"
     ) -> float:
-        if mode != "off" and reading != "":
+        if mode != "off" and reading != "" and next_sign != BOUNDARY:
             return self._smoothed("next_sign_context", (sign, next_sign), reading, mode)
         counts = self.next_sign_context.get((sign, next_sign), Counter())
         total = sum(counts.values())

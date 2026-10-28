@@ -28,13 +28,12 @@ APPROVED_SHA=$2
 WT=/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/transition-smoothing-2026-10-28
 BRANCH=transition-smoothing-2026-10-28
 PY=/Users/lediodurmishaj/venvs/egyptology/bin/python
-PRIV=/Users/lediodurmishaj/projects/Egyptology-APP/data/private
 BASE=$HOME/egyptology-runs/remeasure-2026-10-25     # attempt 2 of the 2026-10-25 run
 B=data/benchmarks
 RECORD=docs/transition-smoothing-dev-record-2026-10-28.json
 TEST_MANIFEST_SHA=ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba
-DEV_MANIFEST_SHA_R10=841e3c49c91c0791c3ae378c5c1991dc049ca2b04633450368983c176ceb6e99
-DEV_MANIFEST_SHA_R20=4aafa8059451e4644ab15e715d42152d7291b42d34069afd3e2cc5856e320c09
+DEV_MANIFEST_SHA_R10=52415842fbb209d955b5d28d48011f462cb5a0d756400c1f8e2d76f191263344
+DEV_MANIFEST_SHA_R20=11dfe145090bb6a3ee4d846f428b595a8fba79787662193d9a20677b3328a0b3
 RUNS=${TS_RUNS_BASE:-$HOME/egyptology-runs}
 STOP_AFTER=${TS_STOP_AFTER:-}
 SWITCH=EGYPTOLOGY_TRANSITION_SMOOTHING
@@ -80,8 +79,10 @@ run step0-clean test -z "$(git status --porcelain)"
 # The default decoder scheme must be add-k: a switch set in the launching shell would make
 # the baseline arm something else.
 run step0-switch-unset test -z "${!SWITCH:-}"
+# No private data of any kind: no keyed directory in the environment, none in the worktree.
+run step0-no-private-env test -z "${PRIVATE_DATA_DIR:-}"
+run step0-no-private-dir test ! -e data/private
 if [ "$PHASE" = test ]; then
-  run step0-private-dir test -d "$PRIV"
   run step0-attempt2-dir test -d "$BASE"
 fi
 # The deploy tests trap HUP/INT/TERM; a signal ignored at launch (nohup, `cmd &`) cannot be
@@ -158,11 +159,9 @@ run step4-paste-auto-default env -u "$SWITCH" "$PY" scripts/run_expert_paste_eva
 run step4-paste-check "$PY" scripts/check_transition_smoothing_gates.py paste --run-dir "$R" \
   --baseline-dir "$BASE" > "$R/step4_gates.txt" 2>&1
 
-# Step 5 - rule (b), the Urk. IV / St Andrews gate, both modes, under the primary arm.
-for M in auto declared; do
-  run "step5-urkiv-$M" env "$SWITCH=$PRIMARY" "$PY" scripts/check_standrews_urkiv_gate.py \
-    --private-dir "$PRIV" --stage "$M" > "$R/urkiv_standrews_$M.txt" 2>&1
-done
+# Step 5 - none. Rule (b), the Urk. IV / St Andrews gate, is withdrawn from this run: it
+# reads private rows, and this run reads only data/processed/examples.csv. The numbering of
+# steps 6-8 is kept.
 
 # Step 6 - rule (g'), the competitive sanity check, per query against attempt 2.
 CE=("$PY" scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule v4)

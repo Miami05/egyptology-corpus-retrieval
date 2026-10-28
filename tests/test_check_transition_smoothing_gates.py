@@ -365,10 +365,18 @@ def make_repo(tmp_path, primary="c2"):
     approved = git(repo, "rev-parse", "HEAD")
     record = repo / gates.DEV_RECORD_PATH
     record.parent.mkdir(parents=True)
+    # a record that follows from its own numbers: c2 is the best arm and is primary
+    arms = {
+        "off": {"delta_correct_vs_off": 0},
+        "c2_transition_only": {"delta_correct_vs_off": -1},
+        "c2": {"delta_correct_vs_off": 5},
+        "c3": {"delta_correct_vs_off": 2},
+    }
     record.write_text(
         json.dumps(
             {"primary": primary, "dev_manifest_sha256": gates.DEV_MANIFEST_SHA[0.10], "dev_rate": 0.1,
-             "approved_commit": approved, "arms": {}, "eligible": [], "walk": []}
+             "approved_commit": approved, "arms": arms, "eligible": ["c2", "c3"], "best": "c2",
+             "walk": [{"arm": "c2", "best_minus_arm": {"ci_low": 0.0}, "qualifies": True}]}
         )
     )
     return repo, record, approved
@@ -405,6 +413,25 @@ def test_preflight_refuses_a_record_with_no_primary_or_a_wrong_manifest(tmp_path
     git(repo2, "commit", "-q", "-m", "dev record")
     _out, failures = check_preflight(record2, repo2)
     assert any("manifest" in f for f in failures)
+
+
+def test_preflight_refuses_a_hand_edited_primary_arm(tmp_path):
+    repo, record, _approved = make_repo(tmp_path, primary="c3")  # c2 is what the numbers give
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "dev record")
+    _out, failures = check_preflight(record, repo)
+    assert any("does not follow from its own numbers" in f for f in failures)
+
+
+def test_a_record_without_a_dev_rate_is_an_input_error_not_a_traceback(tmp_path):
+    repo, record, _approved = make_repo(tmp_path)
+    data = json.loads(record.read_text())
+    del data["dev_rate"]
+    record.write_text(json.dumps(data))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "dev record")
+    with pytest.raises(gates.InputError):
+        check_preflight(record, repo)
 
 
 # ---------- the expert pastes ----------
@@ -544,3 +571,10 @@ def test_the_competitive_rule_loses_no_top3_answer_and_applies_the_floors_where_
     competitive_dir(now, hits, top3="0.70", mrr="0.60")
     _out, failures = gates.check_competitive(now, baseline)
     assert any("v4 T-auto below" in f for f in failures) and any("v4 L-auto below" in f for f in failures)
+
+
+def test_the_dev_check_refuses_to_overwrite_a_dev_record(tmp_path):
+    run = dev_dir(tmp_path, flags({"off": 5, "c2_transition_only": 5, "c2": 6, "c3": 9}))
+    (run / "dev_record.json").write_text("{}")
+    assert main(["dev", "--run-dir", str(run)]) == 2
+    assert (run / "dev_record.json").read_text() == "{}"

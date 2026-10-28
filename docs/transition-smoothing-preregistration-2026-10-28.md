@@ -16,10 +16,10 @@ unit tests only (`tests/test_transition_smoothing.py`), including one 300-senten
 corpus used as a golden for "the default is unchanged". This is an untouched confirmatory
 registration for the test split.
 
-No KRI material appears here, and none is read by the measurement: the only data input of
-the harness is `data/processed/examples.csv`. (The one gate that reads the private
-St Andrews rows is rule (b), the Urk. IV gate, run exactly as in the earlier regression
-runs; see §7.)
+No KRI or St Andrews material appears here, and none is read by the run: the only data input
+of the harness is `data/processed/examples.csv`, and the runner stops at step 0 if a private
+data directory is configured or present. (The draft's rule (b), the Urk. IV gate, read the
+private St Andrews rows; it is withdrawn from this run, see §7 and §10.)
 
 The experiment code is at the commit named in the approval: `app/services/reading_model.py`
 (the schemes), `app/services/stage.py` (the router's explicit `smoothing="off"`),
@@ -118,7 +118,7 @@ degenerate emission estimator does not make the transition fix unmeasurable. Mov
 * **The switch.** The decoder takes `smoothing` (`predict_sequence`,
   `predict_sequence_scored`); `None` means `TRANSITION_SMOOTHING_BY_DEFAULT`, which is
   `"off"` unless the environment variable `EGYPTOLOGY_TRANSITION_SMOOTHING` names a scheme.
-  The variable exists so the product-path gates (expert paste, Urk. IV, competitive sets,
+  The variable exists so the product-path gates (expert paste, competitive sets,
   release check) can be run under the primary arm without a code change; it is never set in
   production, an unknown value raises at import, and the harness and the full test suite are
   run with it unset (the harness refuses to start otherwise).
@@ -150,8 +150,18 @@ and on the stage's compatible rows when it is a stage model):
   `''` is a context with N = 0, so it keeps `log(SMOOTHING)`. `UNREADABLE_EMISSION` is
   unchanged. Under a unigram backoff a path through an unreadable group would otherwise
   become far more expensive, which would move the A53 balance.
-* **Unseen contexts.** A context with N(h) = 0 (BOUNDARY included, when the model has no
-  data for it) keeps `log(SMOOTHING)` in every arm. Only contexts with N(h) ≥ 1 change.
+* **Unseen contexts.** A context with N(h) = 0 keeps `log(SMOOTHING)` in every arm. Only
+  contexts with N(h) ≥ 1 change.
+* **Sentence edges are not changed by any arm (R3, R8).** The model does hold counts for the
+  BOUNDARY marker (`fit` counts the first reading of a sentence in `reading_bigram[BOUNDARY]`,
+  and the edge keys of the two sign-context tables), so these contexts have N ≥ 1 and would
+  otherwise be smoothed. They are not: a transition out of BOUNDARY (position 0), a sign
+  context whose previous sign is BOUNDARY (position 0) and a next-sign context whose next sign
+  is BOUNDARY (the last position) keep the add-k value in every arm, exactly as R3 says
+  ("BOUNDARY included keeps the current value") and as the R8 population needs (position 0
+  has the BOUNDARY context, which no arm changes). BOUNDARY is excluded from the support R.
+  A unit test asserts the equality for every such key in every mode. A smoothed arm therefore
+  changes only transitions between two real readings and sign contexts between two real signs.
 * **Lower-order distribution, per function.**
   * `_transition` (h = previous reading): `P_lower(r) = P_uni(r)`.
   * `_sign_context` (h = previous sign, sign) and `_next_sign_context` (h = sign, next
@@ -263,21 +273,30 @@ stops the run. It is the same split, byte for byte, as the earlier KRI-fixes reg
   `max(1, int(rate · n + 0.5))` of them are taken without replacement from the one generator
   (`rng.choice(n, size=take, replace=False)`), so the draw is a function of corpus, rate and
   seed, and not of row order.
-* **Hygiene, inherited from the test split.** All comparisons are against `fit` = the training
-  partition minus **every drawn row**: first dev rows whose exact sign string occurs in `fit`
-  (counted, dropped), then rows at sign-group Jaccard ≥ 0.8 to a `fit` row, then, with the
-  lexicon on, rows of Ramses and AES. The counts dropped at each step are written to the
-  manifests and the dev-counts files. A drawn row that hygiene drops leaves the experiment:
-  it is in neither dev nor `fit` (see §10 for how this differs from the parenthesis in R4).
-  Models in the dev stage are fitted on `fit` only.
+* **Hygiene, inherited from the test split, with R4's rule for the leaking sources.** With the
+  lexicon on, drawn rows of Ramses and AES are removed from dev and **stay in the training
+  partition**, i.e. they go back into `fit` (R4: "stay in training-minus-dev"); they are
+  counted as "leaking" below. Then all comparisons are against `fit` = the training partition
+  minus the drawn rows that are dev candidates: first dev candidates whose exact sign string
+  occurs in `fit` (counted, dropped), then rows at sign-group Jaccard ≥ 0.8 to a `fit` row.
+  The counts dropped at each step are written to the manifests and the dev-counts files. A
+  drawn TLA or BBAW row that hygiene drops as a duplicate leaves the experiment: it is in
+  neither dev nor `fit`, as a dropped test row is in neither test nor train, so a dev row can
+  never have a twin among the rows its model is fitted on. Models in the dev stage are fitted
+  on `fit` only.
 * **Manifests, pinned.** The dev rows after hygiene are written to a manifest
   (`source, source_text_id, source_sentence_id, hieroglyphs_norm`) whose sha256 is pinned
   here, **before any dev decode**, for both draw rates the registration can use:
 
 | Draw rate | Drawn rows | Dropped: exact / near / leaking | Dev rows (BBAW, TLA) | `fit` rows | Dev manifest sha256 |
 | --- | --- | --- | --- | --- | --- |
-| 10% | 5,072 | 314 / 168 / 3,196 | 1,394 (411, 983) | 47,138 | `841e3c49c91c0791c3ae378c5c1991dc049ca2b04633450368983c176ceb6e99` |
-| 20% | 10,024 | 615 / 301 / 6,283 | 2,825 (827, 1,998) | 42,186 | `4aafa8059451e4644ab15e715d42152d7291b42d34069afd3e2cc5856e320c09` |
+| 10% | 5,072 | 291 / 59 / 3,332 | 1,390 (409, 981) | 50,470 | `52415842fbb209d955b5d28d48011f462cb5a0d756400c1f8e2d76f191263344` |
+| 20% | 10,024 | 563 / 101 / 6,545 | 2,815 (823, 1,992) | 48,731 | `11dfe145090bb6a3ee4d846f428b595a8fba79787662193d9a20677b3328a0b3` |
+
+("Leaking" rows are drawn Ramses and AES rows moved back into `fit`, not lost: `fit` = 52,210
+train rows − dev rows − exact − near drops. Dev rows are listed as BBAW, TLA. The numbers are
+those of the 2026-10-28 revision; the earlier ones, with leaking rows leaving the experiment,
+are withdrawn.)
 
 * **Minimum counts, checked before any arm is decoded.** The dev set must have **≥ 2,000 dev
   positions** in total and **≥ 100 dev positions in the R5 population** (gold previous reading
@@ -287,8 +306,8 @@ stops the run. It is the same split, byte for byte, as the earlier KRI-fixes reg
   `fit`. If still missed, the experiment **stops** (exit 4, "not runnable at this corpus
   size"); no other remedy. The step taken is recorded in `dev_counts.json`.
 
-The dev rows come out as TLA and BBAW only (Ramses and AES are drawn and then dropped under
-the lexicon-hygiene rule), which is also the source mix of the test split.
+The dev rows come out as TLA and BBAW only (Ramses and AES are drawn, then moved back to
+training under the lexicon-hygiene rule), which is also the source mix of the test split.
 
 ---
 
@@ -361,7 +380,7 @@ test, the result is "it failed" and does not go back to dev.
   signs with the spaces removed, segmented by the pooled-model segmenter) feeds only rule (e)
   and the stage router. No reading accuracy over the re-segmented line is reported.
 * **Population (R5 (d′), made exact).** Member positions are gold positions i ≥ 1 of a row
-  (position 0 has the BOUNDARY context, which no arm changes) whose gold previous reading
+  (position 0 has the BOUNDARY context, which no arm changes, §3) whose gold previous reading
   h = gold_reading[i − 1] satisfies V_obs(h) = 1 in the `_transition` table of the fitted
   model **of the stage the row was routed to** (the `off` routing, identical in every arm; the
   pooled model when no stage was chosen). h = `''` is excluded (R3 leaves transitions out of
@@ -374,7 +393,8 @@ test, the result is "it failed" and does not go back to dev.
   consecutive positions are both members, the shared position is counted once as a
   predecessor and once as a member, and the report gives the number of such overlaps. The
   diagnostic "the arm's own path passes through a V_obs = 1 context" is computed from the
-  arm's decoded reading at i − 1 and reported as a count of members. **Low-n guard:** a band
+  arm's decoded reading at i − 1 and reported as a count of members together with n and as
+  a share of members (`count/n (share)`). **Low-n guard:** a band
   with fewer than 30 positions is reported and is never used for a claim in either direction.
 * **Per-position attribution (§3 of the draft).** Each position row carries the baseline and
   arm transition log-probabilities of the chosen reading and of a runner-up, from the
@@ -395,17 +415,19 @@ re-run is a complete re-run of its phase: no subset re-runs, no reuse of a numbe
 failed attempt. A re-run never authorises tuning against a test set that has already been
 seen; if the primary arm fails a gate on test, the result is "it failed".
 
-Rules (a), (b), (e) and (g′) apply to the primary arm, with the product-path steps run under
+Rules (a), (e) and (g′) apply to the primary arm, with the product-path steps run under
 `EGYPTOLOGY_TRANSITION_SMOOTHING=<primary>`.
 
 **(a) Expert paste gate — hard.** 8/8 in `--stage auto` and 8/8 in `--stage declared`, and
 `--stage none` unchanged at its by-design 3/8, with the same per-paste outcome as attempt 2
 of the 2026-10-25 re-measurement (`~/egyptology-runs/remeasure-2026-10-25/paste_none.csv`).
 
-**(b) Urk. IV / St Andrews gate — hard.** `GATE: PASS` in both modes (`auto`, `declared`) in a
-keyed session (`--private-dir`), with the pinned row present once with its folded reading, as
-in the earlier regression runs. This is the one step that reads private rows; it is the
-registered gate of the plan and is run as it has always been run.
+**(b) Urk. IV / St Andrews gate — withdrawn from this run.** It reads the private St Andrews
+rows (`--private-dir`), which this run does not read (no KRI or St Andrews data anywhere; the
+runner's step 0 refuses a configured or present private directory). Nothing in this experiment
+licenses shipping on its own: the gate is a separate step for whoever ships, on the product
+path under the primary arm, outside this registration. The letter is kept so that the other
+rules keep theirs.
 
 **(c′) Overall test accuracy — hard, the primary result.** PASS iff the **lower bound of the
 paired bootstrap 95% CI** of acc(primary) − acc(`off`) is **> 0**: 10,000 resamples over test
@@ -470,7 +492,7 @@ routing, the model fits and the time to derive the discount tables. None should 
 measurable; if one is, it is recorded.
 
 **What must not regress, in one place:** paste 8/8 auto and declared and `none` unchanged at
-3/8; the Urk. IV gate; the CI of overall test accuracy (lower bound > 0); boundary errors; the
+3/8; the CI of overall test accuracy (lower bound > 0); boundary errors; the
 stage each line is decoded under; competitive floors with 0 top-3 answers lost. Plus two that
 are not numbers: the A53 unreadable-emission constant stays where it is, and `off` must
 reproduce today's output exactly (a golden-hash unit test of 60 decodes made with the code
@@ -498,7 +520,8 @@ dev phase; `APPROVED_SHA2` is the id of the commit that adds the dev record (and
 else). Each is the one extra input of its phase, and without a phase and exactly one 40-hex
 argument the runner exits 2 before allocating an attempt directory. The runner enters the
 worktree itself and asserts the toplevel, the branch, that `HEAD` **is** the approved
-commit, a clean tree, and that the switch variable is unset. The attempt directories are
+commit, a clean tree, that the switch variable is unset, and that no private data directory is
+configured or present. The attempt directories are
 `~/egyptology-runs/transition-smoothing-2026-10-28-dev-attemptN` and `…-test-attemptN`,
 fresh each time and never overwritten. If the dev record names no primary arm, the dev phase
 ends the experiment: the test phase's preflight refuses to start. The registered run sets
@@ -535,13 +558,12 @@ APPROVED_SHA=$2
 WT=/Users/lediodurmishaj/projects/Egyptology-APP/.claude/worktrees/transition-smoothing-2026-10-28
 BRANCH=transition-smoothing-2026-10-28
 PY=/Users/lediodurmishaj/venvs/egyptology/bin/python
-PRIV=/Users/lediodurmishaj/projects/Egyptology-APP/data/private
 BASE=$HOME/egyptology-runs/remeasure-2026-10-25     # attempt 2 of the 2026-10-25 run
 B=data/benchmarks
 RECORD=docs/transition-smoothing-dev-record-2026-10-28.json
 TEST_MANIFEST_SHA=ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba
-DEV_MANIFEST_SHA_R10=841e3c49c91c0791c3ae378c5c1991dc049ca2b04633450368983c176ceb6e99
-DEV_MANIFEST_SHA_R20=4aafa8059451e4644ab15e715d42152d7291b42d34069afd3e2cc5856e320c09
+DEV_MANIFEST_SHA_R10=52415842fbb209d955b5d28d48011f462cb5a0d756400c1f8e2d76f191263344
+DEV_MANIFEST_SHA_R20=11dfe145090bb6a3ee4d846f428b595a8fba79787662193d9a20677b3328a0b3
 RUNS=${TS_RUNS_BASE:-$HOME/egyptology-runs}
 STOP_AFTER=${TS_STOP_AFTER:-}
 SWITCH=EGYPTOLOGY_TRANSITION_SMOOTHING
@@ -587,8 +609,10 @@ run step0-clean test -z "$(git status --porcelain)"
 # The default decoder scheme must be add-k: a switch set in the launching shell would make
 # the baseline arm something else.
 run step0-switch-unset test -z "${!SWITCH:-}"
+# No private data of any kind: no keyed directory in the environment, none in the worktree.
+run step0-no-private-env test -z "${PRIVATE_DATA_DIR:-}"
+run step0-no-private-dir test ! -e data/private
 if [ "$PHASE" = test ]; then
-  run step0-private-dir test -d "$PRIV"
   run step0-attempt2-dir test -d "$BASE"
 fi
 # The deploy tests trap HUP/INT/TERM; a signal ignored at launch (nohup, `cmd &`) cannot be
@@ -665,11 +689,9 @@ run step4-paste-auto-default env -u "$SWITCH" "$PY" scripts/run_expert_paste_eva
 run step4-paste-check "$PY" scripts/check_transition_smoothing_gates.py paste --run-dir "$R" \
   --baseline-dir "$BASE" > "$R/step4_gates.txt" 2>&1
 
-# Step 5 - rule (b), the Urk. IV / St Andrews gate, both modes, under the primary arm.
-for M in auto declared; do
-  run "step5-urkiv-$M" env "$SWITCH=$PRIMARY" "$PY" scripts/check_standrews_urkiv_gate.py \
-    --private-dir "$PRIV" --stage "$M" > "$R/urkiv_standrews_$M.txt" 2>&1
-done
+# Step 5 - none. Rule (b), the Urk. IV / St Andrews gate, is withdrawn from this run: it
+# reads private rows, and this run reads only data/processed/examples.csv. The numbering of
+# steps 6-8 is kept.
 
 # Step 6 - rule (g'), the competitive sanity check, per query against attempt 2.
 CE=("$PY" scripts/run_competitive_ambiguity_eval.py --query-path app --useful-rule v4)
@@ -762,13 +784,16 @@ other than the primary one.
    single sentences. Moot for the dev set itself, since Ramses and AES rows leave it under the
    lexicon hygiene, but fixed for the draw's random stream. Draw size per source:
    `max(1, int(rate · n + 0.5))` over sorted unit keys, sources in sorted order.
-3. **What happens to dev rows hygiene drops (R4 wording).** R4 says leaky dev rows "stay in
-   training-minus-dev". Chosen instead: **every dropped drawn row leaves the experiment**
-   (exact duplicates, near-duplicates and lexicon-leaking rows alike), and every duplicate
-   check is against the data the dev models are fitted on. This mirrors `select_test_rows`
-   (a dropped test row is in neither test nor train), and it cannot leave a dev row with a
-   twin among the fit rows. The cost is that the dev models see ≤ 10% fewer Ramses/AES rows
-   than the test models will.
+3. **What happens to dev rows hygiene drops (R4).** As R4 says: drawn Ramses and AES rows
+   leave dev and stay in training (they are put back into `fit` before the duplicate checks,
+   so the dev models see the same Ramses/AES rows as the test models do, apart from the
+   drawn-and-dropped duplicates). Drawn TLA and BBAW rows that are exact or near duplicates of
+   a `fit` row leave the experiment altogether (the mirror of `select_test_rows`, where a
+   dropped test row is in neither test nor train), which is what guarantees that no dev row
+   has a twin among the rows its model is fitted on. An earlier draft of this document sent
+   the leaking rows out of the experiment as well; the Opus and Astra reviews of that draft
+   found that this contradicted R4 and had no hygiene benefit for those rows, and the
+   manifest shas of §4 were re-pinned.
 4. **Commit between dev and test.** R4 requires the primary arm to be committed before the
    test split is touched; a single uninterrupted runner cannot do that, so the runner has two
    phases and the checker enforces that the committed dev record is the only change between
@@ -777,7 +802,8 @@ other than the primary one.
    fixed here besides: groups are `text_group_keys`, sorted by key; the index matrix is one
    `integers(0, G, size=(10000, G), dtype=int32)` draw; the same matrix is used for every
    comparison.
-6. **Support R and counts.** R excludes `''` and BOUNDARY; c(r) is the `sign_reading` count;
+6. **Support R and counts.** R excludes `''` and BOUNDARY (and no arm changes a BOUNDARY
+   context, §3); c(r) is the `sign_reading` count;
    a reading outside R scores `k / (N_tot + k(|R|+1))` each (the "bucket" is a pseudo-type;
    sums to 1 over R plus the bucket).
 7. **C3's two levels** are specified for every function (§3), including the case of no pooled
@@ -791,13 +817,13 @@ other than the primary one.
    token) runs, so held-out and LE-v1 are run as T and C. v4 is run as T and L (the two
    configurations `release_baseline.json` has floors for) and is also compared per query to
    attempt 2. Nothing is compared against the later KRI-fixes runs.
-10. **How (a), (b) and (g′) see the primary arm.** Through `EGYPTOLOGY_TRANSITION_SMOOTHING`,
+10. **How (a) and (g′) see the primary arm.** Through `EGYPTOLOGY_TRANSITION_SMOOTHING`,
     set for steps 4–7 only; the router ignores it (§2), so the pastes' routing is a real
     end-to-end check of rule (f′). The default-scheme paste run is made beside it for the
     comparison.
 11. **`--stage none` in rule (a)** is checked per paste against attempt 2, not just as a
     count.
-12. **Gated and reported.** (c′), (e), (f′), (a), (b), (g′) are gated on the primary arm (or on
+12. **Gated and reported.** (c′), (e), (f′), (a), (g′) are gated on the primary arm (or on
     every arm, for the routing identity); (d′), (h), (i) and the per-arm numbers of the
     other arms are reported.
 13. **Dev positions by source.** The dev set contains TLA and BBAW only (§4); the dev minimum
@@ -806,6 +832,13 @@ other than the primary one.
     `dev_counts.json`, and checked against the pinned manifest of its rate.
 15. **`(e)` is expected to hold with equality** because segmentation does not read the
     transition tables; it is gated anyway.
+16. **Rule (b) withdrawn; sentence edges unchanged; guards (2026-10-28 review round).** Rule
+    (b), the Urk. IV gate, is dropped (it reads private St Andrews rows, §7), and so is the
+    runner's step 5; the runner instead refuses a configured or present private directory.
+    The BOUNDARY contexts keep add-k in every arm (§3). The committed dev record's `primary`,
+    `best` and `eligible` are re-derived from its own numbers at preflight and must match, and
+    the harness and the dev checker refuse to write into an existing output file. The
+    own-path V_obs = 1 diagnostic is printed as `count/n (share)`.
 
 **Known limits.** The router gets the gold-spaced paste, so its spaces act as hints (the
 earlier harnesses state the same limit); this experiment does not change routing, so it is
@@ -820,7 +853,7 @@ not a validation on independent material.
 min), expected: **dev phase ≈ 15–30 min** (about 1 min of model fitting, doubled if the 20%
 step is taken; routing and four arms over ~1,400 rows; a few seconds of bootstrap); **test
 phase ≈ 2–2.5 h**: step 2 ≈ 25–45 min (four arms and three diagnostic routings per row),
-step 4 ≈ 4 min, step 5 ≈ 2.5 min, step 6 ≈ 50 min, step 7 ≈ 15 min, step 8 ≈ 10–11 min. The
+step 4 ≈ 4 min, step 5 none (withdrawn), step 6 ≈ 50 min, step 7 ≈ 15 min, step 8 ≈ 10–11 min. The
 heavy steps (6 and 8) are the product-path checks and the full suite; the question the
 experiment asks is answered by steps 2–3, in the first hour.
 
@@ -828,5 +861,9 @@ experiment asks is answered by steps 2–3, in the first hour.
 
 * 2026-10-26 draft, Revision 1 (review round, Opus + Astra), Revision 2 (Astra re-check):
   `docs/plan-transition-smoothing-2026-10-26.md`, **superseded by this document**.
+* 2026-10-28, review round (Opus + Astra, both `fix_first`): the three blockers and the minor
+  findings are applied, see §10 items 3 and 16, §3 and §4: sentence edges unchanged,
+  R4's leaking-rows rule restored with new dev manifest shas, rule (b) withdrawn, preflight
+  re-derivation, no-overwrite guards. The approved commit changes with this revision.
 * 2026-10-28: this consolidation. Items R1–R9 are all carried in §§1–7; the choices in §10
   are the only places where it goes beyond them.

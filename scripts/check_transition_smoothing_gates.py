@@ -64,8 +64,8 @@ BANDS = ("1", "2-3", "4+")
 # Identities pinned by content (sha256 of the manifest files, section 2 and R4).
 TEST_MANIFEST_SHA = "ddc7fbe662b873e868d9db44421032e7117d89261f7642e7c4a3c05f1bee4fba"
 DEV_MANIFEST_SHA = {
-    0.10: "841e3c49c91c0791c3ae378c5c1991dc049ca2b04633450368983c176ceb6e99",
-    0.20: "4aafa8059451e4644ab15e715d42152d7291b42d34069afd3e2cc5856e320c09",
+    0.10: "52415842fbb209d955b5d28d48011f462cb5a0d756400c1f8e2d76f191263344",
+    0.20: "11dfe145090bb6a3ee4d846f428b595a8fba79787662193d9a20677b3328a0b3",
 }
 DEV_RECORD_PATH = "docs/transition-smoothing-dev-record-2026-10-28.json"
 
@@ -288,10 +288,35 @@ def check_dev(run_dir: Path) -> tuple[list[str], list[str], dict]:
 
 def load_record(path: Path) -> dict:
     record = _load_json(path)
-    for key in ("primary", "dev_manifest_sha256", "approved_commit", "arms", "eligible", "walk"):
+    for key in ("primary", "dev_manifest_sha256", "dev_rate", "approved_commit", "arms", "eligible", "walk"):
         if key not in record:
             raise InputError(f"dev record has no {key!r}")
     return record
+
+
+def rederive_primary(record: dict) -> "tuple[list[str], str | None, str | None]":
+    """R7 again, from the record's own `arms` and `walk`: (eligible, best, primary).
+
+    A committed record whose `primary` (or `best`, or `eligible`) was edited by hand no longer
+    agrees with the numbers it carries. Eligibility is delta > 0 on the record's correct
+    counts, best is the largest delta with the simpler arm winning a tie, and the primary is
+    the first eligible arm, in simplicity order, whose walk entry has ci_low <= 0.
+    """
+    try:
+        deltas = {arm: int(record["arms"][arm]["delta_correct_vs_off"]) for arm in CANDIDATE_ARMS}
+        steps = {step["arm"]: float(step["best_minus_arm"]["ci_low"]) for step in record["walk"]}
+    except (KeyError, TypeError, ValueError) as error:
+        raise InputError(f"dev record: arms or walk malformed ({error!r})") from error
+    eligible = [arm for arm in SIMPLICITY_ORDER if deltas[arm] > 0]
+    if not eligible:
+        return eligible, None, None
+    best = max(eligible, key=lambda arm: (deltas[arm], -SIMPLICITY_ORDER.index(arm)))
+    for arm in eligible:
+        if arm not in steps:
+            raise InputError(f"dev record: the walk has no entry for eligible arm {arm!r}")
+        if steps[arm] <= 0.0:
+            return eligible, best, arm
+    return eligible, best, None
 
 
 def check_preflight(record_path: Path, repo: Path) -> tuple[list[str], list[str]]:
@@ -302,6 +327,12 @@ def check_preflight(record_path: Path, repo: Path) -> tuple[list[str], list[str]
         failures.append(f"the dev record names no primary arm ({record['primary']!r}); the test split is not opened")
         return out, failures
     out.append(f"primary arm from the dev record: {record['primary']}")
+    eligible, best, primary = rederive_primary(record)
+    if (list(record["eligible"]), record.get("best"), record["primary"]) != (eligible, best, primary):
+        failures.append(
+            "the dev record's eligible set, best arm or primary arm does not follow from its own "
+            f"numbers (re-derived: eligible {eligible}, best {best}, primary {primary})"
+        )
     if record["dev_manifest_sha256"] != DEV_MANIFEST_SHA.get(round(float(record["dev_rate"]), 2)):
         failures.append("the dev record's manifest sha256 is not the pinned one for its draw rate")
     approved = record["approved_commit"]
@@ -380,12 +411,13 @@ def _mechanism_lines(positions: pd.DataFrame, member_col: str, title: str) -> li
         report = mechanism_report(positions, member_col, arm)
         for band in ("all",) + (BANDS if member_col == "member1" else ()):
             e = report[band]
+            share = e["own_path_vobs1"] / e["n"] if e["n"] else 0.0
             note = "" if e["n"] >= MIN_BAND_N else "  [n < 30: reported, no claim either way]"
             out.append(
                 f"  {arm:>20} band {band:>3}: n={e['n']:>5}  correct@i {e[f'{arm}_correct_i']}"
                 f" (off {e['off_correct_i']})  @i-1 {e[f'{arm}_correct_prev']}"
                 f" (off {e['off_correct_prev']})  paired@i +{e['better_i']}/-{e['worse_i']}  "
-                f"paired@i-1 +{e['better_prev']}/-{e['worse_prev']}  own-path V=1 {e['own_path_vobs1']}"
+                f"paired@i-1 +{e['better_prev']}/-{e['worse_prev']}  own-path V=1 {e['own_path_vobs1']}/{e['n']} ({share:.3f})"
                 f"  overlaps {e['overlaps']}{note}"
             )
     return out
@@ -619,6 +651,8 @@ def main(argv: "list[str] | None" = None) -> int:
             print(record["primary"])
             return 0
         if args.check == "dev":
+            if (run_dir / "dev_record.json").exists():
+                raise InputError(f"{run_dir / 'dev_record.json'} exists; evidence is never overwritten")
             out, failures, record = check_dev(run_dir)
             (run_dir / "dev_record.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
         elif args.check == "dev-manifest":

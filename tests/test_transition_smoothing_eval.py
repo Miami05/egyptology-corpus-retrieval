@@ -105,11 +105,23 @@ def test_dev_hygiene_leaves_no_row_with_a_twin_in_the_fit_data():
     assert split.dropped_leaky > 0
     fit_signs = set(split.fit["hieroglyphs_norm"])
     assert not (set(split.dev["hieroglyphs_norm"]) & fit_signs)
-    # dev and fit are disjoint, and every drawn row is in neither fit nor (when dropped) dev
+    # dev and fit are disjoint; only the exact/near-duplicate drops leave the experiment,
+    # the drawn leaking rows stay in fit (R4)
     assert not (set(split.dev.index) & set(split.fit.index))
-    assert len(split.dev) + len(split.fit) + (
-        split.dropped_exact + split.dropped_near + split.dropped_leaky
-    ) == len(train)
+    assert len(split.dev) + len(split.fit) + split.dropped_exact + split.dropped_near == len(train)
+
+
+def test_drawn_lexicon_leaking_rows_stay_in_the_training_partition():
+    train = synthetic_train()
+    split = split_dev(train, 0.20, lexicon_on=True)
+    drawn_keys = draw_units(train, 0.20)
+    leaking = train[train["source"].isin({"AES", "Ramses"})]
+    assert split.dropped_leaky > 0
+    # every leaking row of the train partition is in fit, drawn or not
+    assert set(leaking.index) <= set(split.fit.index)
+    assert not (set(leaking.index) & set(split.dev.index))
+    assert len(split.fit) == len(train) - len(split.dev) - split.dropped_exact - split.dropped_near
+    assert drawn_keys  # the draw itself is unchanged by the hygiene
 
 
 def test_a_dev_row_that_duplicates_a_fit_row_is_dropped():
@@ -289,3 +301,12 @@ def test_summarise_counts_what_it_says_it_counts():
 def test_the_harness_refuses_to_run_when_the_default_scheme_is_not_off(monkeypatch, tmp_path):
     monkeypatch.setattr(reading_model_module, "TRANSITION_SMOOTHING_BY_DEFAULT", "c2")
     assert harness.main(["--phase", "manifests", "--out-dir", str(tmp_path)]) == 2
+
+
+def test_the_harness_refuses_to_overwrite_existing_evidence(tmp_path, capsys):
+    (tmp_path / "dev_counts.json").write_text("{}")
+    assert harness.main(["--phase", "dev", "--out-dir", str(tmp_path)]) == 2
+    assert "evidence is never overwritten" in capsys.readouterr().err
+    assert (tmp_path / "dev_counts.json").read_text() == "{}"
+    assert "dev_counts.json" in harness.phase_outputs("dev")
+    assert "test_manifest_used.csv" in harness.phase_outputs("test")

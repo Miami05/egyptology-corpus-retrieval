@@ -162,10 +162,11 @@ def test_unknown_schemes_are_refused():
 
 
 def test_the_schemes_do_change_a_decode_but_only_through_the_three_terms():
-    # Seed 6 of an exploratory search over 3,000 random toy corpora: a shape on which the
+    # Seed 11 of an exploratory search over random toy corpora (sentence edges are not
+    # smoothed by any scheme): a shape on which the
     # four schemes disagree with add-k. This asserts that they act, nothing about which is
     # better.
-    rng = random.Random(6)
+    rng = random.Random(11)
     signs = ["X", "Y", "Z"]
     readings = {"X": ["a", "b"], "Y": ["c", "d"], "Z": ["e", "f"]}
     pairs = []
@@ -188,12 +189,16 @@ def test_the_schemes_do_change_a_decode_but_only_through_the_three_terms():
 
 
 def _contexts(model: ReadingModel):
+    """Every smoothed context. Sentence-edge (BOUNDARY) contexts keep add-k in every scheme."""
     for key in model.reading_bigram:
-        yield "transition", key
+        if key != BOUNDARY:
+            yield "transition", key
     for key in model.sign_context:
-        yield "sign_context", key
+        if key[0] != BOUNDARY:
+            yield "sign_context", key
     for key in model.next_sign_context:
-        yield "next_sign_context", key
+        if key[1] != BOUNDARY:
+            yield "next_sign_context", key
 
 
 def _score(model: ReadingModel, table: str, key, reading: str, mode: str) -> float:
@@ -213,7 +218,7 @@ def test_probabilities_sum_to_one_over_the_vocabulary_and_the_oov_bucket(toy, mo
         total += _score_exp(toy, table, key, "<an out-of-vocabulary reading>", mode)
         assert total == pytest.approx(1.0, abs=1e-12), (table, key)
         checked += 1
-    assert checked > 20
+    assert checked > 12
 
 
 def _score_exp(model, table, key, reading, mode):
@@ -376,8 +381,26 @@ def test_unseen_contexts_and_the_unreadable_sentinel_keep_the_add_k_value(toy, m
     assert toy._sign_context("E", "F", "", mode) == toy._sign_context("E", "F", "")
 
 
-def test_boundary_is_a_context_like_any_other(toy):
-    assert toy._transition(BOUNDARY, "a1", "wb") != toy._transition(BOUNDARY, "a1")
+def test_boundary_contexts_keep_the_add_k_value_in_every_mode(toy):
+    # R3/R8: sentence edges are not changed by any arm, although the model has counts there
+    assert sum(toy.reading_bigram[BOUNDARY].values()) >= 1
+    assert any(key[0] == BOUNDARY for key in toy.sign_context)
+    assert any(key[1] == BOUNDARY for key in toy.next_sign_context)
+    for mode in ("wb", "ad"):
+        for reading in ("a1", "b1", "never-seen"):
+            assert toy._transition(BOUNDARY, reading, mode) == toy._transition(BOUNDARY, reading)
+        for (previous_sign, sign), counts in toy.sign_context.items():
+            if previous_sign == BOUNDARY:
+                for reading in list(counts) + ["never-seen"]:
+                    assert toy._sign_context(previous_sign, sign, reading, mode) == toy._sign_context(
+                        previous_sign, sign, reading
+                    )
+        for (sign, next_sign), counts in toy.next_sign_context.items():
+            if next_sign == BOUNDARY:
+                for reading in list(counts) + ["never-seen"]:
+                    assert toy._next_sign_context(
+                        sign, next_sign, reading, mode
+                    ) == toy._next_sign_context(sign, next_sign, reading)
     assert BOUNDARY not in vocabulary_of(toy)
 
 
