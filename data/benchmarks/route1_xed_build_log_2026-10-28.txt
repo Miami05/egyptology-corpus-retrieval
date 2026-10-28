@@ -1,0 +1,101 @@
+Route 1 cross-edition benchmark: build log (counts only; no query text appears here)
+seed 20261028
+script scripts/build_route1_xed_benchmark.py
+pairs file data/benchmarks/cross_edition_pairs_v1.csv sha256 6eb66daadb2b760f68337bb98d44575bee40f0c9a717a5797fb3a6d8c748fbfa
+corpus data/processed/examples.csv sha256 44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2
+cleanup removal manifest build_N/removal_manifest.csv sha256 6a96c2da8993b291b17dd64928704e862e98ae0da863a8c29e15779dfbde25af
+  (1289 lines with decision == removed)
+benchmark files read for target rows (47):
+  ambiguous_reading_eval_queries.csv: 20 keys
+  ceval_holdout_v4_app_auto_cfg_a.csv: 20 keys
+  ceval_holdout_v4_app_auto_cfg_b.csv: 20 keys
+  ceval_holdout_v4_app_auto_cfg_c.csv: 20 keys
+  ceval_holdout_v4_app_auto_results.csv: 20 keys
+  ceval_holdout_v4_legacy_auto_results.csv: 20 keys
+  ceval_le_v1_app_auto_failures.csv: 4 keys
+  ceval_le_v1_app_auto_results.csv: 30 keys
+  ceval_le_v1_app_declared_failures.csv: 4 keys
+  ceval_le_v1_app_declared_results.csv: 30 keys
+  ceval_le_v1_app_none_failures.csv: 4 keys
+  ceval_le_v1_app_none_results.csv: 30 keys
+  ceval_name_v1_app_auto_failures.csv: 1 keys
+  ceval_name_v1_app_auto_results.csv: 30 keys
+  ceval_v4_driftcorrected_v4_app_auto_results.csv: 20 keys
+  ceval_v4_driftcorrected_v4_legacy_auto_results.csv: 20 keys
+  ceval_v4_v4_app_auto_cfg_a.csv: 20 keys
+  ceval_v4_v4_app_auto_cfg_b.csv: 20 keys
+  ceval_v4_v4_app_auto_cfg_c.csv: 20 keys
+  ceval_v4_v4_app_auto_results.csv: 20 keys
+  ceval_v4_v4_app_declared_results.csv: 20 keys
+  ceval_v4_v4_app_none_results.csv: 20 keys
+  ceval_v4_v4_legacy_auto_results.csv: 20 keys
+  ceval_v4_v4_legacy_declared_results.csv: 20 keys
+  ceval_v4_v4_legacy_none_results.csv: 20 keys
+  ceval_v4_v5_app_auto_results.csv: 20 keys
+  ceval_v4_v5_legacy_auto_results.csv: 20 keys
+  ceval_v4_v5_legacy_declared_results.csv: 20 keys
+  ceval_v4_v5_legacy_none_results.csv: 20 keys
+  competitive_ambiguity_eval_failures.csv: 2 keys
+  competitive_ambiguity_eval_failures_v2.csv: 6 keys
+  competitive_ambiguity_eval_failures_v3.csv: 3 keys
+  competitive_ambiguity_eval_failures_v4.csv: 1 keys
+  competitive_ambiguity_eval_queries.csv: 20 keys
+  competitive_ambiguity_eval_queries_holdout2_2026-10-27.csv: 20 keys
+  competitive_ambiguity_eval_queries_holdout3_2026-10-27_SEALED.csv: 20 keys
+  competitive_ambiguity_eval_queries_holdout_2026-09-05.csv: 20 keys
+  competitive_ambiguity_eval_queries_le_v1.csv: 30 keys
+  competitive_ambiguity_eval_queries_name_v1.csv: 30 keys
+  competitive_ambiguity_eval_queries_v2.csv: 20 keys
+  competitive_ambiguity_eval_queries_v3.csv: 20 keys
+  competitive_ambiguity_eval_queries_v4.csv: 20 keys
+  competitive_ambiguity_eval_queries_v4_driftcorrected.csv: 20 keys
+  competitive_ambiguity_eval_results.csv: 20 keys
+  competitive_ambiguity_eval_results_v2.csv: 20 keys
+  competitive_ambiguity_eval_results_v3.csv: 20 keys
+  competitive_ambiguity_eval_results_v4.csv: 20 keys
+distinct target keys 204, found in the corpus 204
+rows removed by rule at the corpus level: 99 near-twins (>= 0.9), 0 sharing a TLA/AES/Ramses source_text_id, 1068 BBAW rows within +-20
+
+pairs in 300; queries out 295
+pairs / queries per source pair:
+  AES<->BBAW: 50 pairs -> 49 queries
+  AES<->Ramses: 50 pairs -> 50 queries
+  AES<->TLA: 50 pairs -> 50 queries
+  BBAW<->Ramses: 50 pairs -> 47 queries
+  BBAW<->TLA: 50 pairs -> 49 queries
+  Ramses<->TLA: 50 pairs -> 50 queries
+queries per direction: {'A2B': 149, 'B2A': 146}
+queries per direction and source pair:
+  AES<->BBAW A2B: 25
+  AES<->BBAW B2A: 24
+  AES<->Ramses A2B: 25
+  AES<->Ramses B2A: 25
+  AES<->TLA A2B: 25
+  AES<->TLA B2A: 25
+  BBAW<->Ramses A2B: 24
+  BBAW<->Ramses B2A: 23
+  BBAW<->TLA A2B: 25
+  BBAW<->TLA B2A: 24
+  Ramses<->TLA A2B: 25
+  Ramses<->TLA B2A: 25
+queries per query source: {'AES': 76, 'BBAW': 72, 'Ramses': 74, 'TLA': 73}
+queries per expected source: {'AES': 73, 'BBAW': 73, 'Ramses': 73, 'TLA': 76}
+pairs excluded, each under the first rule that applies:
+  row_missing_from_corpus: 0
+  row_key_not_unique: 0
+  transliteration_changed_since_freeze: 0
+  removed_by_cleanup_part_1: 0
+  benchmark_target_row: 1
+  near_twin_of_benchmark_target: 0
+  same_text_as_benchmark_target: 0
+  bbaw_window_of_benchmark_target: 4
+  query_side_too_short: 0
+excluded by reason and source pair:
+  bbaw_window_of_benchmark_target / AES<->BBAW: 1
+  bbaw_window_of_benchmark_target / BBAW<->Ramses: 3
+  benchmark_target_row / BBAW<->TLA: 1
+hidden_row_keys per query: {'min': 1, 'median': 2, 'max': 82, 'queries_with_a_twin_hidden': 163}
+queries whose answer row has other near-copies (>= 0.7) left in pool C: 79
+
+sealed file data/benchmarks/competitive_ambiguity_eval_queries_xed_route1_2026-10-28_SEALED.csv
+sha256 f2c3b3bddd3bf03cfbe00db9f5bf47746c9234f77264931b3769d94823acd80d
