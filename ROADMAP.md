@@ -3061,6 +3061,15 @@ hashed by any run). Append-only; no rule above is changed.**
   that rank different query sets, a missing column or an empty file are "unjudgeable" (exit 2),
   never a pass. A FAIL ends the run normally; the failed confirmation is then reported and
   held-out 3 is spent, as the rule says. Held-out 3 informs no tuning either way.
+- *Review of the runner, 2026-10-28 (Opus and Astra; no rule changed).* Kept as known properties,
+  written in the runner's header: (1) the copied step-0 check "main is an ancestor of base" holds
+  only while main is 51f3757, so launch before anything is merged to main (it stops safely and
+  reads nothing; the pinned runner is not edited later to bypass it); (2) step 0's worktrees make
+  git check held-out 3 out to disk, as every checkout of these commits does; nothing opens,
+  reads, hashes or parses it before step 1. A sparse checkout was considered and rejected: it adds
+  an untestable path (it cannot be exercised without opening held-out 3) to a one-shot run for no
+  change in what is read; (3) a dry run leaves its worktrees, removed by hand. Applied: the
+  checksum file `sha256_top.txt` is now also written when the gate is unjudgeable (exit 2).
 - *Not part of the rule, kept visible.* The results note records, as it did for held-out 2, the
   composition of held-out 3 (query types, sources, stages) and the per-query rank changes; the
   NAME-v1 faithful movement against F-a (results note, section 3) stays a disclosed risk for the

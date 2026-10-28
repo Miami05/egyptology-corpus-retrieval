@@ -26,6 +26,16 @@
 #   EXP3_RUNS_BASE  parent directory of the attempt directory (default ~/egyptology-runs)
 #   EXP3_STOP_AFTER  "0": stop cleanly after the step-0 checks and worktrees, before any
 #                    held-out 3 read
+#
+# Known, deliberate properties (review 2026-10-28):
+#  - step0-base-contains-main is copied from the prereg and needs `main` to be an ancestor of
+#    base. It holds while main is 51f3757. If anything is merged to main first, step 0 stops
+#    (safely, before any read of held-out 3). Launch step 4 before merging anything; do not edit
+#    this pinned runner afterwards to get around it.
+#  - Step 0 makes git check each arm's worktree out, so the held-out 3 file is on disk there (as
+#    in every checkout of these commits). It is not opened, read, hashed or parsed before step 1.
+#  - A dry run (EXP3_STOP_AFTER=0) leaves its two worktrees behind. Remove them by hand:
+#    git worktree remove --force $REPO/.claude/worktrees/exp3-step4-run-<date>-attempt<N>-{base,fa}
 set -euo pipefail
 
 BASE_PIN=e2a9596316ba9d0aa3457eb648a4892712bd1b0a
@@ -184,6 +194,7 @@ log "gate_step4 exit=$GATE_CODE (0 PASS, 1 FAIL, 2 unjudgeable)"
 } > "$R/step4_info.txt" 2>&1
 if [ "$GATE_CODE" -eq 2 ]; then
   log "STOP at gate_step4 (unjudgeable)"
+  shasum -a 256 gate_step4.txt step4_info.txt run_log.txt runner_sha256.txt > sha256_top.txt 2>/dev/null || true
   echo "STOP: gate unjudgeable; see $R/gate_step4.txt" >&2
   exit 2
 fi
