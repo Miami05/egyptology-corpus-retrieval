@@ -1,13 +1,13 @@
-# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 7)
+# Plan: data cleanup, re-measure, Pyramid Texts admission, KRI test (2026-10-26, rev. 8)
 
-**Status: DRAFT, rev. 7 (2026-10-28). Not approved, not a pre-registration.** Nothing in this
+**Status: DRAFT, rev. 8 (2026-10-28). Not approved, not a pre-registration.** Nothing in this
 file has been run, and no code or data was changed to write it. Rev. 3 was reviewed by Opus
 (`ready_after_small_fixes`) and by Codex gpt-6-astra (`not_ready`, 11 findings, 7 of them
 blockers). Rev. 4 answered every one of them. Rev. 4 (commit `5fcc4f8`) was then reviewed by
 Opus (`fix_first`, 2 blockers) and by Astra (`fix_first`, 4 blockers). Rev. 5 (commit `a40feaf`)
 answered those and was re-checked by Astra (`fix_first`, 3 blockers, 5 should-fix); rev. 6
 answered that re-check, and Astra's second re-check of rev. 6 (`da42841`; `fix_first`, 2
-blockers, 2 should-fix) is answered by rev. 7. The maps are in the **Revision log** below. Opus confirmed the rev. 3
+blockers, 2 should-fix) is answered by rev. 7; rev. 8 applies four final review notes (see **Rev. 8 changes**). The maps are in the **Revision log** below. Opus confirmed the rev. 3
 blockers as fixed; they are not reopened here.
 
 The start condition has changed since rev. 3. The `audit-fixes-2026-10-25` merge is done and
@@ -289,6 +289,22 @@ numbered in the order of the re-check. The fixes prefer one rule over added bran
    `all_off`, `pooled_only` and `all_on` are reported; D4 and D0 keep their own scope (§2.3
    item 5 and the acceptance paragraph).
 
+## Rev. 8 changes (final review notes; 2026-10-28)
+
+Four small edits, plan text only, nothing run.
+
+1. **Code-only rollback, non-lossy option (§1.9a step 6):** after the revert deploy, the §1.9
+   step 2 and step 3 block is re-run against the reverted O CSV, expecting `WOULD create=0`; it
+   restores the allowlisted fields without touching annotations.
+2. **Trigger (3) alone (§1.9 step 5, §1.9a):** no DB restore; saving stays paused, the write is
+   investigated with the §1.7 1.3/1.4 checks, Ledio decides. §1.9a runs only if another trigger
+   also fires. Both sections now agree.
+3. **§1.9a step 4:** `chown --reference` next to `chmod --reference`, owner and group verified;
+   an unreadable failed DB is covered explicitly by Ledio's written loss decision, and the
+   preserved copy is kept as-is.
+4. **Ground rules:** the four pending unit settings may be installed only before §1.0 or after
+   part 3, or part 3's code-diff test against `BASE_P3` fails.
+
 ## Rev. 7 changes (answering Astra's second re-check of rev. 6; 2026-10-28)
 
 Astra re-checked rev. 6 (`da42841`) read-only: `fix_first`, 2 blockers and 2 should-fix. Plan
@@ -323,7 +339,8 @@ rule each, parameterised, with no new branches.
 | 2026-10-28 | 4 | Answers the Astra review (verdict `not_ready`, 11 findings) and the Opus review (`ready_after_small_fixes`, 13 findings) of rev. 3. Map below. Draft only: no code, no data. Committed as `5fcc4f8`. |
 | 2026-10-28 | 5 | Answers the Opus review (`fix_first`: 2 blockers, 2 should-fix, 3 nits) and the Astra review (`fix_first`: 4 blockers, 3 should-fix) of rev. 4. Map below the rev. 4 map. Draft only: no code, no data, no server. Committed as `a40feaf`. |
 | 2026-10-28 | 6 | Answers Astra's re-check of rev. 5 (`fix_first`: 3 blockers, 5 should-fix): one parameterised restore procedure used by parts 1 and 3, one mandated merge form (`--no-ff`), historical screening wired into the declaration and driver (tooling amendment H), fuller config backups and destination checks, a working journal check, backup-timer restore, a bounded Case 1 freeze, one decoder gating rule. Map below the rev. 5 map. Draft only: no code, no data, no server. |
-| **2026-10-28** | **7** | Answers Astra's second re-check of rev. 6 (`da42841`; `fix_first`: 2 blockers, 2 should-fix): annotation-loss decision in the restore even inside the pause, a separate part 3 code baseline (`BASE_P3`) with the merge bound to the measured admission commit, conditional timer restore, G's private hash separated from the historical-only rule in amendment H. Map below the rev. 6 map. Draft only: no code, no data, no server. |
+| 2026-10-28 | 7 | Answers Astra's second re-check of rev. 6 (`da42841`; `fix_first`: 2 blockers, 2 should-fix): annotation-loss decision in the restore even inside the pause, a separate part 3 code baseline (`BASE_P3`) with the merge bound to the measured admission commit, conditional timer restore, G's private hash separated from the historical-only rule in amendment H. Map below the rev. 6 map. Draft only: no code, no data, no server. |
+| **2026-10-28** | **8** | Four final review notes: non-lossy code-only rollback (re-run the §1.9 step 2/3 block against the reverted O CSV); trigger (3) alone means no DB restore (§1.9 step 5 and §1.9a agree); `chown --reference` and unreadable-DB loss decision in §1.9a step 4; unit settings installable only before §1.0 or after part 3. Draft only: no code, no data, no server. |
 
 **Rev. 4 blocker map (2026-10-28).** "A" = Astra finding (its order in the journal), "O" = Opus
 finding (its order). Severity as the reviewer gave it.
@@ -438,8 +455,9 @@ of rev. 4.
   without it (its default is 0). The repo unit files equal the installed ones since
   2026-10-26 (`deploy/systemd/egyptology.service`, header), and four wanted settings are still
   *not* installed (OnFailure, `STREAMLIT_SERVER_FILE_WATCHER_TYPE=none`, `MemoryMax=6G`, the
-  backup unit's `EnvironmentFile=`). Installing them is its own deploy, before §1.0 or after
-  §1.9, never inside the pause window: it restarts the service, and changed `Environment=`
+  backup unit's `EnvironmentFile=`). Installing them is its own deploy, **only before §1.0 or after
+  part 3** (rev. 8: a unit-file change in between would make part 3's code-diff test against
+  `BASE_P3` fail), never inside the pause window or between parts 1 and 3: it restarts the service, and changed `Environment=`
   lines would make the §1.7 pause inventory describe a process that is no longer running.
 * `data/processed/examples.csv` is **never written by an importer** in this plan. Importers
   write donor files to `$R` only. One new merge script builds *candidate* CSVs, and a
@@ -1156,8 +1174,11 @@ paused (§1.7 has cleared with the final N):
    not fire at all on a failed refresh or a failed live check after the deploy has succeeded.
 4. Re-run `check_annotation_keys.py` on the live DB (read-only URI, the deployed venv, in the
    clone): chains `ok`, 0 annotations on R, H unchanged, the printed path equal to `LIVE_DB`.
-5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5; a difference is
-   trigger (3) of §1.9a and needs its loss decision, not a restore). Then Ledio
+5. Check the live annotation `COUNT(*), MAX(id)` = `A_pause` (§1.7 step 5). **A difference alone
+   (trigger (3) with every other check passing) means NO DB restore (rev. 8):** saving stays
+   paused, the key and settings are not restored, Ledio investigates how a write got past the
+   pause with the §1.7 step 1.3 and 1.4 checks, and he decides; §1.9a runs only if another
+   trigger also fires. Otherwise Ledio
    restores every file **from its pre-pause copy** (§1.7 step 1a), not from memory and not
    from the names-only inventory. For each place listed in `$R/pause_inventory.txt`:
    `cp -p /home/ledio/pause-backup-<date>/<label> <original path>`, then the owner, group and
@@ -1197,7 +1218,10 @@ a count other than `inserted = admitted, updated 0`, or the `database:` line was
 `LIVE_DB` line; (2) `check_annotation_keys.py` on the live DB is not all `ok`, reports an
 annotation on R, changes H, or prints a path other than `LIVE_DB` (part 1 only); (3) the live
 annotation `COUNT(*), MAX(id)` differs from `A` (this is a **loss question**, see the scope
-paragraph, not an ordinary restore trigger); (4) the live `COUNT(*) FROM examples` is not
+paragraph, not an ordinary restore trigger; **rev. 8: trigger (3) alone means NO DB restore**:
+saving stays paused, Ledio investigates how the write got past the pause with the §1.7 step
+1.3 and 1.4 checks and decides, and this section runs only if another trigger also fires,
+as §1.9 step 5 says); (4) the live `COUNT(*) FROM examples` is not
 the expected count (part 1: equal to `X`, since the refresh updates fields and inserts and
 deletes nothing; part 3: `X` plus the admitted count); (5) the post-deploy pause checks or the
 live app check fail (no result card, `Read-only mode.` notice, a rolled-back deploy followed by
@@ -1250,8 +1274,11 @@ where it is. The code rollback is not lossy: it touches no annotation.
 4. **Restore the exact `RESTORE_FILE`.** The file name and sha256 are in the record named in
    the table, and the file is in `BACKUPS` and in the pause directory. First `sha256sum` it and
    require equality with the recorded value, and `gzip -t`. Then `gunzip -c <that .gz> >
-   LIVE_DB`, with `chmod --reference` the failed file (the same mode and owner). Nothing else
-   is used: not a newer backup, not a "latest".
+   LIVE_DB`, with `chmod --reference=<failed file>` **and `chown --reference=<failed file>`** on `LIVE_DB`
+   (rev. 8), then `stat` shows the same owner, group and mode as the failed file; a mismatch
+   stops the run. Nothing else is used: not a newer backup, not a "latest". If the failed
+   database cannot be read (step 3), Ledio's written loss decision explicitly covers the
+   unreadable case, and the preserved copy is kept as-is, never opened for writing or altered.
 5. **Check it before it serves anything**, `sqlite3 -readonly` on `LIVE_DB`: `PRAGMA
    integrity_check` = `ok`, `quick_check` = `ok`, `foreign_key_check` empty; `COUNT(*)` of
    `examples` equals the restore file's own count (`X`); annotation `COUNT(*), MAX(id)` equals
@@ -1270,6 +1297,10 @@ where it is. The code rollback is not lossy: it touches no annotation.
    decides what to do with it. Leaving the new code on the restored DB is allowed only if
    Ledio decides so in writing, with the reason (for example, a failure that touched no row);
    it is never the default.
+   **Non-lossy option for the code-only rollback (rev. 8):** after the revert deploy, re-run
+   the §1.9 step 2 and step 3 block against the reverted O CSV (same `database:` line check,
+   inode check and allowlist check as step 2), expecting `WOULD create=0`. That restores the
+   allowlisted fields without touching annotations or restoring the DB.
 7. **Re-verify, restore the timer, and only then restore saving.** After the restart: B1 (all
    of (a) to (e), so the restored state is bound to `LIVE_DB` again), the §1.7 step 1.3 and
    1.4 checks (the pause is still in force and `NeedDaemonReload=no`), and the step 5 checks
