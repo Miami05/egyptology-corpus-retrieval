@@ -3122,3 +3122,17 @@ Not built yet; measure before switching on, on queries written in a reader's not
    result goes to Nederhof together with the invitation to test the live tool (his own St Andrews
    texts through the reviewer key).
 3. Then the data-cleanup project (`docs/plan-data-cleanup-2026-10-26.md`).
+
+**Closing note 2026-10-28 (Experiment 3 closed with F-a off). Append-only; no rule above is changed.**
+Step 4 ran once on held-out 3 (`docs/exp3-results-2026-10-28-step4.md`, run
+`~/egyptology-runs/exp3-step4-2026-10-28-attempt1`, runner commit `3d50630`, base `e2a9596`, fa
+`b4844a1`, held-out 3 sha256 `c80100cf…` verified against the build log, the pin and both
+worktrees): on held-out 3 faithful, in both pools, top-3 useful tied (16 = 16) but MRR fell
+(0.7333 -> 0.7167) and the rank-1 count fell (14 -> 13), so `STEP4 OVERALL: FAIL`. By the frozen
+consequence the failed confirmation is reported, F-a is not promoted, `EXP3_FA_DEFAULT` stays
+`False`, and held-out 3 is spent. Together with the selection run
+(`docs/exp3-results-2026-10-28-attempt1.md`: F-a selected on held-out 2; gains on v4, held-out 1 and
+LE-v1; NAME-v1 regression) the experiment is closed with F-a off; no gain or loss is attributed to
+notation alone because F-a also re-splits tokens. A future attempt needs a new pre-registration and
+new unseen sets; nothing here is re-tested on held-out 3. The `WHYPTOLOGY_EXP3_FA` override in
+`app/services/faithful.py` is to be removed when this branch is merged (not removed now).
