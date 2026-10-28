@@ -155,7 +155,7 @@ run**. Until it exists, no endpoint-G number can be produced at all.
 | `scripts/bfreq_baseline.py` | sha256 `9c7f1efe608e1320b8f9d5efe8ba6970943e1260a7b54ae2fc87a46a8793761f` |
 | `scripts/build_bfreq_table.py` | sha256 `2fec0a2db86b7fc4b346a3d136d286e6422facaf61bcc94404badfb50f9fcf80` |
 | `tests/test_bfreq_baseline.py` | sha256 `89b818f640a8cd5d1d2a8bb0a9fade4b54c0a3bf3add3253ece10f266932ea91` |
-| **Combined dependency digest** | `94874bb29079688ac8ee6fc183a6af0a4b9117b72709d1415f76ebf16b0f7215` |
+| **Combined dependency digest** | `cfd10b5b5993fb4915c92f48710525da39baa9e837b60ea226d8e8e099651455` (re-frozen 2026-10-28, see the last amendment) |
 | **Corpus** | `data/processed/examples.csv` at `3e29304`, 130,472 rows, sha256 `44543932a3c83d76b823d5498ce0054b746fae6abb884e97e2650398f39df1e2` |
 
 **The dependency digest** covers `inspect.getsource` of every app function B-freq
@@ -353,3 +353,22 @@ by `tests/test_kri_tooling_freeze.py`.
 
 This amendment changes no B-freq rule, key, tie-break, surface rule, scorer or table;
 the frozen files and their sha256s above are unchanged.
+
+## Amendment 2026-10-28: dependency digest re-frozen after the transition-smoothing merge
+
+*Appended; the table row above carries the new digest, as the freeze test requires.*
+
+Merging `transition-smoothing-2026-10-28` into main added one statement to
+`ReadingModel.fit`: `self._smooth_cache.clear()`, which empties the cache of the
+smoothing switch (default off) when a model is refitted. Nothing that `fit` counts or
+stores for B-freq changed. The combined dependency digest moved from
+`94874bb29079688ac8ee6fc183a6af0a4b9117b72709d1415f76ebf16b0f7215` to
+`cfd10b5b5993fb4915c92f48710525da39baa9e837b60ea226d8e8e099651455`; every other
+per-function digest is unchanged.
+
+**Effect on the table: none.** Rebuilt at the merged main with the same command and
+corpus (sha256 `44543932…1e2`), output in `~/egyptology-runs/bfreq-refreeze-2026-10-28/`:
+`bfreq_table_all.csv` sha256 `2b342dc4d3a4b9f0c0913fc71ac053719c037a7ab0bbd371e0e3fefa556360e1`
+and `bfreq_table_late_egyptian.csv` sha256
+`67cbb90280160ba0736ded11c86014ce81d5ff84445031baf5f806a05ba3718c`, byte-identical to the
+frozen files above. No rule, key, tie-break, surface rule, scorer or table changes.
