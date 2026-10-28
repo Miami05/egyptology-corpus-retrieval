@@ -28,6 +28,11 @@ deciding on step 4 should see it). Next step: the one-time held-out 3 confirmati
 | sha256 `base/sha256.txt` (manifest of 78 files) | `b794ca9800d6684dd1f9566f8857383646a04d08509ff43d1a88a4b9c4e5e52d` |
 | sha256 `fa/sha256.txt` (manifest of 79 files) | `62aea23b108c1e471e5ab632e4479b8087c48e3118e3c3a19cfcc75bce0763fa` |
 
+This section is the record the ROADMAP hard-gates addendum asks for ("the sha256 of every
+reference file is recorded in the results section when the run is made"): the base arm's reference
+files are covered by the `base/sha256.txt` manifest hash above. ROADMAP itself is unchanged by this
+note.
+
 The three top-level files and both per-arm manifests were re-checked with `shasum -a 256 -c`
 when this note was written: every file reports OK. Every number below was recomputed from the
 per-query result CSVs (`useful_family_rank`: top-3 useful = rank 1 to 3; MRR = mean of 1/rank
@@ -269,6 +274,9 @@ reading of `pl` residue words in v4 (section 5).
 
 Applying the frozen rule exactly: **SELECTED** (held-out 2 faithful, pool C and pool T:
 top-3 useful 0.9000 -> 0.9500, MRR 0.8500 -> 0.9250, rank-1 count 16 -> 18, in both).
+
+Keep the section 9 NAME-v1 regression in view when step 4 is planned: it is a real risk signal.
+The step-4 rule is not to be changed in response to it.
 
 The next step is the **one-time held-out 3 confirmation** (step 4): F-a only, both pools, the same
 pinned `$CE` lines, passing iff top-3 useful and MRR are at least the baseline and the rank-1 count
