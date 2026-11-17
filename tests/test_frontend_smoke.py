@@ -272,8 +272,10 @@ def test_heading_names_the_top_result_in_the_same_run_as_the_search() -> None:
     [b for b in app.button if b.label.startswith("Suggest top")][0].click().run()
     assert_clean(app)
     header = heading_html(app)
-    assert "Reading workspace" not in header
     assert "Enter a reading to search the corpus" not in header
+    # Either the title names the closest parallel's text, or it stays the page's own
+    # and the meta line says the corpus records no text for that parallel.
+    assert "Reading workspace" not in header or "Closest parallel" in header, header
     import re
 
     # It names the text when the corpus records one and says so when it does not;

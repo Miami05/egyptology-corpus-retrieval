@@ -2351,12 +2351,16 @@ def render_workspace(df: pd.DataFrame) -> None:
         if current_top_row is None:
             heading, meta = "Reading workspace", "Enter a reading to search the corpus"
         else:
-            heading = row_text_title(
-                current_top_row, "Closest parallel: source text not recorded"
-            )
+            # The title names the closest parallel's text when the corpus records
+            # one. When it does not, the title stays the page's own and the quiet
+            # line below says so: an h1 reading "source text not recorded" put the
+            # gap above everything else on the page.
+            title = row_text_title(current_top_row, "")
+            heading = title or "Reading workspace"
             meta = " · ".join(
                 part
                 for part in [
+                    "" if title else "Closest parallel: source text not recorded",
                     # Normalised, not the raw cell: `Unspecified (AES)` etc. would
                     # otherwise leak into this quiet meta line. An unrecorded stage
                     # is dropped from the line entirely (the "if part" filter
