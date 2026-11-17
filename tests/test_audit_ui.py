@@ -1071,12 +1071,19 @@ def test_parallel_card_shows_the_aes_text_name_escaped(monkeypatch):
 
     shown: list[str] = []
     monkeypatch.setattr(app_module.st, "markdown", lambda body, **_: shown.append(body))
+    # No citation index: the card falls back to the AES name, the path under test.
+    monkeypatch.setattr(
+        app_module, "card_citation_indexes", lambda: (app_module.EMPTY_CITATIONS, None, False)
+    )
     row = pd.Series({**_AES_ROW, "grammar_notes": "AES text: <b>pX</b>"})
     app_module.render_similar_parallel_card(
         1, row, app_module.TIER_TRANSLITERATION, "k", 0.5, 0.5
     )
     html_out = "\n".join(shown)
-    assert "&lt;b&gt;pX&lt;/b&gt; (AES_2DF6EC0096C3)" in html_out
+    # The name is printed; the hash id is an identifier, so it is a hover on the line
+    # (still there to match a card to a corpus row), not part of the visible source.
+    assert "· &lt;b&gt;pX&lt;/b&gt;</span>" in html_out
+    assert 'title="AES_2DF6EC0096C3 · ' in html_out
     assert "<b>pX</b>" not in html_out
 
 

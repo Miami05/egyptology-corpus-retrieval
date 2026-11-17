@@ -197,6 +197,7 @@ def test_workspace_labels_a_lexicon_reading_as_such() -> None:
     assert not app.exception
     markdown = "\n".join(m.value for m in app.markdown)
     assert "◇" in markdown or "from the lexicon" in markdown
-    table_text = " ".join(str(d.value.to_dict()) for d in app.dataframe)
+    # The sign table is hand-rendered HTML (the canvas grid cannot draw ꞽ).
+    table_text = " ".join(m for m in markdown.split("\n") if 'class="corpus-table"' in m)
     assert "no sentence in this corpus" in table_text
     assert "Helsinki" in markdown

@@ -930,6 +930,25 @@ def card_citation_indexes():
         return public, None, False
 
 
+def row_text_title(row, fallback: str) -> str:
+    """What a reader can look a row's text up by: its citation title, else `fallback`.
+
+    Never the internal `source_text_id` (`TLA_EARLIER_9473`, `RAMSES_657C…`): it is an
+    identifier of this corpus file, not a reference. An expert asked for "the source",
+    and a heading made of such an id reads as one without being one. The id stays in
+    the Source tab, labelled as an id. Plain text; callers escape for their sink.
+    """
+    citations, private_citations, private_allowed = card_citation_indexes()
+    citation = citation_for(
+        SupportingExample.from_row(row), citations, private_citations, private_allowed
+    )
+    if citation.kind == "oraec" and citation.text is not None and citation.text.title:
+        return citation.text.title
+    if citation.kind == "standrews" and citation.private is not None:
+        return f"St Andrews corpus: text {citation.private.text}"
+    return aes_text_name(row) or fallback
+
+
 @st.cache_resource(show_spinner=False)
 def load_search_index(_df: pd.DataFrame, signature: str):
     """Query-independent search statistics, built once per corpus."""
@@ -2332,7 +2351,9 @@ def render_workspace(df: pd.DataFrame) -> None:
         if current_top_row is None:
             heading, meta = "Reading workspace", "Enter a reading to search the corpus"
         else:
-            heading = text_label(current_top_row, "Reading workspace")
+            heading = row_text_title(
+                current_top_row, "Closest parallel: source text not recorded"
+            )
             meta = " · ".join(
                 part
                 for part in [
@@ -2892,7 +2913,12 @@ def render_workspace(df: pd.DataFrame) -> None:
                     for p in predictions
                 ]
             )
-            st.dataframe(table, hide_index=True, width="stretch")
+            # An HTML table, not st.dataframe: the canvas grid cannot use the
+            # Egyptological font, so the readings drew ꞽ as an empty box (same as A60).
+            st.markdown(
+                html_table(table, {"Chosen reading", "Alternatives"}),
+                unsafe_allow_html=True,
+            )
 
             if from_lexicon:
                 st.info(
@@ -3050,7 +3076,8 @@ def render_workspace(df: pd.DataFrame) -> None:
                 score = row.get("final_score")
                 score_text = f" · match {float(score):.2f}" if pd.notna(score) else ""
                 with st.expander(
-                    f"{md_escape(text_label(row, '—'))}{score_text} — {label}",
+                    f"{md_escape(row_text_title(row, value(row, 'source', '—')))}"
+                    f"{score_text} — {label}",
                     expanded=position == 0,
                 ):
                     meta_cols = st.columns(4)
@@ -3114,7 +3141,7 @@ def render_workspace(df: pd.DataFrame) -> None:
         else:
             st.markdown(
                 '<div class="panel-title">Word-by-word · '
-                f'{escape(text_label(top_row, "best match"))}</div>',
+                f'{escape(row_text_title(top_row, "best match"))}</div>',
                 unsafe_allow_html=True,
             )
             analysis = token_analysis(top_row)
@@ -3864,8 +3891,13 @@ def render_similar_parallel_card(
     translation = value(row, "translation", "")
     glyphs = value(row, "hieroglyphs", "")
     source_label = escape(value(row, "source", "Unknown source"))
-    text_label_html = escape(text_label(row, "Uncatalogued text"))
-    sentence_label = escape(value(row, "source_sentence_id", "—"))
+    text_label_html = escape(row_text_title(row, "source text not recorded"))
+    # The corpus ids are identifiers, not a reference: kept as a hover for matching a
+    # card to a corpus row, not printed as if they named the text.
+    ids_title = escape(
+        f"{value(row, 'source_text_id', '—')} · {value(row, 'source_sentence_id', '—')}",
+        quote=True,
+    )
     stage_label = escape(evidence_stage_label(row.get("language_stage")))
     glyph_block = (
         f'<div class="glyphs parallel-glyphs">{glyph_markup(glyphs, sign_reference())}</div>'
@@ -3880,7 +3912,7 @@ def render_similar_parallel_card(
             f"""
             <article class="corpus-card parallel-card">
               <div class="corpus-card-top">
-                <span>{rank}. {source_label} · {text_label_html} · {sentence_label}</span>
+                <span title="{ids_title}">{rank}. {source_label} · {text_label_html}</span>
                 <span>{stage_label}</span>
               </div>
               <div class="corpus-reading">{reading}</div>

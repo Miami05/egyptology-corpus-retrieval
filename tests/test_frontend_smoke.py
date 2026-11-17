@@ -274,7 +274,11 @@ def test_heading_names_the_top_result_in_the_same_run_as_the_search() -> None:
     header = heading_html(app)
     assert "Reading workspace" not in header
     assert "Enter a reading to search the corpus" not in header
-    assert "TLA_" in header, header
+    import re
+
+    # It names the text when the corpus records one and says so when it does not;
+    # an internal id (`TLA_EARLIER_9473`) is an identifier, not a source.
+    assert not re.search(r"\b(TLA|RAMSES|BBAW|AES)_[A-Z0-9_]+", header), header
 
 
 def test_ephemeral_storage_makes_the_annotation_form_read_only() -> None:
