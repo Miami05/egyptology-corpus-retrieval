@@ -152,15 +152,15 @@ manual steps before deploying again. A rollback costs another warm-up (about thr
 Not covered: a bad data migration. The database is only ever touched by
 `import_examples.py` (insert-only), and the nightly backup is the safety net there.
 
-**The full lock (`requirements.lock`, audit A45).** Not committed yet. Generate it from the
-venv the server is serving once a deploy has passed, and commit it; from then on every release
-venv is that exact set, and only a deliberate lock change upgrades anything:
+**The full lock (`requirements.lock`, audit A45).** Committed 2026-11-17, frozen from the venv
+serving `8f4cf70`. Every release venv is now that exact set, and only a deliberate lock change
+upgrades anything. Regenerate it from the venv the server is serving once a deploy has passed:
 
 ```bash
 ssh ledio@vela-optiplex-3070 '~/venvs/egyptology/bin/pip freeze --exclude-editable' > requirements.lock
 ```
 
-Until then the deploy holds every package `requirements.txt` does not name at the running
+Without a lock (a commit older than this one) the deploy holds every package `requirements.txt` does not name at the running
 venv's version, which stops a doc-only deploy from upgrading protobuf or tornado underneath
 the app, but a rebuilt machine would still resolve them fresh. Each release venv is about
 760 MB and at most three exist during a deploy (the box's disk is about 72% full: check
